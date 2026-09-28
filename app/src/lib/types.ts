@@ -24,6 +24,10 @@ export interface Projet {
   created_at: string
   /** Mode autonome (0010) : null = éteint ; sinon la session enchaîne les chantiers libres jusqu'à cette heure. */
   autonome_jusqu_a: string | null
+  /** Preuves de branchement (0012) : dernier démarrage de session avec le hook, dernière mise à jour automatique, dernier appel du module du site. */
+  branchement_vu_at?: string | null
+  branchement_maj_at?: string | null
+  embed_vu_at?: string | null
   /** Au plus N chantiers enchaînés par session (1-50, défaut 20 depuis 0011). */
   autonome_max: number
   /** Mode autonome « tout le temps », sans heure de fin (0011). */

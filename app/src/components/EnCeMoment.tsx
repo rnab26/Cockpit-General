@@ -162,7 +162,7 @@ function BlocSession({ vs, projetId }: { vs: VueSession; projetId: string }) {
         </div>
       ) : (
         <p className="truncate text-xs text-texte-2">
-          <span className={vs.repond ? 'font-semibold text-ok' : ''} data-testid="etat-session">{vs.repond ? '✍️ répond en ce moment' : '⏸️ attend ton prochain message'}</span>
+          <span className={vs.repond ? 'font-semibold text-ok' : ''} data-testid="etat-session">{vs.repond ? '✍️ répond en ce moment' : vs.titre.startsWith('🤖 Session autonome') ? '💤 en veille — se réveille toute seule chaque heure' : '⏸️ attend ton prochain message'}</span>
           {' · '}{vs.dernierSigne}
         </p>
       )}
