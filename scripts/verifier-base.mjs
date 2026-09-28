@@ -594,6 +594,64 @@ async function controle13_exec_sql() {
   verifie("deux instructions dans un appel : exécutées sans lignes (rows null), comme documenté", deuxInstr.ok && deuxInstr.rows === null, deuxInstr);
 }
 
+async function controle14_sessions_agents_fusions() {
+  section("14. sessions, agents (hook de suivi), rangement et fusions suggérées — 29 sept. 2026");
+  const sid = `test-sess-${rand}`;
+  const suivre = (ev) => execSql(`select suivre(${q(SLUG_A)}, ${q(JSON.stringify({ session_id: sid, ...ev }))}::jsonb) as r`);
+  await suivre({ hook_event_name: "UserPromptSubmit", prompt: "Essai du suivi", branche: "claude/test" });
+  let s = await une(`select * from sessions where id = ${q(sid)}`);
+  verifie("UserPromptSubmit crée la session, tour en cours, sujet = début du message", s && s.tour_en_cours === true && s.sujet === "Essai du suivi" && s.branche === "claude/test", s);
+  // Un agent se signale AVANT que le hook l'ait vu : ligne provisoire, puis ADOPTÉE (jamais dédoublée).
+  const prov = await execSql(`select progression_tache(${q(SLUG_A)}, 'Mesurer les cheveux', 'Clip 3 sur 12', 25, 540, null, 'en_cours', ${q(sid)}) as id`);
+  verifie("progression_tache avant le hook : ligne provisoire créée", prov.ok && prov.rows?.[0]?.id, prov);
+  await suivre({ hook_event_name: "Stop", background_tasks: [
+    { id: "aT1", type: "local_agent", status: "running", description: "Mesurer les cheveux", agent_type: "general-purpose" },
+    { id: "bT2", type: "local_bash", status: "running", description: "Attendre la réplique", command: "until grep done" } ] });
+  let t = await sql(`select tache_id, type, statut, etape, pourcentage, eta_secondes from taches where session_id = ${q(sid)} order by tache_id`);
+  verifie("Stop : deux tâches, l'agent a adopté sa ligne provisoire (étape, %, reste conservés)",
+    t.length === 2 && t[0].tache_id === "aT1" && t[0].type === "agent" && t[0].etape === "Clip 3 sur 12" && t[0].pourcentage === 25 && t[0].eta_secondes === 540 && t[1].type === "commande", t);
+  s = await une(`select tour_en_cours from sessions where id = ${q(sid)}`);
+  verifie("Stop : la session attend le prochain message (tour_en_cours = false)", s.tour_en_cours === false, s);
+  await suivre({ hook_event_name: "Stop", background_tasks: [{ id: "aT1", type: "local_agent", status: "running", description: "Mesurer les cheveux" }] });
+  t = await une(`select statut, fini_at is not null as fini from taches where session_id = ${q(sid)} and tache_id = 'bT2'`);
+  verifie("une tâche absente de la liste suivante passe « terminée »", t.statut === "termine" && t.fini, t);
+  await suivre({ hook_event_name: "SubagentStop", agent_id: "aT1" });
+  t = await une(`select statut from taches where session_id = ${q(sid)} and tache_id = 'aT1'`);
+  verifie("SubagentStop termine l'agent", t.statut === "termine", t);
+  // Droits : un utilisateur (même membre) ne lit ni sessions ni tâches, n'appelle pas suivre.
+  const lu = await rest(`taches?select=id&session_id=eq.${sid}`, { jwt });
+  verifie("un membre ne voit AUCUNE tâche de session (RLS admin)", lu.status === 200 && Array.isArray(lu.json) && lu.json.length === 0, lu);
+  const lu2 = await rest(`sessions?select=id&id=eq.${sid}`, { jwt });
+  verifie("un membre ne voit AUCUNE session (RLS admin)", lu2.status === 200 && Array.isArray(lu2.json) && lu2.json.length === 0, lu2);
+  const pirate = await rpcUtilisateur("suivre", { p_projet: SLUG_A, p: { session_id: "x", hook_event_name: "Stop" } }, jwt);
+  verifie("suivre avec un JWT utilisateur → refusé (42501)", pirate.status >= 400 && pirate.json?.code === "42501", pirate);
+  // Claude range : la section est créée si besoin.
+  const c1 = await creerChantier(P1, { titre: "Mesure des cheveux longs" });
+  const c2 = await creerChantier(P1, { titre: "Cheveux longs : mesure" });
+  const r = await execSql(`select ranger_chantier(${q(c1)}, 'Rubrique neuve ${rand}', 'claude/test') as s`);
+  const sec = await une(`select s.nom from chantiers c join sections s on s.id = c.section_id where c.id = ${q(c1)}`);
+  verifie("ranger_chantier crée la section et y range le chantier", r.ok && sec?.nom === `Rubrique neuve ${rand}`, { r, sec });
+  // Fusion SUGGÉRÉE : rien ne bouge tant que l'humain n'a pas tranché.
+  const sug = await execSql(`select suggerer_fusion(${q(c2)}, ${q(c1)}, 'Même sujet', 'claude/test') as m`);
+  const mid = sug.rows?.[0]?.m;
+  verifie("suggerer_fusion crée un message « fusion » avec deux options", sug.ok && mid && (await une(`select kind, jsonb_array_length(options) as n from messages where id = ${q(mid)}`))?.n === 2, sug);
+  const bis = await execSql(`select suggerer_fusion(${q(c2)}, ${q(c1)}, 'Même sujet', 'claude/test') as m`);
+  verifie("la même suggestion n'est pas posée deux fois", bis.ok && bis.rows?.[0]?.m === null, bis);
+  verifie("tant qu'il n'a pas tranché, rien n'est fusionné", (await chantier(c2)).doublon_de === null);
+  const tr = await rpcUtilisateur("trancher_fusion", { p_message: mid, p_fusionner: true }, jwt);
+  verifie("un membre NON admin ne peut pas trancher une fusion", tr.status >= 400 && (await chantier(c2)).doublon_de === null, tr);
+  const ok = await execSql(`select trancher_fusion(${q(mid)}, true, 'Raphaël') as r`);
+  const apres = await chantier(c2);
+  const msg = await une(`select reponse, answered_at is not null as repondu from messages where id = ${q(mid)}`);
+  verifie("« Fusionner » : le doublon est absorbé (doublon_de, archivé) et la suggestion est répondue",
+    ok.ok && apres.doublon_de === c1 && apres.archived_at && msg.reponse === "Fusionner" && msg.repondu, { ok, apres, msg });
+  const c3 = await creerChantier(P1, { titre: "Autre sujet" });
+  const sug2 = await execSql(`select suggerer_fusion(${q(c3)}, ${q(c1)}, 'Peut-être', 'claude/test') as m`);
+  await execSql(`select trancher_fusion(${q(sug2.rows[0].m)}, false, 'Raphaël') as r`);
+  verifie("« Garder séparés » : rien n'est fusionné, la suggestion est close",
+    (await chantier(c3)).doublon_de === null && (await une(`select reponse from messages where id = ${q(sug2.rows[0].m)}`)).reponse === "Garder séparés");
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -611,7 +669,7 @@ try {
     async () => { const c = await controle4_certifier(); await controle5_corriger(c); },
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
-    controle12_realtime, controle13_exec_sql,
+    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions,
   ];
   for (const etape of etapes) {
     try { await etape(); }

@@ -77,6 +77,7 @@ fi
 echo "3. Hook de démarrage"
 poser "$ICI/modeles/cockpit-session-start.sh" "$dossier/.claude/hooks/cockpit-session-start.sh"
 poser "$ICI/modeles/cockpit-prompt-rappel.sh" "$dossier/.claude/hooks/cockpit-prompt-rappel.sh"
+poser "$ICI/modeles/cockpit-suivi.sh" "$dossier/.claude/hooks/cockpit-suivi.sh"
 reglages="$dossier/.claude/settings.json"
 [ -f "$reglages" ] || echo '{}' > "$reglages"
 python3 - "$reglages" "$slug" <<'PY'
@@ -98,14 +99,48 @@ ups = hooks.setdefault("UserPromptSubmit", [])
 cmd2 = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-prompt-rappel.sh"
 if not any(x.get("command") == cmd2 for h in ups for x in h.get("hooks", [])):
     ups.append({"hooks": [{"type": "command", "command": cmd2}]})
+# Suivi des sessions et de leurs agents (29 sept. 2026) : quelle session
+# travaille, quels agents et commandes elle a lancés (voir hooks/suivi.sh).
+cmd3 = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-suivi.sh"
+for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse", "SessionEnd"):
+    lst = hooks.setdefault(ev, [])
+    if not any(x.get("command") == cmd3 for h in lst for x in h.get("hooks", [])):
+        entree = {"hooks": [{"type": "command", "command": cmd3, "timeout": 10}]}
+        if ev == "PostToolUse":
+            entree["matcher"] = "*"
+        lst.append(entree)
 json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
-print("   ok : .claude/settings.json (env COCKPIT_PROJET + hooks SessionStart et UserPromptSubmit)")
+print("   ok : .claude/settings.json (env COCKPIT_PROJET + hooks démarrage, rappel et suivi des sessions/agents)")
 PY
 
 echo "4. CLAUDE.md"
 claude="$dossier/CLAUDE.md"; [ -f "$claude" ] || touch "$claude"
-if grep -q "## Cockpit (rnab26/Cockpit-General)" "$claude"; then echo "   déjà présent"; else
-  sed -e "s/{{SLUG}}/$slug/g" -e "s#{{SQL}}#scripts/cockpit-sql.sh#g" "$ICI/docs/bloc-CLAUDE.md" >> "$claude"; echo "   bloc ajouté"; fi
+bloc=$(sed -e "s/{{SLUG}}/$slug/g" -e "s#{{SQL}}#scripts/cockpit-sql.sh#g" "$ICI/docs/bloc-CLAUDE.md")
+if grep -q "## Cockpit (rnab26/Cockpit-General)" "$claude"; then
+  # Le bloc évolue avec le cockpit : on le REMPLACE, du titre jusqu'au repère de
+  # fin (ou, pour un bloc d'avant le repère, jusqu'au titre ## suivant ou au
+  # paragraphe propre au projet « **Ce que le cockpit ne remplace PAS »).
+  # Le reste du CLAUDE.md du projet n'est jamais touché.
+  BLOC="$bloc" python3 - "$claude" <<'PY2'
+import os, re, sys
+p = sys.argv[1]; s = open(p).read(); bloc = os.environ["BLOC"].rstrip("\n") + "\n"
+i = s.index("## Cockpit (rnab26/Cockpit-General)")
+fin = "<!-- fin du bloc cockpit"
+j = s.find(fin, i)
+if j >= 0:
+    j = s.index("\n", j) + 1
+else:
+    m = re.compile(r"^(## |\*\*Ce que le cockpit ne remplace PAS)", re.M).search(s, i + 5)
+    j = m.start() if m else len(s)
+suite = s[j:]
+nouveau = s[:i] + bloc + ("\n" + suite.lstrip("\n") if suite.strip() else "")
+if nouveau != s:
+    open(p, "w").write(nouveau); print("   bloc mis à jour")
+else:
+    print("   déjà à jour")
+PY2
+else
+  printf '\n%s\n' "$bloc" >> "$claude"; echo "   bloc ajouté"; fi
 
 cat <<FIN
 

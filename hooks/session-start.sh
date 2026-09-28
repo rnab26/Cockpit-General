@@ -16,7 +16,7 @@ RACINE="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROJET="${COCKPIT_PROJET:-}"
 # Noms des scripts tels qu'installés dans le projet (brancher.sh les réécrit).
-SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
+SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"; CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"
 
 emettre() { jq -n --arg c "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'; }
 
@@ -58,6 +58,14 @@ livres=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(coalesc
 
 activite=$(un "select coalesce(string_agg(format('- %s | %s | %s %% | %s | %s', a.session, coalesce(c.titre,''), a.pourcentage, a.etape, to_char(a.updated_at, 'DD/MM HH24:MI')), chr(10) order by a.updated_at desc), '(aucune)') from activite a join projets p on p.id = a.projet_id left join chantiers c on c.id = a.chantier_id where p.slug = $P and a.statut = 'en_cours' and a.updated_at > now() - interval '12 hours'")
 
+# Les agents et commandes lancés en arrière-plan, suivis tout seuls par le hook
+# de suivi (29 sept. 2026) : ne relance pas ce qu'un agent fait déjà.
+taches=$(un "select coalesce(string_agg(format('- %s | %s « %s »%s | depuis %s%s', coalesce(se.sujet, se.branche, left(se.id, 8)), case t.type when 'agent' then 'agent' when 'commande' then 'commande' else 'tâche' end, coalesce(t.description, t.sorte, t.tache_id), case when c.titre is not null then ' → ' || c.titre else '' end, to_char(t.demarre_at, 'DD/MM HH24:MI'), case when t.progres_at is not null then ' | ' || coalesce(t.etape, '') || coalesce(' ' || t.pourcentage || ' %', '') else '' end), chr(10) order by t.demarre_at), '(aucun)') from taches t join sessions se on se.id = t.session_id join projets p on p.id = t.projet_id left join chantiers c on c.id = t.chantier_id where p.slug = $P and t.statut = 'en_cours' and t.vu_at > now() - interval '12 hours'")
+
+fusions=$(un "select coalesce(string_agg(format('- %s (suggérée le %s)', m.corps, to_char(m.created_at, 'DD/MM HH24:MI')), chr(10) order by m.created_at), '(aucune)') from messages m join projets p on p.id = m.projet_id where p.slug = $P and m.kind = 'fusion' and m.answered_at is null")
+
+a_ranger=$(un "select coalesce(string_agg(format('- %s | %s', c.id, c.titre), chr(10) order by c.created_at), '(aucun)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.archived_at is null and c.section_id is null")
+
 emettre "$(cat <<FIN
 # Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
 
@@ -88,6 +96,15 @@ $constats
 
 ## Sessions actives (progression en direct)
 $activite
+
+## Agents et commandes en arrière-plan en ce moment (toutes sessions du projet)
+$taches
+
+## Fusions suggérées, en attente de Raphaël (ne les re-suggère pas)
+$fusions
+
+## Chantiers SANS section — c'est à TOI de les ranger (Raphaël ne trie pas) : \`$CHANTIER_CMD --ranger <id> --section "<rubrique>"\`
+$a_ranger
 
 ## Derniers livrés
 $livres

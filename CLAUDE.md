@@ -83,3 +83,27 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 `node scripts/verifier-embed.mjs`. Une modification de `embed/cockpit-embed.js`
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
+
+## Sessions, agents, doublons : ce que Claude décide seul (29 sept. 2026)
+
+- **Session** = une conversation Claude Code ; **tâche** = un agent ou une
+  commande qu'elle lance en arrière-plan. Tables `sessions` / `taches`
+  (migrations 0008, 0009), alimentées par `hooks/suivi.sh`, déclaré par
+  `brancher.sh` sur UserPromptSubmit, Stop, SubagentStart, SubagentStop,
+  PostToolUse et SessionEnd. La liste des tâches vient de Claude Code lui-même
+  (`background_tasks` du hook Stop, lu dans le code de la version 2.1.284). Le
+  hook ne ralentit jamais une session : il répond en ~20 ms, envoie en
+  arrière-plan et ne signale un simple signe de vie qu'une fois par minute.
+- L'étape, le % et le temps restant d'un agent ne se devinent pas : l'agent
+  les signale (`progression.sh --agent "<sa description>"`). S'il le fait
+  avant que le hook l'ait vu, sa ligne provisoire `prov:<description>` est
+  adoptée ensuite, jamais dédoublée (`adopter_provisoire`).
+- Raphaël ne trie pas : doublons (« ambigu » → la session tranche avec les
+  extraits), sections (`--section` / `--ranger`, créée si besoin) et fusions
+  **suggérées** (`--suggerer-fusion`, message `kind = 'fusion'`, qu'il accepte
+  ou refuse d'un toucher via `trancher_fusion`). `verifier-base.mjs` §14.
+- `brancher.sh` REMPLACE désormais le bloc Cockpit du CLAUDE.md d'un projet
+  quand `docs/bloc-CLAUDE.md` change (repère de fin `<!-- fin du bloc cockpit`),
+  sans toucher au reste du fichier. Mais les hooks déclarés dans
+  `.claude/settings.json` d'un projet ne se propagent PAS seuls : un nouvel
+  événement de hook exige de relancer `brancher.sh` sur chaque projet branché.

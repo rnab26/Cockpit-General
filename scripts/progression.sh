@@ -40,6 +40,15 @@
 # la connais vraiment ; sinon omets-la, l'app affiche « durée inconnue ».
 # Jamais 0 pour dire « je ne sais pas ».
 #
+# AGENTS (29 sept. 2026, Raphaël : « j'ai cinq agents, c'est illisible, pas
+# possible de voir leur progression ni combien de temps il reste ») : un agent
+# lancé par une session signale SA ligne, sans toucher à celle de la session :
+#   scripts/progression.sh --agent "<description exacte donnée à son lancement>" \
+#       --chantier <id> --etape "Mesure des 12 clips" --pct 40 --eta 10m
+#   scripts/progression.sh --agent "<même description>" --termine "Fini : …"
+# La tâche elle-même (qu'elle existe, depuis quand elle tourne) est déjà suivie
+# toute seule par le hook de suivi ; ceci n'ajoute que ce qui ne se devine pas.
+#
 # --chantier accepte l'id, ou un morceau du titre (unique dans le projet).
 # Le projet vient de COCKPIT_PROJET (posé par brancher.sh dans
 # .claude/settings.json → env), ou de --projet. La session est le nom de la
@@ -50,7 +59,7 @@ RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
 projet="${COCKPIT_PROJET:-}"
-chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""
+chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""
 session="${COCKPIT_SESSION:-$(git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo session)}"
 
 while [ $# -gt 0 ]; do
@@ -66,6 +75,7 @@ while [ $# -gt 0 ]; do
     --en-ligne) en_ligne="${2:-}"; shift 2 ;;
     --pas-en-ligne) pas_en_ligne="${2:-}"; shift 2 ;;
     --session)  session="${2:-}"; shift 2 ;;
+    --agent)    agent="${2:-}"; shift 2 ;;
     --attente)  statut="attente"; etape="${2:-$etape}"; shift 2 ;;
     --termine)  statut="termine"; etape="${2:-Terminé}"; pct=100; shift 2 ;;
     --echec)    statut="echec"; etape="${2:-Échec}"; shift 2 ;;
@@ -74,7 +84,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$statut" = "termine" ] && [ -n "$chantier" ] && [ -z "${verifier//[[:space:]]/}" ]; then
+if [ "$statut" = "termine" ] && [ -n "$chantier" ] && [ -z "$agent" ] && [ -z "${verifier//[[:space:]]/}" ]; then
   echo "--verifier manque : dis à Raphaël comment vérifier (où aller, quoi faire, ce qu'il doit voir), en étapes numérotées." >&2
   exit 2
 fi
@@ -103,10 +113,26 @@ fi
 
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 
+if [ -n "$agent" ]; then
+  [ -n "$etape" ] || { echo "--etape manque (ou --termine / --echec)." >&2; exit 2; }
+  cid_sql="null"
+  if [ -n "$chantier" ]; then
+    cid=$("$SQL" "select c.id from chantiers c join projets p on p.id = c.projet_id where p.slug = '$(q "$projet")' and (c.id::text = '$(q "$chantier")' or (length('$(q "$chantier")') >= 8 and c.id::text like '$(q "$chantier")' || '%') or c.titre ilike '%' || '$(q "$chantier")' || '%') order by (c.id::text = '$(q "$chantier")') desc, c.archived_at nulls first limit 1" | jq -r '.rows[0].id // empty')
+    [ -n "$cid" ] && cid_sql="'$cid'::uuid"
+  fi
+  pct_sql="null"; [ -n "$pct" ] && pct_sql="$pct"
+  r=$("$SQL" "select progression_tache('$(q "$projet")', '$(q "$agent")', '$(q "$etape")', $pct_sql, $eta_secondes, $cid_sql, '$statut', $( [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "'$(q "$CLAUDE_CODE_SESSION_ID")'" || echo null )) as id" | jq -r '.rows[0].id // empty')
+  if [ -z "$r" ] || [ "$r" = "null" ]; then
+    echo "Aucune tâche « $agent » dans le projet $projet (pas encore vue par le hook de suivi ?). Ta ligne n'a pas été écrite ; réessaie à la prochaine étape." >&2; exit 1
+  fi
+  echo "Agent « $agent » : ${etape}${pct:+ — $pct %}${eta:+ — reste ~$eta}"
+  exit 0
+fi
+
 if [ -n "$chantier" ]; then
   if [ -z "$etape" ] && [ -z "$jalon" ] && [ -z "$en_ligne" ] && [ -z "$pas_en_ligne" ]; then echo "--etape manque (ou --jalon, --termine / --echec / --attente)." >&2; exit 2; fi
   # Résolution du chantier : id exact, sinon morceau de titre UNIQUE.
-  resol=$("$SQL" "select c.id, c.titre from chantiers c join projets p on p.id = c.projet_id where p.slug = '$(q "$projet")' and c.archived_at is null and (c.id::text = '$(q "$chantier")' or c.titre ilike '%' || '$(q "$chantier")' || '%') order by (c.id::text = '$(q "$chantier")') desc limit 3" | jq -c '.rows // []')
+  resol=$("$SQL" "select c.id, c.titre from chantiers c join projets p on p.id = c.projet_id where p.slug = '$(q "$projet")' and c.archived_at is null and (c.id::text = '$(q "$chantier")' or (length('$(q "$chantier")') >= 8 and c.id::text like '$(q "$chantier")' || '%') or c.titre ilike '%' || '$(q "$chantier")' || '%') order by (c.id::text = '$(q "$chantier")') desc limit 3" | jq -c '.rows // []')
   n=$(printf '%s' "$resol" | jq 'length')
   if [ "$n" -eq 0 ]; then echo "Aucun chantier ne correspond à « $chantier » dans le projet $projet." >&2; exit 1; fi
   if [ "$n" -gt 1 ] && [ "$(printf '%s' "$resol" | jq -r '.[0].id')" != "$chantier" ]; then
@@ -144,3 +170,7 @@ fi
 # Le tableau, comme le visuel FacePro : une ligne par chantier actif du projet.
 "$SQL" "select c.titre, c.etat, a.etape, a.pourcentage, a.eta_secondes, a.statut, a.session, extract(epoch from now() - a.updated_at)::int as age from chantiers c join projets p on p.id = c.projet_id left join lateral (select * from activite a where a.chantier_id = c.id order by updated_at desc limit 1) a on true where p.slug = '$(q "$projet")' and c.archived_at is null and (a.id is not null or c.etat in ('en_cours','a_verifier','bloque')) order by (a.statut = 'en_cours') desc nulls last, a.updated_at desc nulls last, c.created_at" \
 | python3 "$RACINE/scripts/progression_tableau.py" "$projet"
+
+# Qui travaille : les sessions du projet et leurs agents / commandes en arrière-plan.
+"$SQL" "select coalesce(se.sujet, se.branche, left(se.id, 8)) as session, t.type, t.description, t.sorte, t.statut, t.etape, t.pourcentage, t.eta_secondes, extract(epoch from now() - t.demarre_at)::int as ecoule, extract(epoch from now() - t.progres_at)::int as progres, extract(epoch from now() - t.fini_at)::int as depuis_fin from taches t join sessions se on se.id = t.session_id join projets p on p.id = t.projet_id where p.slug = '$(q "$projet")' and ((t.statut = 'en_cours' and t.vu_at > now() - interval '12 hours') or t.fini_at > now() - interval '10 minutes') order by se.vu_at desc, t.statut = 'en_cours' desc, t.demarre_at" \
+| python3 "$RACINE/scripts/progression_tableau.py" "$projet" --taches

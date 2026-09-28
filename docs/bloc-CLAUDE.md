@@ -8,10 +8,26 @@ chantiers ouverts par section, questions en attente, réponses humaines,
 demandes des utilisateurs, progression des autres sessions.
 
 - **Chaque demande de travail de Raphaël → un chantier, AVANT de coder** :
-  `scripts/cockpit-chantier.sh --ouvrir "<titre court>" --demande "<ses mots>"`.
-  Il reprend (ou rouvre) le chantier existant au lieu d'en créer un doublon ;
-  « ambigu » → choisis avec `--id` ou `--nouveau`, ou demande. Un rappel le
-  redit à chaque message (hook `cockpit-prompt-rappel.sh`).
+  `scripts/cockpit-chantier.sh --ouvrir "<titre court>" --demande "<ses mots>" --section "<rubrique>"`.
+  Il reprend (ou rouvre) le chantier existant au lieu d'en créer un doublon.
+  **C'est TOI qui tranches, jamais Raphaël** (ses mots, 29 sept. 2026 :
+  « personne mieux que Claude sait si c'est un doublon […] ce n'est pas à moi
+  de trier, catégoriser à chaque fois ») : sur « ambigu », lis les extraits
+  affichés et relance avec `--id <le bon>` ou `--nouveau`, sans lui demander.
+  Range toujours dans une section (`--section`, créée si elle n'existe pas ;
+  après coup : `--ranger <id> --section "…"`). Si deux chantiers existants
+  sont en fait le même sujet, **suggère** la fusion :
+  `--suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi "…"` —
+  il l'accepte d'un toucher dans l'app. Un rappel le redit à chaque message
+  (hook `cockpit-prompt-rappel.sh`).
+- **Tes agents et tes commandes longues sont suivis tout seuls** (hook
+  `cockpit-suivi.sh` : Raphaël voit dans le cockpit chaque session, ses agents,
+  depuis quand ils tournent). Ce qui ne se devine pas, c'est leur avancement :
+  **dans la consigne de CHAQUE agent que tu lances**, écris-lui d'appeler
+  `scripts/cockpit-progression.sh --agent "<la description exacte que tu lui
+  as donnée>" --chantier <id> --etape "…" --pct N --eta 10m` à chaque étape,
+  et `--agent "…" --termine "…"` à la fin. Donne des descriptions d'agents
+  lisibles par Raphaël (le sujet, pas la technique).
 - **Réserver avant de toucher** : `{{SQL}} "select reserver_chantier('<id>', '<ta branche>', 120)"`
   (false = une autre session l'a). Libérer : `liberer_chantier(id, branche)`.
 - **Progression en direct, à chaque étape et en terminant** :
@@ -36,3 +52,4 @@ demandes des utilisateurs, progression des autres sessions.
   Cockpit-General et arrive dans tous les projets branchés en 10 minutes.
 - `{{SQL}}` vise le schéma `cockpit` sans préfixe, une instruction par appel ;
   demande à Raphaël avant tout drop / delete massif / truncate.
+<!-- fin du bloc cockpit : brancher.sh remplace tout ce qui précède jusqu'au titre -->

@@ -3,6 +3,40 @@
 
 import json, sys
 rows = json.load(sys.stdin).get("rows") or []
+
+def duree(sec):
+    sec = max(int(sec or 0), 0)
+    return f"{sec//3600} h {(sec%3600)//60:02d}" if sec >= 3600 else (f"{sec//60} min" if sec >= 60 else f"{sec} s")
+
+if len(sys.argv) > 2 and sys.argv[2] == "--taches":
+    # « Qui travaille » (29 sept. 2026, capture de Raphaël : « j'ai cinq agents,
+    # c'est illisible […] je veux voir leur progression et combien de temps il
+    # reste, en version simplifiée »). Une ligne par session, ses tâches dessous.
+    if not rows:
+        print("Qui travaille : aucun agent ni commande en arrière-plan en ce moment.\n"); sys.exit()
+    sessions = {}
+    for r in rows: sessions.setdefault(r["session"], []).append(r)
+    na = sum(1 for r in rows if r["type"] == "agent" and r["statut"] == "en_cours")
+    nc = sum(1 for r in rows if r["type"] != "agent" and r["statut"] == "en_cours")
+    print(f"Qui travaille — {len(sessions)} session(s) · {na} agent(s) · {nc} commande(s) en cours\n")
+    for sess, taches in sessions.items():
+        print(f"💬 Session {sess}")
+        for r in taches:
+            nom = (r["description"] or r["sorte"] or "tâche")[:70]
+            ico = "🤖 Agent" if r["type"] == "agent" else "⚙️  Commande"
+            if r["statut"] != "en_cours":
+                print(f"   ✅ {ico} : {nom} — fini il y a {duree(r['depuis_fin'])}"); continue
+            ligne = f"   {ico} : {nom} — tourne depuis {duree(r['ecoule'])}"
+            if r["progres"] is None:
+                print(ligne + " — \033[90mavancement non signalé\033[0m")
+            else:
+                p = r["pourcentage"] if r["pourcentage"] is not None else 0
+                reste = "durée inconnue" if r["eta_secondes"] is None else f"reste ~{duree(max(r['eta_secondes'] - r['progres'], 0))}"
+                print(ligne)
+                print(f"      \033[33m{'█' * (p // 5)}{'░' * (20 - p // 5)} {p:3d} %\033[0m  {r['etape'] or ''} · {reste}")
+        print()
+    sys.exit()
+
 if not rows:
     print("(aucune activité en cours dans ce projet)"); sys.exit()
 def eta(s):
