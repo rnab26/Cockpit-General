@@ -3,7 +3,7 @@
  *
  * COMMENT BRANCHER (une balise, rien d'autre) :
  *
- *   <script src="https://rnab26.github.io/cockpit/embed/cockpit-embed.js"
+ *   <script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js"
  *           data-cle="<cle_embed du projet>"
  *           data-utilisateur="Prénom"></script>
  *
