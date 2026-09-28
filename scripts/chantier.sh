@@ -39,7 +39,7 @@ set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; dans=""; pourquoi=""
-session="${COCKPIT_SESSION:-$(git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo session)}"
+session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --projet)   projet="${2:-}"; shift 2 ;;

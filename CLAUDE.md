@@ -126,3 +126,10 @@ de Pages, quelques minutes).
   session continue (`decision: block`). Allumé par projet avec
   `regler_autonome(slug, jusqu_a, max)` (admin ; ≤ 24 h ; plafond par session),
   éteint par défaut. `verifier-base.mjs` §15.
+- **Permanent** (migration 0011, Raphaël : « le mode autonome tout le temps,
+  pas que quand je dors ») : `projets.autonome_toujours`. Pris : `libre`,
+  `a_trier` (la session trie), `en_cours` abandonné (fiche immobile depuis 1 h,
+  aucun signe de vie 30 min, et aucune session VIVANTE du projet ne l'a tenu
+  en dernier) — `chantiers_prenables`, réservée aux sessions. Quand aucune
+  session ne vit, un réveil (Routine Claude horaire) lance `scripts/passe.sh`
+  dans la session autonome du projet : un chantier, ou « RIEN » en une ligne.
