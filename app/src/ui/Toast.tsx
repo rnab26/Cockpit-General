@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 interface Toast { id: number; texte: string; type: 'succes' | 'erreur' | 'info'; action?: { libelle: string; onClick: () => void }; duree: number }
 interface Api {
@@ -22,6 +22,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setListe((l) => [...l.slice(-3), { ...t, id }])
     window.setTimeout(() => retirer(id), t.duree)
   }, [retirer])
+  // La zone des toasts vit dans la « top layer » (popover manuel), réaffichée à
+  // chaque changement : sinon un dialogue modal ouvert (Doublons, Sections…)
+  // la recouvre, et sur téléphone la feuille du bas cache exactement l'endroit
+  // où le toast s'affiche — l'action réussit sans qu'on le voie (trouvé par
+  // verifier-web.mjs, 28 sept. 2026). Navigateur sans popover : div fixe, comme avant.
+  const zone = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const z = zone.current
+    if (!z || typeof z.showPopover !== 'function') return
+    try {
+      if (z.matches(':popover-open')) z.hidePopover()
+      if (liste.length) z.showPopover()
+    } catch { /* popover non géré : la zone reste un simple div fixe */ }
+  }, [liste])
   const api: Api = {
     succes: (texte) => pousser({ texte, type: 'succes', duree: 3500 }),
     erreur: (texte) => pousser({ texte, type: 'erreur', duree: 7000 }),
@@ -31,7 +45,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-[max(env(safe-area-inset-bottom),12px)] z-[60] flex flex-col items-center gap-2 px-3" role="status" aria-live="polite">
+      <div ref={zone} popover="manual" className="pointer-events-none fixed inset-x-0 top-auto bottom-[max(env(safe-area-inset-bottom),12px)] z-[60] m-0 flex h-auto w-auto flex-col items-center gap-2 overflow-visible border-0 bg-transparent px-3 py-0 text-texte" role="status" aria-live="polite">
         {liste.map((t) => (
           <div key={t.id} className={`toast-in pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl border bg-carte px-3 py-2.5 text-[15px] shadow-xl ${STYLE[t.type]}`}>
             <span aria-hidden>{ICONE[t.type]}</span>

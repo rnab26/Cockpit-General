@@ -8,13 +8,18 @@
 // Il sert dist/ avec `vite preview`, se connecte, et vérifie : le premier
 // écran (bandeau / « où j'en suis » visibles), l'absence de défilement
 // horizontal, une carte qui se déplie, une question qui se répond (créée par
-// SQL puis supprimée), un chantier créé puis supprimé avec confirmation.
+// SQL puis supprimée), un chantier créé puis supprimé avec confirmation,
+// puis trois écrans d'admin : Doublons (côte à côte, « pas un doublon »,
+// fusion avec note), sélection groupée (modifier deux chantiers, « Annuler »
+// rend à chacun SA valeur) et historique (restaurer un ancien texte). Les
+// données de test (« [TEST web] … ») sont supprimées à la fin, même en échec.
 // Captures dans $CAPTURES (défaut : le scratchpad de la session, sinon /tmp).
 // Prérequis : Chromium Playwright (PLAYWRIGHT_BROWSERS_PATH ou
 // /opt/pw-browsers/chromium), SUPABASE_SERVICE_ROLE_KEY pour scripts/sql.sh.
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -29,10 +34,17 @@ if (!EMAIL || !MDP) { console.error('COCKPIT_TEST_EMAIL / COCKPIT_TEST_PASSWORD 
 const PORT = Number(process.env.PORT ?? 4173)
 const BASE = `http://127.0.0.1:${PORT}/Cockpit-General/`
 const MARQUE = '[TEST verifier-web]'
+// Données des parcours Doublons / Sélection groupée / Historique : préfixe à
+// part, et identifiants générés ici (un `insert … returning` ne renvoie rien
+// par sql.sh) pour pouvoir tout retrouver au nettoyage.
+const MARQUE2 = '[TEST web]'
+const idsTest = []
 
 let echecs = 0, total = 0
 const verifie = (nom, ok, detail) => { total++; console.log(`  ${ok ? '✓' : '✗'} ${nom}${!ok && detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`); if (!ok) echecs++ }
 const sql = (q) => { const out = execFileSync(sqlSh, [q], { encoding: 'utf8' }); const j = JSON.parse(out); if (!j.ok) throw new Error(j.error); return j.rows }
+const esc = (v) => String(v).replace(/'/g, "''")
+const clePaire = (a, b) => [a, b].sort().join('|')
 const capture = (page, nom) => page.screenshot({ path: path.join(CAPTURES, `app-${nom}.png`), fullPage: false }).then(() => console.log(`    📸 ${path.join(CAPTURES, `app-${nom}.png`)}`))
 
 // --- serveur
@@ -53,7 +65,20 @@ const projet = sql(`select id from projets where slug = 'cockpit'`)[0]
 if (!projet) throw new Error('projet cockpit introuvable')
 sql(`delete from messages where corps like '${MARQUE}%'`)
 sql(`delete from chantiers where titre like '${MARQUE}%'`)
+sql(`delete from historique where chantier_id in (select id from chantiers where titre like '${MARQUE2}%') or chantier_id in (select chantier_id from supprimes where ligne->>'titre' like '${MARQUE2}%')`)
+sql(`delete from chantiers where titre like '${MARQUE2}%'`)
+sql(`delete from supprimes where ligne->>'titre' like '${MARQUE2}%'`)
 const cible = sql(`select id, titre from chantiers where projet_id = '${projet.id}' and archived_at is null and etat <> 'valide' order by created_at limit 1`)[0]
+const moiId = sql(`select id from auth.users where email = '${esc(EMAIL)}'`)[0]?.id
+if (!moiId) throw new Error('compte de test introuvable dans auth.users')
+const prefDoublonsExistait = sql(`select cle from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`).length > 0
+// Un chantier de test : titre préfixé, id connu d'avance.
+const creerTest = (titre, extra = {}) => {
+  const id = randomUUID(); idsTest.push(id)
+  const cols = { id, projet_id: projet.id, titre: `${MARQUE2} ${titre}`, ...extra }
+  sql(`insert into chantiers (${Object.keys(cols).join(', ')}) values (${Object.values(cols).map((v) => `'${esc(v)}'`).join(', ')})`)
+  return { id, titre: cols.titre }
+}
 const nAttenteAvant = sql(`select count(*) as n from messages where projet_id = '${projet.id}' and kind in ('question','action') and answered_at is null`)[0].n
 
 const navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
@@ -129,8 +154,13 @@ try {
   // --- une question se répond (créée par SQL, le direct doit la faire apparaître)
   const options = JSON.stringify([{ libelle: 'Option A', aide: 'la première', recommande: true }, { libelle: 'Option B' }]).replace(/'/g, "''")
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('${projet.id}', '${cible.id}', 'verifier-web', 'session', 'question', '${MARQUE} Quelle option ?', 'Pour vérifier l''écran.', '${options}'::jsonb)`)
+  // On attend le bon COMPTE, pas seulement le bandeau : une question ou une
+  // action déjà en attente dans le projet (réel, 28 sept. 20:48) affiche le
+  // bandeau avant même notre insertion, et l'attente passait à vide.
+  const attendu = `${Number(nAttenteAvant) + 1} question`
+  const alerteAJour = (timeout) => page.waitForFunction((t) => document.querySelector('[data-testid="alerte-questions"]')?.textContent?.includes(t) ?? false, attendu, { timeout })
   let directVu = true
-  try { await page.getByTestId('alerte-questions').waitFor({ timeout: 12000 }) } catch { directVu = false; await page.getByTestId('actualiser').click(); await page.getByTestId('alerte-questions').waitFor({ timeout: 15000 }) }
+  try { await alerteAJour(12000) } catch { directVu = false; await page.getByTestId('actualiser').click(); await alerteAJour(15000) }
   // D-09 : « actualisation en live hyper précise ». Le direct doit la montrer
   // SANS « Actualiser ». (Dans le conteneur Claude, le proxy bloque les
   // WebSocket : le navigateur de test le contourne pour *.supabase.co.)
@@ -192,6 +222,165 @@ try {
   await capture(page, 'reglages')
   await page.keyboard.press('Escape')
 
+
+  // ===================================================================
+  // Trois écrans jamais parcourus avant le 28 sept. : Doublons, sélection
+  // groupée, historique. Données créées ici (titres « [TEST web] … »),
+  // supprimées dans le finally quoi qu'il arrive.
+  const carteDe = (titre) => page.locator('[data-testid="carte"]', { hasText: titre })
+  // Un toast réellement VISIBLE : présent ET au premier plan à son centre
+  // (pas caché derrière un dialogue modal ou la barre de sélection).
+  const toastAuPremierPlan = async (re) => {
+    const t = page.getByRole('status').getByText(re).last()
+    await t.waitFor({ timeout: 10000 })
+    const b = await t.boundingBox()
+    if (!b) return false
+    // Sans dialogue ouvert : le toast est l'élément touché à son centre. Avec
+    // un dialogue modal, tout ce qui est hors du dialogue est inerte, donc
+    // ignoré par elementFromPoint, même dessiné par-dessus : on exige alors
+    // que la zone des toasts soit dans la top layer (popover ouvert, remonté
+    // après le dialogue). La capture fait foi pour l'œil.
+    const r = await page.evaluate(([x, y]) => {
+      const zone = document.querySelector('[role="status"]')
+      if (document.querySelector('dialog[open]')) return { ok: !!zone && zone.matches(':popover-open'), dessus: zone && zone.matches(':popover-open') ? 'top layer (popover)' : 'sous le dialogue' }
+      const e = document.elementFromPoint(x, y)
+      return { ok: !!e && !!e.closest('[role="status"]'), dessus: e ? `${e.tagName.toLowerCase()}.${String(e.className).slice(0, 40)}` : null }
+    }, [b.x + b.width / 2, b.y + b.height / 2])
+    if (b.y < 0 || b.y + b.height > 844) r.ok = false
+    dernierDessus = r.dessus
+    return r.ok
+  }
+  let dernierDessus = null
+  const ANCIEN = 'Ancien texte de la demande, à retrouver par l’historique.'
+  const d1a = creerTest('zorglub quintessence harmonique alpha', { demande: 'Premier de la paire ignorée.' })
+  const d1b = creerTest('zorglub quintessence harmonique beta', { demande: 'Second de la paire ignorée.' })
+  const s1 = creerTest('colibri turquoise', { priorite: 'haute' })
+  const s2 = creerTest('mangouste ardoise', { priorite: 'basse' })
+  const h1 = creerTest('pelican historique', { demande: ANCIEN })
+  sql(`update chantiers set demande = 'Nouveau texte qui a écrasé l''ancien.' where id = '${h1.id}'`)
+  await page.getByTestId('actualiser').click()
+  await carteDe(h1.titre).waitFor({ timeout: 15000 })
+
+  // --- 1. Doublons
+  console.log('  — doublons')
+  const ouvrirDoublons = async () => {
+    await page.getByTestId('menu').click()
+    await page.getByRole('menuitem', { name: /Doublons/ }).click()
+    const dlg = page.getByRole('dialog').filter({ hasText: 'Doublons' })
+    await dlg.waitFor({ timeout: 5000 })
+    return dlg
+  }
+  let dlgD = await ouvrirDoublons()
+  const paire1 = dlgD.getByTestId('paire-doublon').filter({ hasText: d1a.titre }).filter({ hasText: d1b.titre })
+  await paire1.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('Doublons : la paire de test est proposée, les deux titres dans la MÊME paire', await paire1.count() === 1)
+  const [bA, bB] = [await paire1.locator('button', { hasText: d1a.titre }).boundingBox(), await paire1.locator('button', { hasText: d1b.titre }).boundingBox()]
+  verifie('Doublons : les deux chantiers côte à côte (même ligne, colonnes distinctes, dans les 390 px)',
+    bA && bB && Math.abs(bA.y - bB.y) < 4 && Math.abs(bA.x - bB.x) > 50 && Math.max(bA.x + bA.width, bB.x + bB.width) <= 390, { bA, bB })
+  verifie('Doublons : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await paire1.scrollIntoViewIfNeeded()
+  await capture(page, 'doublons')
+  await paire1.getByRole('button', { name: 'Pas un doublon' }).click()
+  const toastIgnore = await toastAuPremierPlan(/ne sera plus proposée/)
+  verifie('« Pas un doublon » : le toast de confirmation est visible au premier plan', toastIgnore, { auPremierPlan: dernierDessus })
+  await paire1.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  verifie('« Pas un doublon » : la paire disparaît', await paire1.count() === 0)
+  const prefD = sql(`select valeur from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`)[0]
+  verifie('« Pas un doublon » : enregistré dans preferences (doublons_ignores)', !!prefD && Array.isArray(prefD.valeur) && prefD.valeur.includes(clePaire(d1a.id, d1b.id)), prefD)
+  await page.keyboard.press('Escape')
+  await dlgD.waitFor({ state: 'hidden', timeout: 5000 })
+
+  // Une seconde paire, cette fois fusionnée : on garde « sud » (pas le choix par défaut forcément).
+  const d2a = creerTest('pamplemousse gyroscope lunaire nord', { demande: 'Demande de la source.' })
+  const d2b = creerTest('pamplemousse gyroscope lunaire sud', { demande: 'Demande de la cible.' })
+  await page.getByTestId('actualiser').click()
+  await carteDe(d2b.titre).waitFor({ timeout: 15000 })
+  dlgD = await ouvrirDoublons()
+  const paire2 = dlgD.getByTestId('paire-doublon').filter({ hasText: d2a.titre }).filter({ hasText: d2b.titre })
+  await paire2.waitFor({ timeout: 5000 })
+  verifie('Doublons : la paire ignorée ne revient pas à la réouverture', await dlgD.getByTestId('paire-doublon').filter({ hasText: d1a.titre }).count() === 0)
+  await paire2.locator('button', { hasText: d2b.titre }).click()
+  verifie('Doublons : le chantier choisi est marqué « On garde »', (await paire2.locator('button', { hasText: d2b.titre }).textContent()).includes('On garde'))
+  const NOTE = 'note de fusion [TEST web]'
+  await paire2.getByPlaceholder(/Note sur la fusion/).fill(NOTE)
+  await paire2.getByRole('button', { name: 'Fusionner' }).click()
+  const toastFusion = await toastAuPremierPlan(/fusionné dans/)
+  verifie('Fusion : le toast de succès est visible au premier plan', toastFusion, { auPremierPlan: dernierDessus })
+  await paire2.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  verifie('Fusion : la paire disparaît de l’écran', await paire2.count() === 0)
+  await capture(page, 'doublons-fusion')
+  const [src] = sql(`select archived_at, doublon_de from chantiers where id = '${d2a.id}'`)
+  const [cib] = sql(`select archived_at, demande from chantiers where id = '${d2b.id}'`)
+  verifie('Fusion : la source est archivée avec doublon_de = cible', !!src?.archived_at && src.doublon_de === d2b.id, src)
+  verifie('Fusion : la cible reste ouverte, sa demande contient « Fusion du doublon » et la note',
+    !cib?.archived_at && cib?.demande.includes('Fusion du doublon') && cib.demande.includes(NOTE) && cib.demande.includes('Demande de la source.'), cib)
+  await page.keyboard.press('Escape')
+  await dlgD.waitFor({ state: 'hidden', timeout: 5000 })
+
+  // --- 2. Sélection groupée
+  console.log('  — sélection groupée')
+  await page.getByTestId('menu').click()
+  await page.getByRole('menuitem', { name: /Choisir/ }).click()
+  const barre = page.getByTestId('barre-selection')
+  await barre.waitFor({ timeout: 5000 })
+  await page.getByRole('checkbox', { name: `Choisir ${s1.titre}` }).check()
+  await page.getByRole('checkbox', { name: `Choisir ${s2.titre}` }).check()
+  verifie('sélection : la barre compte « 2 choisis »', (await barre.textContent()).includes('2 choisis'), await barre.textContent())
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await page.waitForTimeout(300)
+  const bBarre = await barre.boundingBox()
+  const bDerniereCarte = await page.getByTestId('carte').last().boundingBox()
+  const bFinBacs = await page.locator('[data-testid="bacs"] > :last-child').boundingBox()
+  verifie('sélection : la barre ne masque pas la dernière carte (défilement en bas)', bBarre && bDerniereCarte && bDerniereCarte.y + bDerniereCarte.height <= bBarre.y + 0.5, { barre: bBarre, carte: bDerniereCarte })
+  verifie('sélection : ni le dernier bloc de la liste', bBarre && bFinBacs && bFinBacs.y + bFinBacs.height <= bBarre.y + 0.5, { barre: bBarre, dernier: bFinBacs })
+  verifie('sélection : pas de défilement horizontal avec la barre', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'selection')
+  await barre.getByLabel('Priorité').selectOption('normale')
+  const toastSel = await toastAuPremierPlan(/2 chantiers modifiés/)
+  verifie('sélection : toast « 2 chantiers modifiés » visible, au-dessus de la barre', toastSel, { auPremierPlan: dernierDessus })
+  const prios = () => Object.fromEntries(sql(`select id, priorite from chantiers where id in ('${s1.id}', '${s2.id}')`).map((r) => [r.id, r.priorite]))
+  const apres = prios()
+  verifie('sélection : en base, les deux passent à « normale »', apres[s1.id] === 'normale' && apres[s2.id] === 'normale', apres)
+  await capture(page, 'selection-toast')
+  await page.getByRole('status').getByRole('button', { name: 'Annuler' }).click()
+  await page.getByRole('status').getByText(/valeurs d’avant rétablies/).waitFor({ timeout: 10000 })
+  const annule = prios()
+  verifie('« Annuler » : chacun retrouve SA priorité d’avant (haute / basse)', annule[s1.id] === 'haute' && annule[s2.id] === 'basse', annule)
+  await barre.getByRole('button', { name: 'Terminer' }).click()
+  await barre.waitFor({ state: 'detached', timeout: 5000 })
+  verifie('sélection : « Terminer » retire la barre et les cases', await page.getByRole('checkbox', { name: /^Choisir / }).count() === 0)
+
+  // --- 3. Historique et restauration
+  console.log('  — historique')
+  const carteH = carteDe(h1.titre)
+  await carteH.scrollIntoViewIfNeeded()
+  await carteH.getByTestId('carte-titre').click()
+  const hist = carteH.getByTestId('historique')
+  await hist.waitFor({ timeout: 5000 })
+  await hist.locator('> button').click()
+  const ligneH = hist.locator('li', { hasText: ANCIEN.slice(0, 40) })
+  await ligneH.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('historique : la ligne « demande » montre l’ancien texte', await ligneH.count() === 1 && (await ligneH.textContent()).toLowerCase().includes('demande'))
+  await ligneH.scrollIntoViewIfNeeded()
+  verifie('historique : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'historique')
+  await ligneH.getByRole('button', { name: /Revenir à ce texte/ }).click()
+  const dlgR = page.getByRole('dialog').filter({ hasText: 'Revenir à l’ancien' })
+  await dlgR.waitFor({ timeout: 5000 })
+  verifie('restauration : la confirmation montre le texte qui reviendra', (await dlgR.textContent()).includes(ANCIEN))
+  await capture(page, 'historique-confirmation')
+  await dlgR.getByRole('button', { name: 'Revenir à ce texte' }).click()
+  const toastRest = await toastAuPremierPlan(/Texte restauré/)
+  verifie('restauration : toast « Texte restauré » visible', toastRest, { auPremierPlan: dernierDessus })
+  const [hApres] = sql(`select demande from chantiers where id = '${h1.id}'`)
+  verifie('restauration : en base, la demande est revenue à l’ancien texte', hApres?.demande === ANCIEN, hApres)
+  const traces = sql(`select champ, nouvelle, par from historique where chantier_id = '${h1.id}' order by id`)
+  const derniere = traces[traces.length - 1]
+  verifie('restauration : une nouvelle ligne d’historique trace la restauration', traces.length === 2 && derniere.champ === 'demande' && derniere.nouvelle === ANCIEN && /restauration/.test(derniere.par ?? ''), traces)
+  await hist.locator('li', { hasText: 'Nouveau texte' }).first().waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('restauration : l’écran recharge l’historique (2 changements)', (await hist.textContent()).includes('2 changements'), await hist.textContent())
+  await carteH.getByTestId('carte-titre').click()
+
   // --- grand écran
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.waitForTimeout(500)
@@ -207,6 +396,20 @@ try {
 } finally {
   // Nettoyage des lignes de test, quoi qu'il arrive.
   try { sql(`delete from messages where corps like '${MARQUE}%'`); sql(`delete from chantiers where titre like '${MARQUE}%'`); sql(`delete from supprimes where ligne->>'titre' like '${MARQUE}%'`) } catch (e) { console.log(`  (nettoyage SQL : ${e.message})`) }
+  // Doublons / sélection / historique : chantiers (les messages suivent en
+  // cascade), leur historique, leur trace de suppression, et les paires
+  // « pas un doublon » posées pour le compte de test.
+  try {
+    const ids = idsTest.length ? idsTest.map((i) => `'${i}'`).join(', ') : `'00000000-0000-0000-0000-000000000000'`
+    sql(`delete from messages where chantier_id in (${ids}) or corps like '%${MARQUE2}%'`)
+    sql(`delete from chantiers where id in (${ids}) or titre like '${MARQUE2}%'`)
+    sql(`delete from historique where chantier_id in (${ids})`)
+    sql(`delete from supprimes where chantier_id in (${ids}) or ligne->>'titre' like '${MARQUE2}%'`)
+    if (!prefDoublonsExistait) sql(`delete from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`)
+    else if (idsTest.length) sql(`update preferences set valeur = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements_text(valeur) e where not (e ~ '${idsTest.join('|')}')) where user_id = '${moiId}' and cle = 'doublons_ignores'`)
+    const reste = sql(`select (select count(*) from chantiers where id in (${ids}) or titre like '${MARQUE2}%') + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids})) as n`)[0].n
+    if (reste !== 0) console.log(`  (nettoyage incomplet : ${reste} ligne(s) de test restent)`)
+  } catch (e) { console.log(`  (nettoyage SQL [TEST web] : ${e.message})`) }
   await navigateur.close()
   arreterServeur()
 }
