@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 29 sept. 2026, ~01 h 45 (heure d'Israël), fin de la
+Dernière mise à jour : 29 sept. 2026, ~02 h 30 (heure d'Israël), fin de la
 session `session_01B94XRweeYVuqGoJXTyjimP` (trop longue, Raphaël a demandé
 de reprendre dans une session fraîche).
 
@@ -26,6 +26,14 @@ de reprendre dans une session fraîche).
   tableau « Qui travaille » dans la session). `chantier.sh` : Claude tranche
   les « ambigu », range (`--section`/`--ranger`), suggère les fusions
   (`--suggerer-fusion`).
+- **Limites d'usage et nuit** (migration 0010, `8e7d345`) : reprise native
+  de la tâche en cours après une limite (`autoContinueAtUsageLimit`), pause
+  visible (`sessions.pause_raison`, hook StopFailure), et **mode autonome** par
+  projet (`regler_autonome(slug, jusqu_a, max)`, hook Stop `autonome.sh` qui
+  donne le chantier LIBRE suivant). Testé : `verifier-base` §15 (144/144) et de
+  bout en bout sur un projet jetable. Pas encore observé sur une VRAIE limite :
+  à vérifier au premier arrêt réel (la session doit passer « en pause », puis
+  repartir seule) — `select id, pause_raison, pause_at, vu_at from sessions`.
 - Projets branchés : `cockpit` (lui-même) et `facepro` (FacePro `main`
   `3a13ebb`, suivi des agents compris). Jarvis et le Trieur : pas encore
   (décision D-12 : après le pilote).
@@ -69,6 +77,13 @@ Ce que cette refonte doit livrer (demandes de Raphaël des 28-29 sept.) :
 6. **Suggestions de fusion** (messages `kind = 'fusion'`) dans « À toi » :
    « Fusionner » / « Garder séparés » → rpc `trancher_fusion`.
 7. Libellé « 💬 lancé depuis une session Claude » (`origine = 'session'`).
+8. **Interrupteur « 🌙 Mode autonome jusqu'à 09:00 »** par projet (rpc
+   `regler_autonome`) et « ⏸️ En pause — limite d'usage » sur une session.
+9. **État des déploiements** par projet : logique prête et testée
+   (`app/src/lib/deploiement.ts`, `app/scripts/verifier-deploiement.ts`
+   18/18), composant à faire (API GitHub anonyme, dépôts publics ; FacePro
+   est sur Render, pas visible par GitHub : le dire). Chantier
+   `b3ba035a-0484-434d-bfe2-dcc695f91f2d`.
 
 Avant de publier : les contrôles ci-dessus au vert, parcours sur écran de
 téléphone, puis push sur `main` (déploiement auto), vérifier que Pages sert
