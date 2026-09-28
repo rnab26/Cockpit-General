@@ -14,6 +14,7 @@ import { nomCourtSession } from '../lib/texte.ts'
 import { Progression } from './Progression.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
 import { BlocValidation, SignalerProbleme } from './BlocValidation.tsx'
+import { CommentVerifierReplie } from './CommentVerifier.tsx'
 import { Fil } from './Fil.tsx'
 import { Historique } from './Historique.tsx'
 
@@ -106,6 +107,7 @@ export function CarteChantier({ chantier, ouverte, onToggle }: { chantier: Chant
               <SignalerProbleme chantier={chantier} />
             </div>
           ) : null}
+          {chantier.etat === 'valide' ? <CommentVerifierReplie chantier={chantier} /> : null}
 
           <Fil chantierId={chantier.id} messages={fil} />
           {admin ? <Historique chantierId={chantier.id} /> : null}

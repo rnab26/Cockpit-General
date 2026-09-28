@@ -137,6 +137,14 @@
 .centre{padding:16px 0;color:var(--muted);font-size:13px}
 .erreur{color:var(--danger);font-size:13px}
 .edit{display:flex;flex-direction:column;gap:6px}
+.cv{border-radius:8px;padding:6px 8px;margin:4px 0 6px;background:var(--card);box-shadow:inset 0 0 0 1px var(--primary)}
+.cv.vide{box-shadow:inset 0 0 0 1px var(--warning);color:var(--muted)}
+.cv-titre{font-weight:700;color:var(--fg)}
+.cv ol{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.cv li{display:flex;gap:6px;font-size:14px;line-height:1.35;color:var(--fg)}
+.cv .num{flex-shrink:0;min-width:18px;text-align:right;font-weight:700;color:var(--primary)}
+.cv .txt{min-width:0;flex:1;overflow-wrap:anywhere}
+.cv a{color:var(--primary);text-decoration:underline;word-break:break-all}
 `
 
   // ------------------------------------------------------------- outils
@@ -181,6 +189,68 @@
     const hh = Math.floor(s / 3600), mm = Math.round((s % 3600) / 60)
     return '~' + hh + ' h' + (mm ? ' ' + String(mm).padStart(2, '0') : '')
   }
+  // <etapes-verifier> — COPIE de app/src/lib/commentVerifier.ts
+  // (etapesVerifier, segmentsAvecLiens) : le module n'a pas d'étape de build.
+  // app/scripts/verifier-comment-verifier.ts exécute ce bloc et refuse qu'il
+  // diverge de la version de l'app.
+  function etapesVerifier(texte) {
+    const MARQUEUR = /(^|\s)(\d{1,2})[.)]\s+/g
+    const couper = (ligne) => {
+      const marques = []
+      let attendu = null
+      for (const m of ligne.matchAll(MARQUEUR)) {
+        const n = Number(m[2]), debut = m.index + m[1].length, fin = m.index + m[0].length
+        if (attendu === null) { if (debut !== 0 && n !== 1) continue } else if (n !== attendu) continue
+        marques.push({ debut, fin, n }); attendu = n + 1
+      }
+      if (!marques.length) return [{ numero: null, texte: ligne }]
+      const etapes = []
+      const avant = ligne.slice(0, marques[0].debut).trim()
+      if (avant) etapes.push({ numero: null, texte: avant })
+      marques.forEach((mq, i) => etapes.push({ numero: String(mq.n), texte: ligne.slice(mq.fin, i + 1 < marques.length ? marques[i + 1].debut : undefined).trim() }))
+      return etapes
+    }
+    const etapes = []
+    for (const brute of String(texte == null ? '' : texte).replace(/\r\n?/g, '\n').split('\n')) {
+      const ligne = brute.replace(/[ \t]+/g, ' ').trim()
+      if (ligne) etapes.push(...couper(ligne))
+    }
+    return etapes
+  }
+  function segmentsAvecLiens(texte) {
+    const out = []
+    let dernier = 0
+    for (const m of texte.matchAll(/https?:\/\/[^\s<>"']+/g)) {
+      let url = m[0]
+      for (;;) {
+        const fin = url.slice(-1)
+        if (/[.,;:!?»\]]/.test(fin)) { url = url.slice(0, -1); continue }
+        if (fin === ')' && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) { url = url.slice(0, -1); continue }
+        break
+      }
+      if (m.index > dernier) out.push({ lien: false, texte: texte.slice(dernier, m.index) })
+      out.push({ lien: true, texte: url, url })
+      dernier = m.index + url.length
+    }
+    if (dernier < texte.length) out.push({ lien: false, texte: texte.slice(dernier) })
+    return out
+  }
+  // </etapes-verifier>
+
+  // « 👉 Comment vérifier » : les étapes écrites par la session qui livre.
+  function commentVerifier(c) {
+    const texte = (c.comment_verifier || '').trim()
+    if (!texte) return h('div', { class: 'cv vide', 'data-cv': 'vide' },
+      "La session n'a pas encore dit comment vérifier : ajoute un message pour le lui demander.")
+    return h('div', { class: 'cv', 'data-cv': 'etapes' },
+      h('p', { class: 'cv-titre' }, '👉 Comment vérifier'),
+      h('ol', null, etapesVerifier(texte).map((e) => h('li', { 'data-etape': '' },
+        e.numero ? h('span', { class: 'num' }, e.numero + '.') : null,
+        h('span', { class: 'txt' }, segmentsAvecLiens(e.texte).map((sg) => sg.lien
+          ? h('a', { href: sg.url, target: '_blank', rel: 'noopener noreferrer' }, sg.texte)
+          : sg.texte))))))
+  }
+
   const pluriel = (n, mot, fem) => n + ' ' + mot + (n > 1 ? 's' : '') + (fem === undefined ? '' : '')
 
   // Le statut est en LECTURE SEULE pour l'utilisateur final : c'est la
@@ -217,7 +287,7 @@
   function carte(id) {
     return ui.cartes[id] || (ui.cartes[id] = {
       depliee: false, hist: false, edition: false, titre: '', demande: '',
-      correction: false, mots: '', option: null, precision: '', msg: false, msgTexte: '',
+      correction: false, mots: '', option: null, precision: '', msg: false, msgTexte: '', cv: false,
     })
   }
 
@@ -571,13 +641,17 @@
         }) }, envoi ? 'Enregistrement…' : '📩 Envoyer la correction'),
         h('button', { class: 'btn sec', disabled: envoi, onclick: () => { u.correction = false; rendre() } }, 'Annuler')))
     if (mode === 'valide') {
+      const texteCv = (c.comment_verifier || '').trim()
       return h('div', { style: 'margin-top:6px' },
+        texteCv ? h('button', { class: 'discret', 'aria-expanded': String(!!u.cv), onclick: () => { u.cv = !u.cv; rendre() } }, (u.cv ? '▲' : '▼') + ' 👉 Comment vérifier') : null,
+        texteCv && u.cv ? commentVerifier(c) : null,
         u.correction
           ? h('div', { class: 'bloc orange', style: 'margin-top:0' }, h('p', { class: 'bloc-titre' }, "🧪 Qu'est-ce qui ne va pas ?"), zone(), retourPour(c.id, 'validation'))
           : h('div', null, h('button', { class: 'lien', onclick: () => { u.correction = true; rendre(); focus('mots-' + c.id) } }, '✏️ Signaler un problème'), retourPour(c.id, 'validation')))
     }
     return h('div', { class: 'bloc orange' },
       h('p', { class: 'bloc-titre' }, '🧪 Codée et déployée — est-ce que ça fonctionne comme attendu ?'),
+      commentVerifier(c),
       u.correction ? zone() : h('div', { class: 'options' },
         h('button', { class: 'btn', disabled: envoi, onclick: () => agir(c.id, 'validation', () => api('certifier', { chantier_id: c.id })) }, envoi ? 'Enregistrement…' : '✅ Ça fonctionne, je certifie'),
         h('button', { class: 'btn sec', disabled: envoi, onclick: () => { u.correction = true; rendre(); focus('mots-' + c.id) } }, '✏️ Ça ne marche pas, corriger')),

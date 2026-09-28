@@ -12,10 +12,11 @@ import { ETATS, PRIORITES } from '../lib/etats.ts'
 export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | null; onFermer: () => void }) {
   const { sections, recharger } = useCockpit()
   const toast = useToast()
-  const [v, setV] = useState({ titre: '', demande: '', notes: '', resume_simple: '', section_id: '', priorite: 'normale' as Priorite, etat: 'a_trier' as Etat, visible_utilisateurs: true })
+  const [v, setV] = useState({ titre: '', demande: '', notes: '', resume_simple: '', comment_verifier: '', section_id: '', priorite: 'normale' as Priorite, etat: 'a_trier' as Etat, visible_utilisateurs: true })
   const [enCours, setEnCours] = useState(false)
   useEffect(() => {
     if (chantier) setV({ titre: chantier.titre, demande: chantier.demande ?? '', notes: chantier.notes ?? '', resume_simple: chantier.resume_simple ?? '',
+      comment_verifier: chantier.comment_verifier ?? '',
       section_id: chantier.section_id ?? '', priorite: chantier.priorite, etat: chantier.etat, visible_utilisateurs: chantier.visible_utilisateurs })
   }, [chantier])
 
@@ -25,6 +26,7 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
     setEnCours(true)
     const valeurs: Partial<Chantier> = {
       titre: v.titre.trim(), demande: v.demande.trim() || null, notes: v.notes.trim() || null, resume_simple: v.resume_simple.trim() || null,
+      comment_verifier: v.comment_verifier.trim() || null,
       section_id: v.section_id || null, priorite: v.priorite, etat: v.etat, visible_utilisateurs: v.visible_utilisateurs,
     }
     if (v.etat === 'valide' && chantier.etat !== 'valide') { valeurs.valide_at = new Date().toISOString(); valeurs.archived_at = chantier.archived_at ?? new Date().toISOString() }
@@ -42,6 +44,7 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
         <Champ label="Titre"><Input value={v.titre} onChange={(e) => setV({ ...v, titre: e.target.value })} /></Champ>
         <Champ label="Demande"><Textarea rows={5} value={v.demande} onChange={(e) => setV({ ...v, demande: e.target.value })} /></Champ>
         <Champ label="Résumé en langage simple" aide="Ce qu’un utilisateur final comprendra une fois livré."><Textarea rows={2} value={v.resume_simple} onChange={(e) => setV({ ...v, resume_simple: e.target.value })} /></Champ>
+        <Champ label="Comment vérifier (étapes pour Raphaël)" aide="Où aller, quoi toucher, ce qu’il doit voir. Une étape par ligne : « 1. … », « 2. … »."><Textarea rows={4} value={v.comment_verifier} onChange={(e) => setV({ ...v, comment_verifier: e.target.value })} data-testid="champ-comment-verifier" /></Champ>
         <Champ label="Notes de travail"><Textarea rows={3} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Champ>
         <div className="grid grid-cols-2 gap-3">
           <Champ label="Section">

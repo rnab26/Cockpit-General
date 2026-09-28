@@ -19,9 +19,13 @@
  *     tant que la demande n'est pas « à vérifier » (erreur lisible) →
  *     passée à `a_verifier` par SQL → certifier OK → corriger OK → message
  *     OK → modifier REFUSÉ (une session l'a prise) ;
+ *  3b. « Comment vérifier » (0005) : `etat` renvoie `comment_verifier` ;
  *  4. dans Chromium en 390 × 844 : les cartes s'affichent, le style hostile
  *     de la page hôte ne traverse pas, une nouvelle demande créée à l'écran
- *     apparaît, aucun défilement horizontal ; captures dans SCRATCH.
+ *     apparaît, aucun défilement horizontal, l'encadré « 👉 Comment vérifier »
+ *     en tête du bloc orange (étapes sur des lignes distinctes, lien
+ *     cliquable) ou, s'il manque, la phrase qui dit de le demander ;
+ *     captures dans SCRATCH.
  *
  * Tout ce qu'il crée est supprimé à la fin (chantier de test, sa trace dans
  * `supprimes`, ses lignes `historique` / `ce_qui_marche`), même en cas
@@ -97,6 +101,7 @@ async function verifierApi(cle) {
   verifie(Array.isArray(d.chantiers) && Array.isArray(d.activite), 'chantiers[] et activite[]')
   const c0 = (d.chantiers || [])[0]
   verifie(c0 && Array.isArray(c0.messages) && Array.isArray(c0.activite) && 'etat' in c0 && 'titre' in c0, 'chaque chantier porte messages[], activite[], etat, titre')
+  verifie((d.chantiers || []).every((c) => 'comment_verifier' in c), 'chaque chantier porte comment_verifier (même vide)')
   const fuites = [...clesProfondes(d)].filter((k) => CHAMPS_INTERDITS.includes(k))
   verifie(fuites.length === 0, 'aucun champ interne dans etat', fuites.join(', ') || 'rien ne fuit')
   const internes = sql("select count(*)::int as n from chantiers c join projets p on p.id = c.projet_id where p.cle_embed = '" + lit(cle) + "' and c.visible_utilisateurs = false")[0].n
@@ -145,7 +150,11 @@ async function verifierApi(cle) {
     const corrTrop = await appel('corriger', { chantier_id: chantierId, mots: 'trop tôt' }, cle)
     verifie(corrTrop.statut === 409, 'corriger refusé tant que pas a_verifier/valide (409)', corrTrop.corps && corrTrop.corps.erreur)
 
-    sql("update chantiers set etat = 'a_verifier' where id = '" + chantierId + "'")
+    const CV_API = '1. Ouvre la liste. 2. Touche « Trier ». 3. Le plus récent est en haut.'
+    sql("update chantiers set etat = 'a_verifier', comment_verifier = '" + lit(CV_API) + "' where id = '" + chantierId + "'")
+    const etatCv = await appel('etat', {}, cle)
+    const cCv = etatCv.corps.chantiers.find((c) => c.id === chantierId)
+    verifie(cCv && cCv.comment_verifier === CV_API, 'etat renvoie comment_verifier tel qu’écrit par la session', cCv && JSON.stringify(cCv.comment_verifier))
     const cert = await appel('certifier', { chantier_id: chantierId, mots: 'nickel' }, cle)
     verifie(cert.statut === 200, 'certifier → 200', cert.statut + ' ' + (cert.corps.erreur || ''))
     const apresCert = sql("select etat, archived_at, valide_par from chantiers where id = '" + chantierId + "'")[0]
@@ -188,14 +197,17 @@ function nettoyer(id) {
 // leur id (data-chantier) — JAMAIS « la première carte orange » : le
 // 28 sept. 2026 une passe visuelle a envoyé une fausse correction sur un
 // vrai chantier du projet pilote de cette façon (restauré à la main).
+const CV_NAV = "1. Ouvre la liste des clients https://exemple.fr/clients. 2. Touche l'en-tête « Date ». 3. Le client contacté le plus récemment est en haut."
 function creerJeuNavigateur() {
-  const idQ = randomUUID(), idV = randomUUID(), qid = randomUUID()
+  const idQ = randomUUID(), idV = randomUUID(), idV2 = randomUUID(), qid = randomUUID()
   const pj = "(select id from projets where slug = 'cockpit')"
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idQ + "', " + pj + ", '" + lit(MARQUE) + " export PDF', 'Quand je clique sur Exporter, rien ne se passe.', 'en_cours', 'utilisateur')")
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine, resume_simple) values ('" + idV + "', " + pj + ", '" + lit(MARQUE) + " tri des clients', 'Trier les clients par date.', 'a_verifier', 'utilisateur', 'La liste se trie par date de dernier contact.')")
+  sql("update chantiers set comment_verifier = '" + lit(CV_NAV) + "' where id = '" + idV + "'")
+  sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idV2 + "', " + pj + ", '" + lit(MARQUE) + " export CSV', 'Exporter en CSV.', 'a_verifier', 'utilisateur')")
   sql("insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('" + qid + "', " + pj + ", '" + idQ + "', 'session-test', 'session', 'question', 'Une page par facture, ou tout à la suite ?', 'Le rendu diffère.', '[{\"libelle\":\"Une page par facture\",\"aide\":\"Plus lisible.\",\"recommande\":true},{\"libelle\":\"Tout à la suite\"},{\"libelle\":\"Autre, à préciser\"}]'::jsonb)")
   sql("select signaler_activite('cockpit', '" + idQ + "'::uuid, 'session-test', 'Test du correctif sur 30 factures', 62, 540, 'en_cours', 'lot 3/5')")
-  return { idQ, idV, qid }
+  return { idQ, idV, idV2, qid }
 }
 
 async function verifierNavigateur(cle) {
@@ -333,6 +345,28 @@ async function verifierNavigateur(cle) {
     const carteV = page.locator('.cockpit-embed').locator('[data-chantier="' + jeu.idV + '"]')
     const infosV = await carteV.evaluate((c) => ({ orange: c.classList.contains('orange'), badge: c.querySelector('.badge').textContent, resume: (c.querySelector('.resume') || {}).textContent || '', boutons: [...c.querySelectorAll('.bloc.orange .btn')].map((b) => b.textContent) }))
     verifie(infosV.orange && /à vérifier/.test(infosV.badge) && /se trie/.test(infosV.resume) && infosV.boutons.length === 2, 'carte orange « à vérifier » avec résumé simple et deux boutons', JSON.stringify(infosV.boutons))
+    // « 👉 Comment vérifier » en tête du bloc orange.
+    const cv = await carteV.evaluate((c) => {
+      const bloc = c.querySelector('.bloc.orange'), enc = bloc && bloc.querySelector('.cv[data-cv="etapes"]'), opt = bloc && bloc.querySelector('.options')
+      const lis = enc ? [...enc.querySelectorAll('li[data-etape]')] : []
+      const a = enc && enc.querySelector('a')
+      return {
+        present: !!enc, titre: enc ? enc.querySelector('.cv-titre').textContent : '',
+        avantBoutons: !!(enc && opt && (enc.compareDocumentPosition(opt) & Node.DOCUMENT_POSITION_FOLLOWING) && enc.getBoundingClientRect().bottom <= opt.getBoundingClientRect().top),
+        lignes: lis.map((l) => ({ y: Math.round(l.getBoundingClientRect().top), t: l.textContent })),
+        lien: a ? { href: a.getAttribute('href'), target: a.getAttribute('target'), rel: a.getAttribute('rel') } : null,
+      }
+    })
+    verifie(cv.present && /Comment vérifier/.test(cv.titre) && cv.avantBoutons, 'module : l’encadré « 👉 Comment vérifier » est en tête du bloc orange, avant les boutons', JSON.stringify({ present: cv.present, avant: cv.avantBoutons }))
+    verifie(cv.lignes.length === 3 && cv.lignes.every((l, i) => i === 0 || l.y > cv.lignes[i - 1].y + 8) && /^1\.\s*Ouvre/.test(cv.lignes[0].t) && !/Touche/.test(cv.lignes[0].t),
+      'module : les trois étapes (écrites sur une ligne) s’affichent sur trois lignes distinctes', JSON.stringify(cv.lignes))
+    verifie(cv.lien && cv.lien.href === 'https://exemple.fr/clients' && cv.lien.target === '_blank' && /noopener/.test(cv.lien.rel || ''), 'module : le lien est cliquable (nouvel onglet, noopener), sans le point final', JSON.stringify(cv.lien))
+    await carteV.evaluate((c) => c.scrollIntoView({ block: 'start' }))
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-comment-verifier.png'), fullPage: false })
+    const carteV2 = page.locator('.cockpit-embed').locator('[data-chantier="' + jeu.idV2 + '"]')
+    const vide = await carteV2.evaluate((c) => { const e = c.querySelector('.bloc.orange .cv[data-cv="vide"]'); return e ? e.textContent : '' })
+    verifie(/pas encore dit comment vérifier : ajoute un message pour le lui demander/.test(vide), 'module : sans étapes, la phrase qui dit de les demander', vide)
+
     await carteV.evaluate((c) => [...c.querySelectorAll('.bloc.orange .btn')].find((b) => /corriger/.test(b.textContent)).click())
     await carteV.locator('[data-focus="mots-' + jeu.idV + '"]').fill('Le tri est inversé.')
     await page.screenshot({ path: path.join(SCRATCH, 'embed-5-correction.png'), fullPage: true })
@@ -358,6 +392,7 @@ async function verifierNavigateur(cle) {
     if (chantierCree) nettoyer(chantierCree)
     nettoyer(jeu.idQ)
     nettoyer(jeu.idV)
+    nettoyer(jeu.idV2)
   }
 }
 

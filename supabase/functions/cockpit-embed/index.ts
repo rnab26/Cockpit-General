@@ -33,9 +33,11 @@ const CORS: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 }
 
-/** Les colonnes d'un chantier qu'un utilisateur final peut voir. */
+/** Les colonnes d'un chantier qu'un utilisateur final peut voir.
+ *  `comment_verifier` (0005) : les étapes écrites pour la personne qui
+ *  certifie — destinées à l'utilisateur, ce n'est pas du travail interne. */
 const COLONNES_CHANTIER =
-  "id, titre, demande, resume_simple, etat, priorite, origine, section_id, " +
+  "id, titre, demande, resume_simple, comment_verifier, etat, priorite, origine, section_id, " +
   "created_at, updated_at, livre_at, valide_at, valide_par, archived_at"
 
 /** Les colonnes d'un message qu'un utilisateur final peut voir. */

@@ -11,9 +11,9 @@ import { extrait } from '../lib/texte.ts'
 import { infoEtat } from '../lib/etats.ts'
 import type { Etat } from '../lib/types.ts'
 
-const RESTAURABLES = new Set(['titre', 'demande', 'notes', 'resume_simple'])
+const RESTAURABLES = new Set(['titre', 'demande', 'notes', 'resume_simple', 'comment_verifier'])
 const NOM_CHAMP: Record<string, string> = {
-  titre: 'titre', demande: 'demande', notes: 'notes', resume_simple: 'résumé simple', etat: 'état', priorite: 'priorité',
+  titre: 'titre', demande: 'demande', notes: 'notes', resume_simple: 'résumé simple', comment_verifier: 'comment vérifier', etat: 'état', priorite: 'priorité',
   section_id: 'section', archived_at: 'archivage', visible_utilisateurs: 'visible aux utilisateurs',
 }
 

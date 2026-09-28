@@ -11,7 +11,10 @@
 // SQL puis supprimée), un chantier créé puis supprimé avec confirmation,
 // puis trois écrans d'admin : Doublons (côte à côte, « pas un doublon »,
 // fusion avec note), sélection groupée (modifier deux chantiers, « Annuler »
-// rend à chacun SA valeur) et historique (restaurer un ancien texte). Les
+// rend à chacun SA valeur), historique (restaurer un ancien texte) et
+// « Comment vérifier » (étapes sur des lignes distinctes, lien cliquable,
+// bouton « Demander comment vérifier » qui écrit dans le fil, version repliée
+// une fois certifié). Les
 // données de test (« [TEST web] … ») sont supprimées à la fin, même en échec.
 // Captures dans $CAPTURES (défaut : le scratchpad de la session, sinon /tmp).
 // Prérequis : Chromium Playwright (PLAYWRIGHT_BROWSERS_PATH ou
@@ -381,6 +384,70 @@ try {
   verifie('restauration : l’écran recharge l’historique (2 changements)', (await hist.textContent()).includes('2 changements'), await hist.textContent())
   await carteH.getByTestId('carte-titre').click()
 
+  // --- 4. « Comment vérifier » (migration 0005) sur la carte orange
+  console.log('  — comment vérifier')
+  const CV = '1. Ouvre la page https://rnab26.github.io/Cockpit-General/ sur ton téléphone. 2. Touche la carte « Réglages ». 3. Tu dois voir ton e-mail en haut.'
+  const v1 = creerTest('verif avec etapes', { etat: 'a_verifier', demande: 'Chantier livré, étapes écrites.', comment_verifier: CV })
+  const v2 = creerTest('verif sans etapes', { etat: 'a_verifier', demande: 'Chantier livré sans étapes.' })
+  await page.getByTestId('actualiser').click()
+  const carteV1 = carteDe(v1.titre), carteV2 = carteDe(v2.titre)
+  await carteV1.waitFor({ timeout: 15000 })
+  await carteV1.getByTestId('carte-titre').click()
+  const blocV1 = carteV1.getByTestId('bloc-validation')
+  await blocV1.waitFor({ timeout: 5000 })
+  const encadre = blocV1.getByTestId('comment-verifier')
+  verifie('à vérifier : l’encadré « 👉 Comment vérifier » est dans le bloc orange', await encadre.count() === 1 && (await encadre.textContent()).includes('Comment vérifier'))
+  const etapesV = encadre.getByTestId('etape-verifier')
+  const nEtapes = await etapesV.count()
+  const ys = []
+  for (let i = 0; i < nEtapes; i++) ys.push((await etapesV.nth(i).boundingBox())?.y ?? -1)
+  verifie('les trois étapes écrites sur UNE ligne s’affichent sur trois lignes distinctes', nEtapes === 3 && ys.every((y, i) => i === 0 || y > ys[i - 1] + 8), { nEtapes, ys })
+  const textesEtapes = await etapesV.allTextContents()
+  verifie('chaque ligne porte son numéro et son texte, sans le suivant', /^1\.\s*Ouvre la page/.test(textesEtapes[0] ?? '') && /^3\.\s*Tu dois voir/.test(textesEtapes[2] ?? '') && !(textesEtapes[0] ?? '').includes('Touche'), textesEtapes)
+  const lienCv = encadre.getByRole('link')
+  verifie('le lien du texte est cliquable, nouvel onglet, rel noopener',
+    await lienCv.count() === 1 && await lienCv.getAttribute('href') === 'https://rnab26.github.io/Cockpit-General/' && await lienCv.getAttribute('target') === '_blank' && /noopener/.test(await lienCv.getAttribute('rel') ?? ''),
+    await lienCv.count() ? { href: await lienCv.getAttribute('href'), rel: await lienCv.getAttribute('rel') } : 'aucun lien')
+  const [bEnc, bCert] = [await encadre.boundingBox(), await blocV1.getByTestId('btn-certifier').boundingBox()]
+  verifie('l’encadré est AVANT les boutons « certifier / corriger »', bEnc && bCert && bEnc.y + bEnc.height <= bCert.y, { bEnc, bCert })
+  verifie('comment vérifier : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await blocV1.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(200)
+  await capture(page, 'comment-verifier')
+
+  // Sans étapes : la phrase et le bouton qui écrit la demande dans le fil.
+  await carteV2.getByTestId('carte-titre').click()
+  const videV2 = carteV2.getByTestId('comment-verifier-vide')
+  await videV2.waitFor({ timeout: 5000 })
+  verifie('sans étapes : « La session n’a pas dit comment vérifier. Demande-lui avant de certifier : »', (await videV2.textContent()).includes('La session n’a pas dit comment vérifier. Demande-lui avant de certifier'))
+  await videV2.getByTestId('btn-demander-verifier').click()
+  const toastDemande = await toastAuPremierPlan(/Demande envoyée/)
+  verifie('« Demander comment vérifier » : toast de succès visible', toastDemande, { auPremierPlan: dernierDessus })
+  const demandes = sql(`select kind, auteur_type, corps, answered_at from messages where chantier_id = '${v2.id}'`)
+  verifie('la demande est en base : kind info, auteur propriétaire, texte convenu',
+    demandes.length === 1 && demandes[0].kind === 'info' && demandes[0].auteur_type === 'proprietaire' && demandes[0].corps === 'Raphaël demande : comment vérifier ce chantier ? (étapes, où aller, ce que je dois voir)', demandes)
+  await videV2.getByTestId('deja-demande').waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('l’écran dit ensuite « Déjà demandé » (pas de doublon en aveugle)', await videV2.getByTestId('deja-demande').count() === 1 && (await videV2.getByTestId('btn-demander-verifier').textContent()).includes('Redemander'))
+  await capture(page, 'comment-verifier-vide')
+  await carteV2.getByTestId('carte-titre').click()
+
+  // Certifié : les étapes restent disponibles, repliées.
+  await blocV1.getByTestId('btn-certifier').click()
+  await blocV1.getByRole('button', { name: /Je certifie/ }).click()
+  await page.getByRole('status').getByText(/certifié/).last().waitFor({ timeout: 10000 })
+  const bacActif = page.getByTestId('bac-actif')
+  await bacActif.waitFor({ timeout: 10000 })
+  if ((await bacActif.locator('> button').getAttribute('aria-expanded')) !== 'true') await bacActif.locator('> button').click()
+  const carteV1b = bacActif.locator('[data-testid="carte"]', { hasText: v1.titre })
+  await carteV1b.waitFor({ timeout: 15000 })
+  if (await carteV1b.getByTestId('carte-detail').count() === 0) await carteV1b.getByTestId('carte-titre').click()
+  const replie = carteV1b.getByTestId('comment-verifier-replie')
+  await replie.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('certifié : « Comment vérifier » présent, replié', await replie.count() === 1 && await replie.getByTestId('etape-verifier').count() === 0)
+  await replie.locator('> button').click()
+  verifie('certifié : déplié, les trois étapes reviennent', await replie.getByTestId('etape-verifier').count() === 3)
+  await carteV1b.getByTestId('carte-titre').click()
+
   // --- grand écran
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.waitForTimeout(500)
@@ -402,6 +469,7 @@ try {
   try {
     const ids = idsTest.length ? idsTest.map((i) => `'${i}'`).join(', ') : `'00000000-0000-0000-0000-000000000000'`
     sql(`delete from messages where chantier_id in (${ids}) or corps like '%${MARQUE2}%'`)
+    sql(`delete from ce_qui_marche where chantier_id in (${ids})`)
     sql(`delete from chantiers where id in (${ids}) or titre like '${MARQUE2}%'`)
     sql(`delete from historique where chantier_id in (${ids})`)
     sql(`delete from supprimes where chantier_id in (${ids}) or ligne->>'titre' like '${MARQUE2}%'`)

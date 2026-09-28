@@ -44,6 +44,12 @@ reponses=$(un "select coalesce(string_agg(format('- %s | %s → « %s »%s (%s)'
 
 constats=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre,''), left(m.corps, 160)), chr(10) order by m.created_at desc), '(aucun)') from (select * from messages where kind = 'constat' order by created_at desc limit 8) m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P")
 
+# Ce que Raphaël (ou un utilisateur) a écrit dans le fil d'un chantier et
+# qu'aucune session n'a suivi depuis : son « Demander où ça en est », une
+# précision, une remarque. Sans ce bloc, son message reste dans l'app et
+# personne ne le lit (constaté le 29 sept. 2026).
+sans_suite=$(un "select coalesce(string_agg(format('- [%s] %s | %s : %s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre, 'général'), m.auteur, left(replace(m.corps, chr(10), ' '), 240)), chr(10) order by m.created_at), '(rien)') from messages m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P and m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and m.created_at > now() - interval '30 days' and not exists (select 1 from messages s where s.chantier_id is not distinct from m.chantier_id and s.projet_id = m.projet_id and s.auteur_type = 'session' and s.created_at > m.created_at)")
+
 utilisateurs=$(un "select coalesce(string_agg(format('- %s | %s | %s%s', c.id, c.titre, c.etat, case when coalesce(c.demande,'') <> '' then chr(10) || '    ' || left(replace(c.demande, chr(10), ' '), 240) else '' end), chr(10) order by c.created_at), '(aucune)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.origine = 'utilisateur' and c.archived_at is null and c.etat in ('a_trier','a_cadrer','libre')")
 
 livres=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(coalesce(c.valide_at, c.livre_at), 'DD/MM'), c.titre, case when c.etat = 'valide' then 'certifié' else 'à vérifier' end), chr(10) order by coalesce(c.valide_at, c.livre_at) desc), '(aucun)') from (select * from chantiers where etat in ('valide','a_verifier') order by coalesce(valide_at, livre_at) desc nulls last limit 8) c join projets p on p.id = c.projet_id where p.slug = $P")
@@ -68,6 +74,9 @@ $attente
 
 ## Dernières réponses humaines (à appliquer avec jugement)
 $reponses
+
+## Ce que Raphaël (ou un utilisateur) a écrit SANS SUITE — réponds dans le fil du chantier, même pour dire où tu en es
+$sans_suite
 
 ## Demandes des UTILISATEURS pas encore prises
 $utilisateurs

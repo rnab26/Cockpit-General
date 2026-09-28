@@ -42,6 +42,8 @@ export interface Chantier {
   demande: string | null
   notes: string | null
   resume_simple: string | null
+  /** Étapes écrites par la session qui livre, pour la personne qui certifie (0005). */
+  comment_verifier: string | null
   etat: Etat
   priorite: Priorite
   origine: Origine
