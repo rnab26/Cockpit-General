@@ -41,6 +41,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/autonome.sh",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -87,6 +96,18 @@
           }
         ]
       }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/suivi.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
-  }
+  },
+  "autoContinueAtUsageLimit": true
 }

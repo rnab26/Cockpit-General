@@ -652,6 +652,41 @@ async function controle14_sessions_agents_fusions() {
     (await chantier(c3)).doublon_de === null && (await une(`select reponse from messages where id = ${q(sug2.rows[0].m)}`)).reponse === "Garder séparés");
 }
 
+async function controle15_limites_autonome() {
+  section("15. limite d'usage (pause) et mode autonome (enchaînement) — 29 sept. 2026");
+  const sid = `test-auto-${rand}`;
+  const suivre = (ev) => execSql(`select suivre(${q(SLUG_A)}, ${q(JSON.stringify({ session_id: sid, ...ev }))}::jsonb) as r`);
+  await suivre({ hook_event_name: "StopFailure", error: "rate_limit", error_details: "Resets 4am" });
+  let s = await une(`select pause_raison, pause_detail from sessions where id = ${q(sid)}`);
+  verifie("StopFailure rate_limit → session « en pause », détail gardé", s?.pause_raison === "rate_limit" && s.pause_detail === "Resets 4am", s);
+  await suivre({ hook_event_name: "UserPromptSubmit", prompt: "on reprend" });
+  s = await une(`select pause_raison from sessions where id = ${q(sid)}`);
+  verifie("le signe de vie suivant lève la pause", s?.pause_raison === null, s);
+  const suivant = () => execSql(`select prochain_chantier_autonome(${q(SLUG_A)}, ${q(sid)}, 'claude/nuit') as c`);
+  const libre = await creerChantier(P1, { titre: "Libre pour la nuit", etat: "libre" });
+  const cadrer = await creerChantier(P1, { titre: "À cadrer, jamais pris la nuit", etat: "a_cadrer" });
+  let r = await suivant();
+  verifie("mode éteint → rien n'est donné (la session s'arrête)", r.ok && r.rows?.[0]?.c === null, r);
+  const pass = await execSql(`select regler_autonome(${q(SLUG_A)}, now() - interval '1 minute') as r`);
+  verifie("une heure de fin passée est refusée", pass.ok === false, pass);
+  const trop = await execSql(`select regler_autonome(${q(SLUG_A)}, now() + interval '30 hours') as r`);
+  verifie("plus de 24 h d'affilée est refusé", trop.ok === false, trop);
+  const util = await rpcUtilisateur("regler_autonome", { p_projet: SLUG_A, p_jusqu_a: new Date(Date.now() + 3600e3).toISOString() }, jwt);
+  verifie("un membre non admin ne peut pas allumer le mode autonome", util.status >= 400, util);
+  await execSql(`select regler_autonome(${q(SLUG_A)}, now() + interval '3 hours', 1) as r`);
+  r = await suivant();
+  const c = r.rows?.[0]?.c;
+  const donne = c?.id ? await chantier(c.id) : null;
+  verifie("mode allumé → un chantier LIBRE (le plus ancien) est donné et réservé pour la session",
+    !!donne && donne.pris_par === "claude/nuit" && donne.etat === "en_cours" && donne.projet_id === P1 && c.id !== cadrer, { r, donne, libre });
+  verifie("un chantier « à cadrer » n'est jamais donné", (await chantier(cadrer)).pris_par === null);
+  await creerChantier(P1, { titre: "Deuxième libre", etat: "libre" });
+  r = await suivant();
+  verifie("le plafond par session (1 ici) arrête l'enchaînement", r.ok && r.rows?.[0]?.c === null, r);
+  await execSql(`select regler_autonome(${q(SLUG_A)}, null) as r`);
+  verifie("éteindre = null", (await une(`select autonome_jusqu_a from projets where id = ${q(P1)}`)).autonome_jusqu_a === null);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -669,7 +704,7 @@ try {
     async () => { const c = await controle4_certifier(); await controle5_corriger(c); },
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
-    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions,
+    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome,
   ];
   for (const etape of etapes) {
     try { await etape(); }

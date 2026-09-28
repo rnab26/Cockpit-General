@@ -78,6 +78,7 @@ echo "3. Hook de démarrage"
 poser "$ICI/modeles/cockpit-session-start.sh" "$dossier/.claude/hooks/cockpit-session-start.sh"
 poser "$ICI/modeles/cockpit-prompt-rappel.sh" "$dossier/.claude/hooks/cockpit-prompt-rappel.sh"
 poser "$ICI/modeles/cockpit-suivi.sh" "$dossier/.claude/hooks/cockpit-suivi.sh"
+poser "$ICI/modeles/cockpit-autonome.sh" "$dossier/.claude/hooks/cockpit-autonome.sh"
 reglages="$dossier/.claude/settings.json"
 [ -f "$reglages" ] || echo '{}' > "$reglages"
 python3 - "$reglages" "$slug" <<'PY'
@@ -102,15 +103,26 @@ if not any(x.get("command") == cmd2 for h in ups for x in h.get("hooks", [])):
 # Suivi des sessions et de leurs agents (29 sept. 2026) : quelle session
 # travaille, quels agents et commandes elle a lancés (voir hooks/suivi.sh).
 cmd3 = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-suivi.sh"
-for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse", "SessionEnd"):
+for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse", "StopFailure", "SessionEnd"):
     lst = hooks.setdefault(ev, [])
     if not any(x.get("command") == cmd3 for h in lst for x in h.get("hooks", [])):
         entree = {"hooks": [{"type": "command", "command": cmd3, "timeout": 10}]}
         if ev == "PostToolUse":
             entree["matcher"] = "*"
         lst.append(entree)
+# Mode autonome (29 sept. 2026) : à la fin d'une tâche, le chantier libre suivant
+# si le projet est en mode autonome (voir hooks/autonome.sh). Synchrone : c'est
+# sa réponse qui empêche la session de s'arrêter.
+cmd4 = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-autonome.sh"
+st = hooks.setdefault("Stop", [])
+if not any(x.get("command") == cmd4 for h in st for x in h.get("hooks", [])):
+    st.append({"hooks": [{"type": "command", "command": cmd4, "timeout": 15}]})
+# Reprise native de la tâche en cours quand une limite d'usage se lève
+# (réglage de Claude Code : « wait for the limit to reset and continue the task
+# automatically »).
+d["autoContinueAtUsageLimit"] = True
 json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
-print("   ok : .claude/settings.json (env COCKPIT_PROJET + hooks démarrage, rappel et suivi des sessions/agents)")
+print("   ok : .claude/settings.json (env COCKPIT_PROJET, hooks démarrage / rappel / suivi / mode autonome, reprise auto après limite)")
 PY
 
 echo "4. CLAUDE.md"

@@ -110,3 +110,19 @@ de Pages, quelques minutes).
   sans toucher au reste du fichier. Mais les hooks déclarés dans
   `.claude/settings.json` d'un projet ne se propagent PAS seuls : un nouvel
   événement de hook exige de relancer `brancher.sh` sur chaque projet branché.
+
+## Limites d'usage et mode autonome (29 sept. 2026, migration 0010)
+
+- Reprise de la tâche en cours après une limite : native, réglage
+  `autoContinueAtUsageLimit: true` (description de Claude Code 2.1.284 : « wait
+  for the limit to reset and continue the task automatically »), posé dans le
+  `.claude/settings.json` de chaque projet par `brancher.sh`. Limites connues
+  (lues dans son code) : annulée si Claude Code redémarre pendant l'attente
+  (conteneur recyclé), ou si la réinitialisation est à plus de 24 h.
+- La pause se voit : hook `StopFailure` → `sessions.pause_raison`
+  (`rate_limit`, `billing_error`, `overloaded`…), levée au prochain signe de vie.
+- Enchaînement : `hooks/autonome.sh` (Stop, synchrone) → `prochain_chantier_autonome`
+  donne le chantier `libre` suivant (jamais `a_cadrer`), le réserve, et la
+  session continue (`decision: block`). Allumé par projet avec
+  `regler_autonome(slug, jusqu_a, max)` (admin ; ≤ 24 h ; plafond par session),
+  éteint par défaut. `verifier-base.mjs` §15.

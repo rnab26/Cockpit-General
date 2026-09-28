@@ -2,7 +2,7 @@
 # Hook de SUIVI : dit au cockpit, tout seul, quelle session travaille et
 # quelles tâches elle a lancées en arrière-plan (agents, commandes longues).
 # Déclaré par brancher.sh sur UserPromptSubmit, Stop, SubagentStart,
-# SubagentStop, PostToolUse et SessionEnd.
+# SubagentStop, PostToolUse, StopFailure et SessionEnd.
 #
 # Pourquoi (Raphaël, 29 sept. 2026, capture du panneau « Tâches en
 # arrière-plan » de FacePro) : « j'ai cinq agents […] c'est illisible,
@@ -51,6 +51,10 @@ case "$ev" in
     fi ;;
   UserPromptSubmit)
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, prompt: ((.prompt // "") | .[0:200])}') ;;
+  StopFailure)
+    # Une réponse arrêtée par une erreur : limite d'usage (rate_limit), facturation,
+    # surcharge… Le cockpit affiche « En pause » jusqu'au prochain signe de vie.
+    charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, error, error_details: ((.error_details // "") | tostring | .[0:400])}') ;;
   Stop|SubagentStop|SubagentStart|SessionEnd)
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, agent_id, agent_type, background_tasks}') ;;
   *) exit 0 ;;

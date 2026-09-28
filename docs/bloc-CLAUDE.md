@@ -28,6 +28,13 @@ demandes des utilisateurs, progression des autres sessions.
   as donnée>" --chantier <id> --etape "…" --pct N --eta 10m` à chaque étape,
   et `--agent "…" --termine "…"` à la fin. Donne des descriptions d'agents
   lisibles par Raphaël (le sujet, pas la technique).
+- **Limite d'usage et mode autonome** : la reprise de la tâche en cours quand
+  une limite se lève est native (`autoContinueAtUsageLimit`, posé par
+  brancher.sh). Si le projet est en « mode autonome » (allumé par Raphaël
+  jusqu'à une heure), le hook `cockpit-autonome.sh` te donne à la fin de ta
+  tâche le chantier LIBRE suivant, déjà réservé : suis ses règles (aucune
+  dépense, aucune suppression, aucun envoi ; une décision de Raphaël → une
+  question dans le cockpit, puis passe au suivant).
 - **Réserver avant de toucher** : `{{SQL}} "select reserver_chantier('<id>', '<ta branche>', 120)"`
   (false = une autre session l'a). Libérer : `liberer_chantier(id, branche)`.
 - **Progression en direct, à chaque étape et en terminant** :
