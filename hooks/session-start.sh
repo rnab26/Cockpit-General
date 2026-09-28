@@ -11,10 +11,12 @@
 
 set -uo pipefail
 RACINE="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-SQL="$RACINE/scripts/sql.sh"
+# COCKPIT_SQL est posé par le lanceur (scripts/cockpit-lanceur.sh) dans un
+# projet branché : le sql.sh du projet peut viser une AUTRE base (FacePro/Neon).
+SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROJET="${COCKPIT_PROJET:-}"
 # Noms des scripts tels qu'installés dans le projet (brancher.sh les réécrit).
-SQL_CMD="scripts/sql.sh"; PROG_CMD="scripts/progression.sh"; DEM_CMD="scripts/demander.sh"
+SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
 
 emettre() { jq -n --arg c "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'; }
 

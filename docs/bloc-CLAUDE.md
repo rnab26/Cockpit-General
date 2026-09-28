@@ -23,5 +23,9 @@ demandes des utilisateurs, progression des autres sessions.
   la même ligne et rend le chantier). Plus aucun marqueur entre crochets.
 - **Écrire dans le fil** : `insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps)`
   (`kind` info / blocage). Avant de t'arrêter, écris où tu en es.
+- **Ces commandes sont des lanceurs** (`scripts/cockpit-lanceur.sh`) : elles
+  exécutent toujours la dernière version publiée sur Cockpit-General, sans
+  réinstallation. Ne les modifie pas ici ; une évolution se fait dans
+  Cockpit-General et arrive dans tous les projets branchés en 10 minutes.
 - `{{SQL}}` vise le schéma `cockpit` sans préfixe, une instruction par appel ;
   demande à Raphaël avant tout drop / delete massif / truncate.

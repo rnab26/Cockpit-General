@@ -52,26 +52,30 @@ copier() { # source, destination
   chmod +x "$2" 2>/dev/null || true
 }
 
-echo "2. Scripts"
-mkdir -p "$dossier/scripts"
-sqlcible="$dossier/scripts/sql.sh"
-if [ -f "$sqlcible" ] && ! grep -q "Content-Profile: cockpit" "$sqlcible"; then
-  echo "   le projet a déjà son scripts/sql.sh (autre base) : le nôtre devient scripts/cockpit-sql.sh"
-  sqlcible="$dossier/scripts/cockpit-sql.sh"
+echo "2. Commandes des sessions (lanceurs à jour automatique)"
+# Depuis le 29 sept. 2026, on n'installe plus de COPIES figées : des lanceurs
+# qui exécutent toujours la dernière version sur Cockpit-General (voir
+# modeles/cockpit-lanceur.sh). Une ancienne copie posée par ce script est
+# reconnue et remplacée d'office ; un fichier du projet qui n'est pas à nous
+# (le scripts/sql.sh de FacePro, par exemple) n'est jamais touché.
+est_a_nous() { [ -f "$1" ] && grep -qE "Content-Profile: cockpit|COCKPIT_PROJET|Cockpit-General|cockpit-lanceur" "$1"; }
+poser() { # modèle, destination
+  if [ -f "$2" ] && cmp -s "$1" "$2"; then echo "   déjà à jour : ${2#$dossier/}"
+  elif [ ! -f "$2" ] || est_a_nous "$2" || [ "$forcer" = 1 ]; then cp "$1" "$2"; chmod +x "$2"; echo "   ok : ${2#$dossier/}"
+  else echo "   EXISTE, n'est pas au cockpit, conservé (relance avec --forcer pour remplacer) : ${2#$dossier/}"; fi
+}
+mkdir -p "$dossier/scripts" "$dossier/.claude/hooks"
+for n in lanceur sql demander progression; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
+# Ancienne aide de l'installation par copie : plus utilisée.
+if [ -f "$dossier/scripts/cockpit-progression_tableau.py" ]; then rm -f "$dossier/scripts/cockpit-progression_tableau.py"; echo "   retiré (ancienne copie) : scripts/cockpit-progression_tableau.py"; fi
+# Ancien mode : un projet SANS sql.sh recevait notre sql.sh sous son nom. Il est à nous : on le laisse
+# (inoffensif) mais plus rien ne s'en sert ; on le signale.
+if [ -f "$dossier/scripts/sql.sh" ] && grep -q "Content-Profile: cockpit" "$dossier/scripts/sql.sh"; then
+  echo "   note : scripts/sql.sh est une ancienne copie du cockpit ; les sessions utilisent désormais scripts/cockpit-sql.sh"
 fi
-copier "$ICI/scripts/sql.sh" "$sqlcible"
-for f in demander.sh progression.sh progression_tableau.py; do
-  # progression.sh appelle son aide python par son chemin : renommée cockpit-…,
-  # elle doit l'être aussi dans l'appel (défaut trouvé sur FacePro le 28 sept. :
-  # « can't open file scripts/progression_tableau.py »).
-  tmp=$(mktemp); sed -e "s#SQL=\"\$RACINE/scripts/sql.sh\"#SQL=\"\$RACINE/scripts/$(basename "$sqlcible")\"#" -e 's#scripts/progression_tableau.py#scripts/cockpit-progression_tableau.py#' "$ICI/scripts/$f" > "$tmp"
-  copier "$tmp" "$dossier/scripts/cockpit-$f"; rm -f "$tmp"
-done
 
 echo "3. Hook de démarrage"
-mkdir -p "$dossier/.claude/hooks"
-tmp=$(mktemp); sed -e "s#SQL=\"\$RACINE/scripts/sql.sh\"#SQL=\"\$RACINE/scripts/$(basename "$sqlcible")\"#" -e "s#SQL_CMD=\"scripts/sql.sh\"#SQL_CMD=\"scripts/$(basename "$sqlcible")\"#" -e 's#PROG_CMD="scripts/progression.sh"#PROG_CMD="scripts/cockpit-progression.sh"#' -e 's#DEM_CMD="scripts/demander.sh"#DEM_CMD="scripts/cockpit-demander.sh"#' "$ICI/hooks/session-start.sh" > "$tmp"
-copier "$tmp" "$dossier/.claude/hooks/cockpit-session-start.sh"; rm -f "$tmp"
+poser "$ICI/modeles/cockpit-session-start.sh" "$dossier/.claude/hooks/cockpit-session-start.sh"
 reglages="$dossier/.claude/settings.json"
 [ -f "$reglages" ] || echo '{}' > "$reglages"
 python3 - "$reglages" "$slug" <<'PY'
@@ -94,7 +98,7 @@ PY
 echo "4. CLAUDE.md"
 claude="$dossier/CLAUDE.md"; [ -f "$claude" ] || touch "$claude"
 if grep -q "## Cockpit (rnab26/Cockpit-General)" "$claude"; then echo "   déjà présent"; else
-  sed -e "s/{{SLUG}}/$slug/g" -e "s#{{SQL}}#scripts/$(basename "$sqlcible")#g" "$ICI/docs/bloc-CLAUDE.md" >> "$claude"; echo "   bloc ajouté"; fi
+  sed -e "s/{{SLUG}}/$slug/g" -e "s#{{SQL}}#scripts/cockpit-sql.sh#g" "$ICI/docs/bloc-CLAUDE.md" >> "$claude"; echo "   bloc ajouté"; fi
 
 cat <<FIN
 
