@@ -1,0 +1,48 @@
+# Publie l'app (app/dist) et le module embarqué (embed/) sur GitHub Pages à
+# chaque push sur main. La branche gh-pages est la source Pages : la pousser
+# active Pages toute seule, aucun réglage manuel. URL :
+# https://rnab26.github.io/cockpit/  et  …/cockpit/embed/cockpit-embed.js
+name: Déployer sur GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Vérifications hors ligne
+        run: |
+          set -e
+          for f in app/scripts/verifier-*.ts; do [ -f "$f" ] && node --experimental-strip-types "$f"; done
+          bash -n scripts/*.sh hooks/*.sh
+      - name: Build de l'app
+        working-directory: app
+        run: |
+          npm ci
+          npm run build
+      - name: Assembler le site
+        run: |
+          rm -rf site && mkdir -p site
+          cp -r app/dist/. site/
+          mkdir -p site/embed && cp embed/*.js embed/*.html site/embed/ 2>/dev/null || true
+          touch site/.nojekyll
+          # Fallback SPA : GitHub Pages sert 404.html pour toute route inconnue.
+          cp site/index.html site/404.html
+      - name: Publier (branche gh-pages)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          force_orphan: true

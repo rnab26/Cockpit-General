@@ -1,0 +1,23 @@
+# Contrôles hors ligne sur toutes les branches : typecheck de l'app, scripts
+# purs, syntaxe des scripts shell. Seul retour d'une session avant de merger.
+name: Vérifications
+on:
+  push:
+  pull_request:
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: bash -n scripts/*.sh hooks/*.sh
+      - working-directory: app
+        run: |
+          npm ci
+          npx tsc -b
+          for f in scripts/verifier-*.ts; do [ -f "$f" ] && node --experimental-strip-types "$f"; done
+          npm run build

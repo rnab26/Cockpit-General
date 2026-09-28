@@ -1,0 +1,8 @@
+{
+  "env": { "COCKPIT_PROJET": "cockpit" },
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/session-start.sh" } ] }
+    ]
+  }
+}
