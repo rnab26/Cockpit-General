@@ -49,17 +49,38 @@
   color-scheme: dark;
 }
 
-html, body { background: var(--fond); color: var(--texte); }
-body { margin: 0; font-family: var(--font-sans); -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
-* { box-sizing: border-box; min-width: 0; }
-button { font: inherit; color: inherit; }
-dialog { color: inherit; }
-dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+/* Dans une couche « base » : hors couche, `button { color: inherit }` l'emportait sur
+   TOUTES les classes de couleur (texte blanc des boutons pleins, onglet actif…) —
+   trouvé le 29 sept. 2026 sur la capture de l'onglet « Tout », texte invisible. */
+@layer base {
+  html, body { background: var(--fond); color: var(--texte); }
+  body { margin: 0; font-family: var(--font-sans); -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+  * { box-sizing: border-box; min-width: 0; }
+  button { font: inherit; color: inherit; }
+  dialog { color: inherit; }
+  dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+}
 
 .sans-barre::-webkit-scrollbar { display: none; }
 .sans-barre { scrollbar-width: none; }
 
 @keyframes cockpit-pulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
 .pulse { animation: cockpit-pulse 1.6s ease-in-out infinite; }
+/* Barre « vive » : réservée à une session qui a donné signe de vie (presence.ts). Un reflet qui glisse. */
+@keyframes cockpit-reflet { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+.barre-vive {
+  background-image: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / .45) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: cockpit-reflet 1.8s linear infinite;
+}
+/* Point « en direct » à côté d'une session vivante. */
+@keyframes cockpit-point { 0% { box-shadow: 0 0 0 0 rgb(22 163 74 / .55) } 70% { box-shadow: 0 0 0 7px rgb(22 163 74 / 0) } 100% { box-shadow: 0 0 0 0 rgb(22 163 74 / 0) } }
+.point-vivant { animation: cockpit-point 1.8s ease-out infinite; }
+/* Bref flash d'une ligne vivante quand une nouvelle étape arrive (useFlash). */
+@keyframes cockpit-flash { 0% { background-color: rgb(22 163 74 / .30) } 100% { background-color: transparent } }
+.flash-etape { animation: cockpit-flash 1.4s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .pulse, .barre-vive, .point-vivant, .toast-in, .flash-etape { animation: none; }
+}
 @keyframes cockpit-toast { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }
 .toast-in { animation: cockpit-toast .18s ease-out; }

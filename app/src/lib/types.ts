@@ -7,7 +7,7 @@ export type Etat =
 export type Priorite = 'basse' | 'normale' | 'haute'
 export type Origine = 'proprietaire' | 'utilisateur' | 'session'
 export type AuteurType = 'proprietaire' | 'utilisateur' | 'session'
-export type KindMessage = 'info' | 'question' | 'reponse' | 'blocage' | 'action' | 'constat'
+export type KindMessage = 'info' | 'question' | 'reponse' | 'blocage' | 'action' | 'constat' | 'fusion'
 export type EtatAction = 'fait' | 'pas_encore' | 'bloque'
 export type StatutActivite = 'en_cours' | 'termine' | 'echec' | 'attente'
 
@@ -22,6 +22,12 @@ export interface Projet {
   actif: boolean
   cle_embed: string
   created_at: string
+  /** Mode autonome (0010) : null = éteint ; sinon la session enchaîne les chantiers libres jusqu'à cette heure. */
+  autonome_jusqu_a: string | null
+  /** Au plus N chantiers enchaînés par session (1-50, défaut 20 depuis 0011). */
+  autonome_max: number
+  /** Mode autonome « tout le temps », sans heure de fin (0011). */
+  autonome_toujours: boolean
 }
 
 export interface Section {
@@ -44,6 +50,8 @@ export interface Chantier {
   resume_simple: string | null
   /** Étapes écrites par la session qui livre, pour la personne qui certifie (0005). */
   comment_verifier: string | null
+  /** Étapes de mise en ligne (0007) : code, pousse, ci_ok|ci_ko, en_ligne|pas_en_ligne → {at, detail}. Lire avec lib/jalons.ts. */
+  jalons: unknown
   etat: Etat
   priorite: Priorite
   origine: Origine
@@ -65,6 +73,9 @@ export interface OptionQuestion {
   libelle: string
   aide?: string
   recommande?: boolean
+  /** Suggestion de fusion (kind 'fusion', 0008) : le chantier qui disparaît et celui qui reste. */
+  source?: string
+  cible?: string
 }
 
 export interface Message {
@@ -121,4 +132,45 @@ export interface Moi {
   user_id: string
   admin: boolean
   email: string
+}
+
+/** Une conversation Claude Code (migration 0008), suivie par les hooks. */
+export interface SessionClaude {
+  id: string
+  projet_id: string
+  branche: string | null
+  sujet: string | null
+  tour_en_cours: boolean
+  demarre_at: string
+  vu_at: string
+  fin_at: string | null
+  /** Arrêtée sur une limite (0010) : rate_limit, billing_error, overloaded… ; levée au signe de vie suivant. */
+  pause_raison: string | null
+  pause_at: string | null
+  pause_detail: string | null
+  relances: number
+}
+
+export type TypeTache = 'agent' | 'commande' | 'autre'
+export type StatutTache = 'en_cours' | 'termine' | 'echec' | 'arrete'
+
+/** Un travail qu'une session lance en arrière-plan : un agent ou une commande (0008). */
+export interface Tache {
+  id: string
+  session_id: string
+  projet_id: string
+  tache_id: string
+  type: TypeTache
+  description: string | null
+  sorte: string | null
+  statut: StatutTache
+  chantier_id: string | null
+  etape: string | null
+  /** null = inconnu (l'agent n'a rien signalé) : jamais une barre inventée. */
+  pourcentage: number | null
+  eta_secondes: number | null
+  progres_at: string | null
+  demarre_at: string
+  vu_at: string
+  fini_at: string | null
 }

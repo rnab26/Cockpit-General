@@ -6,9 +6,10 @@ import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
 import { EncadreCommentVerifier } from './CommentVerifier.tsx'
+import { FriseMiseEnLigne, PhraseMiseEnLigne } from './MiseEnLigne.tsx'
 
 /** Encadré orange d'un chantier « à vérifier » : certifier, ou corriger (mots obligatoires). */
-export function BlocValidation({ chantier }: { chantier: Chantier }) {
+export function BlocValidation({ chantier, sansEntete = false }: { chantier: Chantier; sansEntete?: boolean }) {
   const { par, recharger } = useCockpit()
   const toast = useToast()
   const [mode, setMode] = useState<'choix' | 'certifier' | 'corriger'>('choix')
@@ -36,8 +37,12 @@ export function BlocValidation({ chantier }: { chantier: Chantier }) {
 
   return (
     <div data-testid="bloc-validation" className="rounded-xl border-2 border-attention/60 bg-attention/8 p-3">
-      <p className="text-sm font-semibold text-attention">🧪 Livré par la session : à toi de dire si ça marche.</p>
-      <div className="mt-2"><EncadreCommentVerifier chantier={chantier} /></div>
+      {sansEntete ? null : <p className="mb-2 text-sm font-semibold text-attention">🧪 Livré par la session : à toi de dire si ça marche.</p>}
+      <div className="space-y-2">
+        <FriseMiseEnLigne chantier={chantier} />
+        <EncadreCommentVerifier chantier={chantier} />
+        <PhraseMiseEnLigne chantier={chantier} />
+      </div>
       {mode === 'choix' ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button variante="ok" taille="lg" onClick={() => setMode('certifier')} data-testid="btn-certifier">✅ Ça fonctionne, je certifie</Button>
