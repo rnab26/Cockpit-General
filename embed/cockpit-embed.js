@@ -466,7 +466,7 @@
 
     const li = h('li', { class: 'carte ' + classe, 'data-chantier': c.id })
     if (u.edition) {
-      li.append(edition(c, u, envoi))
+      ajouter(li, edition(c, u, envoi))
     } else {
       li.append(h('div', { class: 'haut' },
         h('div', { class: 'corps' }, h('p', { class: 'titre' }, c.titre), demande(c, u), c.resume_simple ? h('p', { class: 'resume' }, c.resume_simple) : null),
@@ -474,12 +474,12 @@
           modifiable(c) ? h('button', { class: 'discret', title: 'Modifier le titre / la demande', onclick: () => { u.edition = true; u.titre = c.titre; u.demande = c.demande || ''; rendre(); focus('titre-' + c.id) } }, '✏️') : null)))
     }
     const a = (c.activite || [])[0]
-    if (a) li.append(h('p', { class: 'aide', style: 'margin-top:6px' }, '🔧 ', a.etape), barre(a))
-    if (!blocs.includes((ui.retour[c.id] || {}).bloc)) li.append(retourPour(c.id, (ui.retour[c.id] || {}).bloc))
-    li.append(historique(c, u))
-    questions.forEach((q) => li.append(blocQuestion(c, u, q, envoi)))
-    if (aVerifier) li.append(blocValidation(c, u, envoi, 'a_verifier'))
-    li.append(pied(c, u, envoi))
+    if (a) ajouter(li, [h('p', { class: 'aide', style: 'margin-top:6px' }, '🔧 ', a.etape), barre(a)])
+    if (!blocs.includes((ui.retour[c.id] || {}).bloc)) ajouter(li, retourPour(c.id, (ui.retour[c.id] || {}).bloc))
+    ajouter(li, historique(c, u))
+    questions.forEach((q) => ajouter(li, blocQuestion(c, u, q, envoi)))
+    if (aVerifier) ajouter(li, blocValidation(c, u, envoi, 'a_verifier'))
+    ajouter(li, pied(c, u, envoi))
     return li
   }
 
@@ -491,11 +491,11 @@
         h('span', { title: 'Certifiée', style: 'flex-shrink:0' }, '✅'),
         h('div', { class: 'corps' }, h('p', { class: 'titre' }, c.titre),
           h('p', { class: 'resume', style: 'color:var(--muted)' }, c.resume_simple || 'Certifiée' + (c.valide_par ? ' par ' + c.valide_par : '') + (c.valide_at ? ' — ' + quand(c.valide_at).toLowerCase() : '')))))
-    if (!['validation', 'message'].includes((ui.retour[c.id] || {}).bloc)) li.append(retourPour(c.id, (ui.retour[c.id] || {}).bloc))
-    li.append(blocValidation(c, u, envoi, 'valide'))
-    li.append(demande(c, u, true))
-    li.append(historique(c, u))
-    li.append(pied(c, u, envoi))
+    if (!['validation', 'message'].includes((ui.retour[c.id] || {}).bloc)) ajouter(li, retourPour(c.id, (ui.retour[c.id] || {}).bloc))
+    ajouter(li, blocValidation(c, u, envoi, 'valide'))
+    ajouter(li, demande(c, u, true))
+    ajouter(li, historique(c, u))
+    ajouter(li, pied(c, u, envoi))
     return li
   }
 

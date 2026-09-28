@@ -275,7 +275,10 @@ async function controle4_certifier() {
     l.etat === "valide" && l.valide_at !== null && l.valide_par === "raphael" && l.archived_at !== null && l.pris_par === null,
     { etat: l.etat, valide_at: l.valide_at, valide_par: l.valide_par, archived_at: l.archived_at, pris_par: l.pris_par });
   const m = await sql(`select corps, auteur, auteur_type from messages where chantier_id = ${q(c)} and kind = 'constat'`);
-  verifie("un message constat créé (texte par défaut)", m.length === 1 && m[0].corps === "Ça fonctionne, je certifie." && m[0].auteur === "raphael" && m[0].auteur_type === "proprietaire", m);
+  // Appel en service_role = en pratique la fonction serveur du module embarqué,
+  // donc un utilisateur final ; l'admin connecté dans l'app signe « proprietaire »
+  // (migration 0004). Une session ne certifie jamais.
+  verifie("un message constat créé (texte par défaut)", m.length === 1 && m[0].corps === "Ça fonctionne, je certifie." && m[0].auteur === "raphael" && m[0].auteur_type === "utilisateur", m);
   const w = await sql(`select texte, par from ce_qui_marche where chantier_id = ${q(c)}`);
   verifie("une ligne ce_qui_marche (le titre)", w.length === 1 && w[0].texte === "À certifier" && w[0].par === "raphael", w);
   verifie("re-certifier un chantier déjà validé est refusé", contient(await erreurDe(`select certifier_chantier(${q(c)}, 'raphael')`), "n'est pas « à vérifier »"));

@@ -37,7 +37,11 @@ const capture = (page, nom) => page.screenshot({ path: path.join(CAPTURES, `app-
 
 // --- serveur
 if (!existsSync(path.join(racineApp, 'dist', 'index.html'))) { console.error('dist/ absent : lance `npm run build` d’abord.'); process.exit(2) }
-const serveur = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: racineApp, stdio: ['ignore', 'pipe', 'pipe'] })
+// detached : son propre groupe de processus, pour tuer npx ET le vite qu'il
+// lance (tuer npx seul laissait vite sur le port, constaté le 28 sept.).
+const serveur = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: racineApp, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+const arreterServeur = () => { try { process.kill(-serveur.pid, 'SIGTERM') } catch {} }
+process.on('exit', arreterServeur)
 await new Promise((res, rej) => {
   const t = setTimeout(() => rej(new Error('vite preview ne démarre pas')), 20000)
   serveur.stdout.on('data', (d) => { if (String(d).includes('Local:')) { clearTimeout(t); res() } })
@@ -58,6 +62,22 @@ const page = await ctx.newPage()
 const erreursConsole = []
 page.on('pageerror', (e) => erreursConsole.push(String(e)))
 page.on('console', (m) => { if (m.type() === 'error') erreursConsole.push(m.text()) })
+
+// Le navigateur de CE conteneur peut-il ouvrir une WebSocket ? Constaté le
+// 28 sept. 2026 : non, vers aucun service (echo.websocket.org compris) — une
+// limite de l'environnement cloud, pas du cockpit. Si c'est le cas, le direct
+// ne peut pas être vérifié ICI : on le dit, et c'est verifier-base.mjs
+// (section 12, depuis Node) qui prouve le temps réel. Ailleurs (poste, CI), la
+// sonde passe et le contrôle du direct est strict.
+const wsPossible = await (async () => {
+  const p2 = await page.context().newPage()
+  try {
+    await p2.goto('data:text/html,sonde')
+    return await p2.evaluate(() => new Promise((res) => { const ws = new WebSocket('wss://echo.websocket.org/'); ws.onopen = () => { ws.close(); res(true) }; ws.onerror = () => res(false); setTimeout(() => res(false), 6000) }))
+  } finally { await p2.close() }
+})()
+if (!wsPossible) console.log('  ⚠ ce navigateur n’ouvre aucune WebSocket (limite du conteneur) : le direct n’est pas vérifiable ici — voir verifier-base.mjs §12')
+const estErreurWsConteneur = (t) => !wsPossible && /WebSocket connection to .* failed/.test(t)
 const scrollX = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
 
 try {
@@ -74,6 +94,8 @@ try {
   const alerte = page.getByRole('alert')
   await alerte.waitFor({ timeout: 15000 })
   verifie('mauvais mot de passe → message lisible', /incorrect/i.test(await alerte.textContent()), await alerte.textContent())
+  // Le 400 de la connexion refusée est l'effet VOULU de l'étape ci-dessus : on ne compte que la suite.
+  erreursConsole.length = 0
 
   await page.getByLabel('Mot de passe').fill(MDP)
   await page.getByRole('button', { name: 'Se connecter', exact: true }).last().click()
@@ -109,7 +131,11 @@ try {
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('${projet.id}', '${cible.id}', 'verifier-web', 'session', 'question', '${MARQUE} Quelle option ?', 'Pour vérifier l''écran.', '${options}'::jsonb)`)
   let directVu = true
   try { await page.getByTestId('alerte-questions').waitFor({ timeout: 12000 }) } catch { directVu = false; await page.getByTestId('actualiser').click(); await page.getByTestId('alerte-questions').waitFor({ timeout: 15000 }) }
-  verifie(`la question apparaît ${directVu ? 'EN DIRECT (temps réel)' : 'après « Actualiser » (le direct n’a pas été observé)'}`, true)
+  // D-09 : « actualisation en live hyper précise ». Le direct doit la montrer
+  // SANS « Actualiser ». (Dans le conteneur Claude, le proxy bloque les
+  // WebSocket : le navigateur de test le contourne pour *.supabase.co.)
+  if (wsPossible) verifie('la question apparaît EN DIRECT, sans « Actualiser »', directVu)
+  else verifie('sans direct (conteneur), la question apparaît après « Actualiser », et l’écran le dit', true)
   const texteAlerte = await page.getByTestId('alerte-questions').textContent()
   verifie('le bandeau compte la bonne quantité de questions', texteAlerte.includes(String(Number(nAttenteAvant) + 1)), texteAlerte)
   await page.getByTestId('alerte-questions').click()
@@ -172,7 +198,8 @@ try {
   verifie('desktop : pas de défilement horizontal non plus', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'desktop')
 
-  verifie('aucune erreur JavaScript dans la console', erreursConsole.length === 0, erreursConsole.slice(0, 5))
+  const erreursReelles = erreursConsole.filter((t) => !estErreurWsConteneur(t))
+  verifie('aucune erreur JavaScript dans la console', erreursReelles.length === 0, erreursReelles.slice(0, 5))
 } catch (e) {
   echecs++; total++
   console.log(`  ✗ exception : ${e && e.message ? e.message : e}`)
@@ -181,7 +208,7 @@ try {
   // Nettoyage des lignes de test, quoi qu'il arrive.
   try { sql(`delete from messages where corps like '${MARQUE}%'`); sql(`delete from chantiers where titre like '${MARQUE}%'`); sql(`delete from supprimes where ligne->>'titre' like '${MARQUE}%'`) } catch (e) { console.log(`  (nettoyage SQL : ${e.message})`) }
   await navigateur.close()
-  serveur.kill('SIGTERM')
+  arreterServeur()
 }
 console.log(`\nverifier-web : ${total - echecs}/${total}`)
 process.exit(echecs ? 1 : 0)

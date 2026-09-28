@@ -52,6 +52,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel (118 contrôles)
 bash -n scripts/*.sh hooks/*.sh
 ```
 
@@ -59,6 +60,19 @@ Le compte de test des parcours navigateur est un admin nommé
 `test-cockpit@cockpit.local` (mot de passe hors dépôt, dans l'environnement
 de la session qui l'a créé) : ce n'est pas une personne, ne l'ajoute à aucun
 projet.
+
+**Deux pièges payés le 28 sept. 2026.**
+- Une fonction `security definer` contourne la RLS : elle doit vérifier
+  elle-même le droit de l'appelant (`cockpit.peut_agir`, `est_admin`), et
+  PostgreSQL donne EXECUTE à PUBLIC par défaut. Toute nouvelle fonction :
+  `revoke … from public`, puis `grant` nommé (migration 0004). Et dans une
+  telle fonction, `current_user` est le propriétaire : on lit `auth.role()`.
+  `verifier-base.mjs` (sections 10 et 11) rougit si l'un des deux revient.
+- Le Chromium de l'environnement cloud Claude n'ouvre AUCUNE WebSocket (même
+  vers echo.websocket.org) : le temps réel ne se vérifie pas dans le
+  navigateur de test ici. `verifier-web.mjs` le détecte et le dit ;
+  `verifier-base.mjs` §12 prouve le direct depuis Node. Ne pas « corriger »
+  l'app pour ça.
 
 ## Déploiement
 
