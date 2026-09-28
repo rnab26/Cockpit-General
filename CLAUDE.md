@@ -76,8 +76,9 @@ projet.
 
 ## Déploiement
 
-Push sur `main` → `deploy.yml` construit l'app, y ajoute `embed/`, pousse la
-branche `gh-pages`. La fonction serveur ne se déploie PAS au push :
+Push sur `main` → `deploy.yml` construit l'app, y ajoute `embed/` et publie
+par le déploiement officiel GitHub Pages (Source = « GitHub Actions » dans
+Settings → Pages ; la branche `gh-pages` n'est plus utilisée). La fonction serveur ne se déploie PAS au push :
 `VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-embed` puis
 `node scripts/verifier-embed.mjs`. Une modification de `embed/cockpit-embed.js`
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
