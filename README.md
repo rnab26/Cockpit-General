@@ -11,7 +11,7 @@ Trieur de data, FacePro) et des décisions consignées dans
 
 | Pièce | Où | Pour qui |
 | --- | --- | --- |
-| **L'app centrale** | https://rnab26.github.io/cockpit/ (`app/`) | Raphaël, sur tous ses projets, depuis son téléphone |
+| **L'app centrale** | https://rnab26.github.io/Cockpit-General/ (`app/`) | Raphaël, sur tous ses projets, depuis son téléphone |
 | **Le module embarqué** | `embed/cockpit-embed.js`, une balise `<script>` à coller dans n'importe quel site | Les utilisateurs finaux d'un projet (ils voient les demandes de leur projet, en créent, répondent, certifient) |
 | **Les scripts des sessions** | `scripts/`, `hooks/`, installés par `scripts/brancher.sh` | Les sessions Claude Code, quel que soit le stack du projet |
 
@@ -38,7 +38,7 @@ pas le recasser.
 ## Brancher un projet
 
 ```bash
-git clone https://github.com/rnab26/cockpit
+git clone https://github.com/rnab26/Cockpit-General
 cockpit/scripts/brancher.sh --projet facepro --nom "FacePro" --depot rnab26/Facepro --dossier /chemin/vers/Facepro
 ```
 
@@ -64,7 +64,7 @@ dessine en temps réel : c'est le visuel de progression, sans le demander.
 ## Le module embarqué
 
 ```html
-<script src="https://rnab26.github.io/cockpit/embed/cockpit-embed.js"
+<script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js"
         data-cle="<cle_embed du projet>" data-utilisateur="Prénom"></script>
 ```
 

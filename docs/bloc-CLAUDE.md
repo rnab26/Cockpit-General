@@ -1,8 +1,8 @@
 
-## Cockpit (rnab26/cockpit)
+## Cockpit (rnab26/Cockpit-General)
 
 Ce projet est suivi dans le cockpit central (projet `{{SLUG}}`, app
-https://rnab26.github.io/cockpit/, base Supabase centrale, schéma `cockpit`).
+https://rnab26.github.io/Cockpit-General/, base Supabase centrale, schéma `cockpit`).
 Le hook `.claude/hooks/cockpit-session-start.sh` injecte l'état au démarrage :
 chantiers ouverts par section, questions en attente, réponses humaines,
 demandes des utilisateurs, progression des autres sessions.

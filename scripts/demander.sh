@@ -8,7 +8,7 @@
 #     --option "30 jours|Un mois glissant, puis on efface."
 #
 #   scripts/demander.sh --action --chantier "Déploiement" \
-#     --question "Crée le dépôt rnab26/cockpit sur GitHub" \
+#     --question "Crée le dépôt rnab26/Cockpit-General sur GitHub" \
 #     --pourquoi "La plateforme interdit à une session de créer un dépôt."
 #
 # Deux familles : --question (il DÉCIDE, options cliquables) ; --action (il FAIT

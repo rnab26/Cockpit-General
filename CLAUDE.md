@@ -1,4 +1,4 @@
-# CLAUDE.md — Cockpit (rnab26/cockpit)
+# CLAUDE.md — Cockpit (rnab26/Cockpit-General)
 
 Complète le CLAUDE.md global de Raphaël (`rnab26/dotfiles/.claude/CLAUDE.md`),
 ne le remplace pas. Français, concis, autonomie une fois la tâche confirmée.

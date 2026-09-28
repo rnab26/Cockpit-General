@@ -87,14 +87,14 @@ PY
 
 echo "4. CLAUDE.md"
 claude="$dossier/CLAUDE.md"; [ -f "$claude" ] || touch "$claude"
-if grep -q "## Cockpit (rnab26/cockpit)" "$claude"; then echo "   déjà présent"; else
+if grep -q "## Cockpit (rnab26/Cockpit-General)" "$claude"; then echo "   déjà présent"; else
   sed -e "s/{{SLUG}}/$slug/g" -e "s#{{SQL}}#scripts/$(basename "$sqlcible")#g" "$ICI/docs/bloc-CLAUDE.md" >> "$claude"; echo "   bloc ajouté"; fi
 
 cat <<FIN
 
 5. Module embarqué — à coller dans une page du site (la clé est propre à ce projet) :
-   <script src="https://rnab26.github.io/cockpit/embed/cockpit-embed.js" data-cle="$cle" data-utilisateur="Prénom"></script>
+   <script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js" data-cle="$cle" data-utilisateur="Prénom"></script>
 
 Terminé. Vérifie : cd $dossier && COCKPIT_PROJET=$slug bash .claude/hooks/cockpit-session-start.sh | jq -r .hookSpecificOutput.additionalContext | head -30
-Le projet apparaît maintenant dans l'app : https://rnab26.github.io/cockpit/
+Le projet apparaît maintenant dans l'app : https://rnab26.github.io/Cockpit-General/
 FIN

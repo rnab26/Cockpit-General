@@ -1,7 +1,7 @@
 # Publie l'app (app/dist) et le module embarqué (embed/) sur GitHub Pages à
 # chaque push sur main. La branche gh-pages est la source Pages : la pousser
 # active Pages toute seule, aucun réglage manuel. URL :
-# https://rnab26.github.io/cockpit/  et  …/cockpit/embed/cockpit-embed.js
+# https://rnab26.github.io/Cockpit-General/  et  …/cockpit/embed/cockpit-embed.js
 name: Déployer sur GitHub Pages
 on:
   push:
