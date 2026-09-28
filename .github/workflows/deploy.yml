@@ -1,6 +1,6 @@
-# Publie l'app (app/dist) et le module embarqué (embed/) sur GitHub Pages à
-# chaque push sur main, par le déploiement officiel « GitHub Actions ».
-# Réglage unique côté dépôt : Settings → Pages → Source = « GitHub Actions ».
+# Publie l'app (app/dist) et le module embarqué (embed/) sur la branche
+# gh-pages à chaque push sur main. Réglage côté dépôt, fait par Raphaël le
+# 28 sept. : Settings → Pages → « Deploy from a branch » → gh-pages / (root).
 # URL : https://rnab26.github.io/Cockpit-General/ (+ embed/cockpit-embed.js)
 name: Déployer sur GitHub Pages
 on:
@@ -8,9 +8,7 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -42,15 +40,9 @@ jobs:
           touch site/.nojekyll
           # Fallback SPA : GitHub Pages sert 404.html pour toute route inconnue.
           cp site/index.html site/404.html
-      - uses: actions/upload-pages-artifact@v3
+      - name: Publier (branche gh-pages)
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: ./site
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          force_orphan: true

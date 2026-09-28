@@ -84,5 +84,4 @@ Le cockpit se suit dans le cockpit (projet `cockpit`). Voir `CLAUDE.md`.
   puis `node scripts/verifier-embed.mjs`.
 - Migrations : `scripts/sql.sh < supabase/migrations/000N_….sql` (idempotentes).
 - Déploiement : push sur `main` → `.github/workflows/deploy.yml` publie
-  `app/dist` + `embed/` par le déploiement officiel GitHub Pages
-  (Settings → Pages → Source = « GitHub Actions »).
+  `app/dist` + `embed/` sur la branche `gh-pages`, servie par Pages.
