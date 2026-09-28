@@ -123,7 +123,7 @@ if grep -q "## Cockpit (rnab26/Cockpit-General)" "$claude"; then
   # Le reste du CLAUDE.md du projet n'est jamais touché.
   BLOC="$bloc" python3 - "$claude" <<'PY2'
 import os, re, sys
-p = sys.argv[1]; s = open(p).read(); bloc = os.environ["BLOC"].rstrip("\n") + "\n"
+p = sys.argv[1]; s = open(p).read(); bloc = os.environ["BLOC"].strip("\n") + "\n"
 i = s.index("## Cockpit (rnab26/Cockpit-General)")
 fin = "<!-- fin du bloc cockpit"
 j = s.find(fin, i)
