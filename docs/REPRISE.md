@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 29 sept. 2026, ~02 h 30 (heure d'Israël), fin de la
+Dernière mise à jour : 29 sept. 2026, ~02 h 35 (heure d'Israël), fin de la
 session `session_01B94XRweeYVuqGoJXTyjimP` (trop longue, Raphaël a demandé
 de reprendre dans une session fraîche).
 
@@ -48,7 +48,7 @@ de reprendre dans une session fraîche).
   `3a13ebb`, suivi des agents compris). Jarvis et le Trieur : pas encore
   (décision D-12 : après le pilote).
 
-## 2. Ce qui N'EST PAS en ligne — à reprendre EN PREMIER
+## 2. (FAIT le 29 sept. ~02 h 30 : la refonte est EN LIGNE, commits 8e82a78 → 18b3f5e, verifier-web 167/167) — historique de ce qui était à reprendre
 
 **La refonte de l'écran** (agent « Accueil en entonnoir de l'app cockpit »).
 Elle n'est PAS sur `main`. Dernière sauvegarde : branche
@@ -102,6 +102,12 @@ et `--en-ligne`. Chantier concerné : `3f94d1e2-5847-411e-ba61-9e60def0005b`
 (+ la refonte elle-même, chantier « Écran en entonnoir… » dans Application).
 
 ## 3. Ensuite (dans l'ordre)
+
+- Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
+  à jour (brancher.sh --maj) ; la liste des fichiers vient de modeles/fichiers.txt.
+  Un fichier ajouté au cockpit doit être ajouté à cette liste.
+- Question ouverte à Raphaël : installer le module embarqué sur le SITE FacePro
+  (visible par ses clients ?) — posée dans la conversation du 29 sept.
 
 - Faire tester par Raphaël, sur son téléphone, les chantiers « à vérifier »
   (13 au 29 sept.) : c'est lui qui certifie.
