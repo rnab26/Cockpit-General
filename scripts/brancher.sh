@@ -41,7 +41,7 @@ q() { printf '%s' "$1" | sed "s/'/''/g"; }
 SQL="$ICI/scripts/sql.sh"
 
 echo "1. Projet « $slug » en base"
-"$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', $( [ -n "$depot" ] && echo "'$(q "$depot")'" || echo null ), $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site)" >/dev/null
+"$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', $( [ -n "$depot" ] && echo "'$(q "$depot")'" || echo null ), $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
 cle=$("$SQL" "select cle_embed from projets where slug = '$(q "$slug")'" | jq -r '.rows[0].cle_embed')
 
 copier() { # source, destination
@@ -61,7 +61,10 @@ if [ -f "$sqlcible" ] && ! grep -q "Content-Profile: cockpit" "$sqlcible"; then
 fi
 copier "$ICI/scripts/sql.sh" "$sqlcible"
 for f in demander.sh progression.sh progression_tableau.py; do
-  tmp=$(mktemp); sed "s#SQL=\"\$RACINE/scripts/sql.sh\"#SQL=\"\$RACINE/scripts/$(basename "$sqlcible")\"#" "$ICI/scripts/$f" > "$tmp"
+  # progression.sh appelle son aide python par son chemin : renommée cockpit-…,
+  # elle doit l'être aussi dans l'appel (défaut trouvé sur FacePro le 28 sept. :
+  # « can't open file scripts/progression_tableau.py »).
+  tmp=$(mktemp); sed -e "s#SQL=\"\$RACINE/scripts/sql.sh\"#SQL=\"\$RACINE/scripts/$(basename "$sqlcible")\"#" -e 's#scripts/progression_tableau.py#scripts/cockpit-progression_tableau.py#' "$ICI/scripts/$f" > "$tmp"
   copier "$tmp" "$dossier/scripts/cockpit-$f"; rm -f "$tmp"
 done
 
@@ -79,7 +82,10 @@ d.setdefault("env", {})["COCKPIT_PROJET"] = slug
 hooks = d.setdefault("hooks", {})
 ss = hooks.setdefault("SessionStart", [])
 cmd = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-session-start.sh"
-if not any(cmd in json.dumps(h) for h in ss):
+# Comparer la commande elle-même : json.dumps échappe les guillemets de
+# "$CLAUDE_PROJECT_DIR", le `in` ne matchait jamais et chaque relance ajoutait
+# un second hook identique (constaté sur FacePro le 28 sept.).
+if not any(x.get("command") == cmd for h in ss for x in h.get("hooks", [])):
     ss.append({"hooks": [{"type": "command", "command": cmd}]})
 json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
 print("   ok : .claude/settings.json (env COCKPIT_PROJET + hook SessionStart)")

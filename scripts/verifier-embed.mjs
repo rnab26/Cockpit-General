@@ -200,7 +200,12 @@ async function verifierNavigateur(cle) {
   mkdirSync(SCRATCH, { recursive: true })
   let navigateur, chantierCree = null
   try {
-    navigateur = await pw.chromium.launch()
+    // Le Chromium COMPLET, pas le « headless shell » par défaut : seul le
+    // premier lit la base NSS (~/.pki/nssdb) où vit l'autorité du proxy de
+    // l'environnement. Sans ça : ERR_CERT_AUTHORITY_INVALID sur la fonction.
+    // Si la base est vide (constaté le 28 sept. 2026) :
+    //   certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n ccr-agent-proxy -i /root/.ccr/agent-proxy-ca.crt
+    navigateur = await pw.chromium.launch({ channel: 'chromium' })
     const page = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
     const erreursJs = []
     page.on('pageerror', (e) => erreursJs.push(e.message))
