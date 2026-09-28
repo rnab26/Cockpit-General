@@ -75,7 +75,11 @@ print(json.dumps(out, ensure_ascii=False).replace("\x27", "\x27\x27"))
 ')'::jsonb"
 fi
 
-res=$("$SQL" "insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('$pid', $cid, '$(q "$auteur")', 'session', '$kind', '$(q "$question")', '$(q "$pourquoi")', $opts_json) returning id")
-id=$(printf '%s' "$res" | jq -r '.rows[0].id // empty')
-[ -n "$id" ] || { echo "Insertion sans id : $res" >&2; exit 1; }
+# L'id est généré ICI : exec_sql enveloppe la requête dans un select, et un
+# `insert … returning` n'y renvoie rien (exécuté, mais sans ligne). On relit
+# ensuite par l'id pour prouver que la question est bien en base.
+id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+"$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('$id', '$pid', $cid, '$(q "$auteur")', 'session', '$kind', '$(q "$question")', '$(q "$pourquoi")', $opts_json)" >/dev/null
+relu=$("$SQL" "select id from messages where id = '$id'" | jq -r '.rows[0].id // empty')
+[ "$relu" = "$id" ] || { echo "La question n'a pas été enregistrée (relecture vide pour $id)." >&2; exit 1; }
 echo "Question posée (message $id). Elle s'affiche dans le cockpit ; la réponse reviendra au démarrage des sessions suivantes."
