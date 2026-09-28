@@ -11,7 +11,9 @@ demandes des utilisateurs, progression des autres sessions.
   (false = une autre session l'a). Libérer : `liberer_chantier(id, branche)`.
 - **Progression en direct, à chaque étape et en terminant** :
   `scripts/cockpit-progression.sh --chantier "<titre ou id>" --etape "…" --pct 40 --eta 25m`,
-  puis `--termine "…"` (le chantier passe « à vérifier ») ou `--echec "…"`.
+  puis `--termine "…" --verifier "1. … 2. … 3. Tu dois voir …"` (le chantier
+  passe « à vérifier » ; `--verifier` est obligatoire : où aller, quoi faire,
+  ce que Raphaël doit voir, sans jargon) ou `--echec "…"`.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.

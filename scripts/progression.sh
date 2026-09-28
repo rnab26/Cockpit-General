@@ -4,7 +4,8 @@
 #
 #   scripts/progression.sh --chantier "Écran central" --etape "Bacs et cartes" --pct 40 --eta 25m
 #   scripts/progression.sh --chantier 6f2c… --etape "Build vert, parcours navigateur" --pct 90
-#   scripts/progression.sh --chantier "Écran central" --termine "Livré, à vérifier"
+#   scripts/progression.sh --chantier "Écran central" --termine "Livré" \
+#       --verifier "1. Ouvre le cockpit, projet X. 2. Touche « … ». 3. Tu dois voir …"
 #   scripts/progression.sh --chantier "Écran central" --echec "Le build casse sur X"
 #   scripts/progression.sh                       # affiche seulement le tableau du projet
 #
@@ -17,6 +18,12 @@
 # session, à chaque appel. Une session l'appelle à chaque étape notable —
 # pas à chaque message — et TOUJOURS en terminant (--termine ou --echec) :
 # une barre figée à 60 % depuis deux heures est pire que pas de barre.
+#
+# --verifier est OBLIGATOIRE avec --termine (Raphaël, 28 sept. 2026 : « le nom
+# du chantier, des fois on n'est pas sûr à 100 % de ce qu'on doit vérifier »).
+# Écris-le pour lui, sans jargon, en étapes numérotées : où aller (lien ou
+# écran), quoi faire (le geste exact), ce qu'il doit voir si ça marche. Il
+# s'affiche en tête de la carte orange « à vérifier », dans l'app et le module.
 #
 # --eta : durée restante estimée (« 25m », « 1h30 », « 90s »), seulement si tu
 # la connais vraiment ; sinon omets-la, l'app affiche « durée inconnue ».
@@ -32,7 +39,7 @@ RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
 projet="${COCKPIT_PROJET:-}"
-chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""
+chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""
 session="${COCKPIT_SESSION:-$(git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo session)}"
 
 while [ $# -gt 0 ]; do
@@ -43,6 +50,7 @@ while [ $# -gt 0 ]; do
     --pct)      pct="${2:-}"; shift 2 ;;
     --eta)      eta="${2:-}"; shift 2 ;;
     --detail)   detail="${2:-}"; shift 2 ;;
+    --verifier) verifier="${2:-}"; shift 2 ;;
     --session)  session="${2:-}"; shift 2 ;;
     --attente)  statut="attente"; etape="${2:-$etape}"; shift 2 ;;
     --termine)  statut="termine"; etape="${2:-Terminé}"; pct=100; shift 2 ;;
@@ -51,6 +59,11 @@ while [ $# -gt 0 ]; do
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
+
+if [ "$statut" = "termine" ] && [ -n "$chantier" ] && [ -z "${verifier//[[:space:]]/}" ]; then
+  echo "--verifier manque : dis à Raphaël comment vérifier (où aller, quoi faire, ce qu'il doit voir), en étapes numérotées." >&2
+  exit 2
+fi
 
 if [ -z "$projet" ]; then
   echo "Projet inconnu : pose COCKPIT_PROJET (brancher.sh le fait) ou passe --projet <slug>." >&2
@@ -91,7 +104,7 @@ if [ -n "$chantier" ]; then
   "$SQL" "select pourcentage, statut from signaler_activite('$(q "$projet")', '$id'::uuid, '$(q "$session")', '$(q "$etape")', $pct_sql, $eta_secondes, '$statut', $detail_sql)" >/dev/null
   # Une session qui termine ou échoue rend aussi le chantier lisible dans la colonne etat.
   if [ "$statut" = "termine" ]; then
-    "$SQL" "update chantiers set etat = case when etat in ('en_cours','libre','a_trier') then 'a_verifier' else etat end, pris_par = null, pris_jusqu_a = null where id = '$id'" >/dev/null
+    "$SQL" "update chantiers set etat = case when etat in ('en_cours','libre','a_trier') then 'a_verifier' else etat end, comment_verifier = '$(q "$verifier")', pris_par = null, pris_jusqu_a = null where id = '$id'" >/dev/null
   fi
 fi
 
