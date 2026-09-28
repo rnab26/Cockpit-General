@@ -34,6 +34,16 @@ de reprendre dans une session fraîche).
   bout en bout sur un projet jetable. Pas encore observé sur une VRAIE limite :
   à vérifier au premier arrêt réel (la session doit passer « en pause », puis
   repartir seule) — `select id, pause_raison, pause_at, vu_at from sessions`.
+- **Mode autonome PERMANENT allumé** (29 sept. ~02 h 10, migration 0011) sur
+  `cockpit` et `facepro` (`autonome_toujours`, max 20 par session). Réveils
+  horaires (Routines Claude) :
+  - FacePro : `trig_01XoGgs12Vs5QFwKJD5vqXpt` (minute 7) → session autonome
+    `session_014wqppUDStT4Fcc7CH4SNj6` ;
+  - cockpit : `trig_01VseAzWomoQETWZcXtquBpB` (minute 8) → session autonome
+    `session_016AmT87i4pCEQKCLesesihr`.
+  Vérifié au lancement : la session autonome FacePro a pris « Tête entière —
+  bouche hybride ». Pour tout arrêter : `regler_autonome('<slug>', null)` puis
+  supprimer les deux Routines (delete_trigger).
 - Projets branchés : `cockpit` (lui-même) et `facepro` (FacePro `main`
   `3a13ebb`, suivi des agents compris). Jarvis et le Trieur : pas encore
   (décision D-12 : après le pilote).
