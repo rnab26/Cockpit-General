@@ -10,7 +10,8 @@
  *   Options : data-cible="#un-conteneur" (sinon une <div> est créée juste
  *   après la balise), data-fonction="<url de la fonction>", data-intervalle
  *   ="15" (secondes entre deux rafraîchissements), data-titre="Demandes et
- *   corrections".
+ *   corrections", data-silence="15" (minutes sans nouvelle d'une session
+ *   avant de ne plus la montrer « en cours » — même défaut que l'app).
  *
  * POURQUOI PAS DE FRAMEWORK : ce script doit vivre dans FacePro (Jinja + JS
  * vanilla), dans le Trieur (React) et dans n'importe quelle page HTML à
@@ -45,6 +46,8 @@
     fonction: balise.getAttribute('data-fonction') || 'https://bexiyvmdbxcwxasgslxp.supabase.co/functions/v1/cockpit-embed',
     intervalle: Math.max(3, parseInt(balise.getAttribute('data-intervalle') || '15', 10) || 15),
     titre: balise.getAttribute('data-titre') || 'Demandes et corrections',
+    // null = défaut de l'app (SILENCE_DEFAUT_MIN, bloc <presence>).
+    silenceMin: parseInt(balise.getAttribute('data-silence') || '', 10) > 0 ? parseInt(balise.getAttribute('data-silence'), 10) : null,
   }
 
   let hote = cfg.cible ? document.querySelector(cfg.cible) : null
@@ -95,6 +98,12 @@
 .bandeau.gris{background:var(--muted-bg);color:var(--muted);font-size:12px}
 .barre{position:relative;height:8px;border-radius:99px;background:var(--track);overflow:hidden;margin-top:6px}
 .barre>span{position:absolute;inset:0 auto 0 0;background:var(--primary);border-radius:99px;transition:width .4s}
+.barre.vive>span{background-image:linear-gradient(90deg,transparent 0,rgba(255,255,255,.35) 50%,transparent 100%);
+ background-size:200% 100%;animation:ck-vie 1.6s linear infinite}
+@keyframes ck-vie{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.barre.vive>span{animation:none}}
+.barre.grise{height:4px}.barre.grise>span{background:var(--muted);opacity:.55}
+.vif{color:var(--primary);font-weight:600}
 .barre-legende{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-top:3px}
 .bac-titre{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;padding:6px 0;
  font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;text-align:left}
@@ -237,6 +246,53 @@
   }
   // </etapes-verifier>
 
+  // <presence> — COPIE de app/src/lib/presence.ts (preuveDeVie, et la phrase
+  // « il y a 2 min » de app/src/lib/dates.ts#dateRelative) : le module n'a
+  // pas d'étape de build. scripts/verifier-embed.mjs exécute ce bloc à côté
+  // de la version de l'app, sur les mêmes cas, et refuse toute divergence.
+  //
+  // La règle (29 sept. 2026, captures de Raphaël : des barres orange et des
+  // « En cours » alors qu'aucune session ne travaillait) : « quelqu'un y
+  // travaille » exige une PREUVE DE VIE, une activité au statut `en_cours`
+  // mise à jour depuis moins de `silenceMs`. L'état du chantier ne suffit
+  // jamais : il dit où en est la demande, pas qui est dessus.
+  const SILENCE_DEFAUT_MIN = 15
+  function dateRelative(iso, now) {
+    if (!iso) return ''
+    now = now || new Date()
+    const t = new Date(iso).getTime()
+    if (Number.isNaN(t)) return ''
+    const s = Math.round((now.getTime() - t) / 1000)
+    if (s < 45) return 'à l’instant'
+    if (s < 90) return 'il y a 1 min'
+    const m = Math.round(s / 60)
+    if (m < 60) return 'il y a ' + m + ' min'
+    const hh = Math.round(m / 60)
+    if (hh < 24) return 'il y a ' + hh + ' h'
+    const j = Math.round(hh / 24)
+    if (j === 1) return 'hier'
+    if (j < 30) return 'il y a ' + j + ' j'
+    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  }
+  function preuveDeVie(a, now, silenceMs) {
+    if (!a || a.statut !== 'en_cours') return false
+    const t = a.updated_at ? new Date(a.updated_at).getTime() : NaN
+    return !Number.isNaN(t) && now.getTime() - t < silenceMs
+  }
+  // </presence>
+
+  const silenceMs = () => (cfg.silenceMin || SILENCE_DEFAUT_MIN) * 60000
+  const vivante = (a, now) => preuveDeVie(a, now, silenceMs())
+  const parRecence = (a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')
+  // L'activité à montrer sur une carte : la plus récente des VIVANTES s'il y
+  // en a une (plusieurs sessions possibles), sinon la plus récente tout court
+  // — affichée alors en gris, comme « dernier avancement connu ».
+  function activiteAffichee(c, now) {
+    const liste = (c.activite || []).slice().sort(parRecence)
+    const vive = liste.find((a) => vivante(a, now))
+    return { a: vive || liste[0] || null, vie: !!vive }
+  }
+
   // « 👉 Comment vérifier » : les étapes écrites par la session qui livre.
   function commentVerifier(c) {
     const texte = (c.comment_verifier || '').trim()
@@ -256,6 +312,10 @@
   // Le statut est en LECTURE SEULE pour l'utilisateur final : c'est la
   // session qui le fait avancer (règle du Trieur, « les statuts sont à
   // statuer par toi, pas par moi »).
+  // « 🔧 En cours de codage » n'est dit QUE si une session donne signe de vie
+  // (badgeEtat, plus bas) : un état `en_cours` sans preuve de vie se lit
+  // « En file d'attente », le même libellé que `libre` — la demande attend
+  // qu'une session la (re)prenne, quoi qu'en dise la colonne.
   const BADGES = {
     a_trier: ['⏳ Pas encore examinée', 'muted'],
     a_cadrer: ['🗣️ À préciser', 'primary'],
@@ -266,18 +326,28 @@
     bloque: ['⛔ Bloquée', 'danger'],
     reporte: ['💤 Reportée', 'muted'],
   }
+  // Les états où une session peut être en train de coder : avec une preuve
+  // de vie, ils se lisent « en cours » (même ordre de décision que
+  // presenceChantier dans l'app : à vérifier, bloqué, etc. gardent le leur).
+  const ETATS_DE_TRAVAIL = ['a_trier', 'libre', 'en_cours']
+  function badgeEtat(c, now) {
+    if (ETATS_DE_TRAVAIL.includes(c.etat) && activiteAffichee(c, now || new Date()).vie) return BADGES.en_cours
+    if (c.etat === 'en_cours') return BADGES.libre
+    return BADGES[c.etat] || BADGES.a_trier
+  }
   const enAttente = (m) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
   const questionsEnAttente = (c) => (c.messages || []).filter(enAttente)
   const modifiable = (c) => c.origine === 'utilisateur' && (c.etat === 'a_trier' || c.etat === 'a_cadrer')
   function priorite(c) {
     if (questionsEnAttente(c).length) return 0
     if (c.etat === 'a_verifier') return 1
-    if (c.etat === 'en_cours') return 2
+    if (badgeEtat(c) === BADGES.en_cours) return 2
     return 3
   }
   const normaliser = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ')
 
   // -------------------------------------------------------------- état
+  let instant = null // l'heure du rendu en cours : une seule pour tout l'écran
   const etat = { donnees: null, chargement: true, erreur: null, erreurFond: null, majA: null, empreinte: '' }
   const ui = {
     bacEnCours: true, bacEnCoursChoisi: false, bacActif: false,
@@ -353,8 +423,17 @@
   }
   // Un rafraîchissement de fond ne redessine que si quelque chose a changé,
   // et jamais pendant qu'on tape (il attend que le champ soit quitté).
+  // Ce qui change avec le temps SANS nouvelle donnée : qui est encore vivant,
+  // et le « il y a 2 min ». Une session qui se tait doit perdre son « en
+  // cours » même si le serveur renvoie exactement la même chose.
+  function signaturePresence() {
+    const d = etat.donnees
+    if (!d) return ''
+    const now = new Date()
+    return (d.activite || []).map((a) => a.id + ':' + vivante(a, now) + ':' + dateRelative(a.updated_at, now)).join(',')
+  }
   function rendreSiPossible(fond) {
-    const empreinte = JSON.stringify(etat.donnees) + '|' + (etat.erreur || '') + '|' + (etat.erreurFond || '')
+    const empreinte = JSON.stringify(etat.donnees) + '|' + signaturePresence() + '|' + (etat.erreur || '') + '|' + (etat.erreurFond || '')
     if (fond && empreinte === etat.empreinte) return
     if (fond && champTexteActif()) { ui.rendreApres = true; return }
     etat.empreinte = empreinte
@@ -414,8 +493,12 @@
     const parId = {}
     chantiers.forEach((c) => { parId[c.id] = c })
 
-    // Bandeau « là, maintenant » : l'activité la plus récente encore en cours.
-    const activite = (d.activite || []).slice().sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))[0]
+    // Bandeau « là, maintenant » : seulement avec une PREUVE DE VIE (bloc
+    // <presence>). Sans elle, rien : un bandeau « en cours » sur une session
+    // arrêtée depuis des heures est exactement ce qui trompait Raphaël.
+    const now = new Date()
+    instant = now
+    const activite = (d.activite || []).filter((a) => vivante(a, now)).sort(parRecence)[0]
     if (activite) {
       const c = activite.chantier_id ? parId[activite.chantier_id] : null
       noeuds.push(h('div', { class: 'bandeau now' },
@@ -423,8 +506,8 @@
         c ? h('span', { style: 'font-weight:600' }, c.titre, ' — ') : null,
         activite.etape,
         activite.detail ? h('span', { class: 'aide' }, ' · ', activite.detail) : null,
-        h('span', { class: 'aide' }, ' (', quand(activite.updated_at), ')'),
-        barre(activite)))
+        h('span', { class: 'aide' }, ' (en cours, ', dateRelative(activite.updated_at, now), ')'),
+        barre(activite, true)))
     }
 
     const nbQuestions = chantiers.reduce((n, c) => n + questionsEnAttente(c).length, 0)
@@ -467,12 +550,19 @@
     return noeuds
   }
 
-  function barre(a) {
+  // Barre vive (couleur, animation, temps restant) seulement quand une
+  // session avance vraiment ; sinon une barre grise fine, sans « reste ~x »,
+  // qui ne serait plus qu'une promesse périmée.
+  function barre(a, vive) {
     if (!a) return null
     const p = Math.max(0, Math.min(100, a.pourcentage || 0))
+    if (!vive) {
+      return h('div', { class: 'barre grise', role: 'progressbar', 'aria-valuenow': p, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Dernier avancement connu' },
+        h('span', { style: 'width:' + p + '%' }))
+    }
     const eta = duree(a.eta_secondes)
     return h('div', null,
-      h('div', { class: 'barre', role: 'progressbar', 'aria-valuenow': p, 'aria-valuemin': 0, 'aria-valuemax': 100 },
+      h('div', { class: 'barre vive', role: 'progressbar', 'aria-valuenow': p, 'aria-valuemin': 0, 'aria-valuemax': 100 },
         h('span', { style: 'width:' + p + '%' })),
       h('div', { class: 'barre-legende' }, h('span', null, p + ' %'), h('span', null, eta ? 'reste ' + eta : '')))
   }
@@ -497,7 +587,7 @@
         oninput: (e) => { n.titre = e.target.value; rendre() } }),
       proches.length ? h('div', { class: 'avert' },
         h('p', { style: 'font-weight:600' }, '⚠️ Une demande au nom proche existe déjà. Pour éviter un doublon, ajoute plutôt un message sur sa carte :'),
-        h('ul', null, proches.map((c) => h('li', null, '« ' + c.titre + ' » (' + (BADGES[c.etat] || BADGES.a_trier)[0] + ')')))) : null,
+        h('ul', null, proches.map((c) => h('li', null, '« ' + c.titre + ' » (' + badgeEtat(c)[0] + ')')))) : null,
       h('textarea', { class: 'zone', 'data-focus': 'nouveau-demande', rows: 3, placeholder: 'Ce que tu veux changer, en détail… (un exemple concret aide beaucoup)', disabled: envoi,
         oninput: (e) => { n.demande = e.target.value } }, n.demande),
       h('div', { class: 'ligne' },
@@ -530,9 +620,11 @@
     if (aVerifier) blocs.push('validation')
     if (u.msg) blocs.push('message')
     if (u.edition) blocs.push('edition')
+    const now = instant || new Date()
+    const b = badgeEtat(c, now)
     const badge = questions.length
       ? h('span', { class: 'badge danger' }, '🔴 Réponse attendue')
-      : h('span', { class: 'badge ' + (BADGES[c.etat] || BADGES.a_trier)[1] }, (BADGES[c.etat] || BADGES.a_trier)[0])
+      : h('span', { class: 'badge ' + b[1] }, b[0])
 
     const li = h('li', { class: 'carte ' + classe, 'data-chantier': c.id })
     if (u.edition) {
@@ -543,8 +635,15 @@
         h('div', { class: 'droite' }, badge,
           modifiable(c) ? h('button', { class: 'discret', title: 'Modifier le titre / la demande', onclick: () => { u.edition = true; u.titre = c.titre; u.demande = c.demande || ''; rendre(); focus('titre-' + c.id) } }, '✏️') : null)))
     }
-    const a = (c.activite || [])[0]
-    if (a) ajouter(li, [h('p', { class: 'aide', style: 'margin-top:6px' }, '🔧 ', a.etape), barre(a)])
+    const { a, vie } = activiteAffichee(c, now)
+    if (a && vie) {
+      ajouter(li, [h('p', { class: 'aide', style: 'margin-top:6px', 'data-presence': 'vivante' },
+        '🔧 ', a.etape, h('span', { class: 'vif' }, ' · en cours, ', dateRelative(a.updated_at, now))), barre(a, true)])
+    } else if (a) {
+      const depuis = dateRelative(a.updated_at, now)
+      ajouter(li, [h('p', { class: 'aide', style: 'margin-top:6px', 'data-presence': 'silencieuse' },
+        'dernier avancement connu : ' + Math.max(0, Math.min(100, a.pourcentage || 0)) + ' %' + (depuis ? ' (' + depuis + ')' : '')), barre(a, false)])
+    }
     if (!blocs.includes((ui.retour[c.id] || {}).bloc)) ajouter(li, retourPour(c.id, (ui.retour[c.id] || {}).bloc))
     ajouter(li, historique(c, u))
     questions.forEach((q) => ajouter(li, blocQuestion(c, u, q, envoi)))
@@ -707,5 +806,7 @@
   }
   charger(true)
   setInterval(() => { if (!document.hidden) charger(false) }, cfg.intervalle * 1000)
+  // Recalcul de la présence toutes les 30 s, même sans nouvelle donnée.
+  setInterval(() => { if (!document.hidden && etat.donnees) rendreSiPossible(true) }, 30000)
   document.addEventListener('visibilitychange', () => { if (!document.hidden) charger(false) })
 })()

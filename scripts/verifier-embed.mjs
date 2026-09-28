@@ -19,13 +19,22 @@
  *     tant que la demande n'est pas « à vérifier » (erreur lisible) →
  *     passée à `a_verifier` par SQL → certifier OK → corriger OK → message
  *     OK → modifier REFUSÉ (une session l'a prise) ;
+ *  0. la règle de présence (bloc `<presence>` du module) dit « vivant ou
+ *     pas » exactement comme app/src/lib/presence.ts, exécutés côte à côte
+ *     sur les mêmes cas (import direct du .ts : Node ≥ 22.18 enlève les
+ *     types tout seul) ;
  *  3b. « Comment vérifier » (0005) : `etat` renvoie `comment_verifier` ;
  *  4. dans Chromium en 390 × 844 : les cartes s'affichent, le style hostile
  *     de la page hôte ne traverse pas, une nouvelle demande créée à l'écran
  *     apparaît, aucun défilement horizontal, l'encadré « 👉 Comment vérifier »
  *     en tête du bloc orange (étapes sur des lignes distinctes, lien
  *     cliquable) ou, s'il manque, la phrase qui dit de le demander ;
- *     captures dans SCRATCH.
+ *     la présence (29 sept. 2026) : activité fraîche → bandeau, barre vive,
+ *     « en cours, il y a … », badge « En cours de codage » ; la même vieille
+ *     de 2 h → pas de bandeau pour elle, barre grise, « dernier avancement
+ *     connu », badge « En file d'attente » ; et une session qui se tait perd
+ *     son « en cours » sans nouvelle donnée (horloge avancée de 16 min, zéro
+ *     appel serveur) ; captures dans SCRATCH (embed-presence.png).
  *
  * Tout ce qu'il crée est supprimé à la fin (chantier de test, sa trace dans
  * `supprimes`, ses lignes `historique` / `ce_qui_marche`), même en cas
@@ -36,7 +45,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -83,6 +92,62 @@ function portLibre() {
     s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)) })
     s.on('error', rej)
   })
+}
+
+// ------------------------------------------------------ présence (parité)
+// Même principe que le contrôle <etapes-verifier> de
+// app/scripts/verifier-comment-verifier.ts : on exécute la COPIE du module et
+// la version de l'app sur les mêmes cas, et on refuse la moindre divergence.
+async function verifierPresenceParite() {
+  console.log('\n0. Règle de présence : module embarqué = app')
+  const src = readFileSync(path.join(RACINE, 'embed/cockpit-embed.js'), 'utf8')
+  const bloc = src.match(/\/\/ <presence>[^\n]*\n([\s\S]*?)\/\/ <\/presence>/)
+  verifie(!!bloc, 'le module porte le bloc <presence>')
+  if (!bloc) return
+  const copie = new Function(bloc[1] + '\nreturn { preuveDeVie, dateRelative, SILENCE_DEFAUT_MIN }')()
+  let app
+  try {
+    const presence = await import(pathToFileURL(path.join(RACINE, 'app/src/lib/presence.ts')).href)
+    const dates = await import(pathToFileURL(path.join(RACINE, 'app/src/lib/dates.ts')).href)
+    app = { preuveDeVie: presence.preuveDeVie, SILENCE_DEFAUT_MIN: presence.SILENCE_DEFAUT_MIN, dateRelative: dates.dateRelative }
+  } catch (e) {
+    ko('import de app/src/lib/presence.ts', e.message + ' (Node ≥ 22.18, ou lancer avec --experimental-strip-types)')
+    return
+  }
+  const now = new Date('2026-09-29T01:04:00Z')
+  const il = (min) => new Date(now.getTime() - min * 60000).toISOString()
+  const act = (statut, updated_at) => ({ statut, updated_at, session: 'claude/x', pourcentage: 85, etape: 'Bacs' })
+  const cas = [
+    ['en_cours il y a 2 min', act('en_cours', il(2))],
+    ['en_cours il y a 14 min 59 s', act('en_cours', il(14 + 59 / 60))],
+    ['en_cours il y a 15 min pile', act('en_cours', il(15))],
+    ['en_cours il y a 2 h', act('en_cours', il(120))],
+    ['attente il y a 1 min', act('attente', il(1))],
+    ['attente il y a 5 h (la capture)', act('attente', il(300))],
+    ['termine il y a 1 min', act('termine', il(1))],
+    ['echec il y a 1 min', act('echec', il(1))],
+    ['en_cours sans date', act('en_cours', null)],
+    ['en_cours, date illisible', act('en_cours', 'pas une date')],
+    ['en_cours dans le futur (horloge décalée)', act('en_cours', il(-5))],
+    ['activité absente', null],
+  ]
+  const silences = [app.SILENCE_DEFAUT_MIN * 60000, 60 * 60000, 60000]
+  const divergences = [], reponses = new Set()
+  for (const [nom, a] of cas) for (const sm of silences) {
+    const r = app.preuveDeVie(a, now, sm)
+    reponses.add(r)
+    if (copie.preuveDeVie(a, now, sm) !== r) divergences.push(nom + ' / silence ' + sm / 60000 + ' min : app=' + r)
+  }
+  verifie(copie.SILENCE_DEFAUT_MIN === app.SILENCE_DEFAUT_MIN, 'même délai de silence par défaut', copie.SILENCE_DEFAUT_MIN + ' / ' + app.SILENCE_DEFAUT_MIN + ' min')
+  verifie(reponses.has(true) && reponses.has(false), 'les cas couvrent « vivant » ET « pas vivant » (le contrôle a un sens)')
+  verifie(divergences.length === 0, '« vivant ou pas » : le module et l’app disent la même chose (' + cas.length * silences.length + ' cas)', divergences.join(' | ') || 'aucune divergence')
+  const attendu = { 'en_cours il y a 2 min': true, 'en_cours il y a 2 h': false, 'attente il y a 1 min': false }
+  const faux = Object.entries(attendu).filter(([nom, v]) => copie.preuveDeVie(cas.find((c) => c[0] === nom)[1], now, silences[0]) !== v)
+  verifie(faux.length === 0, 'fraîche = vivante ; vieille de 2 h ou « attente » = pas vivante', faux.map((f) => f[0]).join(', ') || '')
+  const ecarts = [0, 30, 60, 100, 5 * 60, 59 * 60, 90 * 60, 5 * 3600, 23 * 3600, 30 * 3600, 3 * 86400, 40 * 86400]
+  const diffDates = ecarts.map((s) => new Date(now.getTime() - s * 1000).toISOString())
+    .filter((iso) => copie.dateRelative(iso, now) !== app.dateRelative(iso, now))
+  verifie(diffDates.length === 0 && copie.dateRelative(null, now) === app.dateRelative(null, now), '« il y a 2 min » : même phrase que l’app (' + ecarts.length + ' écarts)', diffDates.join(', ') || '')
 }
 
 // ------------------------------------------------------------------ API
@@ -199,15 +264,19 @@ function nettoyer(id) {
 // vrai chantier du projet pilote de cette façon (restauré à la main).
 const CV_NAV = "1. Ouvre la liste des clients https://exemple.fr/clients. 2. Touche l'en-tête « Date ». 3. Le client contacté le plus récemment est en haut."
 function creerJeuNavigateur() {
-  const idQ = randomUUID(), idV = randomUUID(), idV2 = randomUUID(), qid = randomUUID()
+  const idQ = randomUUID(), idV = randomUUID(), idV2 = randomUUID(), qid = randomUUID(), idP = randomUUID()
   const pj = "(select id from projets where slug = 'cockpit')"
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idQ + "', " + pj + ", '" + lit(MARQUE) + " export PDF', 'Quand je clique sur Exporter, rien ne se passe.', 'en_cours', 'utilisateur')")
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine, resume_simple) values ('" + idV + "', " + pj + ", '" + lit(MARQUE) + " tri des clients', 'Trier les clients par date.', 'a_verifier', 'utilisateur', 'La liste se trie par date de dernier contact.')")
   sql("update chantiers set comment_verifier = '" + lit(CV_NAV) + "' where id = '" + idV + "'")
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idV2 + "', " + pj + ", '" + lit(MARQUE) + " export CSV', 'Exporter en CSV.', 'a_verifier', 'utilisateur')")
   sql("insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('" + qid + "', " + pj + ", '" + idQ + "', 'session-test', 'session', 'question', 'Une page par facture, ou tout à la suite ?', 'Le rendu diffère.', '[{\"libelle\":\"Une page par facture\",\"aide\":\"Plus lisible.\",\"recommande\":true},{\"libelle\":\"Tout à la suite\"},{\"libelle\":\"Autre, à préciser\"}]'::jsonb)")
+  // La carte « présence », sans question : signalée AVANT celle de idQ pour
+  // que le bandeau « Là, maintenant » reste sur idQ (la plus récente).
+  sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idP + "', " + pj + ", '" + lit(MARQUE) + " présence', 'Trier par date.', 'en_cours', 'utilisateur')")
+  sql("select signaler_activite('cockpit', '" + idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
   sql("select signaler_activite('cockpit', '" + idQ + "'::uuid, 'session-test', 'Test du correctif sur 30 factures', 62, 540, 'en_cours', 'lot 3/5')")
-  return { idQ, idV, idV2, qid }
+  return { idQ, idV, idV2, qid, idP }
 }
 
 async function verifierNavigateur(cle) {
@@ -378,6 +447,70 @@ async function verifierNavigateur(cle) {
     verifie(/file d’attente|file d'attente/.test(badgeV), 'après correction le badge dit « En file d’attente »', badgeV)
     await page.screenshot({ path: path.join(SCRATCH, 'embed-6-apres-actions.png'), fullPage: true })
 
+    // --- présence (29 sept. 2026) : « en cours » exige une preuve de vie.
+    const lirePresence = (id) => page.evaluate((id) => {
+      const r = document.querySelector('.cockpit-embed').shadowRoot
+      const c = r.querySelector('[data-chantier="' + id + '"]')
+      const p = c && c.querySelector('[data-presence]')
+      const b = r.querySelector('.bandeau.now')
+      return {
+        existe: !!c, presence: p ? p.getAttribute('data-presence') : null, texte: p ? p.textContent : '',
+        vive: !!(c && c.querySelector('.barre.vive')), grise: !!(c && c.querySelector('.barre.grise')),
+        legende: c && c.querySelector('.barre-legende') ? c.querySelector('.barre-legende').textContent : '',
+        badge: c ? c.querySelector('.badge').textContent : '', bandeau: b ? b.textContent : null,
+      }
+    }, id)
+    const p1 = await lirePresence(jeu.idP)
+    verifie(p1.presence === 'vivante' && /en cours, (à l’instant|il y a \d+ min)/.test(p1.texte) && p1.vive && !p1.grise,
+      'présence : activité fraîche → « en cours, il y a … » et barre vive', JSON.stringify({ texte: p1.texte, vive: p1.vive, grise: p1.grise }))
+    verifie(/En cours de codage/.test(p1.badge), 'présence : activité fraîche → badge « En cours de codage »', p1.badge)
+    verifie(p1.bandeau !== null && /Là, maintenant/.test(p1.bandeau) && /en cours, /.test(p1.bandeau), 'présence : activité fraîche → bandeau « Là, maintenant … (en cours, …) »', (p1.bandeau || 'absent').slice(0, 120))
+
+    // La MÊME activité, vieille de 2 h (la session s'est tue).
+    sql("update activite set updated_at = now() - interval '2 hours' where chantier_id = '" + jeu.idP + "'")
+    await page.goto('http://127.0.0.1:' + port + '/demo.html')
+    await page.waitForFunction((id) => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r && r.querySelector('[data-chantier="' + id + '"]') }, jeu.idP, { timeout: 20000 })
+    const p2 = await lirePresence(jeu.idP)
+    verifie(p2.presence === 'silencieuse' && /^dernier avancement connu : 40 % \(il y a 2 h\)$/.test(p2.texte) && p2.grise && !p2.vive && !/reste/.test(p2.legende),
+      'présence : vieille de 2 h → ligne grise « dernier avancement connu : 40 % (il y a 2 h) », barre grise, sans « reste »', JSON.stringify({ texte: p2.texte, vive: p2.vive, grise: p2.grise }))
+    verifie(/En file d['’]attente/.test(p2.badge) && !/En cours de codage/.test(p2.badge), 'présence : vieille de 2 h → badge « En file d’attente »', p2.badge)
+    verifie(p2.bandeau === null || !/Test présence/.test(p2.bandeau), 'présence : vieille de 2 h → le bandeau ne la montre plus', (p2.bandeau || 'absent').slice(0, 120))
+    await page.evaluate(({ id }) => { const r = document.querySelector('.cockpit-embed').shadowRoot; r.querySelector('[data-chantier="' + id + '"]').scrollIntoView({ block: 'start' }) }, { id: jeu.idP })
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-presence.png'), fullPage: false })
+
+    // Plus AUCUNE activité fraîche du jeu : sans autre session vivante sur le
+    // projet, aucun bandeau du tout.
+    sql("update activite set updated_at = now() - interval '2 hours' where chantier_id = '" + jeu.idQ + "'")
+    const autresVivantes = sql("select count(*)::int as n from activite a join projets p on p.id = a.projet_id where p.slug = 'cockpit' and a.statut = 'en_cours' and a.updated_at > now() - interval '15 minutes'")[0].n
+    await page.goto('http://127.0.0.1:' + port + '/demo.html')
+    await page.waitForFunction((id) => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r && r.querySelector('[data-chantier="' + id + '"]') }, jeu.idP, { timeout: 20000 })
+    const p3 = await lirePresence(jeu.idQ)
+    if (autresVivantes === 0) verifie(p3.bandeau === null, 'présence : aucune preuve de vie sur le projet → aucun bandeau « Là, maintenant »', p3.bandeau || 'absent')
+    else verifie(p3.bandeau === null || !/Test du correctif|Test présence/.test(p3.bandeau), 'présence : le bandeau ne montre que la session vraiment vivante (' + autresVivantes + ' hors test)', (p3.bandeau || '').slice(0, 120))
+
+    // Une session qui se tait perd son « en cours » SANS nouvelle donnée : on
+    // coupe le rechargement (data-intervalle=3600) et on avance l'horloge de
+    // la page de 16 min ; seul le recalcul des 30 s peut changer l'écran.
+    sql("select signaler_activite('cockpit', '" + jeu.idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
+    const horloge = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
+    await horloge.route('**/demo.html', async (route) => {
+      const rep = await route.fetch()
+      await route.fulfill({ response: rep, body: (await rep.text()).replace('data-utilisateur="Démo"', 'data-utilisateur="Démo" data-intervalle="3600"') })
+    })
+    await horloge.clock.install()
+    await horloge.goto('http://127.0.0.1:' + port + '/demo.html')
+    await horloge.waitForFunction((id) => { const r = document.querySelector('.cockpit-embed').shadowRoot; const c = r && r.querySelector('[data-chantier="' + id + '"]'); return c && c.querySelector('[data-presence]') }, jeu.idP, { timeout: 20000 })
+    const lireH = () => horloge.evaluate((id) => { const c = document.querySelector('.cockpit-embed').shadowRoot.querySelector('[data-chantier="' + id + '"]'); return { presence: c.querySelector('[data-presence]').getAttribute('data-presence'), badge: c.querySelector('.badge').textContent } }, jeu.idP)
+    const h1 = await lireH()
+    let appels = 0
+    horloge.on('request', (r) => { if (r.url().startsWith(FONCTION)) appels++ })
+    await horloge.clock.fastForward('16:00')
+    await horloge.waitForTimeout(300)
+    const h2 = await lireH()
+    verifie(h1.presence === 'vivante' && h2.presence === 'silencieuse' && /file d['’]attente/.test(h2.badge) && appels === 0,
+      'présence : 16 min de silence → « en cours » perdu par le recalcul des 30 s, sans appel serveur', JSON.stringify({ avant: h1, apres: h2, appels }))
+    await horloge.close()
+
     // --- thème sombre : le module suit prefers-color-scheme.
     const sombre = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark' })
     await sombre.goto('http://127.0.0.1:' + port + '/demo.html')
@@ -393,6 +526,7 @@ async function verifierNavigateur(cle) {
     nettoyer(jeu.idQ)
     nettoyer(jeu.idV)
     nettoyer(jeu.idV2)
+    nettoyer(jeu.idP)
   }
 }
 
@@ -401,6 +535,7 @@ const cle = sql("select cle_embed from projets where slug = 'cockpit'")[0]?.cle_
 if (!cle) { console.error('Projet pilote « cockpit » introuvable.'); process.exit(2) }
 console.log('Fonction : ' + FONCTION)
 try {
+  await verifierPresenceParite()
   await verifierApi(cle)
   if (!process.env.SANS_NAVIGATEUR) await verifierNavigateur(cle)
 } catch (e) {

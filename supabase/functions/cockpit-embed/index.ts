@@ -155,7 +155,10 @@ async function actionEtat(sb: SupabaseClient, projet: Projet) {
   const { data: activites, error: e3 } = await sb.from("activite")
     .select(COLONNES_ACTIVITE)
     .eq("projet_id", projet.id)
-    .eq("statut", "en_cours")
+    // « en_cours » ET « attente » : le module décide lui-même ce qui est vivant
+    // (règle <presence>) et affiche le reste en gris, « dernier avancement
+    // connu » (29 sept. 2026). Les lignes terminées/en échec ne servent à rien ici.
+    .in("statut", ["en_cours", "attente"])
     .order("updated_at", { ascending: false })
   if (e3) throw erreurDepuis(e3)
   // Une activité sur un chantier interne ne sort pas : son étape décrit un
