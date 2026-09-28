@@ -1,8 +1,27 @@
 {
-  "env": { "COCKPIT_PROJET": "cockpit" },
+  "env": {
+    "COCKPIT_PROJET": "cockpit"
+  },
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/session-start.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/prompt-rappel.sh"
+          }
+        ]
+      }
     ]
   }
 }

@@ -65,7 +65,7 @@ poser() { # modèle, destination
   else echo "   EXISTE, n'est pas au cockpit, conservé (relance avec --forcer pour remplacer) : ${2#$dossier/}"; fi
 }
 mkdir -p "$dossier/scripts" "$dossier/.claude/hooks"
-for n in lanceur sql demander progression; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
+for n in lanceur sql demander progression chantier; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
 # Ancienne aide de l'installation par copie : plus utilisée.
 if [ -f "$dossier/scripts/cockpit-progression_tableau.py" ]; then rm -f "$dossier/scripts/cockpit-progression_tableau.py"; echo "   retiré (ancienne copie) : scripts/cockpit-progression_tableau.py"; fi
 # Ancien mode : un projet SANS sql.sh recevait notre sql.sh sous son nom. Il est à nous : on le laisse
@@ -76,6 +76,7 @@ fi
 
 echo "3. Hook de démarrage"
 poser "$ICI/modeles/cockpit-session-start.sh" "$dossier/.claude/hooks/cockpit-session-start.sh"
+poser "$ICI/modeles/cockpit-prompt-rappel.sh" "$dossier/.claude/hooks/cockpit-prompt-rappel.sh"
 reglages="$dossier/.claude/settings.json"
 [ -f "$reglages" ] || echo '{}' > "$reglages"
 python3 - "$reglages" "$slug" <<'PY'
@@ -91,8 +92,14 @@ cmd = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-session-start.sh"
 # un second hook identique (constaté sur FacePro le 28 sept.).
 if not any(x.get("command") == cmd for h in ss for x in h.get("hooks", [])):
     ss.append({"hooks": [{"type": "command", "command": cmd}]})
+# Rappel à CHAQUE message (29 sept. 2026) : ce qu'on lance dans une session
+# arrive dans le cockpit, sans doublon (voir hooks/prompt-rappel.sh).
+ups = hooks.setdefault("UserPromptSubmit", [])
+cmd2 = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-prompt-rappel.sh"
+if not any(x.get("command") == cmd2 for h in ups for x in h.get("hooks", [])):
+    ups.append({"hooks": [{"type": "command", "command": cmd2}]})
 json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
-print("   ok : .claude/settings.json (env COCKPIT_PROJET + hook SessionStart)")
+print("   ok : .claude/settings.json (env COCKPIT_PROJET + hooks SessionStart et UserPromptSubmit)")
 PY
 
 echo "4. CLAUDE.md"
