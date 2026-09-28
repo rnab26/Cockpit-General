@@ -2,7 +2,8 @@
 // Le premier cas est la capture de Raphaël du 29 sept. 2026 : barres à 85 %
 // reprises d'un visuel, badge « En cours », personne dessus.
 import { verifie, bilan } from './_assert.ts'
-import { presenceChantier, sessionsActives, consigneClaude, preuveDeVie } from '../src/lib/presence.ts'
+import { presenceDe } from '../src/lib/entonnoir.ts'
+import { presenceChantier, sessionsActives, consigneClaude, preuveDeVie, silenceMsDe, derniereDemandeOuCaEnEst, MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
 
 const now = new Date('2026-09-29T01:04:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
@@ -21,7 +22,7 @@ console.log('verifier-presence')
   verifie('…barre GRISE (pas vive)', !p.barreVive)
   verifie('…propose de relancer', p.aRelancer)
   verifie('…dit le dernier avancement connu', /85 %/.test(p.detail ?? ''), p.detail)
-  verifie('…dit quoi faire', /copie la consigne/.test(p.tonAction ?? ''))
+  verifie('…dit quoi faire (« Copier la consigne », ou écrire une précision)', /Copier la consigne/.test(p.tonAction ?? '') && /écris une précision/.test(p.tonAction ?? ''), p.tonAction)
 }
 // 2. Une vraie session, étape signalée il y a 2 min.
 {
@@ -52,7 +53,15 @@ verifie('statut « termine » récent n’est pas une preuve de vie', !preuveDeV
 verifie('à vérifier = « À toi de vérifier » avec l’action', presenceChantier(ch('a_verifier'), null, false, now).tonAction?.includes('Comment vérifier') === true)
 verifie('à cadrer = « À cadrer avec toi »', presenceChantier(ch('a_cadrer'), act('attente', 300), false, now).code === 'a_cadrer')
 verifie('certifié = terminé, rien à faire', presenceChantier(ch('valide'), null, false, now).tonAction === null)
-verifie('à trier sans personne le dit', /pas encore examiné/.test(presenceChantier(ch('a_trier'), null, false, now).libelle))
+// Retour de Raphaël, 29 sept. : un reporté ne disait pas qu'il n'y avait rien à faire.
+{
+  const p = presenceChantier(ch('reporte'), null, false, now)
+  verifie('reporté : dit « rien à faire de ta part » et propose de le relancer', !!p.tonAction && /Rien à faire de ta part/.test(p.tonAction) && /relancer/.test(p.tonAction), p.tonAction)
+}
+verifie('à cadrer : « Écris-la ci-dessous »', /Écris-la ci-dessous/.test(presenceChantier(ch('a_cadrer'), null, false, now).tonAction ?? ''))
+verifie('bloqué : « réponds ci-dessous »', /réponds ci-dessous/.test(presenceChantier(ch('bloque'), null, false, now).tonAction ?? ''))
+// Le badge reste court (il tient sur une ligne de téléphone) : « pas encore examiné » passe dans le détail.
+verifie('à trier sans personne le dit (dans le détail, badge court)', /pas encore examiné/.test(presenceChantier(ch('a_trier'), null, false, now).detail ?? '') && presenceChantier(ch('a_trier'), null, false, now).libelle === '⏸️ Personne dessus')
 verifie('« libre » avec une barre à 90 % reste « Personne dessus »', presenceChantier(ch('libre'), act('attente', 300, 90), false, now).code === 'personne')
 // 8. Le bandeau du haut.
 verifie('bandeau : aucune session quand tout est vieux ou en attente', sessionsActives([act('attente', 1), act('en_cours', 300)], now).length === 0)
@@ -63,5 +72,30 @@ verifie('bandeau : une session vivante est comptée une fois',
   const t = consigneClaude({ id: 'abc', titre: 'Objets — vidéo' }, 'facepro')
   verifie('consigne : nomme le chantier, le projet et l’id', t.includes('« Objets — vidéo »') && t.includes('facepro') && t.includes('abc'), t)
   verifie('consigne : demande la progression et « Comment vérifier »', t.includes('progression') && t.includes('Comment vérifier'))
+}
+// 10. Le réglage « délai de silence » (préférence silence_minutes).
+verifie('silence : défaut 15 min sans préférence', silenceMsDe(undefined) === 15 * 60_000)
+verifie('silence : 5 et 60 min acceptés', silenceMsDe(5) === 5 * 60_000 && silenceMsDe(60) === 60 * 60_000)
+verifie('silence : une valeur hors liste retombe sur 15 min', silenceMsDe(7) === 15 * 60_000 && silenceMsDe('n’importe quoi') === 15 * 60_000)
+verifie('silence : un réglage à 5 min fait passer 6 min de silence en « silencieux »',
+  presenceChantier(ch('en_cours', 'claude/x', dans(60)), act('en_cours', 6), false, now, silenceMsDe(5)).code === 'silencieux')
+// 11. « Demander où ça en est » : la dernière demande du fil.
+{
+  const fil = [
+    { corps: MESSAGE_OU_CA_EN_EST, created_at: il(30) },
+    { corps: 'autre chose', created_at: il(1) },
+    { corps: MESSAGE_OU_CA_EN_EST, created_at: il(5) },
+  ]
+  verifie('la dernière demande « où ça en est » est la plus récente', derniereDemandeOuCaEnEst(fil)?.created_at === il(5))
+  verifie('aucune demande → null', derniereDemandeOuCaEnEst([{ corps: 'x', created_at: il(1) }]) === null)
+}
+// 12. Un AGENT vivant lié au chantier est une preuve de vie (règle dans sessions.ts, appliquée par presenceDe).
+{
+  const agent = { id: 't', session_id: 's', projet_id: 'p', tache_id: 't', type: 'agent', description: 'Refonte', sorte: null, statut: 'en_cours',
+    chantier_id: 'c1', etape: 'Tests', pourcentage: 40, eta_secondes: null, progres_at: il(3), demarre_at: il(30), vu_at: il(3), fini_at: null } as never
+  const c = { ...ch('en_cours'), id: 'c1' }
+  const p = presenceDe(c, [], new Set(), now, 15 * 60_000, [agent]).presence
+  verifie('agent signalé il y a 3 min sur le chantier → « 🟢 Un agent y travaille »', p.code === 'travaille' && p.libelle.includes('Un agent'), p)
+  verifie('sans agent, le même chantier reste « Personne dessus »', presenceDe(c, [], new Set(), now, 15 * 60_000, []).presence.code === 'personne')
 }
 bilan('verifier-presence')

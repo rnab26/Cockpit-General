@@ -13,7 +13,7 @@ import { nomCourtSession } from '../lib/texte.ts'
  * encore / Ça bloque) qui attend l'humain. Encadré rouge, toujours dépliée.
  */
 export function BlocQuestion({ message }: { message: Message }) {
-  const { par, recharger } = useCockpit()
+  const { par, recharger, now } = useCockpit()
   const toast = useToast()
   const [choix, setChoix] = useState<string | null>(null)
   const [precision, setPrecision] = useState('')
@@ -42,7 +42,7 @@ export function BlocQuestion({ message }: { message: Message }) {
     <div data-testid="bloc-question" className="rounded-xl border-2 border-alerte/60 bg-alerte/6 p-3">
       <div className="flex items-baseline justify-between gap-2 text-xs text-texte-2">
         <span>{estAction ? '🙋 Action attendue de toi' : '🔴 Question'} · {nomCourtSession(message.auteur)}</span>
-        <span>{dateRelative(message.created_at)}</span>
+        <span>{dateRelative(message.created_at, now)}</span>
       </div>
       <p className="mt-1 whitespace-pre-wrap text-[15px] font-semibold leading-snug">{message.corps}</p>
       {message.pourquoi ? <p className="mt-1 whitespace-pre-wrap text-sm text-texte-2"><span className="font-medium">Pourquoi :</span> {message.pourquoi}</p> : null}
@@ -59,9 +59,9 @@ export function BlocQuestion({ message }: { message: Message }) {
             <div className="mt-3 flex flex-col gap-2" role="radiogroup">
               {options.map((o) => (
                 <button key={o.libelle} type="button" role="radio" aria-checked={choix === o.libelle} onClick={() => setChoix(o.libelle)}
-                  className={`rounded-xl border-2 px-3 py-2 text-left transition ${choix === o.libelle ? 'border-accent bg-accent/10' : 'border-bord bg-carte'}`}>
+                  className={`min-h-12 rounded-xl border-2 px-3 py-2.5 text-left transition ${choix === o.libelle ? 'border-accent bg-accent/10' : 'border-bord bg-carte'}`}>
                   <span className="font-semibold">{o.libelle}</span>
-                  {o.recommande ? <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">recommandé</span> : null}
+                  {o.recommande ? <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">★ recommandé</span> : null}
                   {o.aide ? <span className="mt-0.5 block text-sm text-texte-2">{o.aide}</span> : null}
                 </button>
               ))}
@@ -73,7 +73,6 @@ export function BlocQuestion({ message }: { message: Message }) {
         </>
       )}
       {estAction && message.etat ? <p className="mt-2 text-xs text-texte-2">Dernier état : {message.etat === 'pas_encore' ? 'pas encore' : message.etat}{message.answered_at ? '' : ' — la session attend « fait »'}</p> : null}
-      {!estAction && precision.trim() && options.length === 0 ? null : null}
     </div>
   )
 }

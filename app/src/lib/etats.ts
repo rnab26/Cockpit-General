@@ -15,7 +15,7 @@ export interface InfoEtat {
 export const ETATS: readonly InfoEtat[] = [
   { etat: 'a_trier',    libelle: '⏳ Pas encore examinée',      court: 'Pas encore examinée', teinte: 'neutre',    aide: 'Une demande arrivée, que personne n’a encore lue.' },
   { etat: 'a_cadrer',   libelle: '🗣️ À cadrer avec Raphaël',    court: 'À cadrer',           teinte: 'info',      aide: 'À discuter avant de coder : coût, périmètre, accès.' },
-  { etat: 'libre',      libelle: '🟢 Libre',                    court: 'Libre',              teinte: 'ok',        aide: 'Spécifiée, prête à être prise par une session.' },
+  { etat: 'libre',      libelle: '📋 Libre',                    court: 'Libre',              teinte: 'ok',        aide: 'Spécifiée, prête à être prise par une session.' },
   { etat: 'en_cours',   libelle: '🔧 En cours',                 court: 'En cours',           teinte: 'attention', aide: 'Une session travaille dessus.' },
   { etat: 'a_verifier', libelle: '🧪 Codée, à vérifier',        court: 'Codée, à vérifier',  teinte: 'attention', aide: 'Livrée par la session : à toi de certifier ou corriger.' },
   { etat: 'valide',     libelle: '✅ Certifiée',                court: 'Certifiée',          teinte: 'ok',        aide: 'Un humain a constaté que ça marche.' },
@@ -66,5 +66,5 @@ export function bacDe(c: Pick<Chantier, 'etat' | 'archived_at'>): Bac {
 
 export const ICONE_AUTEUR: Record<string, string> = { session: '🤖', proprietaire: '👤', utilisateur: '🙋' }
 export const LIBELLE_KIND: Record<string, string> = {
-  info: 'info', question: 'question', reponse: 'réponse', blocage: 'blocage', action: 'action', constat: 'constat',
+  info: 'info', question: 'question', reponse: 'réponse', blocage: 'blocage', action: 'action', constat: 'constat', fusion: 'fusion',
 }

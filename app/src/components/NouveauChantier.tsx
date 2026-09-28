@@ -72,7 +72,7 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
               {ETATS.filter((e) => e.etat !== 'valide').map((e) => <option key={e.etat} value={e.etat}>{e.libelle}</option>)}
             </Select>
           </Champ>
-        ) : <p className="text-xs text-texte-2">Ta demande arrive « ⏳ Pas encore examinée » ; Raphaël la trie, une session la prend, et tu certifies quand c’est livré.</p>}
+        ) : <p className="text-xs text-texte-2">Ta demande arrive « ⏳ Pas encore examinée » ; Claude la range, une session la prend, et tu certifies quand c’est livré.</p>}
       </div>
     </Dialog>
   )

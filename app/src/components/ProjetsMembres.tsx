@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Membre, Projet } from '../lib/types.ts'
-import { useCockpit } from '../contexte.ts'
+import { useGlobal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
@@ -19,7 +19,7 @@ const depuis = (p: Projet): Formulaire => ({ slug: p.slug, nom: p.nom, descripti
 
 /** Projets & membres (admin) : créer/modifier un projet, clé du module embarqué, membres par e-mail. */
 export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { ouvert: boolean; onFermer: () => void; projets: Projet[]; chargerProjets: () => Promise<Projet[]> }) {
-  const { recharger } = useCockpit()
+  const { recharger } = useGlobal()
   const toast = useToast()
   const confirmer = useConfirmer()
   const [selection, setSelection] = useState<string | 'nouveau' | null>(null)
