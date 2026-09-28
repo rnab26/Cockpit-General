@@ -19,7 +19,7 @@ export function Sections({ ouvert, onFermer }: { ouvert: boolean; onFermer: () =
   const [enCours, setEnCours] = useState(false)
   const nb = (s: Section) => chantiers.filter((c) => c.section_id === s.id).length
 
-  const executer = async (fn: () => Promise<{ error: unknown }>, succes: string) => {
+  const executer = async (fn: () => PromiseLike<{ error: unknown }>, succes: string) => {
     setEnCours(true)
     const { error } = await fn()
     setEnCours(false)

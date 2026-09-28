@@ -183,6 +183,21 @@ function nettoyer(id) {
 }
 
 // ----------------------------------------------------------- navigateur
+// Le jeu de test du navigateur : une demande avec une question à options et
+// une activité en cours, une demande « à vérifier ». Toujours ciblées par
+// leur id (data-chantier) — JAMAIS « la première carte orange » : le
+// 28 sept. 2026 une passe visuelle a envoyé une fausse correction sur un
+// vrai chantier du projet pilote de cette façon (restauré à la main).
+function creerJeuNavigateur() {
+  const idQ = randomUUID(), idV = randomUUID(), qid = randomUUID()
+  const pj = "(select id from projets where slug = 'cockpit')"
+  sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idQ + "', " + pj + ", '" + lit(MARQUE) + " export PDF', 'Quand je clique sur Exporter, rien ne se passe.', 'en_cours', 'utilisateur')")
+  sql("insert into chantiers (id, projet_id, titre, demande, etat, origine, resume_simple) values ('" + idV + "', " + pj + ", '" + lit(MARQUE) + " tri des clients', 'Trier les clients par date.', 'a_verifier', 'utilisateur', 'La liste se trie par date de dernier contact.')")
+  sql("insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('" + qid + "', " + pj + ", '" + idQ + "', 'session-test', 'session', 'question', 'Une page par facture, ou tout à la suite ?', 'Le rendu diffère.', '[{\"libelle\":\"Une page par facture\",\"aide\":\"Plus lisible.\",\"recommande\":true},{\"libelle\":\"Tout à la suite\"},{\"libelle\":\"Autre, à préciser\"}]'::jsonb)")
+  sql("select signaler_activite('cockpit', '" + idQ + "'::uuid, 'session-test', 'Test du correctif sur 30 factures', 62, 540, 'en_cours', 'lot 3/5')")
+  return { idQ, idV, qid }
+}
+
 async function verifierNavigateur(cle) {
   console.log('\n4. Navigateur (390 × 844)')
   process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers'
@@ -199,6 +214,7 @@ async function verifierNavigateur(cle) {
   await new Promise((r) => setTimeout(r, 700))
   mkdirSync(SCRATCH, { recursive: true })
   let navigateur, chantierCree = null
+  const jeu = creerJeuNavigateur()
   try {
     // Le Chromium COMPLET, pas le « headless shell » par défaut : seul le
     // premier lit la base NSS (~/.pki/nssdb) où vit l'autorité du proxy de
@@ -240,8 +256,12 @@ async function verifierNavigateur(cle) {
     await champ.fill(titre)
     await page.locator('.cockpit-embed').locator('[data-focus="nouveau-demande"]').fill('Créée par verifier-embed.mjs, à supprimer.')
     await page.screenshot({ path: path.join(SCRATCH, 'embed-2-formulaire.png'), fullPage: true })
+    // Playwright fait défiler AVANT de cliquer : pour mesurer notre rendu et
+    // pas ce défilement-là, on met le bouton en vue nous-mêmes, on note la
+    // position, puis on clique par le DOM.
+    await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; [...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).scrollIntoView({ block: 'center' }) })
     const yAvant = await page.evaluate(() => window.scrollY)
-    await page.locator('.cockpit-embed').getByRole('button', { name: /Ajouter la demande/ }).click()
+    await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; [...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).click() })
     await page.waitForFunction((t) => {
       const r = document.querySelector('.cockpit-embed').shadowRoot
       return [...r.querySelectorAll('.carte .titre')].some((el) => el.textContent === t)
@@ -268,10 +288,76 @@ async function verifierNavigateur(cle) {
     // Le badge d'état en lecture seule : aucun contrôle ne permet de le changer.
     const selects = await page.evaluate(() => document.querySelector('.cockpit-embed').shadowRoot.querySelectorAll('select').length)
     verifie(selects === 0, 'aucun sélecteur d’état (statut en lecture seule)')
+    const nulls = await page.evaluate(() => /(^|>)null(<|$)/.test(document.querySelector('.cockpit-embed').shadowRoot.querySelector('.ck').innerHTML))
+    verifie(!nulls, 'aucun « null » affiché par erreur')
+
+    // --- la carte avec une question (ciblée par son id)
+    const carteQ = page.locator('.cockpit-embed').locator('[data-chantier="' + jeu.idQ + '"]')
+    const infosQ = await carteQ.evaluate((c) => ({
+      badge: c.querySelector('.badge').textContent, rouge: c.classList.contains('rouge'),
+      barre: !!c.querySelector('.barre'), legende: (c.querySelector('.barre-legende') || {}).textContent || '',
+      options: [...c.querySelectorAll('.bloc.rouge .btn')].map((b) => b.textContent),
+    }))
+    verifie(/Réponse attendue/.test(infosQ.badge) && infosQ.rouge, 'une question en attente remplace le badge par « Réponse attendue »', infosQ.badge)
+    verifie(infosQ.barre && /62 %/.test(infosQ.legende) && /9 min/.test(infosQ.legende), 'barre de progression 62 % + ETA ~9 min sur la carte', infosQ.legende)
+    verifie(infosQ.options.length === 3 && /★/.test(infosQ.options[0]), 'trois options, la recommandée marquée ★', infosQ.options.join(' | '))
+    const bandeau = await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return (r.querySelector('.bandeau.now') || {}).textContent || '' })
+    verifie(/Là, maintenant/.test(bandeau) && /Test du correctif/.test(bandeau), 'bandeau « Là, maintenant » avec l’étape en cours', bandeau.slice(0, 80))
+    const rougeBandeau = await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return (r.querySelector('.bandeau.rouge') || {}).textContent || '' })
+    verifie(/question/.test(rougeBandeau), 'bandeau rouge « N question(s) en attente »', rougeBandeau)
+
+    // « Autre, à préciser » n'envoie pas : il place le curseur dans le champ.
+    await carteQ.evaluate((c) => [...c.querySelectorAll('.bloc.rouge .btn')].find((b) => /préciser/.test(b.textContent)).click())
+    await page.waitForTimeout(150)
+    const focusQ = await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r.activeElement && r.activeElement.getAttribute('data-focus') })
+    verifie(focusQ === 'precision-' + jeu.qid, '« à préciser » place le curseur dans le champ Précision au lieu d’envoyer', String(focusQ))
+    const enBase0 = sql("select answered_at from messages where id = '" + jeu.qid + "'")[0]
+    verifie(!enBase0.answered_at, 'rien n’est parti en base au clic sur « à préciser »')
+    await carteQ.locator('[data-focus="precision-' + jeu.qid + '"]').fill('Une page, mais en paysage')
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-4-question.png'), fullPage: true })
+    await carteQ.evaluate((c) => c.querySelector('.bloc.rouge').scrollIntoView({ block: 'center' }))
+    const yQ0 = await page.evaluate(() => window.scrollY)
+    await carteQ.evaluate((c) => [...c.querySelectorAll('.btn')].find((b) => /Valider cette réponse/.test(b.textContent)).click())
+    await page.waitForFunction((id) => { const r = document.querySelector('.cockpit-embed').shadowRoot; const c = r.querySelector('[data-chantier="' + id + '"]'); return c && !c.querySelector('.bloc.rouge') }, jeu.idQ, { timeout: 20000 })
+    const yQ1 = await page.evaluate(() => window.scrollY)
+    verifie(Math.abs(yQ1 - yQ0) <= 2, 'répondre ne fait pas sauter la page', yQ0 + ' → ' + yQ1)
+    const enBase1 = sql("select reponse, precision from messages where id = '" + jeu.qid + "'")[0]
+    verifie(enBase1.reponse === 'Autre, à préciser' && enBase1.precision === 'Une page, mais en paysage', 'la réponse et la précision tapées à l’écran sont en base', JSON.stringify(enBase1))
+    await carteQ.evaluate((c) => c.querySelector('.discret[aria-expanded]').click())
+    const hist = await carteQ.evaluate((c) => (c.querySelector('.hist') || {}).textContent || '')
+    verifie(/Réponse : Autre, à préciser/.test(hist) && /Précision : Une page/.test(hist), 'l’historique déplié montre la question répondue 🤖/🙋', hist.slice(0, 120))
+    const badgeQ = await carteQ.evaluate((c) => c.querySelector('.badge').textContent)
+    verifie(/En cours de codage/.test(badgeQ), 'une fois répondue, le badge redevient l’état réel', badgeQ)
+
+    // --- la carte « à vérifier » : corriger, sur SA carte
+    const carteV = page.locator('.cockpit-embed').locator('[data-chantier="' + jeu.idV + '"]')
+    const infosV = await carteV.evaluate((c) => ({ orange: c.classList.contains('orange'), badge: c.querySelector('.badge').textContent, resume: (c.querySelector('.resume') || {}).textContent || '', boutons: [...c.querySelectorAll('.bloc.orange .btn')].map((b) => b.textContent) }))
+    verifie(infosV.orange && /à vérifier/.test(infosV.badge) && /se trie/.test(infosV.resume) && infosV.boutons.length === 2, 'carte orange « à vérifier » avec résumé simple et deux boutons', JSON.stringify(infosV.boutons))
+    await carteV.evaluate((c) => [...c.querySelectorAll('.bloc.orange .btn')].find((b) => /corriger/.test(b.textContent)).click())
+    await carteV.locator('[data-focus="mots-' + jeu.idV + '"]').fill('Le tri est inversé.')
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-5-correction.png'), fullPage: true })
+    await carteV.evaluate((c) => [...c.querySelectorAll('.btn')].find((b) => /Envoyer la correction/.test(b.textContent)).click())
+    await page.waitForFunction((id) => { const r = document.querySelector('.cockpit-embed').shadowRoot; const c = r.querySelector('[data-chantier="' + id + '"]'); return c && !c.querySelector('.bloc.orange') }, jeu.idV, { timeout: 20000 })
+    const apresV = sql("select etat, demande from chantiers where id = '" + jeu.idV + "'")[0]
+    verifie(apresV.etat === 'libre' && /Le tri est inversé/.test(apresV.demande), 'la correction tapée à l’écran a rendu la demande à la session', apresV.etat)
+    const badgeV = await carteV.evaluate((c) => c.querySelector('.badge').textContent)
+    verifie(/file d’attente|file d'attente/.test(badgeV), 'après correction le badge dit « En file d’attente »', badgeV)
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-6-apres-actions.png'), fullPage: true })
+
+    // --- thème sombre : le module suit prefers-color-scheme.
+    const sombre = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark' })
+    await sombre.goto('http://127.0.0.1:' + port + '/demo.html')
+    await sombre.waitForFunction(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r && r.querySelector('.carte') }, null, { timeout: 20000 })
+    const couleurSombre = await sombre.evaluate(() => getComputedStyle(document.querySelector('.cockpit-embed').shadowRoot.querySelector('.carte .titre')).color)
+    verifie(couleurSombre === 'rgb(229, 231, 235)', 'thème sombre : texte clair', couleurSombre)
+    await sombre.screenshot({ path: path.join(SCRATCH, 'embed-7-sombre.png'), fullPage: false })
+    await sombre.close()
   } finally {
     if (navigateur) await navigateur.close()
     serveur.kill()
     if (chantierCree) nettoyer(chantierCree)
+    nettoyer(jeu.idQ)
+    nettoyer(jeu.idV)
   }
 }
 

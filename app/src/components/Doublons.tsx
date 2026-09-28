@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { Badge } from '../ui/Badge.tsx'
 import { Textarea, Select, Champ } from '../ui/Champs.tsx'
 import { Vide } from '../ui/Etats.tsx'
-import { pairesDoublons, clePaire } from '../lib/doublons.ts'
+import { pairesDoublons } from '../lib/doublons.ts'
 import { infoEtat } from '../lib/etats.ts'
 import { extrait } from '../lib/texte.ts'
 
