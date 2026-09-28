@@ -3,6 +3,9 @@
 Complète le CLAUDE.md global de Raphaël (`rnab26/dotfiles/.claude/CLAUDE.md`),
 ne le remplace pas. Français, concis, autonomie une fois la tâche confirmée.
 
+**Tu reprends le travail ? Lis d'abord `docs/REPRISE.md`** (état, ce qui n'est
+pas encore en ligne, la suite, les pièges), puis les décisions de Raphaël.
+
 ## Ce que c'est, et pourquoi il existe
 
 Le cockpit unique de tous les projets de Raphaël : une base Supabase
