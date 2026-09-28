@@ -26,7 +26,14 @@ cockpit_a_jour() {
     [ "$age" -lt "${COCKPIT_TTL:-600}" ] && return 0
   fi
   local tmp f; tmp=$(mktemp -d)
-  for f in "${COCKPIT_FICHIERS[@]}"; do
+  # La liste des fichiers vient du cockpit lui-même (modeles/fichiers.txt) :
+  # un fichier ajouté au cockpit arrive partout sans retoucher ce lanceur.
+  # La liste écrite ci-dessus ne sert que si elle est injoignable.
+  local liste=("${COCKPIT_FICHIERS[@]}")
+  if curl -fsS --max-time 8 "$COCKPIT_SOURCE/modeles/fichiers.txt" -o "$tmp/.liste" 2>/dev/null && [ -s "$tmp/.liste" ]; then
+    mapfile -t liste < <(grep -E '^[a-zA-Z0-9_./-]+$' "$tmp/.liste")
+  fi
+  for f in "${liste[@]}"; do
     mkdir -p "$tmp/$(dirname "$f")"
     if ! curl -fsS --max-time 8 "$COCKPIT_SOURCE/$f" -o "$tmp/$f"; then
       rm -rf "$tmp"
@@ -36,7 +43,8 @@ cockpit_a_jour() {
       echo "Cockpit : impossible de récupérer $f depuis $COCKPIT_SOURCE, et aucune version en cache." >&2; return 1
     fi
   done
-  chmod +x "$tmp"/scripts/*.sh "$tmp"/hooks/*.sh
+  rm -f "$tmp/.liste"
+  chmod +x "$tmp"/scripts/*.sh "$tmp"/hooks/*.sh "$tmp"/modeles/*.sh 2>/dev/null
   # Remplacement d'un bloc : jamais un mélange d'ancienne et de nouvelle version.
   mkdir -p "$COCKPIT_CACHE"; cp -r "$tmp"/. "$COCKPIT_CACHE"/; touch "$repere"; rm -rf "$tmp"
 }

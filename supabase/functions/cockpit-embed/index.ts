@@ -325,6 +325,12 @@ Deno.serve(async (req) => {
 
     const projet = await projetParCle(sb, cle)
     slug = projet.slug
+    // Preuve que le module est bien branché sur le site du projet (29 sept. 2026,
+    // Raphaël : « je n'arrive pas à voir si c'est branché réellement à notre
+    // site »). Au plus une écriture toutes les 5 min ; jamais bloquant.
+    sb.from("projets").update({ embed_vu_at: new Date().toISOString() }).eq("id", projet.id)
+      .or(`embed_vu_at.is.null,embed_vu_at.lt.${new Date(Date.now() - 5 * 60_000).toISOString()}`)
+      .then(() => {}, () => {})
 
     let resultat: unknown
     switch (action) {

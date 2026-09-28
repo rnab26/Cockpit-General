@@ -20,7 +20,7 @@
 # pas remplacé (sauf --forcer).
 set -euo pipefail
 ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-slug=""; nom=""; depot=""; url_site=""; dossier="$PWD"; forcer=0; couleur=""
+slug=""; nom=""; depot=""; url_site=""; dossier="$PWD"; forcer=0; couleur=""; maj=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --projet) slug="${2:-}"; shift 2 ;;
@@ -30,6 +30,11 @@ while [ $# -gt 0 ]; do
     --couleur) couleur="${2:-}"; shift 2 ;;
     --dossier) dossier="${2:-}"; shift 2 ;;
     --forcer) forcer=1; shift ;;
+    # --maj : mise à jour AUTOMATIQUE d'un projet déjà branché, lancée par le
+    # hook de démarrage de chaque session (29 sept. 2026, Raphaël : « les
+    # améliorations du cockpit doivent être partout, sans que j'aie à le
+    # demander »). Ne touche pas à la base, n'imprime que ce qui a changé.
+    --maj) maj=1; shift ;;
     -h|--help) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
@@ -40,9 +45,10 @@ nom="${nom:-$slug}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 SQL="$ICI/scripts/sql.sh"
 
+if [ "$maj" = 1 ]; then exec 3>&1 1>/tmp/cockpit-brancher-$$.log; fi
 echo "1. Projet « $slug » en base"
-"$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', $( [ -n "$depot" ] && echo "'$(q "$depot")'" || echo null ), $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
-cle=$("$SQL" "select cle_embed from projets where slug = '$(q "$slug")'" | jq -r '.rows[0].cle_embed')
+[ "$maj" = 1 ] || "$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', $( [ -n "$depot" ] && echo "'$(q "$depot")'" || echo null ), $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
+cle=""; [ "$maj" = 1 ] || cle=$("$SQL" "select cle_embed from projets where slug = '$(q "$slug")'" | jq -r '.rows[0].cle_embed')
 
 copier() { # source, destination
   if [ -f "$2" ] && ! cmp -s "$1" "$2"; then
@@ -85,6 +91,7 @@ python3 - "$reglages" "$slug" <<'PY'
 import json, sys
 p, slug = sys.argv[1], sys.argv[2]
 d = json.load(open(p))
+avant = json.dumps(d, sort_keys=True)
 d.setdefault("env", {})["COCKPIT_PROJET"] = slug
 hooks = d.setdefault("hooks", {})
 ss = hooks.setdefault("SessionStart", [])
@@ -121,8 +128,11 @@ if not any(x.get("command") == cmd4 for h in st for x in h.get("hooks", [])):
 # (réglage de Claude Code : « wait for the limit to reset and continue the task
 # automatically »).
 d["autoContinueAtUsageLimit"] = True
-json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
-print("   ok : .claude/settings.json (env COCKPIT_PROJET, hooks démarrage / rappel / suivi / mode autonome, reprise auto après limite)")
+if json.dumps(d, sort_keys=True) == avant:
+    print("   déjà à jour : .claude/settings.json")
+else:
+    json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
+    print("   ok : .claude/settings.json (env COCKPIT_PROJET, hooks démarrage / rappel / suivi / mode autonome, reprise auto après limite)")
 PY
 
 echo "4. CLAUDE.md"
@@ -154,6 +164,14 @@ PY2
 else
   printf '\n%s\n' "$bloc" >> "$claude"; echo "   bloc ajouté"; fi
 
+if [ "$maj" = 1 ]; then
+  # Seulement ce qui a changé, pour le hook de démarrage.
+  exec 1>&3 3>&-
+  grep -E "   (ok|remplacé|retiré[^:]*) :|bloc (mis à jour|ajouté)" /tmp/cockpit-brancher-$$.log | grep -v "ok : scripts/cockpit-lanceur.sh$" || true
+  grep -E "   ok : scripts/cockpit-lanceur.sh$" /tmp/cockpit-brancher-$$.log || true
+  rm -f /tmp/cockpit-brancher-$$.log
+  exit 0
+fi
 cat <<FIN
 
 5. Module embarqué — à coller dans une page du site (la clé est propre à ce projet) :
