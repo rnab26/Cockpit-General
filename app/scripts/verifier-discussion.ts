@@ -52,6 +52,8 @@ verifie('personne, aucune chef → « ouvre Claude Code sur ce projet »', deux?
 const att = attenteReponse([moi(1)], { ...base, prochainPassage: t(68) })
 verifie('une chef a un réveil → « Prochain passage de Claude vers … »', att?.etat === 'attente' && /Prochain passage de Claude vers \d+ h 08/.test(att.detail), att)
 verifie('réveil déjà passé → « dans l’heure »', /dans l’heure/.test(attenteReponse([moi(1)], { ...base, prochainPassage: t(10) })?.detail ?? ''))
+const tard = attenteReponse([moi(1)], { maintenant: T0 + 45 * 60_000, sessionTient: false, prochainPassage: t(68) })
+verifie('sans réponse depuis 30 min malgré un « prochain passage » → on dit que le réveil a échoué', tard?.etat === 'personne' && /n’a pas abouti/.test(tard.detail), tard)
 verifie('une session tient le chantier → elle le verra à son prochain pas', attenteReponse([moi(1)], { ...base, sessionTient: true })?.etat === 'session')
 verifie('remis à la session (reçu) → « Claude a reçu ton message »', attenteReponse([moi(1, 'x', { recu_at: t(2), recu_par: 'claude/x' })], base)?.titre === 'Claude a reçu ton message')
 const prise = attenteReponse([moi(1, 'x', { recu_at: t(2), recu_par: 'agent/message-1' })], base)
