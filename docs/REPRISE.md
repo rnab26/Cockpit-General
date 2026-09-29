@@ -270,6 +270,20 @@ fil de `450afa9e`. Piège trouvé : `certifier_chantier` pose aussi
 `agent/question-gardee`. Le module embarqué (`embed/`) ne montre pas encore
 cette étape à l'utilisateur final (la base garde quand même sa question).
 
+## 2 quaterdecies. 29 sept. soir : rejouer une demande d'utilisateur (D-05, chantier `b188cfbb`)
+
+Le module embarqué joint à chaque demande et correction (bloc `<capture>`,
+désactivable par `data-reproduction="non"`) : page sans jetons, titre, écran,
+appareil, langue, heure, version (`/health` ou `data-version`), 20 dernières
+actions (libellés, jamais une valeur saisie), 5 erreurs JS. La fonction
+serveur refait tri et bornes (`supabase/functions/cockpit-embed/reproduction.ts`,
+v5 déployée) et ne la renvoie jamais au site ; `corriger` remplace le scénario.
+App : « Pour reproduire » replié + « Rejouer » (ouvre la page d'origine).
+Sessions : `scripts/reproduction.sh --chantier <id>`, cité dans les consignes
+(chef, renfort, mode autonome) quand il existe. Parité module/serveur du
+nettoyage : `app/scripts/verifier-reproduction.ts`. Hors v1 : rejouer les clics
+tout seul, test synthétique automatique, capture dans l'app elle-même (« + Chantier »).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
@@ -282,8 +296,6 @@ cette étape à l'utilisateur final (la base garde quand même sa question).
   (13 au 29 sept.) : c'est lui qui certifie.
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
-- À cadrer avec Raphaël (dans le cockpit, `demander.sh`, pas d'artefact) :
-  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 undecies.)
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
 
 ## 4. Pièges déjà payés (ne pas les repayer)

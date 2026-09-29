@@ -127,6 +127,11 @@ demandes des utilisateurs, progression des autres sessions.
   avec l'outil du projet (Playwright sur le site, capture de l'app…), et
   REGARDE-la avant de l'envoyer (Read sur l'image).
 - **Photos, vidéos, fichiers de Raphaël** (joints à ses réponses dans l'app, 📎 dans le hook) : `scripts/cockpit-media.sh --message <id>` ou `--chantier <id>` les télécharge ; REGARDE-les (Read sur l'image) avant de répondre.
+- **Demande d'un utilisateur du site : rejoue-la d'abord** (D-05) : le module
+  embarqué joint à chaque demande et correction la page, l'appareil, la
+  version servie, ses 20 dernières actions et les erreurs JavaScript.
+  `scripts/cockpit-reproduction.sh --chantier <id>` l'affiche ; ouvre la page,
+  refais les étapes, constate le problème AVANT de corriger (et rejoue après).
 - **Le cycle** est une colonne `etat` : à trier → à cadrer → libre → en cours →
   à vérifier → validé (+ bloqué, reporté). **Seul un humain pose « validé »**
   (bouton « Ça fonctionne, je certifie » ; « Corriger » complète la demande sur
