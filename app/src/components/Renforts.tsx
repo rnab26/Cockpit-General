@@ -42,6 +42,8 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
   const [envoi, setEnvoi] = useState(false)
   const [dernier, setDernier] = useState<{ ok: boolean; texte: string } | null>(null)
   const [reglages, setReglages] = useState(false)
+  // Le projet n'existe plus (supprimé pendant l'affichage) : la base renvoie null, on ne montre rien.
+  const [disparu, setDisparu] = useState(false)
   const vivant = useRef(true)
 
   const charger = useCallback(async () => {
@@ -49,7 +51,8 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
     if (!vivant.current) return
     if (error) { setErreur(messageErreur(error)); return }
     setErreur(null)
-    setEtat(data as EtatRenforts)
+    setEtat(data as EtatRenforts | null)
+    setDisparu(data == null)
   }, [projet.slug])
 
   // Au montage, toutes les 30 s, et quand les chantiers changent (temps réel) : un peu après, groupé.
@@ -75,6 +78,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
     await charger()
   }
 
+  if (disparu) return null
   if (!etat && !erreur) {
     return toujours ? <p className="px-1 text-sm text-texte-2" role="status" data-testid="renforts-chargement">Chargement des renforts…</p> : null
   }

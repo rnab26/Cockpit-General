@@ -186,11 +186,15 @@ end $$;
 
 -- Tout ce que l'écran montre, calculé ici (une seule règle) : réglages, chef,
 -- ce qui attend par section, et les renforts (vivants, ou finis depuis 24 h).
+-- Un projet qui n'existe plus (supprimé pendant que l'écran l'affiche) : null,
+-- pas une erreur — l'écran n'a simplement rien à montrer (seul l'admin lit).
 create or replace function cockpit.etat_renforts(p_projet text)
 returns jsonb language plpgsql stable security definer set search_path = cockpit, pg_temp as $$
 declare pr cockpit.projets; ch cockpit.chefs;
 begin
-  pr := cockpit.renfort_projet(p_projet);
+  perform cockpit.exiger(cockpit.est_admin() or cockpit.est_service(), 'réservé à l''admin du cockpit');
+  select * into pr from cockpit.projets where slug = p_projet;
+  if pr.id is null then return null; end if;
   select * into ch from cockpit.chefs where projet_id = pr.id;
   return jsonb_build_object(
     'sessions_max', coalesce(ch.max_renforts, 2),

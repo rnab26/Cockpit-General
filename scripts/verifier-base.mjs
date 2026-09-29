@@ -1023,6 +1023,9 @@ async function controle22_renforts() {
 
   // L'attente par section : ce qui n'attend pas Raphaël seulement.
   const etat0 = (await une(`select etat_renforts(${q(SLUG_E)}) as e`)).e;
+  // Un projet supprimé pendant que l'écran l'affiche : null, jamais une erreur (400 répétés dans l'app).
+  verifie("etat_renforts d'un projet qui n'existe plus : null, pas une erreur",
+    (await une(`select etat_renforts(${q(`test-verif-${rand}-disparu`)}) is null as ok`)).ok === true);
   const parSec = Object.fromEntries(etat0.attente.map((a) => [a.section, a]));
   verifie("attente : Écran 3 (libres + pas trié), Base 2 (libre + vérifie pour moi), Sans section 1",
     parSec["Écran"]?.n === 3 && parSec["Base"]?.n === 2 && parSec["Sans section"]?.n === 1 && etat0.attente.length === 3, etat0.attente);
