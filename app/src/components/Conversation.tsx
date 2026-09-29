@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, CircleCheck, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, CheckCheck, CircleCheck, Clock, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -14,6 +14,7 @@ import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
+import { attenteReponse, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
 import { BlocQuestion } from './BlocQuestion.tsx'
 import { BlocValidation, SignalerProbleme } from './BlocValidation.tsx'
 import { BlocBloque, BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
@@ -31,9 +32,14 @@ import { BoutonJoindre, MediasMessage, VignettesPieces, deposerMedia, ecrireAvec
  * Chaque chantier s'ouvre en CONVERSATION (modèle D, choisi par Raphaël le 29
  * sept. 2026 : « vas-y fais A + D ») : une feuille plein écran sur téléphone,
  * un grand dialogue sur ordinateur. En haut le sujet et qui est dessus, au
- * milieu le fil en bulles (Claude à gauche, toi à droite), la demande en
- * premier et ce qu'il faut faire en dernier, en bas « Écrire à Claude… ».
- * On y arrive positionné sur ce qu'il y a à faire.
+ * milieu le fil en bulles (Claude à gauche, toi à droite), en bas « Écrire à
+ * Claude… ».
+ * Comme une discussion WhatsApp (Raphaël, 29 sept. : « que le dernier artefact
+ * où je dois choisir des cartes se mette toujours en dernier, après ma question
+ * et une fois que Claude a répondu ») : chronologique, le plus récent en bas,
+ * on arrive EN BAS ; ce qui attend ton choix (question, fusion, vérification)
+ * est toujours tout en bas ; après ton message, « réponse en attente » dit
+ * qui va te répondre et quand (lib/discussion.ts).
  *
  * `chantierId` null : les questions du PROJET (sans chantier).
  */
@@ -198,25 +204,77 @@ function BulleMessage({ m }: { m: Message }) {
   )
 }
 
-/** Le fil, puis la barre du bas ; à l'ouverture, positionné sur la première chose à faire (sinon en bas). */
-function Corps({ children, chantierId, placeholder }: { children: ReactNode; chantierId: string | null; placeholder: string }) {
+/**
+ * Le fil, puis la barre du bas. Comme une discussion : on arrive EN BAS (le
+ * dernier échange, puis ce qui attend ton choix). Si ce qui est à faire est
+ * plus haut que l'écran, on s'arrête sur son début pour qu'il se lise.
+ * `cle` change à chaque nouveau message : si on était en bas, on y reste.
+ */
+function Corps({ children, chantierId, placeholder, cle }: { children: ReactNode; chantierId: string | null; placeholder: string; cle: string }) {
   const corps = useRef<HTMLDivElement>(null)
+  const enBas = useRef(true)
+  const allerEnBas = (doux = false) => {
+    const el = corps.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: doux ? 'smooth' : 'auto' })
+    const cible = el.querySelector<HTMLElement>('[data-a-faire="oui"]')
+    if (!doux && cible && cible.getBoundingClientRect().top < el.getBoundingClientRect().top) {
+      el.scrollTop += cible.getBoundingClientRect().top - el.getBoundingClientRect().top - 8
+    }
+  }
   useEffect(() => {
     // Après l'ouverture de la feuille (showModal passe après ce rendu) : une image plus tard.
-    const r = requestAnimationFrame(() => {
-      const el = corps.current
-      if (!el) return
-      const cible = el.querySelector<HTMLElement>('[data-a-faire="oui"]')
-      if (cible) el.scrollTop += cible.getBoundingClientRect().top - el.getBoundingClientRect().top - 8
-      else el.scrollTop = el.scrollHeight
-    })
+    const r = requestAnimationFrame(() => allerEnBas())
     return () => cancelAnimationFrame(r)
   }, [])
+  const premier = useRef(true)
+  useEffect(() => {
+    if (premier.current) { premier.current = false; return }
+    if (enBas.current) { const r = requestAnimationFrame(() => allerEnBas(true)); return () => cancelAnimationFrame(r) }
+  }, [cle])
+  const surDefilement = () => { const el = corps.current; if (el) enBas.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160 }
   return (
     <>
-      <div ref={corps} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
-      <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => window.setTimeout(() => corps.current?.scrollTo({ top: corps.current.scrollHeight, behavior: 'smooth' }), 150)} />
+      <div ref={corps} onScroll={surDefilement} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
+      <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => { enBas.current = true; window.setTimeout(() => allerEnBas(true), 150) }} />
     </>
+  )
+}
+
+/** Le prochain passage de la chef du projet (réveil horaire), relu toutes les 5 min. null : aucun connu. */
+function useProchainPassage(projetId: string, cle: string): string | null {
+  const [quand, setQuand] = useState<string | null>(null)
+  useEffect(() => {
+    let vivant = true
+    const lire = async () => {
+      const { data, error } = await supabase.rpc('prochain_passage_chef', { p_projet_id: projetId })
+      if (vivant && !error) setQuand(typeof data === 'string' ? data : null)
+    }
+    void lire()
+    const t = window.setInterval(lire, 5 * 60_000)
+    return () => { vivant = false; window.clearInterval(t) }
+  }, [projetId, cle])
+  return quand
+}
+
+/** Après ton message, tant que Claude n'a pas répondu dans le fil : qui va répondre, et quand. */
+function BulleAttente({ attente }: { attente: AttenteReponse }) {
+  const { now } = useCockpit()
+  const recu = attente.etat === 'prise' || attente.etat === 'recue'
+  return (
+    <div className="flex justify-start" data-zone-libre="oui" data-testid="attente-reponse" data-etat={attente.etat}>
+      <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-dashed border-bord bg-carte px-3 py-2">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          {recu ? <CheckCheck size={16} className="shrink-0 text-ok" aria-hidden /> : <Clock size={16} className="shrink-0 text-texte-2" aria-hidden />}
+          {attente.titre}
+          {attente.etat === 'prise' || attente.etat === 'recue' || attente.etat === 'session'
+            ? <span className="flex gap-0.5 pl-0.5" aria-hidden><span className="point-vivant h-1.5 w-1.5 rounded-full bg-texte-2" /><span className="point-vivant h-1.5 w-1.5 rounded-full bg-texte-2 [animation-delay:150ms]" /><span className="point-vivant h-1.5 w-1.5 rounded-full bg-texte-2 [animation-delay:300ms]" /></span>
+            : null}
+        </p>
+        <p className="mt-0.5 text-sm text-texte-2" data-testid="attente-detail">{attente.detail}</p>
+        <p className="mt-0.5 text-[11px] text-texte-2">{attente.nombre > 1 ? `${attente.nombre} messages sans réponse, ` : ''}envoyé {dateRelative(attente.depuis, now)}</p>
+      </div>
+    </div>
   )
 }
 
@@ -243,7 +301,7 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
     const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId, par, admin, corps: texte.trim() || resumeMedias(pj.medias), medias: pj.medias })
     setEnCours(false)
     if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return }
-    toast.succes('Message envoyé : Claude le lira la prochaine fois qu’il travaillera sur ce projet.')
+    toast.succes('Message envoyé : Claude te répondra ici, dans ce fil.')
     setTexte('')
     pj.vider()
     await recharger()
@@ -262,7 +320,7 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
           {enCours || pj.enCours ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : <SendHorizontal size={18} />}
         </button>
       </div>
-      {texte.trim() ? <p className="px-2 pt-1 text-[11px] text-texte-2">Claude le lira la prochaine fois qu’il travaillera sur ce projet.</p> : null}
+      {texte.trim() ? <p className="px-2 pt-1 text-[11px] text-texte-2">Claude te répondra ici, dans ce fil.</p> : null}
     </div>
   )
 }
@@ -326,6 +384,8 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const c = chantiers.find((x) => x.id === chantierId) ?? null
   const fil = useMemo(() => messages.filter((m) => m.chantier_id === chantierId).sort((a, b) => a.created_at.localeCompare(b.created_at)), [messages, chantierId])
   const pd = useMemo(() => (c ? presenceDe(c, activites, enAttente, now, silenceMs, taches) : null), [c, activites, taches, enAttente, now, silenceMs])
+  const cle = `${fil.length}:${fil.at(-1)?.id ?? ''}:${fil.at(-1)?.answered_at ?? ''}:${fil.at(-1)?.recu_at ?? ''}`
+  const prochainPassage = useProchainPassage(c?.projet_id ?? '', cle)
 
   if (!c || !pd) {
     return (
@@ -336,6 +396,9 @@ function FilChantier({ chantierId }: { chantierId: string }) {
     )
   }
   const { presence, activite } = pd
+  const { historique, aChoisir } = ordreDuFil(fil)
+  const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
+  const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })
   const section = c.section_id ? sections.find((s) => s.id === c.section_id) : null
   const dernierBlocage = [...fil].reverse().find((m) => m.kind === 'blocage') ?? null
   const relancer = async () => {
@@ -355,41 +418,36 @@ function FilChantier({ chantierId }: { chantierId: string }) {
           </p>
         }
         menu={admin ? <MenuChantier chantier={c} nMessages={fil.length} onHistorique={() => setSignalHistorique((n) => n + 1)} /> : null} />
-      <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'}>
-        {/* 1. La demande, en premier. */}
+      <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'} cle={cle}>
+        {/* 0. En tête du fil, en petit : l'état, les notes, l'historique (comme les infos d'une discussion). */}
+        <div className="space-y-1.5" data-testid="infos-chantier">
+          <p className="flex flex-wrap gap-x-3 gap-y-0.5 px-1 text-[11px] text-texte-2" data-testid="etat-technique">
+            <span>État : {infoEtat(c.etat).libelle}</span>
+            <span>{section ? `Section : ${section.nom}` : 'Sans section'}</span>
+            {c.priorite !== 'normale' ? <span>Priorité {c.priorite}</span> : null}
+            {c.origine === 'session' ? <span data-testid="origine-session">lancé par Claude</span> : c.origine === 'utilisateur' ? <span>demande d’un utilisateur</span> : null}
+            {c.livre_at ? <span>Livré {dateRelative(c.livre_at, now)}</span> : null}
+            {c.pris_par ? <span title={c.pris_par}>Réservé par {nomCourtSession(c.pris_par)}</span> : null}
+            {c.archived_at ? <span>archivé</span> : null}
+          </p>
+          {c.notes ? <Repliable titre={<span className="text-sm font-medium">Notes de travail de Claude</span>}><p className="whitespace-pre-wrap text-sm text-texte-2">{c.notes}</p></Repliable> : null}
+          {admin ? <Historique chantierId={c.id} signal={signalHistorique} /> : null}
+        </div>
+
+        {/* 1. La demande, puis la discussion, dans l'ordre : le plus récent en bas. */}
         <Bulle cote={c.origine === 'session' ? 'gauche' : 'droite'} auteur={c.origine === 'session' ? 'Claude · la demande' : c.origine === 'utilisateur' ? 'Demande d’un utilisateur' : 'La demande'} quand={c.created_at} testId="bulle-demande">
           {c.demande ? <TexteLong texte={c.demande} /> : <p className="text-sm text-texte-2">Pas de description : le titre dit tout.</p>}
           {c.resume_simple ? <p className="mt-1 text-sm text-texte-2">En clair : {c.resume_simple}</p> : null}
         </Bulle>
+        {historique.map((m) => <BulleMessage key={m.id} m={m} />)}
 
-        {/* 2. Le fil : ce qui attend une réponse devient une bulle à remplir. */}
-        {fil.map((m) => {
-          if ((m.kind === 'question' || m.kind === 'action') && !m.answered_at) return <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>
-          if (m.kind === 'fusion' && !m.answered_at) return <AFaire key={m.id}><BlocFusion message={m} /></AFaire>
-          return <BulleMessage key={m.id} m={m} />
-        })}
-
-        {/* 3. Où en est le chantier, et ce qu'on attend de toi. */}
-        {c.etat === 'a_verifier' ? <AFaire><BlocValidation chantier={c} /></AFaire> : null}
-        {c.etat === 'a_cadrer' ? <AFaire><BlocCadrer chantier={c} /></AFaire> : null}
-        {c.etat === 'bloque' ? <AFaire><BlocBloque chantier={c} blocage={dernierBlocage} /></AFaire> : null}
+        {/* 2. Où en est le chantier. */}
         {presence.code === 'travaille' ? (
           <Bulle cote="gauche" auteur="En ce moment" testId="bulle-travail">
             <p className="flex items-center gap-1.5 text-sm"><PointTravaille />{presence.detail ?? ''}</p>
             {activite ? <Progression activite={activite} vive={presence.barreVive} compact now={now} /> : null}
             <div className="mt-1.5"><TachesDuChantier chantierId={c.id} /></div>
           </Bulle>
-        ) : null}
-        {(presence.code === 'personne' || presence.code === 'silencieux') && c.etat !== 'a_cadrer' ? (
-          <AFaire testId="bulle-relance">
-            <div className="space-y-2 rounded-2xl border border-bord bg-carte p-3">
-              <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
-              {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
-              {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
-              <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>
-              <BoutonsRelance chantier={c} />
-            </div>
-          </AFaire>
         ) : null}
         {c.etat === 'reporte' ? (
           <Bulle cote="gauche" auteur="Mis de côté" testId="bulle-reporte">
@@ -404,19 +462,28 @@ function FilChantier({ chantierId }: { chantierId: string }) {
           </Bulle>
         ) : null}
         {c.etat !== 'a_verifier' ? <FriseMiseEnLigne chantier={c} /> : null}
+        {(presence.code === 'personne' || presence.code === 'silencieux') && c.etat !== 'a_cadrer' ? (
+          <AFaire testId="bulle-relance">
+            <div className="space-y-2 rounded-2xl border border-bord bg-carte p-3">
+              <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
+              {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
+              {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
+              <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>
+              <BoutonsRelance chantier={c} />
+            </div>
+          </AFaire>
+        ) : null}
 
-        {/* 4. Le reste, en petit. */}
-        {c.notes ? <Repliable titre={<span className="text-sm font-medium">Notes de travail de Claude</span>}><p className="whitespace-pre-wrap text-sm text-texte-2">{c.notes}</p></Repliable> : null}
-        <p className="flex flex-wrap gap-x-3 gap-y-0.5 px-1 pt-1 text-[11px] text-texte-2" data-testid="etat-technique">
-          <span>État : {infoEtat(c.etat).libelle}</span>
-          <span>{section ? `Section : ${section.nom}` : 'Sans section'}</span>
-          {c.priorite !== 'normale' ? <span>Priorité {c.priorite}</span> : null}
-          {c.origine === 'session' ? <span data-testid="origine-session">lancé par Claude</span> : c.origine === 'utilisateur' ? <span>demande d’un utilisateur</span> : null}
-          {c.livre_at ? <span>Livré {dateRelative(c.livre_at, now)}</span> : null}
-          {c.pris_par ? <span title={c.pris_par}>Réservé par {nomCourtSession(c.pris_par)}</span> : null}
-          {c.archived_at ? <span>archivé</span> : null}
-        </p>
-        {admin ? <Historique chantierId={c.id} signal={signalHistorique} /> : null}
+        {/* 3. Ton dernier message attend sa réponse : qui va répondre, et quand. */}
+        {attente ? <BulleAttente attente={attente} /> : null}
+
+        {/* 4. TOUJOURS EN DERNIER : ce qui attend ton choix (cartes). */}
+        {c.etat === 'a_verifier' ? <AFaire><BlocValidation chantier={c} /></AFaire> : null}
+        {c.etat === 'a_cadrer' ? <AFaire><BlocCadrer chantier={c} /></AFaire> : null}
+        {c.etat === 'bloque' ? <AFaire><BlocBloque chantier={c} blocage={dernierBlocage} /></AFaire> : null}
+        {aChoisir.map((m) => m.kind === 'fusion'
+          ? <AFaire key={m.id}><BlocFusion message={m} /></AFaire>
+          : <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>)}
       </Corps>
     </>
   )
@@ -424,15 +491,22 @@ function FilChantier({ chantierId }: { chantierId: string }) {
 
 /** Les questions du projet qui ne portent sur aucun chantier. */
 function FilProjet() {
-  const { messages } = useCockpit()
+  const { messages, projet, now } = useCockpit()
   const fil = useMemo(() => messages.filter((m) => !m.chantier_id).sort((a, b) => a.created_at.localeCompare(b.created_at)), [messages])
+  const cle = `${fil.length}:${fil.at(-1)?.id ?? ''}:${fil.at(-1)?.answered_at ?? ''}:${fil.at(-1)?.recu_at ?? ''}`
+  const prochainPassage = useProchainPassage(projet.id, cle)
+  const { historique, aChoisir } = ordreDuFil(fil)
+  const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient: false, prochainPassage })
   return (
     <>
       <EnTete titre="Questions sur le projet" sousTitre={<p className="text-xs text-texte-2">Ce qui ne porte sur aucun chantier en particulier</p>} />
-      <Corps chantierId={null} placeholder="Écrire à Claude…">
-        {fil.length ? fil.map((m) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
-          ? <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>
-          : <BulleMessage key={m.id} m={m} />) : <p className="text-sm text-texte-2">Rien pour l’instant.</p>}
+      <Corps chantierId={null} placeholder="Écrire à Claude…" cle={cle}>
+        {fil.length ? null : <p className="text-sm text-texte-2">Rien pour l’instant.</p>}
+        {historique.map((m) => <BulleMessage key={m.id} m={m} />)}
+        {attente ? <BulleAttente attente={attente} /> : null}
+        {aChoisir.map((m) => m.kind === 'fusion'
+          ? <AFaire key={m.id}><BlocFusion message={m} /></AFaire>
+          : <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>)}
       </Corps>
     </>
   )

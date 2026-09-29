@@ -460,7 +460,7 @@ try {
   verifie('en-tête de conversation : « Claude y travaille — 60 % », avec le point qui pulse',
     /Claude y travaille — 60 %/.test(await conv().getByTestId('presence-conversation').textContent()) && await conv().getByTestId('presence-conversation').locator('.point-vivant').count() === 1)
   verifie('…et une bulle « En ce moment » avec la barre vive', await conv().getByTestId('bulle-travail').locator('[data-vive="oui"]').count() === 1)
-  verifie('la demande est la première bulle', (await conv().locator('[data-testid="fil-conversation"] > *').first().getAttribute('data-testid')) === 'bulle-demande')
+  verifie('la demande est la première bulle (après les infos du chantier, en petit)', (await conv().locator('[data-testid="fil-conversation"] > :not([data-testid="infos-chantier"])').first().getAttribute('data-testid')) === 'bulle-demande')
   verifie('conversation : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await captureUx(page, 'ux-conversation-vivante')
   // Le geste « retour » du téléphone ferme la conversation (et ne quitte pas le cockpit).
@@ -647,7 +647,8 @@ try {
   const tCmd = blocSession.locator('[data-testid="tache"]', { hasText: 'commande muette' })
   verifie('agent qui a signalé : « Agent : … », barre vive, temps restant', (await tAgent.textContent()).includes('Agent :') && await tAgent.locator('[data-vive="oui"]').count() === 1 && /reste ~\d+ min/.test(await tAgent.textContent()), await tAgent.textContent())
   verifie('commande muette : « Commande : … », « avancement non signalé », AUCUNE barre', (await tCmd.textContent()).includes('Commande :') && await tCmd.getByTestId('non-signale').count() === 1 && await tCmd.getByRole('progressbar').count() === 0)
-  verifie('chaque tâche dit depuis quand elle tourne', /depuis 12 min/.test(await tAgent.textContent()) && /depuis 3 min/.test(await tCmd.textContent()))
+  // Une minute de marge : entre l'insertion et la lecture, le réseau peut prendre plus de 60 s (échec intermittent du 29 sept.).
+  verifie('chaque tâche dit depuis quand elle tourne', /depuis 1[23] min/.test(await tAgent.textContent()) && /depuis [34] min/.test(await tCmd.textContent()), [await tAgent.textContent(), await tCmd.textContent()])
   verifie('la tâche liée à un chantier le nomme', (await tAgent.textContent()).includes(P4.titre))
   verifie('les tâches finies depuis peu sont repliées sous la session', (await blocSession.getByTestId('taches-finies').textContent()).includes('1 fini'))
   verifie('l’aide « c’est quoi ? » est là, repliée, et s’ouvre', await page.getByTestId('vocabulaire').count() === 1 && (await page.getByTestId('vocabulaire').getAttribute('aria-expanded')) === 'false')
@@ -810,7 +811,10 @@ try {
   const blocQI = conv().getByTestId('bloc-question')
   const vigQI = blocQI.locator('[data-testid="images-question"] [data-testid="media"] img').first()
   await vigQI.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  // L'image arrive par une URL signée : attendre son chargement réel, pas un
+  // délai fixe (800 ms ne suffisaient pas toujours, échec intermittent du 29 sept.).
+  await vigQI.evaluate((i) => i.complete && i.naturalWidth > 0 ? true : new Promise((ok) => { i.addEventListener('load', () => ok(true), { once: true }); i.addEventListener('error', () => ok(false), { once: true }) })).catch(() => {})
+  await page.waitForTimeout(300)
   const boiteQI = await vigQI.boundingBox().catch(() => null)
   verifie('question de Claude : l’image s’affiche en miniature SOUS la question (chargée, ≥ 100 px)',
     await vigQI.count() === 1 && await vigQI.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false) && (boiteQI?.width ?? 0) >= 100, boiteQI)
@@ -1001,6 +1005,75 @@ try {
   verifie('« C’est décidé : prêt à lancer » : toast visible', await toastAuPremierPlan(/est prêt/))
   verifie('…en base : libre', sql(`select etat from chantiers where id = '${K1.id}'`)[0]?.etat === 'libre')
   await fermerConv()
+  // 0025 : le fil est une DISCUSSION (Raphaël : « que le dernier artefact où je dois choisir des cartes se
+  // mette toujours en dernier, après ma question et une fois que Claude a répondu […] comme WhatsApp »).
+  console.log('  — fil en discussion')
+  {
+    const D = creerTest('discussion', { etat: 'libre' })
+    const optsD = JSON.stringify([{ libelle: 'Oui' }, { libelle: 'Non' }]).replace(/'/g, "''")
+    // La question est posée EN PREMIER (il y a 30 min), puis 10 échanges : elle doit quand même être rendue en dernier.
+    const valsD = [`('${projet.id}', '${D.id}', 'verifier-web', 'session', 'question', '${MARQUE2} Version courte ?', '${optsD}'::jsonb, now() - interval '30 minutes')`]
+    for (let i = 1; i <= 10; i++) valsD.push(`('${projet.id}', '${D.id}', 'verifier-web', '${i % 2 ? 'proprietaire' : 'session'}', 'info', '${MARQUE2} échange ${i}', null, now() - interval '${30 - 2 * i} minutes')`)
+    sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, options, created_at) values ${valsD.join(', ')}`)
+    // Le réveil horaire de la chef du projet (minute 7) : l'app annonce le prochain passage.
+    sql(`insert into chefs (projet_id, session_id, actif, reveil_trigger, reveil_minute) values ('${projet.id}', 'test-web-chef', true, 'trig_test_web', 7)
+         on conflict (projet_id) do update set session_id = 'test-web-chef', actif = true, reveil_trigger = 'trig_test_web', reveil_minute = 7`)
+    await actualiser()
+    await (await elementAToi(D.id, 'question')).getByTestId('verbe-a-toi').click()
+    await attendreConv(D.titre)
+    const filD = conv().getByTestId('fil-conversation')
+    await page.waitForTimeout(500)
+    const echanges = () => filD.locator('[data-testid="bulle"]').evaluateAll((els) => els.map((e) => [e.textContent.match(/échange (\d+)/)?.[1] ?? null, e.getAttribute('data-cote'), e.textContent]))
+    const ordreD = (await echanges()).filter((x) => x[0])
+    verifie('discussion : chronologique, le plus récent EN BAS (échanges 1 → 10)', ordreD.map((x) => x[0]).join(',') === '1,2,3,4,5,6,7,8,9,10', ordreD.map((x) => x[0]))
+    verifie('discussion : toi à droite, Claude à gauche', ordreD.every(([n, c]) => c === (Number(n) % 2 ? 'droite' : 'gauche')), ordreD)
+    const enfantsD = () => filD.evaluate((el) => [...el.children].map((c) => c.getAttribute('data-testid') ?? (c.getAttribute('data-a-faire') ? 'a-faire' : c.tagName)))
+    const derniersD = await filD.evaluate((el) => { const k = [...el.children]; return { dernier: k.at(-1)?.getAttribute('data-a-faire'), question: !!k.at(-1)?.querySelector('[data-testid="bloc-question"]') } })
+    verifie('la question ouverte (cartes), posée en premier, est rendue TOUT EN BAS', derniersD.dernier === 'oui' && derniersD.question, { derniersD, enfants: await enfantsD() })
+    const basD = await filD.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
+    verifie('la conversation s’ouvre EN BAS (dernier échange et cartes)', basD < 8 && await dansLaVue(conv().getByTestId('bloc-question')), basD)
+    verifie('Claude a répondu en dernier : rien « en attente »', await conv().getByTestId('attente-reponse').count() === 0)
+    // Il écrit « je n'ai pas compris » : sa bulle, puis « réponse en attente » et quand, PUIS les cartes.
+    const barreD = conv().getByTestId('ecrire-a-claude')
+    await barreD.locator('textarea').fill(`${MARQUE2} je n'ai pas compris ta demande`)
+    await barreD.getByTestId('envoyer-message').click()
+    verifie('message envoyé : toast « Claude te répondra ici »', await toastAuPremierPlan(/Claude te répondra ici/), { auPremierPlan: dernierDessus })
+    await conv().getByTestId('attente-reponse').waitFor({ timeout: 10000 }).catch(() => {})
+    const att = conv().getByTestId('attente-reponse')
+    verifie('après son message : « Message envoyé : réponse en attente », avec le prochain passage de Claude (vers HH h 07)',
+      await att.count() === 1 && /réponse en attente/.test(await att.textContent()) && /Prochain passage de Claude (vers \d+ h 07|dans l’heure)/.test(await att.getByTestId('attente-detail').textContent()),
+      await att.count() ? await att.textContent() : 'absent')
+    const ordreApres = await enfantsD()
+    const iMoi = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('pas compris ta demande')))
+    verifie('ordre : sa bulle → « en attente » → les cartes, en dernier', iMoi >= 0 && ordreApres[iMoi + 1] === 'attente-reponse' && ordreApres.at(-1) === 'a-faire' && iMoi + 2 === ordreApres.length - 1, { iMoi, ordreApres })
+    verifie('après l’envoi, on reste EN BAS (sa bulle et les cartes visibles)', await dansLaVue(conv().getByTestId('bloc-question')) && await dansLaVue(att))
+    const msgD = sql(`select id, auteur_type, kind from messages where chantier_id = '${D.id}' and corps like '%pas compris ta demande'`)[0]
+    verifie('en base : un message libre à qui une réponse est due (messages_sans_reponse)', msgD?.auteur_type === 'proprietaire'
+      && sql(`select message_id from messages_sans_reponse('${projet.id}', null)`).some((r) => r.message_id === msgD.id), msgD)
+    await capture(page, 'discussion-attente')
+    // Marqué « reçu » (hook de la session) → « Claude a reçu ton message ».
+    sql(`select marquer_messages_recus(array['${msgD.id}']::uuid[], 'claude/test-web') as n`)
+    await fermerConv(); await actualiser()
+    await (await elementAToi(D.id, 'question')).getByTestId('verbe-a-toi').click()
+    await attendreConv(D.titre)
+    verifie('reçu par la session : « Claude a reçu ton message »', /Claude a reçu ton message/.test(await conv().getByTestId('attente-reponse').textContent().catch(() => '')))
+    // Claude répond dans le fil (progression.sh --point → repondre_dans_fil) : l'attente disparaît, la réponse est sous sa bulle, les cartes restent en dernier.
+    await fermerConv()
+    sql(`select repondre_dans_fil(null, '${D.id}', 'claude/test-web', '${MARQUE2} Je parlais de la version courte du texte.') as id`)
+    await actualiser()
+    await (await elementAToi(D.id, 'question')).getByTestId('verbe-a-toi').click()
+    await attendreConv(D.titre)
+    const finD = await enfantsD()
+    const iRep = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('Je parlais de la version courte')))
+    const iMoi2 = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('pas compris ta demande')))
+    verifie('Claude a répondu : plus d’attente, sa réponse (à gauche) sous ta bulle, les cartes toujours en dernier',
+      await conv().getByTestId('attente-reponse').count() === 0 && iRep === iMoi2 + 1 && finD.at(-1) === 'a-faire'
+        && (await filD.locator('[data-testid="bulle"]', { hasText: 'Je parlais de la version courte' }).getAttribute('data-cote')) === 'gauche', { finD, iRep, iMoi2 })
+    verifie('discussion : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+    await capture(page, 'discussion-repondu')
+    await fermerConv()
+    sql(`delete from chefs where projet_id = '${projet.id}' and reveil_trigger = 'trig_test_web'`)
+  }
   await (await elementAToi(B1.id, 'bloque')).getByTestId('verbe-a-toi').click()
   await attendreConv(B1.titre)
   const blocB = conv().getByTestId('bloc-bloque')

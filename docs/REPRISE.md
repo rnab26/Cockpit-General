@@ -247,6 +247,17 @@ plus 1 h, ou dès que Raphaël lui écrit) ; un renfort muet 3 h rend sa section
 (« erreur » visible). Les projets déjà branchés reçoivent `renfort.sh` par le
 lanceur ; `cockpit-renfort.sh` arrive au prochain démarrage (brancher.sh --maj).
 
+## 2 duodecies. 29 sept. soir : chaque fil est une discussion (chantier `450afa9e`, migration 0025)
+
+Un message libre de Raphaël dans un fil attend une réponse ÉCRITE de Claude
+(`progression.sh --point`, avec ou sans `--chantier`) ; la chef la confie à un
+agent « Répondre : … » si personne ne tient le fil. L'app : chronologique, en
+bas, cartes toujours en dernier, « réponse en attente / prochain passage vers
+HH h MM ». Branche `agent/discussion`. Ouvert : réveil immédiat de la chef
+quand il écrit (déclencheur API de routine, jeton à créer à la main) — question
+posée dans le chantier. Le module embarqué montre seulement « la réponse
+arrivera ici » (pas l'ordre des cartes ni le prochain passage).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

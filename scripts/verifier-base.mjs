@@ -871,7 +871,7 @@ async function controle18_reponses_prises() {
     const l = await chantier(c);
     const fil = await sql(`select corps from messages where chantier_id = ${q(c)} and auteur_type = 'session' and kind = 'info'`);
     verifie("chef.sh donne une consigne d'agent : la question, la réponse, « Fais ce que cette réponse annonce »",
-      sortie.includes(`SESSION CHEF de ${SLUG_A} : lance 2 agent`) && sortie.includes("Je lance le banc GPU de test ?") && sortie.includes("« Oui, ~0,9 $ »")
+      /SESSION CHEF de \S+ : lance [23] agent/.test(sortie) && sortie.includes(`SESSION CHEF de ${SLUG_A}`) && sortie.includes("Je lance le banc GPU de test ?") && sortie.includes("« Oui, ~0,9 $ »")
         && sortie.includes("Fais ce que cette réponse annonce") && sortie.includes(c), sortie);
     verifie("une réponse qui engage une dépense rappelle les barrières de budget", /DÉPENSE.*plafond de durée.*annulation automatique.*job par job/s.test(sortie), sortie);
     verifie("le chantier repart « en cours », réservé à la branche agent/reponse-… citée dans la consigne",
@@ -882,7 +882,10 @@ async function controle18_reponses_prises() {
     verifie("question de projet : un chantier INTERNE est ouvert, en cours, réservé à l'agent, la question y est rattachée, consigne donnée",
       !!cP && cP.etat === "en_cours" && cP.visible_utilisateurs === false && /^agent\/reponse-/.test(cP.pris_par ?? "") && sortie.includes("Installer le module de test ?")
         && sortie.includes("question de projet, sans chantier") && sortie.includes(cP.id), { cP, sortie });
-    verifie("reprise UNE seule fois : la passe suivante ne la redonne pas", /^RIEN/.test(chef()));
+    // 0025 : la place libre restante peut servir un message libre du projet (« Répondre : … ») ;
+    // ce qui compte ici : aucune des deux RÉPONSES n'est redonnée.
+    const s2 = chef();
+    verifie("reprise UNE seule fois : la passe suivante ne la redonne pas", /^RIEN/.test(s2) || !s2.includes("Fais ce que cette réponse annonce"), s2.slice(0, 600));
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
@@ -989,6 +992,98 @@ async function controle24_ou_en_est() {
   verifie("délai de l'app (DELAI_OU_EN_EST_MS) = délai de la base (delai_ou_en_est)", !!m2 && Number(m2[1]) * 3600 === base, { app: m2?.[1], base });
   const cV = await creerChantier(P1, { titre: "Test certifié", etat: "valide" });
   verifie("chantier certifié : rien à demander (refusé)", (await rpcUtilisateur("demander_ou_en_est", { p_chantier: cV, p_par: "membre" }, jwt)).status >= 400);
+}
+
+// 25. Chaque fil est une discussion (0025, chantier 450afa9e, Raphaël : « je
+// pose des questions du type "je n'ai pas compris ta demande" et je n'ai pas
+// de retour »). Un message libre attend une RÉPONSE ÉCRITE de Claude ; même
+// règle dans l'app (lib/discussion.ts) et en base (est_message_libre).
+async function controle26_fil_discussion() {
+  section("26. Fil en discussion (0025) : un message libre attend une réponse écrite, même règle que l'app, droits");
+  const c = await creerChantier(P1, { titre: "Test discussion", etat: "a_verifier" });
+  const ins = async (o) => {
+    const id = randomUUID();
+    await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, ou_en_est, medias, created_at, answered_at)
+      values (${q(id)}, ${q(P1)}, ${q(o.chantier === undefined ? c : o.chantier)}, 'verifier-base', ${q(o.auteur_type ?? "proprietaire")}, ${q(o.kind ?? "info")}, ${q(o.corps)},
+              ${o.ou_en_est ? "true" : "false"}, ${o.medias ? q(JSON.stringify(o.medias)) + "::jsonb" : "'[]'::jsonb"},
+              now() - make_interval(secs => ${o.il_y_a ?? 0}), ${o.repondue_il_y_a != null ? `now() - make_interval(secs => ${o.repondue_il_y_a})` : "null"})`);
+    return id;
+  };
+  // Un jeu de lignes couvrant chaque cas de la règle.
+  const media = [{ chemin: "x/y.png", nom: "y.png", type: "image/png", taille: 1 }];
+  await ins({ auteur_type: "session", kind: "question", corps: "Version courte ?", il_y_a: 900, repondue_il_y_a: 600 });
+  await ins({ corps: "Je n'ai pas compris ta demande", il_y_a: 800 });
+  await ins({ auteur_type: "utilisateur", corps: "Et pour moi ?", il_y_a: 790 });
+  await ins({ auteur_type: "session", corps: "Réponse de Claude", il_y_a: 700 });
+  await ins({ kind: "constat", corps: "Ça ne marche pas : le bouton", il_y_a: 650 });
+  await ins({ kind: "constat", corps: "Ça fonctionne, je certifie.", il_y_a: 640 });
+  await ins({ kind: "constat", corps: "Je ne sais pas dire si c’est bon : vérifie pour moi.", il_y_a: 630 });
+  await ins({ corps: "Raphaël demande : où en est ce chantier ?", ou_en_est: true, il_y_a: 620 });
+  await ins({ corps: "Doublon fusionné : « X »", il_y_a: 610 });
+  await ins({ corps: "1 photo", medias: media, il_y_a: 590 }); // jointe à la réponse à la question (10 s après)
+  await ins({ corps: "1 photo plus tard", medias: media, il_y_a: 60 });
+  const lignes = await sql(`select m.id, m.auteur_type, m.kind, m.corps, m.ou_en_est, m.medias, m.chantier_id,
+      to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
+      to_char(m.answered_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as answered_at,
+      cockpit.est_message_libre(m) as libre_base from messages m where m.chantier_id = ${q(c)} order by m.created_at`);
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const { estMessageLibre } = await import(join(racine, "app/src/lib/discussion.ts"));
+  const ecarts = lignes.filter((m) => estMessageLibre(m, lignes) !== m.libre_base).map((m) => ({ corps: m.corps, base: m.libre_base }));
+  verifie(`même règle « message libre » dans l'app et en base (${lignes.length} lignes, chaque cas)`, lignes.length === 11 && ecarts.length === 0, ecarts);
+  verifie("« je n'ai pas compris », Corriger, une photo seule : attendent une réponse ; boutons, où ça en est, doublon, photo de réponse : non",
+    lignes.filter((m) => m.libre_base).map((m) => m.corps).join("|") === "Je n'ai pas compris ta demande|Et pour moi ?|Ça ne marche pas : le bouton|1 photo plus tard", lignes.filter((m) => m.libre_base).map((m) => m.corps));
+
+  // Une étape ne suffit pas : il faut un message de Claude dans le fil.
+  let sr = (await sql(`select * from messages_sans_reponse(${q(P1)}, null)`)).find((r) => r.chantier_id === c);
+  verifie("sans réponse écrite depuis « Ça ne marche pas » : le fil est dans messages_sans_reponse (depuis son plus ancien)",
+    !!sr && sr.nombre === 2 && (await une(`select corps from messages where id = ${q(sr.message_id)}`)).corps === "Ça ne marche pas : le bouton", sr);
+  await sql(`select signaler_activite(${q(SLUG_A)}, ${q(c)}, 'claude/etape-seule', 'je travaille', 30, null, 'en_cours', null)`);
+  await sql(`update chantiers set pris_par = null, pris_jusqu_a = null where id = ${q(c)}`);
+  sr = (await sql(`select * from messages_sans_reponse(${q(P1)}, null)`)).find((r) => r.chantier_id === c);
+  verifie("une simple étape signalée ne compte PAS comme une réponse", !!sr, sr);
+  // Tenu par une AUTRE session vivante : c'est elle qui répond (hook), pas la chef.
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values ('test-disc-${rand}', ${q(P1)}, 'claude/tient-disc', now())
+             on conflict (id) do update set vu_at = now(), fin_at = null`);
+  await sql(`update chantiers set pris_par = 'claude/tient-disc', pris_jusqu_a = now() + interval '30 minutes' where id = ${q(c)}`);
+  verifie("tenu par une autre session vivante : pas dans la file de la chef",
+    !(await sql(`select chantier_id from messages_sans_reponse(${q(P1)}, null)`)).some((r) => r.chantier_id === c));
+  verifie("… mais la session qui le tient le voit à son démarrage (sa branche)",
+    (await sql(`select chantier_id from messages_sans_reponse(${q(P1)}, 'claude/tient-disc')`)).some((r) => r.chantier_id === c));
+  // La réponse : repondre_dans_fil (progression.sh --point) le sort de la liste, rattachée à son dernier message.
+  const idRep = (await une(`select repondre_dans_fil(null, ${q(c)}, 'claude/tient-disc', 'Je regarde le bouton.') as id`)).id;
+  const rep = await une(`select auteur_type, kind, repond_a, (select corps from messages where id = r.repond_a) as a from messages r where id = ${q(idRep)}`);
+  verifie("repondre_dans_fil : un message de session, rattaché à la demande « où ça en est » en attente (sinon au dernier message)",
+    rep?.auteur_type === "session" && rep.a === "Raphaël demande : où en est ce chantier ?", rep);
+  verifie("après la réponse : plus rien n'attend dans ce fil",
+    !(await sql(`select chantier_id from messages_sans_reponse(${q(P1)}, 'claude/tient-disc')`)).some((r) => r.chantier_id === c));
+  // Un « Où ça en est ? » en attente : la réponse s'y rattache, et il est marqué reçu (0023 passe par la même fonction).
+  const cO = await creerChantier(P1, { titre: "Test discussion, où ça en est", etat: "en_cours" });
+  const dem = (await une(`select demander_ou_en_est(${q(cO)}, 'Raphaël') as r`)).r;
+  const r2 = (await une(`select repondre_ou_en_est(${q(cO)}, 'claude/x', 'Fait : tout. Reste : rien.') as r`)).r;
+  const lie = await une(`select m.repond_a, d.recu_at from messages m join messages d on d.id = ${q(dem.id)} where m.id = ${q(r2.id)}`);
+  verifie("repondre_ou_en_est passe par repondre_dans_fil : rattachée à la demande, demande reçue", r2.demande === dem.id && lie?.repond_a === dem.id && !!lie.recu_at, { r2, lie });
+  const cL = await creerChantier(P1, { titre: "Test discussion, sans demande", etat: "en_cours" });
+  await ins({ chantier: cL, corps: "Premier", il_y_a: 20 });
+  await ins({ chantier: cL, corps: "Dernier", il_y_a: 10 });
+  const idL = (await une(`select repondre_dans_fil(null, ${q(cL)}, 'claude/x', 'Vu.') as id`)).id;
+  verifie("sans « où ça en est » en attente : rattachée à son DERNIER message du fil",
+    (await une(`select (select corps from messages where id = r.repond_a) as a from messages r where id = ${q(idL)}`))?.a === "Dernier");
+  // Droits : tout est réservé aux sessions, sauf le prochain passage (lecture, membres).
+  for (const [fn, args] of [["messages_sans_reponse", { p_projet_id: P1 }], ["reprendre_message", { p_branche: "agent/pirate", p_projet_id: P1 }],
+    ["marquer_messages_recus", { p_ids: [idRep], p_par: "pirate" }], ["repondre_dans_fil", { p_projet: SLUG_A, p_chantier: c, p_auteur: "pirate", p_texte: "faux" }]]) {
+    const r = await rpcUtilisateur(fn, args, jwt);
+    verifie(`${fn} : interdit à un utilisateur (sessions seulement)`, r.status >= 400, { status: r.status, json: r.json });
+  }
+  await sql(`insert into chefs (projet_id, session_id, actif, reveil_trigger, reveil_minute) values (${q(P1)}, 'test-disc-${rand}', true, 'trig_test', 8)
+             on conflict (projet_id) do update set reveil_trigger = 'trig_test', reveil_minute = 8, actif = true, session_id = excluded.session_id`);
+  const pp = await rpcUtilisateur("prochain_passage_chef", { p_projet_id: P1 }, jwt);
+  const quand = pp.json ? new Date(pp.json) : null;
+  verifie("prochain_passage_chef : un membre lit le prochain réveil (minute 8, dans l'heure qui vient)",
+    pp.status === 200 && !!quand && quand.getUTCMinutes() === 8 && quand > new Date() && quand - new Date() <= 3600_000, pp);
+  const ppB = await rpcUtilisateur("prochain_passage_chef", { p_projet_id: P2 }, jwt);
+  verifie("prochain_passage_chef : rien pour un projet dont il n'est pas membre", ppB.status === 200 && ppB.json === null, ppB);
+  await sql(`delete from chefs where projet_id = ${q(P1)} and reveil_trigger = 'trig_test'`);
+  await sql(`delete from sessions where id = 'test-disc-${rand}'`);
 }
 
 // Deux projets NEUFS (C et D) : rien des sections précédentes dans leur file.
@@ -1391,7 +1486,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion,
   ];
   for (const etape of etapes) {
     try { await etape(); }
