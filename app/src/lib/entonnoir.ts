@@ -39,12 +39,12 @@ export function presenceDe(
 }
 
 export const LIBELLE_COURT_PRESENCE: Record<CodePresence, string> = {
-  travaille: 'Claude y travaille', attend_toi: 'attend ta réponse', a_verifier: 'à vérifier', silencieux: 'pris, silencieux',
+  travaille: 'Claude y travaille', attend_toi: 'attend ta réponse', a_verifier: 'à vérifier', claude_verifie: 'Claude vérifie pour toi', silencieux: 'pris, silencieux',
   a_cadrer: 'à cadrer', bloque: 'bloqué', personne: 'personne dessus', reporte: 'reporté', termine: 'certifié',
 }
 /** Ordre de lecture d'une liste : ce qui bouge, puis ce qui t'attend, puis ce qui dort. */
 const RANG_PRESENCE: Record<CodePresence, number> = {
-  travaille: 0, attend_toi: 1, a_verifier: 2, silencieux: 3, a_cadrer: 4, bloque: 5, personne: 6, reporte: 7, termine: 8,
+  travaille: 0, claude_verifie: 1, attend_toi: 2, a_verifier: 3, silencieux: 4, a_cadrer: 5, bloque: 6, personne: 7, reporte: 8, termine: 9,
 }
 const RANG_PRIORITE: Record<Priorite, number> = { haute: 0, normale: 1, basse: 2 }
 
@@ -316,11 +316,16 @@ export function caAvanceToutSeul(
     // réponse (question ouverte, bloqué) restait hors de « Ça avance » alors
     // qu'une preuve de vie existe. Le travail réel se montre toujours ici ;
     // la question, elle, reste aussi dans « À toi ».
-    const presence: Presence = presenceBase.code === 'travaille' || !(parSession || agentVivant) ? presenceBase : {
+    const presence: Presence = presenceBase.code === 'travaille' || presenceBase.code === 'claude_verifie' || !(parSession || agentVivant) ? presenceBase : {
       code: 'travaille', libelle: 'Claude y travaille', teinte: 'ok', detail: presenceBase.detail,
       barreVive: !!parSession || agentVivant?.pourcentage != null, aRelancer: false, tonAction: presenceBase.tonAction,
     }
-    if (presence.code === 'travaille') {
+    if (presence.code === 'claude_verifie') {
+      // « Vérifie pour moi » : sorti de « À toi », il avance ici, sous le même nom partout.
+      const barre = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : parSession
+      lignes.push({ c, presence, activite: barre, vivant: true, qui: presence.libelle,
+        etape: barre?.etape || agentVivant?.etape || null, pourquoi: null, demandeLe: null })
+    } else if (presence.code === 'travaille') {
       const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
       const morceaux: string[] = []
       if (parSession) {

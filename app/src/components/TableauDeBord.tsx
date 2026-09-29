@@ -54,7 +54,7 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
 type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
-  { cle: 'caAvance', libelle: 'ça avance', aide: 'Claude y travaille, ou l’avait pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'caAvance', libelle: 'ça avance', aide: 'Claude y travaille, vérifie pour toi, ou l’avait pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'enPause', libelle: 'en pause', aide: 'personne dessus : prêt à lancer', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]

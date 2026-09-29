@@ -731,10 +731,21 @@ try {
   verifie('en attente de Claude : plus AUCUN bouton (ni « Ça marche », ni « Corriger »), seulement « En attente de Claude »', await blocV4.getByTestId('verification-en-cours').count() === 1 && await blocV4.getByTestId('btn-verifie-pour-moi').count() === 0 && await blocV4.getByTestId('btn-certifier').count() === 0 && await blocV4.getByTestId('btn-corriger').count() === 0)
   await fermerConv()
   verifie('pendant que Claude vérifie, le chantier sort de « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v4.id}"]`).count() === 0)
+  // Retour de Raphaël (29 sept.) : « je ne vois pas où ce chantier part ». Il se voit, sous UN nom, partout.
+  const lV4 = await ligneAvance(v4.id)
+  verifie('…et se voit dans « Ça avance tout seul » : « Claude vérifie pour toi », vivant, sans « Relancer »',
+    await lV4.count() === 1 && /Claude vérifie pour toi/.test(await lV4.textContent()) && (await lV4.getAttribute('data-vivant')) === 'oui' && await lV4.getByTestId('ouvrir-relance').count() === 0)
+  verifie('…compté dans la tuile « ça avance » (même nombre que la liste)',
+    Number(await page.getByTestId('tuile-caAvance').getByTestId('nombre-tuile').textContent()) === Number(await page.getByTestId('ca-avance-total').textContent()))
+  await allerCockpit()
+  await deplierTout()
+  verifie('…et « Tous les chantiers » (vue du projet) dit « Claude vérifie pour toi »', (await ligneId(v4.id).getByTestId('badge-presence').textContent()).includes('Claude vérifie pour toi'))
+  await allerTout()
   sql(`select rendre_verdict('${v4.id}'::uuid, 'test-web', true, '${esc(`${MARQUE2} Tout correspond à la base`)}')`)
   await actualiser()
   const elV4 = await elementAToi(v4.id, 'a_verifier')
   verifie('après le verdict « bon », il revient : « Claude a vérifié : c’est bon, confirme d’un toucher »', /c’est bon, confirme/.test(await elV4.getByTestId('attente-a-toi').textContent()))
+  verifie('…et quitte « Ça avance tout seul »', await page.locator(`[data-testid="en-ce-moment"] [data-testid="ligne-en-ce-moment"][data-chantier-ligne="${v4.id}"]`).count() === 0)
 
   // ===================================================================
   // 6. À cadrer et bloqué : « Décider » / « Débloquer », la barre d'écriture, « prêt à lancer »
