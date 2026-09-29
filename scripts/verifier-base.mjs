@@ -937,6 +937,56 @@ async function controle20_images_session() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+async function controle23_ou_en_est() {
+  section("23. « Où ça en est ? » (0022) : une seule demande en attente, droits, file, péremption, même délai que l'app");
+  // Chemin navigateur : un MEMBRE du projet A (non admin) touche le bouton.
+  const c = await creerChantier(P1, { titre: "Test où ça en est" });
+  const r1 = await rpcUtilisateur("demander_ou_en_est", { p_chantier: c, p_par: "membre" }, jwt);
+  verifie("un membre demande : HTTP 200, une demande neuve", r1.status === 200 && r1.json?.deja === false && !!r1.json?.id, r1);
+  const m = await une(`select ou_en_est, auteur_type, kind, recu_at from messages where id = ${q(r1.json?.id)}`);
+  verifie("la demande est marquée ou_en_est, écrite par l'utilisateur, jamais reçue encore", m?.ou_en_est === true && m.auteur_type === "utilisateur" && m.kind === "info" && m.recu_at === null, m);
+  const r2 = await rpcUtilisateur("demander_ou_en_est", { p_chantier: c, p_par: "membre" }, jwt);
+  verifie("deuxième toucher : la même demande rendue, rien d'écrit", r2.json?.deja === true && r2.json?.id === r1.json?.id, r2);
+  // Dix touchers à la fois (double clic, deux appareils) : une seule ligne.
+  const c2 = await creerChantier(P1, { titre: "Test dix touchers" });
+  await Promise.all(Array.from({ length: 10 }, () => rpcUtilisateur("demander_ou_en_est", { p_chantier: c2, p_par: "membre" }, jwt)));
+  verifie("dix touchers simultanés : UNE seule demande en base", (await une(`select count(*)::int as n from messages where chantier_id = ${q(c2)} and ou_en_est`)).n === 1);
+  // Droits.
+  const cB = await creerChantier(P2, { titre: "Test où ça en est, projet B" });
+  const rB = await rpcUtilisateur("demander_ou_en_est", { p_chantier: cB, p_par: "pirate" }, jwt);
+  verifie("non membre du projet : refusé (42501), rien d'écrit", rB.status >= 400 && rB.json?.code === "42501" && (await une(`select count(*)::int as n from messages where chantier_id = ${q(cB)}`)).n === 0, rB);
+  const cI = await creerChantier(P1, { titre: "Test interne", visible: false });
+  const rI = await rpcUtilisateur("demander_ou_en_est", { p_chantier: cI, p_par: "membre" }, jwt);
+  verifie("chantier interne (invisible aux utilisateurs) : refusé", rI.status >= 400 && rI.json?.code === "42501", rI);
+  for (const [fn, args] of [["prendre_ou_en_est", { p_branche: "agent/pirate", p_projet_id: P1 }], ["marquer_ou_en_est_recu", { p_ids: [r1.json?.id], p_par: "pirate" }],
+    ["repondre_ou_en_est", { p_chantier: c, p_auteur: "pirate", p_texte: "faux" }], ["ou_en_est_sans_suite", { p_projet_id: P1 }]]) {
+    const r = await rpcUtilisateur(fn, args, jwt);
+    verifie(`${fn} : interdit à un utilisateur (sessions seulement)`, r.status >= 400, { status: r.status, json: r.json });
+  }
+  verifie("rien n'a été marqué reçu ni répondu par ces appels", (await une(`select recu_at from messages where id = ${q(r1.json?.id)}`)).recu_at === null
+    && (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and auteur_type = 'session'`)).n === 0);
+  // Un chantier tenu (étape récente) n'est pas servi par la chef : sa session la reçoit par le hook.
+  const cT = await creerChantier(P1, { titre: "Test tenu, où ça en est", etat: "en_cours" });
+  await sql(`select signaler_activite(${q(SLUG_A)}, ${q(cT)}, 'claude/tenu-oe', 'au travail', 40, null, 'en_cours', null)`);
+  await sql(`select demander_ou_en_est(${q(cT)}, 'Raphaël') as r`);
+  const file = (await sql(`select chantier_id from ou_en_est_sans_suite(${q(P1)})`)).map((x) => x.chantier_id);
+  verifie("sans personne dessus → dans la file de la chef, la plus ancienne d'abord", file[0] === c && file.includes(c2), file);
+  verifie("tenu (étape en cours récente) → jamais dans la file de la chef", !file.includes(cT), file);
+  verifie("tous projets (sans projet nommé) : jamais un projet de test", !(await sql(`select chantier_id from ou_en_est_sans_suite()`)).some((x) => x.chantier_id === c));
+  // Péremption : sans réponse après le délai, on peut redemander.
+  await sql(`update messages set created_at = now() - cockpit.delai_ou_en_est() - interval '1 minute' where id = ${q(r1.json?.id)}`);
+  const r3 = await rpcUtilisateur("demander_ou_en_est", { p_chantier: c, p_par: "membre" }, jwt);
+  verifie("périmée (> délai, sans réponse) : un toucher crée une nouvelle demande", r3.json?.deja === false && r3.json?.id !== r1.json?.id, r3);
+  // Même délai que l'app (une seule règle, deux endroits : on les compare).
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const ts = (await import("node:fs")).readFileSync(join(racine, "app/src/lib/ouEnEst.ts"), "utf8");
+  const m2 = ts.match(/DELAI_OU_EN_EST_MS = (\d+) \* 3600_000/);
+  const base = (await une(`select extract(epoch from cockpit.delai_ou_en_est())::int as s`)).s;
+  verifie("délai de l'app (DELAI_OU_EN_EST_MS) = délai de la base (delai_ou_en_est)", !!m2 && Number(m2[1]) * 3600 === base, { app: m2?.[1], base });
+  const cV = await creerChantier(P1, { titre: "Test certifié", etat: "valide" });
+  verifie("chantier certifié : rien à demander (refusé)", (await rpcUtilisateur("demander_ou_en_est", { p_chantier: cV, p_par: "membre" }, jwt)).status >= 400);
+}
+
 // Deux projets NEUFS (C et D) : rien des sections précédentes dans leur file.
 const P3 = randomUUID(), P4 = randomUUID();
 const SLUG_C = `test-verif-${rand}-c`, SLUG_D = `test-verif-${rand}-d`;
@@ -1026,7 +1076,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle21_aucun_reste_de_test,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_ou_en_est, controle21_aucun_reste_de_test,
   ];
   for (const etape of etapes) {
     try { await etape(); }
