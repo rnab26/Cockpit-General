@@ -281,10 +281,20 @@ export function caAvanceToutSeul(
   const lignes: LigneCaAvance[] = []
   for (const c of chantiers) {
     if (c.archived_at || (projetId && c.projet_id !== projetId)) continue
-    const { presence, activite } = presenceDe(c, activites, enAttente, now, silenceMs, taches)
+    const { presence: presenceBase, activite } = presenceDe(c, activites, enAttente, now, silenceMs, taches)
+    const act = activiteDuChantier(activites, c.id, now)
+    const parSession = act && preuveDeVie(act, now, silenceMs) ? act : null
+    const agentVivant = agentVivantDuChantier(taches, c.id, now, silenceMs)
+    // Retour de Raphaël, 29 sept. : « des agents tournent sur FacePro et le
+    // cockpit ne montre rien en cours ». Un chantier qui ATTEND aussi sa
+    // réponse (question ouverte, bloqué) restait hors de « Ça avance » alors
+    // qu'une preuve de vie existe. Le travail réel se montre toujours ici ;
+    // la question, elle, reste aussi dans « À toi ».
+    const presence: Presence = presenceBase.code === 'travaille' || !(parSession || agentVivant) ? presenceBase : {
+      code: 'travaille', libelle: 'Claude y travaille', teinte: 'ok', detail: presenceBase.detail,
+      barreVive: !!parSession || agentVivant?.pourcentage != null, aRelancer: false, tonAction: presenceBase.tonAction,
+    }
     if (presence.code === 'travaille') {
-      const act = activiteDuChantier(activites, c.id, now)
-      const parSession = act && preuveDeVie(act, now, silenceMs) ? act : null
       const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
       const morceaux: string[] = []
       if (parSession) {
@@ -293,8 +303,8 @@ export function caAvanceToutSeul(
       }
       if (agents) morceaux.push(`${agents} assistant${agents > 1 ? 's' : ''} de Claude`)
       // Jamais une vieille barre sous une ligne vivante : celle de la session, ou celle de l'agent s'il a signalé un %.
-      const barre = parSession ?? (presence.barreVive ? activite : null)
-      const agent = agentVivantDuChantier(taches, c.id, now, silenceMs)
+      const barre = parSession ?? (presence.barreVive ? (presenceBase.code === 'travaille' ? activite : agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : null) : null)
+      const agent = agentVivant
       lignes.push({ c, presence, activite: barre, vivant: true, qui: morceaux.join(' · ') || 'Claude',
         etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null })
     } else if (estEnCoursSansNouvelles(c, presence)) {
