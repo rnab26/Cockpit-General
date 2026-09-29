@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { File, FileText, Film, Image, Mic, Paperclip, PenLine, X, type LucideIcon } from 'lucide-react'
 import type { Media } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
-import { ACCEPT_MEDIAS, BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
+import { BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { Annoter } from './Annoter.tsx'
@@ -11,8 +11,13 @@ import { Annoter } from './Annoter.tsx'
  * Médias joints à une réponse (0013). Le fichier part dans le stockage DÈS
  * qu'il est choisi (vignette + roue) : l'envoi du message est ensuite
  * immédiat, et un échec se voit sur la vignette, avec « réessayer ».
+ *
+ * Mode `differe` (création d'un chantier, 29 sept. 2026) : le chantier n'a
+ * pas encore d'id, donc pas de dossier où déposer. Les fichiers restent sur
+ * l'appareil (« attente », crayon possible) jusqu'à `envoyerTout(id)`, appelé
+ * juste après la création ; un échec garde le fichier, avec « réessayer ».
  */
-interface Piece { id: string; fichier: File; apercu: string | null; etat: 'envoi' | 'ok' | 'erreur'; media: Media | null; erreur?: string }
+interface Piece { id: string; fichier: File; apercu: string | null; etat: 'attente' | 'envoi' | 'ok' | 'erreur'; media: Media | null; erreur?: string }
 
 export interface MediasAJoindre {
   pieces: Piece[]
@@ -24,6 +29,10 @@ export interface MediasAJoindre {
   /** Le crayon : l'image annotée remplace la pièce (déposée d'abord ; l'ancienne n'est retirée qu'ensuite). null = fait, sinon l'erreur. */
   remplacer: (id: string, fichier: File) => Promise<string | null>
   vider: () => void
+  /** Mode différé : dépose tout ce qui n'est pas encore parti dans le dossier de ce chantier. `ids` / `medias` : ce qui est déposé (avant ou maintenant). */
+  envoyerTout: (chantierId: string) => Promise<{ ids: string[]; medias: Media[]; echecs: number }>
+  /** Retire des vignettes des pièces envoyées dans un message (sans toucher au stockage). */
+  oublier: (ids: string[]) => void
 }
 
 /** Dépose un fichier dans le stockage privé : le média, ou l'erreur lisible. */
@@ -34,33 +43,39 @@ export async function deposerMedia(projetId: string, chantierId: string | null, 
   return { media: { chemin, nom: fichier.name, type: fichier.type || 'application/octet-stream', taille: fichier.size } }
 }
 
-export function useMediasAJoindre(projetId: string, chantierId: string | null): MediasAJoindre {
+export function useMediasAJoindre(projetId: string, chantierId: string | null, { differe = false }: { differe?: boolean } = {}): MediasAJoindre {
   const toast = useToast()
   const [pieces, setPieces] = useState<Piece[]>([])
   const liste = useRef<Piece[]>([])
   liste.current = pieces
+  // Le dossier de dépôt : le chantier donné ; en différé, celui que fixe `envoyerTout` (null = on garde sur l'appareil).
+  const cible = useRef<string | null>(chantierId)
+  if (!differe) cible.current = chantierId
+  const garder = () => differe && !cible.current
   // Les aperçus locaux sont libérés quand le composant disparaît.
   useEffect(() => () => { for (const p of liste.current) if (p.apercu) URL.revokeObjectURL(p.apercu) }, [])
 
-  const envoyer = useCallback(async (p: Piece) => {
-    const r = await deposerMedia(projetId, chantierId, p.id, p.fichier)
+  const envoyer = useCallback(async (p: Piece, avecToast = true) => {
+    const r = await deposerMedia(projetId, cible.current, p.id, p.fichier)
     setPieces((l) => l.map((x) => x.id !== p.id ? x : 'erreur' in r
       ? { ...x, etat: 'erreur', erreur: r.erreur }
       : { ...x, etat: 'ok', media: r.media }))
-    if ('erreur' in r) toast.erreur(`« ${p.fichier.name} » n’a pas pu être envoyé : ${r.erreur}`)
-  }, [projetId, chantierId, toast])
+    if ('erreur' in r && avecToast) toast.erreur(`« ${p.fichier.name} » n’a pas pu être envoyé : ${r.erreur}`)
+    return r
+  }, [projetId, toast])
 
   const ajouter = useCallback((fichiers: File[]) => {
     if (!fichiers.length) return
     const refus = refusMedias(fichiers, liste.current.length)
     if (refus) { toast.erreur(refus); return }
+    const local = garder()
     const nouvelles: Piece[] = fichiers.map((f) => ({
-      id: crypto.randomUUID(), fichier: f, etat: 'envoi', media: null,
+      id: crypto.randomUUID(), fichier: f, etat: local ? 'attente' : 'envoi', media: null,
       apercu: f.type.startsWith('image/') || f.type.startsWith('video/') ? URL.createObjectURL(f) : null,
     }))
     setPieces((l) => [...l, ...nouvelles])
-    for (const p of nouvelles) void envoyer(p)
-  }, [envoyer, toast])
+    if (!local) for (const p of nouvelles) void envoyer(p)
+  }, [envoyer, toast]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const retirer = useCallback((id: string) => {
     const p = liste.current.find((x) => x.id === id)
@@ -72,7 +87,7 @@ export function useMediasAJoindre(projetId: string, chantierId: string | null): 
 
   const reessayer = useCallback((id: string) => {
     const p = liste.current.find((x) => x.id === id)
-    if (!p) return
+    if (!p || garder()) return
     setPieces((l) => l.map((x) => x.id === id ? { ...x, etat: 'envoi', erreur: undefined } : x))
     void envoyer(p)
   }, [envoyer])
@@ -80,8 +95,15 @@ export function useMediasAJoindre(projetId: string, chantierId: string | null): 
   const remplacer = useCallback(async (id: string, fichier: File) => {
     const ancienne = liste.current.find((x) => x.id === id)
     if (!ancienne) return 'la pièce n’est plus là.'
+    if (garder() || ancienne.etat === 'attente') {
+      // Rien n'est encore parti : l'image annotée remplace l'originale sur l'appareil.
+      const locale: Piece = { id: crypto.randomUUID(), fichier, etat: 'attente', media: null, apercu: URL.createObjectURL(fichier) }
+      if (ancienne.apercu) URL.revokeObjectURL(ancienne.apercu)
+      setPieces((l) => l.map((x) => x.id === id ? locale : x))
+      return null
+    }
     const nouvelle: Piece = { id: crypto.randomUUID(), fichier, etat: 'ok', media: null, apercu: null }
-    const r = await deposerMedia(projetId, chantierId, nouvelle.id, fichier)
+    const r = await deposerMedia(projetId, cible.current, nouvelle.id, fichier)
     if ('erreur' in r) return r.erreur
     nouvelle.media = r.media
     nouvelle.apercu = URL.createObjectURL(fichier)
@@ -90,15 +112,32 @@ export function useMediasAJoindre(projetId: string, chantierId: string | null): 
     // L'originale n'est plus jointe : retirée du stockage (admin seulement, comme « retirer »).
     if (ancienne.media) void supabase.storage.from(BUCKET_MEDIAS).remove([ancienne.media.chemin])
     return null
-  }, [projetId, chantierId])
+  }, [projetId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const vider = useCallback(() => {
     for (const p of liste.current) if (p.apercu) URL.revokeObjectURL(p.apercu)
     setPieces([])
+    // Différé : la prochaine création repart sans dossier (sinon ses pièces iraient chez le chantier précédent).
+    if (differe) cible.current = null
+  }, [differe])
+
+  const envoyerTout = useCallback(async (id: string) => {
+    cible.current = id
+    const deja = liste.current.filter((p) => p.etat === 'ok' && p.media)
+    const aEnvoyer = liste.current.filter((p) => p.etat === 'attente' || p.etat === 'erreur')
+    setPieces((l) => l.map((x) => aEnvoyer.some((a) => a.id === x.id) ? { ...x, etat: 'envoi', erreur: undefined } : x))
+    const res = await Promise.all(aEnvoyer.map(async (p) => ({ p, r: await envoyer(p, false) })) /* un seul message d’échec : celui de l’appelant */)
+    const ok = [...deja.map((p) => ({ id: p.id, media: p.media! })), ...res.flatMap(({ p, r }) => 'media' in r ? [{ id: p.id, media: r.media }] : [])]
+    return { ids: ok.map((o) => o.id), medias: ok.map((o) => o.media), echecs: res.filter(({ r }) => 'erreur' in r).length }
+  }, [envoyer])
+
+  const oublier = useCallback((ids: string[]) => {
+    for (const p of liste.current) if (ids.includes(p.id) && p.apercu) URL.revokeObjectURL(p.apercu)
+    setPieces((l) => l.filter((x) => !ids.includes(x.id)))
   }, [])
 
   return {
-    pieces, ajouter, retirer, reessayer, remplacer, vider,
+    pieces, ajouter, retirer, reessayer, remplacer, vider, envoyerTout, oublier,
     medias: pieces.filter((p) => p.etat === 'ok' && p.media).map((p) => p.media!),
     enCours: pieces.some((p) => p.etat === 'envoi'),
   }
@@ -142,7 +181,7 @@ export function VignettesPieces({ ctrl }: { ctrl: MediasAJoindre }) {
               </div>
               <button type="button" onClick={() => ctrl.retirer(p.id)} aria-label={`Retirer ${p.fichier.name}`}
                 className="absolute -left-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-bord bg-carte text-texte-2 shadow-sm"><X size={14} /></button>
-              {p.etat === 'ok' && genreMedia(p.fichier.type, p.fichier.name) === 'image' ? <BoutonCrayon nom={p.fichier.name} onClick={() => setAnnotee(p)} /> : null}
+              {(p.etat === 'ok' || p.etat === 'attente') && genreMedia(p.fichier.type, p.fichier.name) === 'image' ? <BoutonCrayon nom={p.fichier.name} onClick={() => setAnnotee(p)} /> : null}
             </li>
           ))}
         </ul>
@@ -173,7 +212,7 @@ export function BoutonJoindre({ ctrl, icone = false }: { ctrl: MediasAJoindre; i
   const input = useRef<HTMLInputElement>(null)
   return (
     <>
-      <input ref={input} type="file" multiple accept={ACCEPT_MEDIAS} className="hidden" data-testid="entree-medias"
+      <input ref={input} type="file" multiple className="hidden" data-testid="entree-medias"
         onChange={(e) => { ctrl.ajouter(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       <button type="button" onClick={() => input.current?.click()} data-testid="ajouter-media"
         title="Joindre une photo, une vidéo ou un fichier" aria-label="Joindre une photo, une vidéo ou un fichier"

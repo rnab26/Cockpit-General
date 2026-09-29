@@ -6,8 +6,9 @@ export const BUCKET_MEDIAS = 'cockpit-medias'
 /** Plafond par fichier : celui du plan gratuit Supabase, posé aussi sur le bucket. */
 export const TAILLE_MAX_MEDIA = 50 * 1024 * 1024
 export const MEDIAS_MAX_PAR_MESSAGE = 10
-/** Ce que le sélecteur propose (photos, vidéos, audio, PDF, textes) ; tout autre fichier reste possible. */
-export const ACCEPT_MEDIAS = 'image/*,video/*,audio/*,application/pdf,text/*,.zip,.json,.csv,.log'
+// Tout type de fichier (Raphaël, 29 sept. 2026 : « peu importe le type ») : le
+// sélecteur n'a pas de filtre `accept` (un filtre cachait les autres fichiers
+// sur téléphone) ; seuls la taille et le nombre sont bornés (refusMedias).
 
 export type GenreMedia = 'image' | 'video' | 'audio' | 'pdf' | 'fichier'
 

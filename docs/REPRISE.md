@@ -180,14 +180,25 @@ Reste : le module embarqué (`embed/`) n'affiche pas encore ces images.
 `verifier-web.mjs` ne purge plus que les projets de test de plus de 2 h
 (plusieurs agents le lançaient en même temps et se purgeaient l'un l'autre).
 
-## 2 septies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
+## 2 septies. 29 sept. soir : pièces jointes dès la création (chantier `db78423d`, fusionné avec `e68e0efd`)
+
+« + Chantier » accepte tout type de fichier (aucun filtre `accept` ; bucket
+`cockpit-medias` : tout type, 50 Mo, limite écrite sous le bouton), crayon sur
+les images avant envoi. Le chantier est créé (id choisi par l'app), puis les
+pièces partent dans `<projet>/<chantier>/` et un message `info`. Dépôt en
+échec : pièces gardées, « Envoyer les pièces ». En ligne (PR #1, 9358916),
+verifier-web 299/299 (image + PDF + .dwg, `media.sh --chantier` les récupère).
+Reste : le module embarqué (`embed/`, « Nouvelle demande ») ne joint aucun
+fichier — à décider avec Raphaël.
+
+## 2 octies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
 
 Bouton « Lancer des renforts » (au-dessus de « Prêt à lancer », vue projet et
 « Tout »), réglages (sessions 0-4, agents 1-5), états demande envoyée / en
 route / erreur / terminé. Migration 0021 appliquée (le brouillon 0020 de
 agent/646460 a été repris, renuméroté : 0020 est pris par l'aperçu d'image).
 Voir CLAUDE.md « Renforts ». Vérifié : verifier-base 244/244 (§22),
-verifier-renforts 16/16, verifier-web (section « renforts »).
+verifier-renforts 16/16, verifier-web 299/299 (section « renforts »).
 **Pas encore observé en vrai** : aucune session renfort n'a été ouverte. La
 première ouverture réelle sera faite par la session chef du cockpit (Raphaël
 clique, la passe de `chef.sh` lui donne les `create_session`). À surveiller :
@@ -212,7 +223,7 @@ lanceur ; `cockpit-renfort.sh` arrive au prochain démarrage (brancher.sh --maj)
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - À cadrer avec Raphaël (dans le cockpit, `demander.sh`, pas d'artefact) :
-  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 septies.)
+  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 octies.)
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
 
 ## 4. Pièges déjà payés (ne pas les repayer)
