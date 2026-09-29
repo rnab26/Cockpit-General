@@ -1147,6 +1147,28 @@ async function controle19_chef_par_projet() {
   execFileSync("bash", [join(racine, "hooks/prompt-rappel.sh")],
     { encoding: "utf8", input: JSON.stringify({ session_id: "nouvelle-d", prompt: "fais ceci" }), env: { ...process.env, COCKPIT_PROJET: SLUG_D, CLAUDE_PROJECT_DIR: racine } });
   verifie("message de Raphaël dans une session de D → chef de D seulement (C inchangé)", await estChef(SLUG_D, "nouvelle-d") && await estChef(SLUG_C, "chef-c"));
+
+  // La ROUTINE de réveil (30 sept.) : /fire ouvre une NOUVELLE session. Son prompt
+  // (chef.sh --texte-routine) ne fait pas d'elle la chef par le hook de message, et
+  // --releve : chef vivante → seulement ce qui attend ; chef morte → elle la remplace.
+  const texteRoutine = lancer(SLUG_D, "x", ["--texte-routine"]);
+  verifie("--texte-routine : dépôt absent → une ligne ; sinon chef.sh --releve",
+    /n'est pas cloné ici/.test(texteRoutine) && texteRoutine.includes(`COCKPIT_PROJET=${SLUG_D} scripts/chef.sh --releve`), texteRoutine);
+  execFileSync("bash", [join(racine, "hooks/prompt-rappel.sh")],
+    { encoding: "utf8", input: JSON.stringify({ session_id: "fire-d", prompt: texteRoutine }), env: { ...process.env, COCKPIT_PROJET: SLUG_D, CLAUDE_PROJECT_DIR: racine } });
+  verifie("le prompt de la routine ne fait pas de la session ouverte par /fire la chef (hook de message)", await estChef(SLUG_D, "nouvelle-d") && !(await estChef(SLUG_D, "fire-d")));
+  const rep2 = await creerChantier(P4, { titre: "Réponse D2", etat: "bloque" });
+  const m2 = await creerMessage(P4, rep2, { kind: "question", corps: "Question D2 ?" });
+  await sql(`update messages set reponse = 'Oui', answered_at = now(), answered_by = ${q(userId)} where id = ${q(m2)}`);
+  const libre2 = await creerChantier(P4, { titre: "Libre D2", etat: "libre", demande: "travail D2" });
+  const releve = lancer(SLUG_D, "fire-d", ["--releve"]);
+  verifie("--releve, chef vivante : RELÈVE qui sert la réponse en attente, pas le chantier libre, et ne vole pas la chef",
+    releve.includes(`RELÈVE de ${SLUG_D}`) && releve.includes(rep2) && !releve.includes(libre2) && await estChef(SLUG_D, "nouvelle-d"), releve.slice(0, 600));
+  await sql(`update chefs set vu_at = now() - interval '4 hours' where projet_id = ${q(P4)}`);
+  const releve2 = lancer(SLUG_D, "fire-d2", ["--releve"]);
+  verifie("--releve, chef morte : la session ouverte par /fire devient chef et fait la passe, sans toucher au réveil",
+    await estChef(SLUG_D, "fire-d2") && releve2.includes("devient la SESSION CHEF") && releve2.includes(`SESSION CHEF de ${SLUG_D}`) && !/delete_trigger/.test(releve2), releve2.slice(0, 600));
+  verifie("--releve dans la session chef : la passe normale", !/^RIEN — cette session n'est pas/.test(lancer(SLUG_D, "fire-d2", ["--releve"])));
 }
 
 // Un projet NEUF (F) pour les renforts : ses sections et ses chantiers seulement.

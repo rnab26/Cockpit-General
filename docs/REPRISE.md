@@ -311,8 +311,12 @@ cockpit : deux portes égales ». Vérifié : verifier-base 357/357 (§29),
 verifier-reponses 56/56 (§13-14), verifier-web 376/376, tests purs (reporter
 10/10, renforts 17/17). Preuve du réveil : un faux jeton part vraiment vers
 api.anthropic.com (401 authentication_error enregistré). Reste :
-- le JETON de la routine : geste de Raphaël (action posée sur `450afa9e`) ;
-  pas encore constaté qu'un /fire réveille la session chef elle-même ;
+- le JETON de la routine : posé par Raphaël le 30 sept. ; constaté : un /fire
+  ouvre une NOUVELLE session (pas la chef), sans dépôt si la routine n'en a
+  pas. Corrigé côté cockpit (`chef.sh --releve`, `--texte-routine`, CLAUDE.md
+  « /fire ouvre une NOUVELLE session ») ; reste le geste de Raphaël : ajouter
+  le dépôt aux dépôts de la routine (action dans « À toi »), et la session
+  chef applique le nouveau prompt (update_trigger) ;
 - FacePro : les 2 demandes de renfort seront ouvertes par la chef relais (cockpit)
   à son prochain passage, une fois `main` à jour (le lanceur prend main).
 - non fait : la case « Écrire à Claude » dans l'onglet « Tout » (seulement vue

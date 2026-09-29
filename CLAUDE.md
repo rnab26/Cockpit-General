@@ -309,9 +309,22 @@ recopiés dans le fil).
   rien si une session vivante tient le chantier ; cible = `cible_reveil` (sa
   chef vivante, sinon la chef relais ; un projet de test : lui seul). Sans
   jeton : passage horaire, l'app dit l'heure (`prochain_passage_chef` ; ~3 min
-  après un réveil). Non vérifié : qu'un /fire sur la routine liée à la session
-  chef la réveille (la doc parle de « nouvelle session ») — à constater au
-  premier jeton (`etat_reveil_immediat` → `session`).
+  après un réveil).
+- **/fire ouvre une NOUVELLE session** (constaté le 30 sept. au premier jeton,
+  conforme à la doc : « starts a new session ») — jamais la session chef, même
+  si la routine y est liée pour ses passages horaires. Cette session n'a que
+  les dépôts de la ROUTINE : sans le dépôt, elle répondait « Cockpit-General
+  n'est pas cloné ici ». Il faut donc (1) le dépôt du projet dans les dépôts de
+  la routine (claude.ai/code/routines › la routine › menu › Edit ; action de
+  Raphaël, aucun outil ne le fait), la routine sur l'environnement qui porte
+  les clés Supabase ; (2) son prompt = `chef.sh --texte-routine` (un seul texte
+  pour les deux cas ; commence par « Réveil du chef », donc le hook de message
+  ne fait pas d'elle la chef), qui lance `chef.sh --releve` : la chef → la
+  passe ; une autre session → si la chef vit (`chef_vivante`), elle sert
+  SEULEMENT ce qui attend Raphaël (réponses, « où ça en est », messages) sans
+  toucher au signe de vie de la chef, puis s'arrête ; chef morte → elle devient
+  chef (sans déplacer le réveil). Une routine qui porte le jeton ne se supprime
+  jamais (le jeton mourrait avec). `verifier-base` §19 (« routine de réveil »).
 `verifier-base` §29, `verifier-reponses` §13-14, `verifier-reporter.ts`.
 
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
