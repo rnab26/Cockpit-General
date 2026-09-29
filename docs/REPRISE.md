@@ -180,6 +180,22 @@ Reste : le module embarqué (`embed/`) n'affiche pas encore ces images.
 `verifier-web.mjs` ne purge plus que les projets de test de plus de 2 h
 (plusieurs agents le lançaient en même temps et se purgeaient l'un l'autre).
 
+## 2 septies. 29 sept. soir : « À toi de jouer » à jour (chantier `20a42f79`, migration 0021)
+
+Raphaël : des demandes de plus de 12 h déjà réglées ailleurs, sans savoir
+lesquelles sont récentes. Livré : l'âge sur chaque ligne, le plus récent en
+haut (bouton de tri), « peut-être plus à jour » pour tous les types, en bas ;
+en base, certifié/archivé ferme ses questions, `a_toi_a_revoir` +
+`scripts/revue-a-toi.sh` (chef.sh / passe.sh, 1 revue par heure et par
+projet), `demander.sh --confirmer <chantier>` et `--debloquer`. État relevé
+avant : cockpit 13 éléments (3 de plus de 12 h, aucun dépassé) ; FacePro 12
+(5 de plus de 12 h, 4 que Claude avait fait avancer depuis). Une question
+FacePro déjà répondue dans la session (« attends ») retirée. Reste :
+FacePro n'a pas de chef, donc sa revue ne tourne que via `passe.sh` (session
+autonome) tant que Raphaël n'écrit pas dans une session FacePro ; 2 bloqués
+FacePro « regroupés dans une autre session » sont des doublons à proposer en
+fusion par cette revue.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
