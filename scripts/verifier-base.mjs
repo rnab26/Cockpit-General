@@ -1665,8 +1665,8 @@ async function controle29_synchro() {
   await sql(`insert into sessions (id, projet_id, branche, vu_at) values ('test-reveil-${rand}', ${q(P8)}, 'claude/tient-reveil', now())`);
   await sql(`update chantiers set pris_par = 'claude/tient-reveil', pris_jusqu_a = now() + interval '1 hour' where id = ${q(cm)}`);
   verifie("une session vivante tient le chantier : pas de réveil (« session_tient »)", (await une(`select reveiller_chef(${q(P8)}, ${q(cm)}, 'message') as r`)).r === "session_tient");
-  const pp = (await une(`select prochain_passage_chef(${q(P8)}) as t, now() as n`));
-  verifie("prochain passage annoncé dans ~3 min après un réveil", !!pp.t && Date.parse(pp.t) - Date.parse(pp.n) <= 181_000, pp);
+  const pp = (await une(`select prochain_passage_chef(${q(P8)}) as prochain, now() as n`));
+  verifie("prochain passage annoncé dans ~3 min après un réveil", !!pp?.prochain && Date.parse(pp.prochain) - Date.parse(pp.n) <= 181_000, pp);
   // pg_net a vraiment appelé l'API des routines (faux jeton → 401 attendu).
   let st = null;
   for (let i = 0; i < 10 && !st?.statut; i++) { await attendre(1000); st = (await une(`select etat_reveil_immediat(${q(SLUG_H)}) as e`)).e; }
