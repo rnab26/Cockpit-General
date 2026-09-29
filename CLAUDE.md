@@ -118,6 +118,15 @@ modèles), jamais dans un projet branché ; un projet ne reçoit que ce que
 propagent le lanceur et `brancher.sh`. Et toute session qui travaille ici se
 voit dans le cockpit (chantier + `progression.sh` à chaque étape).
 
+## Les projets branchés GARDENT les mises à jour (29 sept. 2026)
+
+Constaté sur FacePro : les scripts arrivaient (lanceur), mais le bloc
+CLAUDE.md et les nouvelles commandes n'étaient jamais commités — chaque
+nouvelle session repartait des anciennes règles. Désormais le hook de
+démarrage commite lui-même les fichiers du cockpit sur la branche courante
+(seulement ceux qui étaient propres avant : jamais un travail en cours), et
+injecte le bloc à jour dans le contexte de la session.
+
 ## Réponses courtes (Raphaël, 29 sept. 2026)
 
 « Je veux des réponses simples, courtes, nettes et précises. » Dans la
