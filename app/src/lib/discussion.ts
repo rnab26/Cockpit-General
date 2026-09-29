@@ -12,7 +12,7 @@
  *  - `attenteReponse` : après un message LIBRE de sa part, tant qu'aucune
  *    réponse écrite de Claude ne l'a suivi, ce qu'il en est (pris par un
  *    assistant, reçu par la session, en attente — et jusqu'à quand).
- * `estMessageLibre` est la MÊME règle que `cockpit.est_message_libre` (0024) ;
+ * `estMessageLibre` est la MÊME règle que `cockpit.est_message_libre` (0025) ;
  * verifier-base.mjs §24 compare les deux sur les mêmes lignes.
  */
 import type { Message } from './types.ts'

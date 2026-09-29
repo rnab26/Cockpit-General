@@ -53,6 +53,19 @@
 # La tâche elle-même (qu'elle existe, depuis quand elle tourne) est déjà suivie
 # toute seule par le hook de suivi ; ceci n'ajoute que ce qui ne se devine pas.
 #
+# « OÙ ÇA EN EST ? » (0023) : Raphaël l'a demandé d'un bouton ; le hook te le
+# met sous les yeux, ou la chef lance un assistant. Réponds dans le fil, en 3
+# lignes au plus (fait / reste / ce qui bloque), 400 caractères au plus :
+#   scripts/progression.sh --chantier <id> --point "Fait : … Reste : … Bloque : rien."
+# L'app passe alors sa demande à « Réponse arrivée » et rouvre le bouton.
+#
+# RÉPONDRE DANS LE FIL (0025) : un message de Raphaël dans un fil (« je n'ai pas
+# compris ta demande », une précision, un « Corriger ») = une réponse courte de
+# Claude DANS ce fil avant de continuer. Même commande, 400 caractères au plus :
+#   scripts/progression.sh --chantier <id> --point "Je parlais du bouton Envoyer, en bas."
+#   scripts/progression.sh --point "…"      # fil du projet (« Écrire à Claude » hors chantier)
+# Une capture à montrer : media.sh --envoyer --chantier <id> --texte "…" --image f.png.
+#
 # --chantier accepte l'id, ou un morceau du titre (unique dans le projet).
 # Le projet vient de COCKPIT_PROJET (posé par brancher.sh dans
 # .claude/settings.json → env), ou de --projet. La session est le nom de la
@@ -63,7 +76,7 @@ RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
 projet="${COCKPIT_PROJET:-}"
-chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""; images=()
+chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""; point=""; images=()
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
@@ -87,10 +100,11 @@ while [ $# -gt 0 ]; do
     --pas-en-ligne) pas_en_ligne="${2:-}"; shift 2 ;;
     --session)  session="${2:-}"; shift 2 ;;
     --agent)    agent="${2:-}"; shift 2 ;;
+    --point)    point="${2:-}"; shift 2 ;;
     --attente)  statut="attente"; etape="${2:-$etape}"; shift 2 ;;
     --termine)  statut="termine"; etape="${2:-Terminé}"; pct=100; shift 2 ;;
     --echec)    statut="echec"; etape="${2:-Échec}"; shift 2 ;;
-    -h|--help)  sed -n '2,43p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help)  sed -n '2,49p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
@@ -158,6 +172,26 @@ if [ -n "$agent" ]; then
     echo "Aucune tâche « $agent » dans le projet $projet (pas encore vue par le hook de suivi ?). Ta ligne n'a pas été écrite ; réessaie à la prochaine étape." >&2; exit 1
   fi
   echo "Agent « $agent » : ${etape}${pct:+ — $pct %}${eta:+ — reste ~$eta}"
+  exit 0
+fi
+
+if [ -n "$point" ]; then
+  np=$(printf '%s' "$point" | python3 -c 'import sys; print(len(sys.stdin.read().strip()))')
+  if [ "$np" -eq 0 ] || [ "$np" -gt 400 ]; then
+    echo "Refusé (règle de clarté) : --point fait $np caractères, 1 à 400 : la réponse d'abord, en mots simples." >&2; exit 2
+  fi
+  if [ -z "$chantier" ]; then
+    # Fil du projet (« Écrire à Claude » hors chantier).
+    r=$("$SQL" "select repondre_dans_fil('$(q "$projet")', null, '$(q "$session")', '$(q "$point")') as r" | jq -r '.rows[0].r // empty')
+    [ -n "$r" ] && [ "$r" != "null" ] || { echo "La réponse n'a pas été écrite (projet $projet inconnu, ou base injoignable ?). Réessaie." >&2; exit 1; }
+    echo "Réponse écrite dans le fil du projet $projet : Raphaël la voit dans l'app."; exit 0
+  fi
+  cid=$("$SQL" "select c.id from chantiers c join projets p on p.id = c.projet_id where p.slug = '$(q "$projet")' and (c.id::text = '$(q "$chantier")' or (length('$(q "$chantier")') >= 8 and c.id::text like '$(q "$chantier")' || '%')) order by (c.id::text = '$(q "$chantier")') desc limit 1" | jq -r '.rows[0].id // empty')
+  [ -n "$cid" ] || { echo "Aucun chantier d'id « $chantier » dans le projet $projet." >&2; exit 1; }
+  r=$("$SQL" "select repondre_ou_en_est('$cid'::uuid, '$(q "$session")', '$(q "$point")') as r" | jq -c '.rows[0].r // empty')
+  [ -n "$r" ] && [ "$r" != "null" ] || { echo "La réponse n'a pas été écrite (base injoignable ?). Réessaie." >&2; exit 1; }
+  if [ "$(printf '%s' "$r" | jq -r '.demande // empty')" != "" ]; then echo "Réponse écrite dans le fil : Raphaël voit « Réponse arrivée » sous sa demande « Où ça en est ? »."
+  else echo "Réponse écrite dans le fil du chantier : Raphaël la voit dans l'app, sous son message."; fi
   exit 0
 fi
 

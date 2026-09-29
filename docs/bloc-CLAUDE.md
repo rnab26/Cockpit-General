@@ -90,6 +90,10 @@ demandes des utilisateurs, progression des autres sessions.
   passe « à vérifier » ; `--verifier` est obligatoire : où aller, quoi faire,
   ce que Raphaël doit voir, sans jargon) ou `--echec "…"`.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
+- **« Où ça en est ? »** (Raphaël le demande d'un bouton ; le hook te le met
+  sous les yeux) : réponds TOUT DE SUITE dans le fil, 3 lignes au plus (fait /
+  reste / ce qui bloque) : `scripts/cockpit-progression.sh --chantier <id> --point "…"`.
+  Son écran passe alors à « Réponse arrivée ».
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.
 - **Montre, ne décris pas** (Raphaël, 29 sept. 2026 : « montre-moi des images

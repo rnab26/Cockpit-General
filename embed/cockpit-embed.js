@@ -776,7 +776,7 @@
     }
     if (!items.length) return null
     items.sort((a, b) => a.ts.localeCompare(b.ts))
-    // Comme une discussion (0024) : ton dernier message sans réponse écrite de
+    // Comme une discussion (0025) : ton dernier message sans réponse écrite de
     // Claude le dit, en bas du fil, jusqu'à ce qu'il réponde.
     const derniereSession = (c.messages || []).filter((m) => m.auteur_type === 'session').map((m) => m.created_at).sort().pop() || ''
     const attend = (c.messages || []).some((m) => m.auteur_type !== 'session' && ['info', 'reponse'].includes(m.kind) && m.created_at > derniereSession)

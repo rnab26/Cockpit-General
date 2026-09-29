@@ -13,10 +13,10 @@
 # brute du dépôt), COCKPIT_CACHE (dossier), COCKPIT_TTL (secondes).
 COCKPIT_SOURCE="${COCKPIT_SOURCE:-https://raw.githubusercontent.com/rnab26/Cockpit-General/main}"
 COCKPIT_CACHE="${COCKPIT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/cockpit-general}"
-COCKPIT_FICHIERS=(scripts/sql.sh scripts/demander.sh scripts/progression.sh scripts/progression_tableau.py scripts/chantier.sh hooks/session-start.sh hooks/prompt-rappel.sh hooks/suivi.sh hooks/autonome.sh scripts/passe.sh scripts/media.sh scripts/chef.sh scripts/verdict.sh scripts/revue-a-toi.sh scripts/repondre.sh)
+COCKPIT_FICHIERS=(scripts/sql.sh scripts/demander.sh scripts/progression.sh scripts/progression_tableau.py scripts/chantier.sh hooks/session-start.sh hooks/prompt-rappel.sh hooks/suivi.sh hooks/autonome.sh scripts/passe.sh scripts/media.sh scripts/chef.sh scripts/verdict.sh scripts/revue-a-toi.sh)
 
 # Noms des commandes tels qu'on les tape DANS le projet (affichés par le hook).
-export COCKPIT_SQL_CMD="scripts/cockpit-sql.sh" COCKPIT_PROG_CMD="scripts/cockpit-progression.sh" COCKPIT_DEM_CMD="scripts/cockpit-demander.sh" COCKPIT_CHANTIER_CMD="scripts/cockpit-chantier.sh" COCKPIT_MEDIA_CMD="scripts/cockpit-media.sh" COCKPIT_CHEF_CMD="scripts/cockpit-chef.sh" COCKPIT_VERDICT_CMD="scripts/cockpit-verdict.sh" COCKPIT_REPONDRE_CMD="scripts/cockpit-repondre.sh"
+export COCKPIT_SQL_CMD="scripts/cockpit-sql.sh" COCKPIT_PROG_CMD="scripts/cockpit-progression.sh" COCKPIT_DEM_CMD="scripts/cockpit-demander.sh" COCKPIT_CHANTIER_CMD="scripts/cockpit-chantier.sh" COCKPIT_MEDIA_CMD="scripts/cockpit-media.sh" COCKPIT_CHEF_CMD="scripts/cockpit-chef.sh" COCKPIT_VERDICT_CMD="scripts/cockpit-verdict.sh"
 export COCKPIT_SQL="$COCKPIT_CACHE/scripts/sql.sh"
 
 cockpit_a_jour() {

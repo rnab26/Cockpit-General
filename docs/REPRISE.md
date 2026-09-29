@@ -220,6 +220,14 @@ autonome) tant que Raphaël n'écrit pas dans une session FacePro ; 2 bloqués
 FacePro « regroupés dans une autre session » sont des doublons à proposer en
 fusion par cette revue.
 
+## 2 decies. 29 sept. soir : « Où ça en est ? » suivi en direct (chantier `73fddb87`, migration 0023)
+
+Un toucher = UNE demande (`demander_ou_en_est`), suivie en direct dans « Ça
+avance tout seul » (frise Envoyée → Reçue / En file → Réponse), bouton
+désactivé tant qu'on attend. Reçue : hook de suivi ; personne dessus : la chef
+lance un assistant « Point » qui répond avec `progression.sh --point`. Voir
+CLAUDE.md. Reste : le module embarqué (`embed/`) n'a pas ce bouton.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

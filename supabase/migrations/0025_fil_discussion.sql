@@ -20,7 +20,7 @@
 --    une réponse écrite. Un fil par ligne (son plus ancien message sans réponse).
 --    Pas ceux que d'autres voies servent déjà : « Ça fonctionne » (chantier
 --    certifié/archivé), « vérifie pour moi » (0016, un agent rend un verdict),
---    « Où ça en est ? » (0022, ou_en_est), les pièces jointes d'une réponse à
+--    « Où ça en est ? » (0023, ou_en_est), les pièces jointes d'une réponse à
 --    une question (0017), une fusion de doublon.
 --    Personne d'AUTRE ne le tient (mêmes conditions que reponses_sans_suite),
 --    et aucun assistant ne l'a pris depuis moins de 2 h (recu_par/recu_at).
@@ -31,12 +31,16 @@
 --    forcément travailler), et la fonction rend de quoi écrire la consigne.
 --  - marquer_messages_recus(ids, par) : le hook de suivi marque « reçu » ce
 --    qu'il remet à une session vivante (l'app : « la session l'a reçu »).
+--  - repondre_dans_fil(projet, chantier, auteur, texte) : LA façon d'écrire une
+--    réponse dans un fil (progression.sh --point, avec ou sans --chantier).
+--    repondre_ou_en_est (0023) passe désormais par elle : une seule règle pour
+--    « à quoi répond ce message » (repond_a : la demande « Où ça en est ? » en
+--    attente, sinon son dernier message du fil).
 --  - chefs.reveil_minute : la minute du réveil horaire de la chef, pour que
 --    l'app dise « prochain passage vers 17 h 08 » (chef.sh --reveil … --minute).
 -- Idempotente.
 
--- Mêmes définitions que 0022 (« Où ça en est ? », autre branche) : sans effet
--- si elle est déjà passée, et elle passera sans effet après celle-ci.
+-- Mêmes définitions que 0023 (« Où ça en est ? ») : sans effet, elle est passée avant.
 alter table cockpit.messages add column if not exists ou_en_est boolean not null default false;
 alter table cockpit.messages add column if not exists recu_at timestamptz;
 alter table cockpit.messages add column if not exists recu_par text;
@@ -44,7 +48,7 @@ alter table cockpit.chefs add column if not exists reveil_minute int check (reve
 
 -- Un message humain « libre » qui attend une réponse écrite de Claude. MÊME
 -- règle dans l'app : app/src/lib/discussion.ts (estMessageLibre) ;
--- verifier-base.mjs §23 compare les deux sur les mêmes lignes.
+-- verifier-base.mjs §25 compare les deux sur les mêmes lignes.
 create or replace function cockpit.est_message_libre(m cockpit.messages)
 returns boolean language sql stable set search_path = cockpit, pg_temp as $$
   select m.auteur_type in ('proprietaire', 'utilisateur')
@@ -155,8 +159,9 @@ begin
   return n;
 end $$;
 
--- Répondre dans un fil (scripts/repondre.sh) : un message de session, rattaché
--- au dernier message humain sans réponse du fil (repond_a).
+-- Répondre dans un fil (progression.sh --point) : un message de session,
+-- rattaché (repond_a) à la demande « Où ça en est ? » en attente s'il y en a
+-- une (marquée reçue au passage), sinon à son dernier message du fil.
 create or replace function cockpit.repondre_dans_fil(p_projet text, p_chantier uuid, p_auteur text, p_texte text)
 returns uuid language plpgsql security definer set search_path = cockpit, pg_temp as $$
 declare v_projet uuid; v_id uuid := gen_random_uuid(); v_a uuid;
@@ -166,16 +171,34 @@ begin
   if p_chantier is not null then
     select projet_id into v_projet from cockpit.chantiers where id = p_chantier;
     if v_projet is null then raise exception 'chantier introuvable'; end if;
+    v_a := cockpit.ou_en_est_en_attente(p_chantier);
+    if v_a is not null then
+      update cockpit.messages set recu_at = coalesce(recu_at, now()), recu_par = coalesce(recu_par, nullif(p_auteur, '')) where id = v_a;
+    end if;
   else
     select id into v_projet from cockpit.projets where slug = p_projet;
     if v_projet is null then raise exception 'projet inconnu : %', p_projet; end if;
   end if;
-  select m.id into v_a from cockpit.messages m
-   where m.projet_id = v_projet and m.chantier_id is not distinct from p_chantier and m.auteur_type in ('proprietaire', 'utilisateur')
-   order by m.created_at desc limit 1;
+  if v_a is null then
+    select m.id into v_a from cockpit.messages m
+     where m.projet_id = v_projet and m.chantier_id is not distinct from p_chantier and m.auteur_type in ('proprietaire', 'utilisateur')
+     order by m.created_at desc limit 1;
+  end if;
   insert into cockpit.messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, repond_a)
-  values (v_id, v_projet, p_chantier, coalesce(nullif(p_auteur, ''), 'session'), 'session', 'info', p_texte, v_a);
+  values (v_id, v_projet, p_chantier, coalesce(nullif(p_auteur, ''), 'session'), 'session', 'info', trim(p_texte), v_a);
   return v_id;
+end $$;
+
+-- 0023 garde son nom (scripts déjà installés) mais passe par la même règle.
+create or replace function cockpit.repondre_ou_en_est(p_chantier uuid, p_auteur text, p_texte text)
+returns jsonb language plpgsql security definer set search_path = cockpit, pg_temp as $$
+declare v_dem uuid; v_id uuid;
+begin
+  perform cockpit.exiger(cockpit.est_service(), 'réservé aux sessions');
+  if p_chantier is null then raise exception 'chantier introuvable'; end if;
+  v_dem := cockpit.ou_en_est_en_attente(p_chantier);
+  v_id := cockpit.repondre_dans_fil(null, p_chantier, p_auteur, p_texte);
+  return jsonb_build_object('id', v_id, 'demande', v_dem);
 end $$;
 
 -- Le prochain passage de la chef d'un projet (réveil horaire), pour l'app.
@@ -192,10 +215,11 @@ $$;
 
 revoke all on function cockpit.est_message_libre(cockpit.messages), cockpit.messages_sans_reponse(uuid, text),
   cockpit.reprendre_message(text, uuid), cockpit.marquer_messages_recus(uuid[], text),
-  cockpit.repondre_dans_fil(text, uuid, text, text), cockpit.prochain_passage_chef(uuid) from public, anon, authenticated;
+  cockpit.repondre_dans_fil(text, uuid, text, text), cockpit.repondre_ou_en_est(uuid, text, text),
+  cockpit.prochain_passage_chef(uuid) from public, anon, authenticated;
 grant execute on function cockpit.est_message_libre(cockpit.messages), cockpit.messages_sans_reponse(uuid, text),
   cockpit.reprendre_message(text, uuid), cockpit.marquer_messages_recus(uuid[], text),
-  cockpit.repondre_dans_fil(text, uuid, text, text) to service_role;
+  cockpit.repondre_dans_fil(text, uuid, text, text), cockpit.repondre_ou_en_est(uuid, text, text) to service_role;
 grant execute on function cockpit.prochain_passage_chef(uuid) to authenticated, service_role;
 
 -- Le réveil du cockpit (trig_01VseAzWomoQETWZcXtquBpB, « 8 * * * * », lu le 29 sept.).

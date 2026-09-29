@@ -104,9 +104,17 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   [ -n "$rp" ] && [ "$rp" != "null" ] || break
   donnes+=("$(printf '%s' "$rp" | jq -c --arg br "$br" '. + {branche: $br, reponse_prise: true}')")
 done
-# Puis ses MESSAGES LIBRES restés sans réponse écrite (0024 : « je n'ai pas compris
+# Puis les « OÙ ÇA EN EST ? » (0023) que personne ne recevra (aucune session ni
+# agent vivant sur le chantier) : un assistant regarde et répond dans le fil.
+while [ ${#donnes[@]} -lt "$libres" ]; do
+  br="agent/point-$(date +%s%N | tail -c 7)"
+  po=$(un "select prendre_ou_en_est('$br', '$pid') as r" | jq -c '.r // empty')
+  [ -n "$po" ] && [ "$po" != "null" ] || break
+  donnes+=("$(printf '%s' "$po" | jq -c --arg br "$br" '. + {branche: $br, point: true}')")
+done
+# Puis ses MESSAGES LIBRES restés sans réponse écrite (0025 : « je n'ai pas compris
 # ta demande », une précision, un « Corriger ») sur un fil que personne ne tient :
-# un agent lui RÉPOND dans le fil (repondre.sh), même s'il n'y a rien à coder.
+# un agent lui RÉPOND dans le fil (progression.sh --point), même s'il n'y a rien à coder.
 while [ ${#donnes[@]} -lt "$libres" ]; do
   br="agent/message-$(date +%s%N | tail -c 7)"
   rm_=$(un "select reprendre_message('$br', '$pid') as r" | jq -c '.r // empty')
@@ -146,7 +154,7 @@ if [ "$nb" -eq 0 ]; then echo "RIEN — aucun chantier à prendre dans $projet (
 echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche."
 echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance $CHEF_CMD pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 echo
-VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"; REP="${COCKPIT_REPONDRE_CMD:-scripts/repondre.sh}"
+VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
 for c in "${donnes[@]}"; do
   if [ "$(printf '%s' "$c" | jq -r '.reponse_prise // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
@@ -166,8 +174,8 @@ Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche 
     echo; continue
   fi
   if [ "$(printf '%s' "$c" | jq -r '.message_pris // false')" = "true" ]; then
-    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg rep "$REP" '
-(if .id then "--chantier \(.id)" else "--projet" end) as $ou |
+    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
+(if .id then "--chantier \(.id) --point" else "--point" end) as $ou |
 "━━ Agent « Répondre : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche)\(if .id then ", chantier \(.id)" else ", fil du projet" end))
 Consigne à lui donner, telle quelle :
 ---
@@ -179,10 +187,26 @@ Juste avant, dans le fil :
 \(if .id then "État du chantier : \(.etat). Demande :\n\(.demande)" else "C’est le fil du projet (hors chantier)." end)\(if (.medias // 0) > 0 then "\nPièces jointes : COCKPIT_PROJET=\(.slug) scripts/media.sh \(if .id then "--chantier \(.id)" else "--message <id>" end), puis REGARDE-les." else "" end)
 
 1. Comprends ce qu’il demande (lis le fil, le code, la base : vérifie avant d’affirmer).
-2. RÉPONDS-LUI d’abord, court, en mots simples (600 caractères au plus), la réponse en premier : COCKPIT_PROJET=\(.slug) \($rep) \($ou) \"…\". Une capture aide ? --image capture.png (chantier seulement).
+2. RÉPONDS-LUI d’abord, court, en mots simples (400 caractères au plus), la réponse en premier : COCKPIT_PROJET=\(.slug) \($prog) \($ou) \"…\". Une capture aide ? COCKPIT_PROJET=\(.slug) scripts/media.sh --envoyer --chantier <id> --texte \"…\" --image capture.png.
 3. S’il demande un travail : dis-le dans ta réponse, puis fais-le si c’est court et sans risque (branche \(.branche), jamais main directement ; tests ; progression : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Répondre : \(.titre)\"\(if .id then " --chantier \(.id)" else "" end) --etape \"…\" --pct N --eta M). Sinon ouvre ou complète un chantier (scripts/chantier.sh --ouvrir) et dis-le-lui.
 4. Une décision de Raphaël nécessaire → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté), puis rends la main.
 Aucune dépense, suppression ni envoi en son nom. Ne change pas l’état du chantier pour rien (il est seulement réservé à ta branche 60 min). Rends un rapport de 3 lignes : ce que tu as répondu, ce que tu as fait, ce qui reste.
+---"'
+    echo; continue
+  fi
+  if [ "$(printf '%s' "$c" | jq -r '.point // false')" = "true" ]; then
+    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg sql "${COCKPIT_SQL_CMD:-scripts/sql.sh}" '
+"━━ Agent « Point : \(.titre) » (projet \(.slug), dépôt \(.depot), chantier \(.id))
+Consigne à lui donner, telle quelle :
+---
+Tu es un agent du cockpit. Raphaël demande OÙ EN EST le chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot) (demandé le \(.demande_le)). Aucune session ne le tient : c’est toi qui réponds.
+État : \(.etat)\(if .pris_par then " · dernière branche : \(.pris_par)" else "" end)\(if .derniere_etape then " · dernière étape signalée : \(.derniere_etape)" else "" end)
+Demande du chantier :
+\(.demande)
+
+Regarde à la source, SANS rien modifier : le fil du chantier (\($sql) \u0027select auteur_type, kind, corps, reponse, created_at from messages where chantier_id = $$\(.id)$$ order by created_at\u0027), la branche et ses commits s’il y en a, ce qui est sur main et en ligne. Puis réponds-lui dans le fil, en 3 lignes au plus, mots simples (fait / reste / ce qui bloque, et ce que tu conseilles : relancer, attendre ou abandonner) :
+COCKPIT_PROJET=\(.slug) \($prog) --chantier \(.id) --point \"Fait : … Reste : … Bloque : …\"
+Ne réserve pas le chantier, ne code rien. Rends un rapport de 2 lignes.
 ---"'
     echo; continue
   fi

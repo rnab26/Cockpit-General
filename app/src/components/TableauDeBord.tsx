@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowDownUp, ChevronDown, ChevronRight, CirclePause, Rocket, Settings2 } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
@@ -15,7 +15,8 @@ import { Button } from '../ui/Button.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { BarreProjet, ProjetsResume } from './BarreProjet.tsx'
-import { BoutonsRelance } from './Relance.tsx'
+import { BoutonsRelance, SuiviOuEnEst } from './Relance.tsx'
+import { ouEnEstVisible } from '../lib/ouEnEst.ts'
 import { BlocSession } from './QuiTravaille.tsx'
 import { IconeAToi, PointProjet } from './Icones.tsx'
 import { useFlash } from './Vivant.tsx'
@@ -368,6 +369,11 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
   const flash = useFlash(l.vivant && a ? `${a.updated_at}|${a.pourcentage}|${a.etape}` : null)
   const reste = l.vivant && a ? etaLisible(a.eta_secondes) : null
   const ouvrir = () => g.ouvrirChantier(l.c.projet_id, l.c.id)
+  // « Où ça en est ? » en attente (0023) : la ligne la suit, et rien ne se renvoie.
+  const oe = ouEnEstVisible(l.ouEnEst, g.now) ? l.ouEnEst! : null
+  // Demande partie : le panneau « Relancer » se referme (la ligne montre le suivi, une seule fois).
+  const attente = !!oe?.enAttente
+  useEffect(() => { if (attente) setRelance(false) }, [attente])
   return (
     <li data-testid="ligne-en-ce-moment" data-chantier-ligne={l.c.id} data-vivant={l.vivant ? 'oui' : 'non'} data-flash={flash ? 'oui' : 'non'} className={flash ? 'flash-etape' : ''}>
       <div className="flex items-start gap-2 px-3 py-2.5">
@@ -385,6 +391,11 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
               <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-ok align-middle" aria-hidden data-testid="point-travaille" />
               <span className="line-clamp-2 inline">{l.qui}{l.etape ? ` · « ${l.etape} »` : ''}</span>
             </span>
+          ) : oe ? (
+            <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
+              <span className={oe.enAttente ? 'text-info' : 'text-ok'}>{oe.enAttente ? 'Tu as demandé où ça en est' : 'Claude a répondu à « où ça en est ? »'}</span>
+            </span>
           ) : l.reprise ? (
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
@@ -398,11 +409,12 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
             </span>
           )}
         </button>
-        {!l.vivant && !l.reprise ? (
+        {!l.vivant && !l.reprise && !oe?.enAttente ? (
           <Button taille="sm" onClick={() => setRelance(!relance)} aria-expanded={relance} data-testid="ouvrir-relance" className="shrink-0">Relancer</Button>
         ) : null}
       </div>
-      {relance ? <div className="px-3 pb-2.5"><AvecProjet projetId={l.c.projet_id}><BoutonsRelance chantier={l.c} /></AvecProjet></div> : null}
+      {oe && !(relance && !oe.enAttente) ? <div className="-mt-1 px-3 pb-2.5" data-testid="suivi-ligne"><SuiviOuEnEst etat={oe} compact={l.vivant} /></div> : null}
+      {relance && !oe?.enAttente ? <div className="px-3 pb-2.5"><AvecProjet projetId={l.c.projet_id}><BoutonsRelance chantier={l.c} /></AvecProjet></div> : null}
     </li>
   )
 }

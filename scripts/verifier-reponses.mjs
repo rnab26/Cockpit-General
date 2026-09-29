@@ -13,6 +13,8 @@
 //   4. un agent reçoit la réponse de SON chantier, pas celle d'un autre agent
 //   5. base injoignable un instant → rien n'est perdu (le curseur n'avance pas)
 //   6. une question générale (sans chantier) répondue → visible au démarrage
+//   7-8. « Où ça en est ? » (0023) : remise une fois, marquée reçue, --point ; sans personne, la chef la sert
+//   9-11. message LIBRE (0025) : remis et « reçu », réponse --point dans le fil ; sans personne, la chef le confie ; fil du projet
 // Le cas « personne ne tient le chantier » relève de scripts/chef.sh (autre chantier).
 
 import { spawnSync } from "node:child_process";
@@ -147,24 +149,58 @@ try {
   const bloc4 = (o.additionalContext ?? "").split("## Ses RÉPONSES que personne n'a encore prises")[1]?.split("\n## ")[0] ?? "";
   verifie("une réponse notée par une session (dite dans sa conversation) n'y est pas", !/Notée par une session/.test(bloc4), bloc4);
 
-  // 0024 : un message LIBRE de Raphaël dans un fil = une réponse écrite de Claude dans ce fil.
-  console.log("\n7. message libre : la session qui tient le chantier doit RÉPONDRE dans le fil");
+  // Raphaël, 29 sept. : « qu'on ne pollue pas les sessions en cliquant 10 fois
+  // sur "où ça en est", et que ça ne reste pas statique » (0023).
+  console.log("\n7. « Où ça en est ? » : remise une fois, marquée reçue, réponse dans le fil");
+  const dem = sql(`select demander_ou_en_est(${q(C1)}, 'Raphaël') as r`)[0].r;
+  const dem2 = sql(`select demander_ou_en_est(${q(C1)}, 'Raphaël') as r`)[0].r;
+  verifie("un deuxième toucher ne renvoie rien (même demande, « déjà »)", dem2.deja === true && dem2.id === dem.id && sql(`select count(*)::int as n from messages where chantier_id = ${q(C1)} and ou_en_est`)[0].n === 1, { dem, dem2 });
+  o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
+  verifie("la session qui tient le chantier la reçoit, avec la commande pour répondre", /OÙ ÇA EN EST/.test(o.additionalContext ?? "") && /--point/.test(o.additionalContext ?? "") && o.additionalContext.includes(C1), o);
+  let recu = null;
+  for (let i = 0; i < 20 && !recu?.recu_at; i++) { await attendre(500); recu = sql(`select recu_at, recu_par from messages where id = ${q(dem.id)}`)[0]; }
+  verifie("elle est marquée REÇUE par la branche de la session (l'app affiche « Reçue par Claude »)", !!recu?.recu_at && recu.recu_par === "claude/test-rep", recu);
+  o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
+  verifie("elle n'est pas redonnée au pas d'après", !/OÙ ÇA EN EST/.test(o.additionalContext ?? ""), o);
+  const prog = (args) => spawnSync("bash", [join(RACINE, "scripts/progression.sh"), ...args], { encoding: "utf8", env: env(), cwd: PROJET_DIR, timeout: 60000 });
+  let r = prog(["--chantier", C1, "--point", "x".repeat(401)]);
+  verifie("--point trop long : refusé (règle de clarté), rien d'écrit", r.status === 2 && /400/.test(r.stderr) && sql(`select count(*)::int as n from messages where repond_a = ${q(dem.id)}`)[0].n === 0, r.stderr);
+  r = prog(["--chantier", C1, "--point", "Fait : l'écran. Reste : les tests. Bloque : rien."]);
+  const rep = sql(`select auteur, auteur_type, corps from messages where repond_a = ${q(dem.id)}`);
+  verifie("progression.sh --point répond dans le fil, rattaché à la demande", r.status === 0 && rep.length === 1 && rep[0].auteur_type === "session" && /Reste : les tests/.test(rep[0].corps), { out: r.stdout, err: r.stderr, rep });
+  verifie("la demande n'est plus en attente : on peut redemander", sql(`select ou_en_est_en_attente(${q(C1)}) as id`)[0].id === null);
+
+  console.log("\n8. « Où ça en est ? » sur un chantier que personne ne tient : la chef la sert");
+  const demC3 = sql(`select demander_ou_en_est(${q(C3)}, 'Raphaël') as r`)[0].r;
+  verifie("ni session vivante ni agent sur C3 → dans ou_en_est_sans_suite", sql(`select chantier_id from ou_en_est_sans_suite(${q(P)})`).some((x) => x.chantier_id === C3));
+  verifie("C1 (tenu par une session vivante) n'y serait jamais", !sql(`select chantier_id from ou_en_est_sans_suite(${q(P)})`).some((x) => x.chantier_id === C1));
+  sql(`select prendre_chef(${q(SLUG)}, ${q(SID)}, 'claude/test-rep', null) as r`);
+  sql(`update chefs set max_agents = 8 where projet_id = ${q(P)}`);
+  r = spawnSync("bash", [join(RACINE, "scripts/chef.sh"), "--projet", SLUG, "--session", SID], { encoding: "utf8", env: env(), cwd: PROJET_DIR, timeout: 120000 });
+  verifie("la passe de chef.sh lance un assistant « Point » avec la commande --point", /Agent « Point : Chantier d'un autre »/.test(r.stdout) && r.stdout.includes(`--chantier ${C3} --point`), r.stdout.slice(0, 600) || r.stderr);
+  const pris = sql(`select recu_at, recu_par from messages where id = ${q(demC3.id)}`)[0];
+  verifie("la demande est marquée prise par l'assistant (agent/point-…) : l'app dit « Un assistant regarde »", !!pris.recu_at && /^agent\/point-/.test(pris.recu_par ?? ""), pris);
+  verifie("le chantier n'est pas réservé à l'assistant (répondre ne bloque personne)", sql(`select pris_par from chantiers where id = ${q(C3)}`)[0].pris_par === "agent/autre");
+  verifie("une deuxième passe ne la redonne pas", sql(`select prendre_ou_en_est('agent/point-x', ${q(P)}) as r`)[0].r === null);
+
+  // 0025 : un message LIBRE de Raphaël dans un fil = une réponse écrite de Claude dans ce fil.
+  console.log("\n9. message libre : la session qui tient le chantier doit RÉPONDRE dans le fil");
   suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} }); // curseur à jour
   const M1 = randomUUID();
   sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(M1)}, ${q(P)}, ${q(C1)}, 'Raphaël', 'proprietaire', 'info', 'Je n''ai pas compris ta demande')`);
   o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
-  verifie("il arrive au pas suivant avec l'ordre de lui répondre dans le fil (repondre.sh --chantier)",
-    /pas compris ta demande/.test(o.additionalContext ?? "") && /RÉPONDS-LUI/.test(o.additionalContext ?? "") && o.additionalContext.includes(`repondre.sh --chantier ${C1}`), o);
+  verifie("il arrive au pas suivant avec l'ordre de lui répondre dans le fil (progression.sh --chantier … --point)",
+    /pas compris ta demande/.test(o.additionalContext ?? "") && /RÉPONDS-LUI/.test(o.additionalContext ?? "") && o.additionalContext.includes(`progression.sh --chantier ${C1} --point`), o);
   await attendre(2500);
   verifie("remis à la session vivante = marqué « reçu » (l'app le dit)", !!sql(`select recu_at from messages where id = ${q(M1)}`)[0]?.recu_at);
-  const rep = spawnSync("bash", [join(RACINE, "scripts/repondre.sh"), "--chantier", C1, "Je parlais du bouton Envoyer, en bas de l'écran."], { encoding: "utf8", env: env({ COCKPIT_SESSION: "claude/test-rep" }) });
-  verifie("repondre.sh écrit la réponse dans le fil", rep.status === 0, rep.stderr || rep.stdout);
+  const repL = prog(["--chantier", C1, "--point", "Je parlais du bouton Envoyer, en bas de l'écran."]);
+  verifie("progression.sh --point écrit la réponse dans le fil", repL.status === 0 && /sous son message/.test(repL.stdout), repL.stderr || repL.stdout);
   const ecrite = sql(`select auteur_type, repond_a from messages where chantier_id = ${q(C1)} and corps like 'Je parlais du bouton%'`)[0];
   verifie("réponse de session, rattachée à son message (repond_a)", ecrite?.auteur_type === "session" && ecrite?.repond_a === M1, ecrite);
-  const long = spawnSync("bash", [join(RACINE, "scripts/repondre.sh"), "--chantier", C1, "x".repeat(700)], { encoding: "utf8", env: env() });
-  verifie("règle de clarté : une réponse de plus de 600 caractères est refusée", long.status !== 0 && /600/.test(long.stderr), long.stderr);
+  const long = prog(["--chantier", C1, "--point", "x".repeat(700)]);
+  verifie("règle de clarté : une réponse de plus de 400 caractères est refusée", long.status === 2 && /400/.test(long.stderr), long.stderr);
 
-  console.log("\n8. message libre sur un fil que PERSONNE ne tient → la chef le confie à un agent");
+  console.log("\n10. message libre sur un fil que PERSONNE ne tient → la chef le confie à un agent");
   const C4 = randomUUID(), M2 = randomUUID(), SIDC = `test-chef-${rand}`;
   sql(`insert into chantiers (id, projet_id, titre, etat, demande) values (${q(C4)}, ${q(P)}, 'Chantier sans personne', 'a_verifier', 'Refaire le menu')`);
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(P)}, ${q(C4)}, 'claude/vieux', 'session', 'info', 'Livré : le menu est refait')`);
@@ -176,25 +212,25 @@ try {
   verifie("« Ça fonctionne, je certifie » n'attend pas de réponse (servi ailleurs)", sr.find((r) => r.chantier_id === C4)?.nombre === 1, sr);
   o = hook("session-start.sh", { session_id: `test-rep6-${rand}`, hook_event_name: "SessionStart", source: "startup" });
   const bloc5 = (o.additionalContext ?? "").split("SANS RÉPONSE")[1]?.split("\n## ")[0] ?? "";
-  verifie("le démarrage d'une session le montre dans « SANS RÉPONSE », avec la commande pour répondre", /où est-il/.test(bloc5) && /repondre\.sh --chantier/.test(bloc5), bloc5 || o);
+  verifie("le démarrage d'une session le montre dans « SANS RÉPONSE », avec la commande pour répondre", /où est-il/.test(bloc5) && /progression\.sh --chantier <id> --point/.test(o.additionalContext ?? ""), bloc5 || o);
   sql(`insert into chefs (projet_id, session_id, actif, max_agents) values (${q(P)}, ${q(SIDC)}, true, 5) on conflict (projet_id) do update set session_id = excluded.session_id, actif = true, max_agents = 5`);
   const passe = spawnSync("bash", [join(RACINE, "scripts/chef.sh"), "--projet", SLUG, "--session", SIDC], { encoding: "utf8", env: env(), timeout: 60000 });
   const sortie = passe.stdout ?? "";
   verifie("la passe de la chef lance un agent « Répondre : … » qui cite son message et la commande",
-    /Agent « Répondre : Chantier sans personne »/.test(sortie) && /où est-il/.test(sortie) && sortie.includes(`repondre.sh --chantier ${C4}`) && /Livré : le menu est refait/.test(sortie), sortie.slice(0, 1500) || passe.stderr);
+    /Agent « Répondre : Chantier sans personne »/.test(sortie) && /où est-il/.test(sortie) && sortie.includes(`progression.sh --chantier ${C4} --point`) && /Livré : le menu est refait/.test(sortie), sortie.slice(0, 1500) || passe.stderr);
   const apres = sql(`select c.etat, c.pris_par, m.recu_par from chantiers c join messages m on m.id = ${q(M2)} where c.id = ${q(C4)}`)[0];
   verifie("message marqué pris par l'agent, chantier réservé SANS changer d'état", apres?.etat === "a_verifier" && /^agent\/message-/.test(apres?.pris_par ?? "") && apres?.recu_par === apres?.pris_par, apres);
   sr = sql(`select * from messages_sans_reponse(${q(P)}, null)`);
   verifie("il n'est pas redonné à la passe suivante", !sr.some((r) => r.chantier_id === C4), sr);
 
-  console.log("\n9. fil du projet (« Écrire à Claude » hors chantier)");
+  console.log("\n11. fil du projet (« Écrire à Claude » hors chantier)");
   const MP = randomUUID();
   sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps) values (${q(MP)}, ${q(P)}, 'Raphaël', 'proprietaire', 'info', 'Question générale : tout va bien ?')`);
   sr = sql(`select * from messages_sans_reponse(${q(P)}, null)`);
   verifie("un message hors chantier attend aussi sa réponse", sr.some((r) => r.message_id === MP && r.chantier_id === null), sr);
-  const repP = spawnSync("bash", [join(RACINE, "scripts/repondre.sh"), "--projet", "Oui : 3 chantiers avancent, rien ne bloque."], { encoding: "utf8", env: env() });
+  const repP = prog(["--point", "Oui : 3 chantiers avancent, rien ne bloque."]);
   sr = sql(`select * from messages_sans_reponse(${q(P)}, null)`);
-  verifie("repondre.sh --projet y répond, et il sort de la liste", repP.status === 0 && !sr.some((r) => r.message_id === MP), repP.stderr || sr);
+  verifie("progression.sh --point (sans chantier) y répond, et il sort de la liste", repP.status === 0 && !sr.some((r) => r.message_id === MP), repP.stderr || sr);
 } catch (e) {
   verifie("le banc s'est déroulé sans planter", false, e.message);
 } finally {

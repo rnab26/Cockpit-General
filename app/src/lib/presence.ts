@@ -139,12 +139,16 @@ export function consigneClaude(c: Pick<Chantier, 'id' | 'titre'>, projetSlug: st
     + `pose tes questions dans le cockpit, et termine en « à vérifier » avec les étapes « Comment vérifier ».`
 }
 
-/** Le message écrit dans le fil par « Demander où ça en est ». */
+/** Le message écrit dans le fil par « Demander où ça en est » (par la base, demander_ou_en_est, 0023). */
 export const MESSAGE_OU_CA_EN_EST = 'Raphaël demande : où en est ce chantier ? Qu’est-ce qui est fait, qu’est-ce qui reste, qu’est-ce qui bloque ?'
 
+/** Une demande « où ça en est » : marquée `ou_en_est` depuis 0023 ; avant, reconnue à son texte. Suivi : lib/ouEnEst.ts. */
+export const estDemandeOuEnEst = (m: { corps: string; auteur_type?: string; ou_en_est?: boolean | null }): boolean =>
+  !!m.ou_en_est || (m.auteur_type !== 'session' && m.corps === MESSAGE_OU_CA_EN_EST)
+
 /** La dernière demande « où ça en est » du fil d'un chantier (pour afficher « Demandé il y a … » au lieu d'en empiler). */
-export function derniereDemandeOuCaEnEst<M extends { corps: string; created_at: string }>(fil: readonly M[]): M | null {
+export function derniereDemandeOuCaEnEst<M extends { corps: string; created_at: string; auteur_type?: string; ou_en_est?: boolean | null }>(fil: readonly M[]): M | null {
   let res: M | null = null
-  for (const m of fil) if (m.corps === MESSAGE_OU_CA_EN_EST && (!res || m.created_at > res.created_at)) res = m
+  for (const m of fil) if (estDemandeOuEnEst(m) && (!res || m.created_at > res.created_at)) res = m
   return res
 }

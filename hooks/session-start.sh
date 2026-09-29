@@ -18,7 +18,7 @@ RACINE="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROJET="${COCKPIT_PROJET:-}"
 # Noms des scripts tels qu'installés dans le projet (brancher.sh les réécrit).
-SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"; CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"; MEDIA_CMD="${COCKPIT_MEDIA_CMD:-scripts/media.sh}"; REPONDRE_CMD="${COCKPIT_REPONDRE_CMD:-scripts/repondre.sh}"
+SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"; CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"; MEDIA_CMD="${COCKPIT_MEDIA_CMD:-scripts/media.sh}"
 
 emettre() { jq -n --arg c "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'; }
 
@@ -111,7 +111,7 @@ non_prises=$(un "select coalesce(string_agg(format('- [%s] %s | question « %s �
 constats=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre,''), left(m.corps, 160)), chr(10) order by m.created_at desc), '(aucun)') from (select * from messages where kind = 'constat' order by created_at desc limit 8) m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P")
 
 # Ce que Raphaël (ou un utilisateur) a écrit dans un fil et qu'AUCUNE réponse
-# écrite de Claude n'a suivi (une étape ne suffit pas, 0024) : « je n'ai pas
+# écrite de Claude n'a suivi (une étape ne suffit pas, 0025) : « je n'ai pas
 # compris », une précision, un « Corriger »… UNE seule règle, celle de la chef :
 # messages_sans_reponse(projet, sa branche). Ne pas la réécrire ici.
 sans_suite=$(un "select coalesce(string_agg(format('- [%s] %s | %s : %s%s%s', to_char(m.created_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), coalesce(c.titre || ' (' || c.id || ')', 'fil du projet'), m.auteur, left(replace(m.corps, chr(10), ' '), 240), case when r.nombre > 1 then format(' (+%s autre(s) message(s) dans ce fil)', r.nombre - 1) else '' end, case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) jointe(s) — REGARDE-LES : $MEDIA_CMD --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by m.created_at), '(rien)') from messages_sans_reponse((select id from projets where slug = $P), $brsql) r join messages m on m.id = r.message_id left join chantiers c on c.id = r.chantier_id")
@@ -162,7 +162,7 @@ $non_prises
 ## Dernières réponses humaines (à appliquer avec jugement)
 $reponses
 
-## Ce que Raphaël (ou un utilisateur) a écrit SANS RÉPONSE — réponds-lui DANS le fil, court, avant de continuer : \`$REPONDRE_CMD --chantier <id> "…"\` (fil du projet : --projet)
+## Ce que Raphaël (ou un utilisateur) a écrit SANS RÉPONSE — réponds-lui DANS le fil, court, avant de continuer : \`$PROG_CMD --chantier <id> --point "…"\` (fil du projet : sans --chantier)
 $sans_suite
 
 ## Demandes des UTILISATEURS pas encore prises
