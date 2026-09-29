@@ -40,7 +40,7 @@ create or replace function cockpit.mettre_de_cote(p_id uuid, p_jusqu_a timestamp
 returns jsonb language plpgsql security definer set search_path = cockpit, pg_temp as $$
 declare c cockpit.chantiers; v_texte text;
 begin
-  perform cockpit.exiger(cockpit.est_admin(), 'réservé à l''admin du cockpit');
+  perform cockpit.exiger(cockpit.est_admin() or cockpit.est_service(), 'réservé à l''admin du cockpit');
   if p_jusqu_a is not null and (p_jusqu_a <= now() or p_jusqu_a > now() + interval '1 year') then
     raise exception 'date de report : dans le futur, un an au plus';
   end if;
@@ -52,7 +52,8 @@ begin
           || coalesce(' : ' || nullif(trim(p_raison), ''), '.');
   -- Un « constat » : il vient d'un bouton, il n'attend pas de réponse écrite (est_message_libre).
   insert into cockpit.messages (projet_id, chantier_id, auteur, auteur_type, kind, corps)
-  values (c.projet_id, c.id, 'Raphaël', 'proprietaire', 'constat', left(v_texte, 500));
+  values (c.projet_id, c.id, case when cockpit.est_service() then 'session' else 'Raphaël' end,
+          case when cockpit.est_service() then 'session' else 'proprietaire' end, 'constat', left(v_texte, 500));
   return jsonb_build_object('id', c.id, 'etat', c.etat, 'jusqu_a', c.reporte_jusqu_a);
 end $$;
 
@@ -60,12 +61,13 @@ create or replace function cockpit.abandonner_chantier(p_id uuid, p_raison text 
 returns jsonb language plpgsql security definer set search_path = cockpit, pg_temp as $$
 declare c cockpit.chantiers;
 begin
-  perform cockpit.exiger(cockpit.est_admin(), 'réservé à l''admin du cockpit');
+  perform cockpit.exiger(cockpit.est_admin() or cockpit.est_service(), 'réservé à l''admin du cockpit');
   update cockpit.chantiers set etat = 'reporte', reporte_jusqu_a = null, pris_par = null, pris_jusqu_a = null, archived_at = now()
    where id = p_id returning * into c;
   if c.id is null then raise exception 'chantier introuvable'; end if;
   insert into cockpit.messages (projet_id, chantier_id, auteur, auteur_type, kind, corps)
-  values (c.projet_id, c.id, 'Raphaël', 'proprietaire', 'constat',
+  values (c.projet_id, c.id, case when cockpit.est_service() then 'session' else 'Raphaël' end,
+          case when cockpit.est_service() then 'session' else 'proprietaire' end, 'constat',
           left('Abandonné' || coalesce(' : ' || nullif(trim(p_raison), ''), '.'), 500));
   return jsonb_build_object('id', c.id, 'archived_at', c.archived_at);
 end $$;
@@ -106,6 +108,15 @@ returns uuid language sql stable security definer set search_path = cockpit, pg_
   select p.id from cockpit.projets p join cockpit.chefs c on c.projet_id = p.id
    where p.actif and not cockpit.projet_de_test(p.slug) and cockpit.chef_vivante(p.id)
    order by (p.slug = 'cockpit') desc, c.vu_at desc nulls last limit 1;
+$$;
+
+-- QUI répond pour un projet (une seule règle, pour le réveil ET le « prochain
+-- passage » de l'app) : sa chef si elle vit, sinon la chef relais. Un projet de
+-- test : lui seul, jamais la chef d'un vrai projet.
+create or replace function cockpit.cible_reveil(p_projet_id uuid)
+returns uuid language sql stable security definer set search_path = cockpit, pg_temp as $$
+  select case when cockpit.projet_de_test(p.slug) or cockpit.chef_vivante(p.id) then p.id else cockpit.chef_relais() end
+    from cockpit.projets p where p.id = p_projet_id;
 $$;
 
 create table if not exists cockpit.ouvertures (
@@ -182,6 +193,17 @@ alter table cockpit.reveils_immediats replica identity full;
 drop policy if exists admin_tout on cockpit.reveils_immediats;
 create policy admin_tout on cockpit.reveils_immediats for all using (cockpit.est_admin()) with check (cockpit.est_admin());
 
+create or replace function cockpit.reveil_efface_secret()
+returns trigger language plpgsql security definer set search_path = cockpit, pg_temp as $$
+begin
+  delete from vault.secrets where id = old.secret_id;
+  return null;
+end $$;
+drop trigger if exists reveil_efface_secret on cockpit.reveils_immediats;
+create trigger reveil_efface_secret after delete on cockpit.reveils_immediats
+  for each row execute function cockpit.reveil_efface_secret();
+revoke all on function cockpit.reveil_efface_secret() from public, anon, authenticated;
+
 -- Raphaël colle l'adresse (ou l'identifiant trig_…) et le jeton : le jeton va au coffre.
 create or replace function cockpit.regler_reveil_immediat(p_projet text, p_adresse text, p_jeton text)
 returns jsonb language plpgsql security definer set search_path = cockpit, pg_temp as $$
@@ -214,8 +236,7 @@ begin
   perform cockpit.exiger(cockpit.est_admin() or cockpit.est_service(), 'réservé à l''admin du cockpit');
   select ri.* into r from cockpit.reveils_immediats ri join cockpit.projets p on p.id = ri.projet_id where p.slug = p_projet;
   if r.projet_id is null then return false; end if;
-  delete from vault.secrets where id = r.secret_id;
-  delete from cockpit.reveils_immediats where projet_id = r.projet_id;
+  delete from cockpit.reveils_immediats where projet_id = r.projet_id;   -- le trigger efface le jeton du coffre
   return true;
 end $$;
 
@@ -260,7 +281,7 @@ begin
     return 'session_tient';
   end if;
   -- Qui réveiller : la chef du projet si elle vit, sinon la chef relais. Un projet de test : lui seul.
-  v_cible := case when cockpit.projet_de_test(v_slug) or cockpit.chef_vivante(p_projet_id) then p_projet_id else cockpit.chef_relais() end;
+  v_cible := cockpit.cible_reveil(p_projet_id);
   if v_cible is null then return 'aucune_chef'; end if;
   select * into r from cockpit.reveils_immediats where projet_id = v_cible and actif for update skip locked;
   if r.projet_id is null then return 'pas_configure'; end if;
@@ -316,7 +337,7 @@ returns timestamptz language plpgsql stable security definer set search_path = c
 declare v_cible uuid; c cockpit.chefs; v_h timestamptz; r cockpit.reveils_immediats;
 begin
   if not (cockpit.est_service() or cockpit.est_membre(p_projet_id)) then return null; end if;
-  v_cible := case when cockpit.chef_vivante(p_projet_id) then p_projet_id else cockpit.chef_relais() end;
+  v_cible := cockpit.cible_reveil(p_projet_id);
   if v_cible is null then return null; end if;
   select * into c from cockpit.chefs where projet_id = v_cible;
   if c.reveil_minute is not null and c.actif and c.session_id is not null and c.reveil_trigger is not null then
@@ -367,7 +388,7 @@ end $$;
 
 -- ------------------------------------------------ droits
 revoke all on function cockpit.mettre_de_cote(uuid, timestamptz, text), cockpit.abandonner_chantier(uuid, text),
-  cockpit.reveiller_reportes(uuid), cockpit.chef_vivante(uuid), cockpit.chef_relais(), cockpit.relais_a_servir(text, text),
+  cockpit.reveiller_reportes(uuid), cockpit.chef_vivante(uuid), cockpit.chef_relais(), cockpit.cible_reveil(uuid), cockpit.relais_a_servir(text, text),
   cockpit.noter_ouverture(text, text, text, text), cockpit.regler_reveil_immediat(text, text, text),
   cockpit.retirer_reveil_immediat(text), cockpit.etat_reveil_immediat(text), cockpit.reveiller_chef(uuid, uuid, text),
   cockpit.reveil_sur_message(), cockpit.reveil_sur_renfort(), cockpit.prochain_passage_chef(uuid), cockpit.etat_renforts(text)
@@ -375,5 +396,5 @@ revoke all on function cockpit.mettre_de_cote(uuid, timestamptz, text), cockpit.
 grant execute on function cockpit.mettre_de_cote(uuid, timestamptz, text), cockpit.abandonner_chantier(uuid, text),
   cockpit.reveiller_reportes(uuid), cockpit.regler_reveil_immediat(text, text, text), cockpit.retirer_reveil_immediat(text),
   cockpit.etat_reveil_immediat(text), cockpit.prochain_passage_chef(uuid), cockpit.etat_renforts(text) to authenticated, service_role;
-grant execute on function cockpit.chef_vivante(uuid), cockpit.chef_relais(), cockpit.relais_a_servir(text, text),
+grant execute on function cockpit.chef_vivante(uuid), cockpit.chef_relais(), cockpit.cible_reveil(uuid), cockpit.relais_a_servir(text, text),
   cockpit.noter_ouverture(text, text, text, text), cockpit.reveiller_chef(uuid, uuid, text) to service_role;

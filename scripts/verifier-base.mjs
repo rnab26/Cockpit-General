@@ -33,6 +33,7 @@
 //   25. renforts (0024) : une session par section, exclusivité, jamais deux renforts sur un chantier
 //   26. fil en discussion (0025)
 //   27. certifier garde une question ouverte (0026), sa réponse reprise sans rouvrir le certifié
+//   28. session et cockpit synchronisés (0027) : de côté / reporter / abandonner, chef relais, réveil immédiat
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -44,7 +45,7 @@
 // Le nettoyage tourne dans un `finally`, même si un contrôle plante.
 
 import { randomUUID, randomBytes } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -1521,6 +1522,118 @@ async function controle27_question_gardee() {
   verifie("droits : ni anon ni un utilisateur connecté n'exécutent ces fonctions", droits && !droits.a && !droits.b && !droits.c, droits);
 }
 
+
+// ------------------------------------------------------------------ 28
+const P8 = randomUUID(), SLUG_H = `test-verif-${rand}-h`;
+const RACINE_DEPOT = dirname(dirname(fileURLToPath(import.meta.url)));
+async function controle28_synchro() {
+  section("28. Session et cockpit synchronisés (0027) : de côté / reporter / abandonner, chef relais, réveil immédiat");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P8)}, ${q(SLUG_H)}, 'Projet de test H', 'rnab26/test-inexistant')`);
+  const message = (id) => une(`select * from messages where id = ${q(id)}`);
+  // --- de côté, reporter, abandonner
+  const c1 = await creerChantier(P8, { titre: "À mettre de côté", etat: "en_cours" });
+  await sql(`update chantiers set pris_par = 'agent/x', pris_jusqu_a = now() + interval '1 hour' where id = ${q(c1)}`);
+  await sql(`select mettre_de_cote(${q(c1)}, null, null)`);
+  const a1 = await chantier(c1);
+  verifie("mettre_de_cote : « reporte », sans date, réservation libérée", a1.etat === "reporte" && a1.reporte_jusqu_a === null && a1.pris_par === null, a1);
+  const l1 = await une(`select corps, kind, auteur_type from messages where chantier_id = ${q(c1)} order by created_at desc limit 1`);
+  verifie("mettre_de_cote : une ligne « Mis de côté. » dans le fil (constat, n'attend pas de réponse)", l1?.corps === "Mis de côté." && l1.kind === "constat", l1);
+  verifie("cette ligne n'est pas un « message sans réponse »", !(await sql(`select chantier_id from messages_sans_reponse(${q(P8)})`)).some((r) => r.chantier_id === c1));
+  verifie("reporter à une date passée : refusé", !!(await erreurDe(`select mettre_de_cote(${q(c1)}, now() - interval '1 day', null)`)));
+  await sql(`select mettre_de_cote(${q(c1)}, now() + interval '3 days', 'plus tard')`);
+  verifie("reporter à une date : reporte_jusqu_a posé", !!(await chantier(c1)).reporte_jusqu_a);
+  await sql(`update chantiers set reporte_jusqu_a = now() - interval '1 minute' where id = ${q(c1)}`);
+  const n = (await une(`select reveiller_reportes(${q(P8)}) as n`)).n;
+  const a2 = await chantier(c1);
+  verifie("reveiller_reportes : la date passée → « libre » (Prêt à lancer), une ligne dans le fil", n === 1 && a2.etat === "libre" && a2.reporte_jusqu_a === null, { n, a2 });
+  const c2 = await creerChantier(P8, { titre: "À abandonner", etat: "libre" });
+  await sql(`select abandonner_chantier(${q(c2)}, 'plus utile')`);
+  const a3 = await chantier(c2);
+  verifie("abandonner_chantier : archivé, « reporte », ligne « Abandonné : plus utile »", !!a3.archived_at && a3.etat === "reporte"
+    && (await une(`select corps from messages where chantier_id = ${q(c2)} order by created_at desc limit 1`))?.corps === "Abandonné : plus utile", a3);
+  const refus = await rpcUtilisateur("mettre_de_cote", { p_id: c2, p_jusqu_a: null, p_raison: null }, jwt);
+  verifie("un utilisateur non admin ne peut pas mettre de côté (refus)", refus.status >= 400, refus.status);
+  // Le vrai script de session (chantier.sh --de-cote / --abandonner).
+  const c3 = await creerChantier(P8, { titre: "Par la session", etat: "libre" });
+  const loin = spawnSync("bash", [join(RACINE_DEPOT, "scripts/chantier.sh"), "--projet", SLUG_H, "--de-cote", c3, "--jusqu-au", "2099-01-01"], { encoding: "utf8", env: { ...process.env } });
+  verifie("chantier.sh --de-cote … --jusqu-au 2099 : refusé, raison dite (la base borne à un an)", loin.status === 1 && /un an au plus/.test(loin.stderr) && !(await chantier(c3)).reporte_jusqu_a, { status: loin.status, err: loin.stderr });
+  execFileSync("bash", [join(RACINE_DEPOT, "scripts/chantier.sh"), "--projet", SLUG_H, "--de-cote", c3], { encoding: "utf8", env: { ...process.env } });
+  const a4 = await chantier(c3);
+  const l4 = await une(`select auteur_type from messages where chantier_id = ${q(c3)} order by created_at desc limit 1`);
+  verifie("chantier.sh --de-cote (session) : mis de côté, la ligne est signée de la session", a4.etat === "reporte" && l4?.auteur_type === "session", { a4, l4 });
+
+  // --- chef vivante, relais
+  await sql(`insert into chefs (projet_id, session_id, actif, vu_at) values (${q(P8)}, 'test-relais-${rand}', true, now())`);
+  verifie("chef_vivante : vue à l'instant → oui", (await une(`select chef_vivante(${q(P8)}) as v`)).v === true);
+  await sql(`update chefs set vu_at = now() - interval '4 hours' where projet_id = ${q(P8)}`);
+  verifie("chef_vivante : muette depuis 4 h (et pas de session) → non", (await une(`select chef_vivante(${q(P8)}) as v`)).v === false);
+  const S = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P8)}, 'Écran', 1)`);
+  const cl = await creerChantier(P8, { titre: "Libre à renforcer", etat: "libre" });
+  await sql(`update chantiers set section_id = ${q(S)} where id = ${q(cl)}`);
+  const rid = randomUUID();
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, chantiers) values (${q(rid)}, ${q(P8)}, ${q(S)}, 'renfort/testh', 1)`);
+  const cm = await creerChantier(P8, { titre: "Fil avec une question", etat: "libre" });
+  await creerMessage(P8, cm, { kind: "info", corps: "Deux sujets : le bouton, et la couleur", auteur_type: "proprietaire" });
+  const rel = (await une(`select relais_a_servir('cockpit', ${q(SLUG_H)}) as r`)).r;
+  const moi = rel.find((x) => x.slug === SLUG_H);
+  verifie("relais_a_servir (mode test) : le projet sans chef vivante, son renfort à ouvrir et UNE session à ouvrir",
+    !!moi && moi.renforts.ouvrir.some((o) => o.id === rid) && moi.ouvrir_session === true && moi.messages >= 1, rel);
+  await sql(`select noter_ouverture(${q(SLUG_H)}, 'session_test_relais', null, 'cockpit')`);
+  const rel2 = (await une(`select relais_a_servir('cockpit', ${q(SLUG_H)}) as r`)).r.find((x) => x.slug === SLUG_H);
+  verifie("après noter_ouverture : plus de session à ouvrir avant 1 h (le renfort reste)", !!rel2 && rel2.ouvrir_session === false && rel2.renforts.ouvrir.length === 1, rel2);
+  const relVrai = (await une(`select relais_a_servir('cockpit') as r`)).r;
+  verifie("relais_a_servir réel : jamais un projet de test", !JSON.stringify(relVrai).includes("test-verif-"), relVrai.map((x) => x.slug));
+  verifie("relais_a_servir d'un projet qui n'est PAS la chef relais : rien", (await une(`select relais_a_servir(${q(SLUG_H)}) as r`)).r.length === 0);
+  const er = (await une(`select etat_renforts(${q(SLUG_H)}) as e`)).e;
+  const relaisAttendu = (await une(`select p.slug from projets p where p.id = chef_relais()`))?.slug ?? null;
+  verifie("etat_renforts : chef = vivante (non), projet nommé, relais = la chef relais du moment", er.chef === false && er.projet === "Projet de test H" && (er.relais ?? null) === null, { er, relaisAttendu });
+  // La consigne du relais (chef.sh --relais-texte) : create_session, renfort.sh --session, chef.sh --ouverture ; jamais le travail.
+  const texte = execFileSync("bash", [join(RACINE_DEPOT, "scripts/chef.sh"), "--relais-texte"], { input: JSON.stringify(rel), encoding: "utf8" }).toString();
+  verifie("consigne du relais : create_session du renfort + renfort.sh --session, et session [cockpit-relais] + --ouverture",
+    texte.includes(`--session ${rid}`) && texte.includes("[cockpit-renfort]") && texte.includes("[cockpit-relais]") && texte.includes(`--ouverture ${SLUG_H}`) && /Ne lui réponds PAS d’ici/.test(texte), texte.slice(0, 400));
+
+  // --- réveil immédiat
+  const regl = (await une(`select regler_reveil_immediat(${q(SLUG_H)}, 'https://api.anthropic.com/v1/claude_code/routines/trig_01VERIFBASE/fire', 'sk-ant-oat01-faux-jeton-verifier-base') as r`)).r;
+  verifie("regler_reveil_immediat : l'identifiant trig_… lu dans l'adresse", regl.trigger === "trig_01VERIFBASE", regl);
+  verifie("adresse ou jeton illisible : refusé", !!(await erreurDe(`select regler_reveil_immediat(${q(SLUG_H)}, 'https://exemple.com/x', 'sk-ant-oat01-faux-jeton-verifier-base')`))
+    && !!(await erreurDe(`select regler_reveil_immediat(${q(SLUG_H)}, 'trig_01VERIFBASE', 'motdepasse')`)));
+  const ligne = await une(`select to_jsonb(r) as j from reveils_immediats r where projet_id = ${q(P8)}`);
+  const etatR = (await une(`select etat_reveil_immediat(${q(SLUG_H)}) as e`)).e;
+  verifie("le jeton n'est QUE dans le coffre : ni dans la table, ni dans l'état montré à l'app",
+    !JSON.stringify(ligne).includes("faux-jeton") && !JSON.stringify(etatR).includes("faux-jeton") && etatR.configure === true, { ligne, etatR });
+  verifie("il est bien dans le coffre (Vault)", (await une(`select count(*)::int as n from vault.decrypted_secrets where name = ${q("cockpit_reveil_" + P8)} and decrypted_secret like 'sk-ant-oat01-faux%'`)).n === 1);
+  // Un message libre de Raphaël → le trigger réveille (projet de test : lui-même, jamais la chef du cockpit).
+  const avant = await une(`select dernier_at from reveils_immediats where projet_id = ${q(P8)}`);
+  await creerMessage(P8, cm, { kind: "info", corps: "Encore une question", auteur_type: "proprietaire" });
+  const apres = await une(`select dernier_at, dernier_request, dernier_raison from reveils_immediats where projet_id = ${q(P8)}`);
+  verifie("message de Raphaël → réveil envoyé (trigger), noté avec sa requête", !avant.dernier_at && !!apres.dernier_at && !!apres.dernier_request && /message/.test(apres.dernier_raison ?? ""), apres);
+  verifie("un deuxième réveil dans les 5 min : « trop_tot »", (await une(`select reveiller_chef(${q(P8)}, ${q(cm)}, 'message') as r`)).r === "trop_tot");
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values ('test-reveil-${rand}', ${q(P8)}, 'claude/tient-reveil', now())`);
+  await sql(`update chantiers set pris_par = 'claude/tient-reveil', pris_jusqu_a = now() + interval '1 hour' where id = ${q(cm)}`);
+  verifie("une session vivante tient le chantier : pas de réveil (« session_tient »)", (await une(`select reveiller_chef(${q(P8)}, ${q(cm)}, 'message') as r`)).r === "session_tient");
+  const pp = (await une(`select prochain_passage_chef(${q(P8)}) as t, now() as n`));
+  verifie("prochain passage annoncé dans ~3 min après un réveil", !!pp.t && Date.parse(pp.t) - Date.parse(pp.n) <= 181_000, pp);
+  // pg_net a vraiment appelé l'API des routines (faux jeton → 401 attendu).
+  let st = null;
+  for (let i = 0; i < 10 && !st?.statut; i++) { await attendre(1000); st = (await une(`select etat_reveil_immediat(${q(SLUG_H)}) as e`)).e; }
+  verifie("l'appel part vraiment vers api.anthropic.com (faux jeton : 401 authentication_error)", st?.statut === 401 && /authentication_error/.test(st?.erreur ?? ""), st);
+  const droits = await une(`select has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as a,
+                                    has_function_privilege('anon', 'cockpit.relais_a_servir(text,text)', 'execute') as b,
+                                    has_function_privilege('authenticated', 'cockpit.noter_ouverture(text,text,text,text)', 'execute') as c,
+                                    has_function_privilege('anon', 'cockpit.regler_reveil_immediat(text,text,text)', 'execute') as d`);
+  verifie("droits : ni anon ni un utilisateur connecté ne réveillent ni ne relaient", droits && !droits.a && !droits.b && !droits.c && !droits.d, droits);
+  const refusR = await rpcUtilisateur("regler_reveil_immediat", { p_projet: SLUG_H, p_adresse: "trig_01X", p_jeton: "sk-ant-oat01-faux-jeton-utilisateur" }, jwt);
+  const vueR = await rest(`reveils_immediats?select=projet_id`, { jwt });
+  verifie("un utilisateur non admin : ne règle pas le réveil, ne voit pas la table", refusR.status >= 400 && Array.isArray(vueR.json) && vueR.json.length === 0, { r: refusR.status, v: vueR.json });
+  verifie("retirer_reveil_immediat : ligne et jeton effacés du coffre", (await une(`select retirer_reveil_immediat(${q(SLUG_H)}) as ok`)).ok === true
+    && (await une(`select count(*)::int as n from vault.secrets where name = ${q("cockpit_reveil_" + P8)}`)).n === 0);
+  // Un projet supprimé en cascade n'y laisse pas de jeton (trigger).
+  await sql(`select regler_reveil_immediat(${q(SLUG_H)}, 'trig_01VERIFBASE', 'sk-ant-oat01-faux-jeton-verifier-base')`);
+  await sql(`delete from reveils_immediats where projet_id = ${q(P8)}`);
+  verifie("ligne supprimée (cascade d'un projet) : le jeton quitte le coffre", (await une(`select count(*)::int as n from vault.secrets where name = ${q("cockpit_reveil_" + P8)}`)).n === 0);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -1539,7 +1652,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_synchro,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -1550,7 +1663,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -1558,8 +1671,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

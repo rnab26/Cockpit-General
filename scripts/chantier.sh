@@ -11,6 +11,9 @@
 #   (un correctif visuel / mise en page / ergonomie est rangé TOUT SEUL dans
 #    « Correctifs » à la création, migration 0021 ; --ranger corrige un faux tri)
 #   scripts/chantier.sh --suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi "…"
+#   scripts/chantier.sh --de-cote <id> [--jusqu-au 2026-10-15] [--pourquoi "…"]   mettre de côté / reporter (0027)
+#   scripts/chantier.sh --abandonner <id> [--pourquoi "…"]                          abandonner (archivé, Désarchiver le rend)
+#   (quand Raphaël le demande dans la session : mêmes gestes que les boutons du fil)
 #
 # C'EST TOI QUI TRANCHES (Raphaël, 29 sept. 2026) : « personne mieux que
 # Claude sait si c'est un chantier doublon […] ce n'est pas à moi de trier,
@@ -40,6 +43,7 @@
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
+decote=""; jusqua=""; abandon=""
 projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; dans=""; pourquoi=""
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 while [ $# -gt 0 ]; do
@@ -55,6 +59,9 @@ while [ $# -gt 0 ]; do
     --suggerer-fusion) fusion="${2:-}"; shift 2 ;;
     --dans)     dans="${2:-}"; shift 2 ;;
     --pourquoi) pourquoi="${2:-}"; shift 2 ;;
+    --de-cote)  decote="${2:-}"; shift 2 ;;
+    --jusqu-au) jusqua="${2:-}"; shift 2 ;;
+    --abandonner) abandon="${2:-}"; shift 2 ;;
     --session)  session="${2:-}"; shift 2 ;;
     -h|--help)  sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
@@ -90,6 +97,20 @@ if [ -n "$fusion" ]; then
   if [ "$(printf '%s' "$r" | jq -r '.ok')" != "true" ]; then echo "Échec : $(printf '%s' "$r" | jq -r '.error // .message // .')" >&2; exit 1; fi
   if [ "$(printf '%s' "$r" | jq -r '.rows[0].m')" = "null" ]; then echo "Cette fusion est déjà suggérée et attend Raphaël."; else
     echo "Fusion suggérée à Raphaël : il l'accepte ou la refuse d'un toucher dans le cockpit. Rien n'est fusionné tant qu'il n'a pas accepté."; fi
+  exit 0
+fi
+if [ -n "$decote" ] || [ -n "$abandon" ]; then
+  if [ -n "$abandon" ]; then
+    r=$("$SQL" "select abandonner_chantier('$(q "$abandon")'::uuid, $( [ -n "$pourquoi" ] && echo "'$(q "$pourquoi")'" || echo null )) as r" || true)
+  else
+    [ -z "$jusqua" ] || [[ "$jusqua" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "--jusqu-au : une date AAAA-MM-JJ." >&2; exit 2; }
+    j="null"; [ -n "$jusqua" ] && j="('$jusqua 09:00'::timestamp at time zone 'Asia/Jerusalem')"
+    r=$("$SQL" "select mettre_de_cote('$(q "$decote")'::uuid, $j, $( [ -n "$pourquoi" ] && echo "'$(q "$pourquoi")'" || echo null )) as r" || true)
+  fi
+  if [ "$(printf '%s' "$r" | jq -r '.ok')" != "true" ]; then echo "Échec : $(printf '%s' "$r" | jq -r '.error // .')" >&2; exit 1; fi
+  if [ -n "$abandon" ]; then echo "Chantier abandonné (archivé) ; une ligne dans son fil. « Désarchiver » dans l'app le rend."
+  elif [ -n "$jusqua" ]; then echo "Chantier reporté au $jusqua : il revient tout seul dans « Prêt à lancer » ce jour-là."
+  else echo "Chantier mis de côté ; « Relancer maintenant » dans l'app le rouvre."; fi
   exit 0
 fi
 [ -n "$titre" ] || { echo "--ouvrir \"<titre court>\" manque." >&2; exit 2; }
