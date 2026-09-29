@@ -152,6 +152,15 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
   256f351 avait embarqués par erreur) : en fusionnant cette branche, garder SA
   version de app/.
 
+## 2 quinquies. 29 sept. midi : écran A + D en ligne, et UNE session chef
+
+- Écran A + D fusionné et en ligne (54e63e0, verifier-web 227/227).
+- Session chef (0014, `scripts/chef.sh`, voir CLAUDE.md) : la session où
+  Raphaël écrit dirige et lance des agents ; un seul réveil horaire
+  (`trig_01VseAzWomoQETWZcXtquBpB`, sur la chef) ; le réveil FacePro a été
+  supprimé avec l'accord de Raphaël. Chef actuelle : session
+  `session_016AmT87i4pCEQKCLesesihr`.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
