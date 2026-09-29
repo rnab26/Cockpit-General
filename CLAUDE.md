@@ -395,6 +395,19 @@ lecture suivent donc ceux du chantier). Écran du cockpit : `node
 app/scripts/capture-ecran.mjs <url> <dossier>`. Pas encore affiché par le
 module embarqué (`embed/`) : seulement l'app.
 
+## Appli installable (30 sept. 2026)
+
+Raphaël : « installer l'appli depuis la page internet du cockpit, plutôt qu'un
+raccourci Chrome » (Chrome disait « Impossible d'installer cette appli » : pas
+de manifeste). `app/public/manifest.webmanifest` (standalone, portée
+`/Cockpit-General/`), icônes PNG générées par `app/scripts/generer-icones.mjs`,
+`app/public/sw.js` : réseau d'abord, jamais une vieille version servie, seules
+les navigations passent par lui. Bouton « Installer l'appli » (menu ⋯ et
+Réglages) : l'invite de Chrome (`beforeinstallprompt`, captée avant React dans
+`hooks/useInstallation.ts`), sinon la marche à suivre (iPhone : Partager › Sur
+l'écran d'accueil). Règle : `lib/installation.ts`. `verifier-installation.ts`,
+contrôles « appli installable » de `verifier-web.mjs`.
+
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 
 Raphaël : « quitter en appuyant sur les zones extérieures de la carte ».

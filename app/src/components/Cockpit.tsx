@@ -10,6 +10,7 @@ import { pastillesProjet } from '../lib/entonnoir.ts'
 import { Layers, Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase.ts'
 import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
+import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
@@ -24,7 +25,7 @@ import { ProjetsMembres } from './ProjetsMembres.tsx'
 import { Chargement, Erreur, Vide } from '../ui/Etats.tsx'
 import { Button } from '../ui/Button.tsx'
 
-type Dialogue = 'nouveau' | 'sections' | 'doublons' | 'reglages' | 'projets' | null
+type Dialogue = 'nouveau' | 'sections' | 'doublons' | 'reglages' | 'projets' | 'installer' | null
 
 /** La présence se recalcule toute seule, même sans événement : une session qui se tait passe de « travaille » à « plus de nouvelles ». */
 export const TIC_PRESENCE_MS = 30_000
@@ -43,6 +44,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const [sectionsOuvertes, setSectionsOuvertes] = useState<Set<string>>(new Set())
   const [conversation, setConversation] = useState<CibleConversation | null>(null)
   const [dialogue, setDialogue] = useState<Dialogue>(null)
+  const installation = useLancerInstallation(() => setDialogue('installer'))
   const [aModifier, setAModifier] = useState<Chantier | null>(null)
   const [doublonDe, setDoublonDe] = useState<Chantier | null>(null)
   const [selectionActive, setSelectionActive] = useState(false)
@@ -129,6 +131,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const onMenu = (a: ActionMenu) => {
     if (a === 'choisir') { setSelectionActive((v) => !v); setSelectionIds(new Set()); return }
+    if (a === 'installer') { void installation.lancer(); return }
     setDialogue(a)
   }
 
@@ -137,9 +140,10 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const entete = (
     <EnTete projets={d.projets} projet={d.projet} vueTout={vueTout} choisirVue={changerVue} pastilles={pastilles} admin={admin} chargement={d.chargement} direct={d.direct}
-      derniereMaj={d.derniereMaj} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} />
+      derniereMaj={d.derniereMaj} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'} />
   )
-  const reglages = <Reglages ouvert={dialogue === 'reglages'} onFermer={() => setDialogue(null)} theme={theme} changerTheme={changerTheme} onProjets={() => setDialogue('projets')} seDeconnecter={seDeconnecter} />
+  const reglages = <Reglages ouvert={dialogue === 'reglages'} onFermer={() => setDialogue(null)} theme={theme} changerTheme={changerTheme} onProjets={() => setDialogue('projets')} seDeconnecter={seDeconnecter} onAideInstallation={() => setDialogue('installer')} />
+  const aideInstallation = <AideInstallation ouvert={dialogue === 'installer'} onFermer={() => setDialogue(null)} />
   const projetsMembres = admin ? <ProjetsMembres ouvert={dialogue === 'projets'} onFermer={() => setDialogue(null)} projets={d.projets} chargerProjets={d.chargerProjets} /> : null
 
   if (!d.projets.length) {
@@ -153,6 +157,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
               : <Vide icone={<Lock size={28} strokeWidth={1.5} />} titre="Aucun projet pour toi" texte={<>Demande à Raphaël de t’ajouter à ton projet avec cette adresse : <b>{moi.email}</b>.</>} action={<Button onClick={() => void seDeconnecter()}>Se déconnecter</Button>} />}
           </main>
           {reglages}
+          {aideInstallation}
           {projetsMembres}
         </div>
       </GlobalCtx.Provider>
@@ -204,6 +209,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {admin && aModifier ? <AvecProjet projetId={aModifier.projet_id}><ModifierChantier chantier={aModifier} onFermer={() => setAModifier(null)} /></AvecProjet> : null}
         {admin && doublonDe ? <AvecProjet projetId={doublonDe.projet_id}><DoublonDe source={doublonDe} onFermer={() => setDoublonDe(null)} /></AvecProjet> : null}
         {reglages}
+        {aideInstallation}
         {projetsMembres}
       </div>
     </GlobalCtx.Provider>
