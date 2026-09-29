@@ -73,7 +73,7 @@ demandes des utilisateurs, progression des autres sessions.
   le devient, la consigne dit de créer (ou déplacer) SON réveil horaire, puis
   de le noter : `scripts/cockpit-chef.sh --reveil <trig_…> --distante <session_…>`.
   `--etat` : qui dirige ; `--max <n>` : agents en parallèle pour ce projet.
-- **RENFORTS** (0023) : Raphaël les demande d'un bouton du cockpit (« Lancer
+- **RENFORTS** (0024) : Raphaël les demande d'un bouton du cockpit (« Lancer
   des renforts ») : une session cloud par SECTION en attente. La passe de la
   chef te dit d'ouvrir chaque demande (`create_session`, titre « Renfort ·
   <projet> · <section> — ne pas toucher », tags `cockpit-renfort`), de la
@@ -100,6 +100,10 @@ demandes des utilisateurs, progression des autres sessions.
   passe « à vérifier » ; `--verifier` est obligatoire : où aller, quoi faire,
   ce que Raphaël doit voir, sans jargon) ou `--echec "…"`.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
+- **« Où ça en est ? »** (Raphaël le demande d'un bouton ; le hook te le met
+  sous les yeux) : réponds TOUT DE SUITE dans le fil, 3 lignes au plus (fait /
+  reste / ce qui bloque) : `scripts/cockpit-progression.sh --chantier <id> --point "…"`.
+  Son écran passe alors à « Réponse arrivée ».
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.
 - **Montre, ne décris pas** (Raphaël, 29 sept. 2026 : « montre-moi des images

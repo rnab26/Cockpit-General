@@ -15,7 +15,7 @@
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
 #   scripts/chef.sh --reveil <trig_…> [--distante <session_…>]   note le réveil horaire du projet
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
-#   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0023)
+#   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
 #   (renforts : Raphaël les demande d'un bouton de l'app ; voir scripts/renfort.sh)
 #
@@ -102,7 +102,7 @@ fi
 agents=$(printf '%s' "$etat" | jq -r '.agents // 0'); maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 3')
 depot=$(printf '%s' "$etat" | jq -r '.depot // ""')
 libres=$(( maxa - agents ))
-# RENFORTS (0023) : Raphaël les demande d'un bouton dans l'app (une session par
+# RENFORTS (0024) : Raphaël les demande d'un bouton dans l'app (une session par
 # SECTION en attente) ; la chef les OUVRE (create_session), les note, et archive
 # ceux qui ont fini. Jamais leur travail elle-même. Projets de test : jamais.
 RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
@@ -129,6 +129,14 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   rp=$(un "select reprendre_reponse('$br', '$pid') as r" | jq -c '.r // empty')
   [ -n "$rp" ] && [ "$rp" != "null" ] || break
   donnes+=("$(printf '%s' "$rp" | jq -c --arg br "$br" '. + {branche: $br, reponse_prise: true}')")
+done
+# Puis les « OÙ ÇA EN EST ? » (0023) que personne ne recevra (aucune session ni
+# agent vivant sur le chantier) : un assistant regarde et répond dans le fil.
+while [ ${#donnes[@]} -lt "$libres" ]; do
+  br="agent/point-$(date +%s%N | tail -c 7)"
+  po=$(un "select prendre_ou_en_est('$br', '$pid') as r" | jq -c '.r // empty')
+  [ -n "$po" ] && [ "$po" != "null" ] || break
+  donnes+=("$(printf '%s' "$po" | jq -c --arg br "$br" '. + {branche: $br, point: true}')")
 done
 # Un chantier par place libre si le mode autonome du projet est allumé, le plus ancien d'abord.
 if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
@@ -179,6 +187,22 @@ Demande du chantier :
 
 Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
 Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+---"'
+    echo; continue
+  fi
+  if [ "$(printf '%s' "$c" | jq -r '.point // false')" = "true" ]; then
+    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg sql "${COCKPIT_SQL_CMD:-scripts/sql.sh}" '
+"━━ Agent « Point : \(.titre) » (projet \(.slug), dépôt \(.depot), chantier \(.id))
+Consigne à lui donner, telle quelle :
+---
+Tu es un agent du cockpit. Raphaël demande OÙ EN EST le chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot) (demandé le \(.demande_le)). Aucune session ne le tient : c’est toi qui réponds.
+État : \(.etat)\(if .pris_par then " · dernière branche : \(.pris_par)" else "" end)\(if .derniere_etape then " · dernière étape signalée : \(.derniere_etape)" else "" end)
+Demande du chantier :
+\(.demande)
+
+Regarde à la source, SANS rien modifier : le fil du chantier (\($sql) \u0027select auteur_type, kind, corps, reponse, created_at from messages where chantier_id = $$\(.id)$$ order by created_at\u0027), la branche et ses commits s’il y en a, ce qui est sur main et en ligne. Puis réponds-lui dans le fil, en 3 lignes au plus, mots simples (fait / reste / ce qui bloque, et ce que tu conseilles : relancer, attendre ou abandonner) :
+COCKPIT_PROJET=\(.slug) \($prog) --chantier \(.id) --point \"Fait : … Reste : … Bloque : …\"
+Ne réserve pas le chantier, ne code rien. Rends un rapport de 2 lignes.
 ---"'
     echo; continue
   fi

@@ -569,13 +569,52 @@ try {
   await captureUx(page, 'ux-a-lancer')
   const lP2 = await ligneAvance(P2.id)
   await lP2.getByTestId('ouvrir-relance').click()
+  // « Où ça en est ? » qui se SUIT (0023). Raphaël : « on ne voit pas de
+  // différence […] qu'on ne pollue pas les sessions en cliquant 10 fois ».
   await lP2.getByTestId('demander-ou-ca-en-est').click()
-  verifie('« Relancer » → « Demander où ça en est » : toast visible', await toastAuPremierPlan(/Question posée dans le fil/), { auPremierPlan: dernierDessus })
-  const demandesOu = sql(`select kind, auteur_type, corps from messages where chantier_id = '${P2.id}'`)
-  verifie('« Demander où ça en est » : le message est en base (info, propriétaire, texte convenu)',
-    demandesOu.length === 1 && demandesOu[0].kind === 'info' && demandesOu[0].auteur_type === 'proprietaire' && demandesOu[0].corps === MESSAGE_OU_CA_EN_EST, demandesOu)
-  await lP2.getByTestId('deja-demande-ou').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('la ligne dit ensuite « Demandé … »', await lP2.getByTestId('deja-demande-ou').count() === 1)
+  verifie('« Relancer » → « Demander où ça en est » : toast visible', await toastAuPremierPlan(/Demande envoyée/), { auPremierPlan: dernierDessus })
+  const demandesOu = sql(`select id, kind, auteur_type, corps, ou_en_est from messages where chantier_id = '${P2.id}'`)
+  verifie('« Demander où ça en est » : UNE demande en base (info, propriétaire, marquée ou_en_est)',
+    demandesOu.length === 1 && demandesOu[0].kind === 'info' && demandesOu[0].auteur_type === 'proprietaire' && demandesOu[0].corps === MESSAGE_OU_CA_EN_EST && demandesOu[0].ou_en_est === true, demandesOu)
+  const suiviP2 = lP2.getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  await suiviP2.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('après le toucher, la ligne CHANGE : frise « Envoyée ✓ → En file ✓ → Réponse … » et « En file d’attente »',
+    await suiviP2.count() === 1 && (await suiviP2.getAttribute('data-code')) === 'file' && /file d’attente/.test(await suiviP2.textContent())
+    && await suiviP2.locator('[data-etape="faite"]').count() === 2 && await suiviP2.locator('[data-etape="en-cours"]').count() === 1, await suiviP2.textContent().catch(() => null))
+  verifie('…« Tu as demandé où ça en est », et plus de bouton « Relancer » (rien à renvoyer)',
+    /Tu as demandé où ça en est/.test(await lP2.textContent()) && await lP2.getByTestId('ouvrir-relance').count() === 0 && await lP2.getByTestId('demander-ou-ca-en-est').count() === 0)
+  await lP2.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(200)
+  await captureUx(page, 'ux-ou-en-est-file')
+  // Double toucher : dans la conversation, le bouton est désactivé avec l'état ; même forcé, rien ne part.
+  await lP2.locator('button').first().click()
+  await attendreConv(P2.titre)
+  const btnOu = conv().getByTestId('demander-ou-ca-en-est')
+  verifie('dans la conversation : bouton « Demande en cours » désactivé, et le même état affiché',
+    await btnOu.isDisabled() && /Demande en cours/.test(await btnOu.textContent()) && (await conv().getByTestId('etat-ou-en-est').getAttribute('data-code')) === 'file')
+  await btnOu.click({ force: true }).catch(() => {})
+  await btnOu.dispatchEvent('click').catch(() => {})
+  await page.waitForTimeout(800)
+  verifie('deuxième toucher (forcé) : aucune nouvelle demande en base', sql(`select count(*)::int n from messages where chantier_id = '${P2.id}' and ou_en_est`)[0].n === 1)
+  await fermerConv()
+  // La session la reçoit (hook de suivi) puis répond (progression.sh --point) : la ligne suit.
+  sql(`update messages set recu_at = now(), recu_par = 'claude/test-web' where id = '${demandesOu[0].id}'`)
+  await actualiser()
+  const suivi2 = (await ligneAvance(P2.id)).getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  verifie('reçue par la session → « Reçue par Claude … : réponse en préparation »', (await suivi2.getAttribute('data-code')) === 'recue' && /Reçue par Claude/.test(await suivi2.textContent()), await suivi2.textContent().catch(() => null))
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, repond_a) values ('${projet.id}', '${P2.id}', 'claude/test-web', 'session', 'info', 'Fait : l’écran. Reste : les tests. Bloque : rien.', '${demandesOu[0].id}')`)
+  await actualiser()
+  const lP2b = await ligneAvance(P2.id)
+  const suivi3 = lP2b.getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  verifie('réponse arrivée → la ligne le dit, avec l’extrait de la réponse, frise complète',
+    (await suivi3.getAttribute('data-code')) === 'repondue' && /Réponse arrivée/.test(await suivi3.textContent()) && /Reste : les tests/.test(await suivi3.getByTestId('reponse-ou-en-est').textContent())
+    && await suivi3.locator('[data-etape="faite"]').count() === 3, await suivi3.textContent().catch(() => null))
+  await captureUx(page, 'ux-ou-en-est-reponse')
+  verifie('…et on peut de nouveau relancer (« Relancer » revient)', await lP2b.getByTestId('ouvrir-relance').count() === 1)
+  await lP2b.getByTestId('ouvrir-relance').click()
+  verifie('…le bouton dit « Redemander où ça en est », actif, et le suivi n’est affiché qu’une fois', /Redemander où ça en est/.test(await lP2b.getByTestId('demander-ou-ca-en-est').textContent()) && !(await lP2b.getByTestId('demander-ou-ca-en-est').isDisabled())
+    && await lP2b.getByTestId('etat-ou-en-est').count() === 1)
+  await lP2b.getByTestId('ouvrir-relance').click()
 
   // ===================================================================
   // 3 bis. Qui travaille : une session factice, un agent qui parle, une commande muette
@@ -1143,7 +1182,7 @@ try {
   await allerCockpit()
 
   // ===================================================================
-  // 7 ter. Renforts (0023, D-10) : bouton distinct au-dessus de « Prêt à lancer »,
+  // 7 ter. Renforts (0024, D-10) : bouton distinct au-dessus de « Prêt à lancer »,
   // réglages, demande envoyée / en route / erreur / terminé. Aucune vraie session :
   // le projet de test n'est jamais servi à une chef (renforts_a_ouvrir).
   console.log('  — renforts')

@@ -31,7 +31,7 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty'); [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
-# Une session de RENFORT (0023) ne prend que SA section : son hook Stop lui
+# Une session de RENFORT (0024) ne prend que SA section : son hook Stop lui
 # redonne ses chantiers suivants s'il y en a (jamais ceux d'une autre section).
 renfort_marque=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort
 if [ -s "$renfort_marque" ]; then
