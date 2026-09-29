@@ -226,8 +226,8 @@ Bouton « Lancer des renforts » (au-dessus de « Prêt à lancer », vue projet
 « Tout »), réglages (sessions 0-4, agents 1-5), états demande envoyée / en
 route / erreur / terminé. Migration 0023 appliquée (le brouillon 0020 de
 agent/646460 a été repris, renuméroté : 0020 à 0022 étaient pris).
-Voir CLAUDE.md « Renforts ». Vérifié : verifier-base §24,
-verifier-renforts 16/16, verifier-web 299/299 (section « renforts »).
+Voir CLAUDE.md « Renforts ». Vérifié : verifier-base 270/270 (§24),
+verifier-renforts 16/16, verifier-web 322/322 (section « renforts »).
 **Pas encore observé en vrai** : aucune session renfort n'a été ouverte. La
 première ouverture réelle sera faite par la session chef du cockpit (Raphaël
 clique, la passe de `chef.sh` lui donne les `create_session`). À surveiller :
