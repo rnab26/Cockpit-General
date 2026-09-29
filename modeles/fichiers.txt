@@ -32,3 +32,7 @@ modeles/cockpit-prompt-rappel.sh
 modeles/cockpit-suivi.sh
 modeles/cockpit-autonome.sh
 modeles/fichiers.txt
+scripts/greffe.sh
+modeles/cockpit-greffe.sh
+modeles/cockpit-greffe-hook.sh
+modeles/cockpit-pre-push.sh

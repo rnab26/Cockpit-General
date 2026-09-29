@@ -335,9 +335,14 @@ api.anthropic.com (401 authentication_error enregistré). Reste :
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
-- **Se greffer sur un projet qui n'est pas à Raphaël** (chantier `f31ae3ec`,
-  « pas la priorité, note-le », 29 sept.). Rien de codé ; question posée dans
-  le chantier (choix de la voie). Ce qui gêne aujourd'hui : `brancher.sh` écrit
+- **Se greffer sur un projet qui n'est pas à Raphaël** (chantier `f31ae3ec`).
+  **FAIT le 30 sept.** : Raphaël a répondu « les 3 options me plaisent, ça
+  laisse le choix au client » → `brancher.sh --voie invisible|branches|normale`
+  (refus sans voie sur un dépôt d'autrui), garde pre-push, `greffe.sh
+  --branche-propre`, `verifier-greffe.mjs` (voir CLAUDE.md et README). Reste :
+  le skill `cockpit` (dépôt dotfiles) doit poser la question de la voie au
+  moment de brancher un dépôt d'autrui ; aucun dépôt d'autrui branché à ce
+  jour. Historique de la réflexion ci-dessous. Ce qui gêne aujourd'hui : `brancher.sh` écrit
   DANS le dépôt (bloc CLAUDE.md, `.claude/settings.json`, `scripts/cockpit-*`)
   et le hook de démarrage les commite seul sur la branche courante — chez
   autrui, c'est une trace non demandée. Et la clé `service_role` de la base

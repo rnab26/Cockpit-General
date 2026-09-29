@@ -49,6 +49,21 @@ embarqué avec la clé du projet. Prérequis dans l'environnement cloud Claude
 Code du projet : `SUPABASE_SERVICE_ROLE_KEY` (déjà en place sur les
 environnements de Raphaël), `jq`, `curl`, `python3`.
 
+### Un dépôt qui n'est pas à Raphaël : trois voies, au choix du client
+
+Sur un dépôt dont le propriétaire n'est pas `rnab26`, `brancher.sh` refuse
+sans `--voie` (rien n'est écrit) :
+
+| Voie | Commande | Ce que le client voit |
+|---|---|---|
+| 1. Greffe invisible | `--voie invisible` (ou `--sans-trace`) | Rien : commandes dans `~/.cockpit/bin`, hooks dans `~/.claude/settings.json` de l'environnement de Raphaël, projet reconnu par son dépôt (`~/.cockpit/greffes`). À relancer par le script d'installation de cet environnement (`--voie invisible --maj …`, lignes imprimées par `brancher.sh`). |
+| 2. Branches de Raphaël | `--voie branches [--branches "claude/* …"]` | Les fichiers du cockpit, seulement sur ces branches. Garde `.git/hooks/pre-push` : refus de les pousser ailleurs. PR : `scripts/cockpit-greffe.sh --branche-propre <nom>` (un commit sur leur branche, sans le cockpit). Les sessions doivent partir d'une branche qui porte le cockpit. |
+| 3. Avec leur accord | `--voie normale` | Comme un dépôt de Raphaël. |
+
+Dans les trois cas, la clé `service_role` reste dans l'environnement cloud de
+Raphaël (la garde de la voie 2 refuse aussi tout commit qui la contient).
+Preuve : `node scripts/verifier-greffe.mjs` (dépôts jetables).
+
 ## Ce qu'une session fait
 
 ```bash

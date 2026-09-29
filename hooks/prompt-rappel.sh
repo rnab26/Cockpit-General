@@ -29,7 +29,8 @@ renfort_marque=$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cock
 PAS_LUI='^[[:space:]]*(<(task-notification|system-reminder|wake|agent-message|teammate-message)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
 if [ -n "$sid" ] && [ -x "$SQL" ] && [ ! -s "$renfort_marque" ] && ! printf '%s' "$invite" | grep -qE "$PAS_LUI"; then
   CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
-  chef_txt=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
+  case "$CHEF" in /*) ;; *) CHEF="$RACINE/$CHEF" ;; esac # greffe invisible : chemin complet
+  chef_txt=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$CHEF" --prendre 2>/dev/null || true)
 fi
 branche=$(git -C "$RACINE" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 # UN SUJET = UN FIL (29 sept. 2026, 0028). Raphaël : « on discute de plusieurs

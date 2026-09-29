@@ -58,6 +58,7 @@ node scripts/verifier-embed.mjs                            # fonction serveur d�
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
+node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
 bash -n scripts/*.sh hooks/*.sh
 ```
 
@@ -208,6 +209,27 @@ nouvelle session repartait des anciennes règles. Désormais le hook de
 démarrage commite lui-même les fichiers du cockpit sur la branche courante
 (seulement ceux qui étaient propres avant : jamais un travail en cours), et
 injecte le bloc à jour dans le contexte de la session.
+
+## Dépôt qui n'est pas à Raphaël : trois voies (30 sept. 2026, chantier f31ae3ec)
+
+Raphaël : « Les 3 options me plaisent, ça laisse le choix au client. »
+`brancher.sh` refuse sans `--voie` quand le propriétaire du dépôt n'est pas
+`rnab26` (`COCKPIT_PROPRIETAIRE`) ; le tableau est dans le README.
+- **Voie 1, invisible** : rien dans leur dépôt, ni commit (le hook de
+  démarrage saute mise à jour et commit quand `COCKPIT_SANS_TRACE=1`, posé par
+  le lanceur de `~/.cockpit/bin` qui reconnaît le dépôt à son `origin`). Les
+  consignes du bloc arrivent par le hook, commandes en chemin complet. Tient
+  tant que le script d'installation de l'environnement de Raphaël relance
+  `brancher.sh --voie invisible --maj` (action de Raphaël, une fois).
+- **Voie 2, branches de Raphaël** : `COCKPIT_VOIE=branches` et
+  `COCKPIT_BRANCHES` dans leurs réglages (sur ses branches) ; garde
+  `modeles/cockpit-pre-push.sh` (la SEULE règle « trace du cockpit »,
+  `--traces`, reprise par `scripts/greffe.sh`) ; hors de ses branches, le hook
+  ne pose que la garde, ne met rien à jour, ne commite rien. Un dépôt qui
+  range ses hooks git ailleurs (`core.hooksPath`) n'a pas de garde : dit.
+- **Voie 3** : inchangée.
+Un chemin de commande peut donc être ABSOLU (`COCKPIT_*_CMD`) : ne jamais
+écrire `"$RACINE/$CMD"` sans `case "$CMD" in /*)`. `verifier-greffe.mjs`.
 
 ## « Je ne sais pas : vérifie pour moi » (29 sept. 2026, migration 0016)
 

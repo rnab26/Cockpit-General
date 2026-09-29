@@ -18,9 +18,21 @@
 #      SUPABASE_SERVICE_ROLE_KEY est déjà dans l'environnement cloud).
 # Rien n'est écrasé sans être lu : un fichier existant différent est signalé,
 # pas remplacé (sauf --forcer).
+#
+# DÉPÔT QUI N'EST PAS À RAPHAËL (30 sept. 2026, chantier f31ae3ec : « les 3
+# options me plaisent, ça laisse le choix au client ») : --voie est alors
+# OBLIGATOIRE ; sans elle, le script refuse (rien n'est écrit) et explique :
+#   --voie invisible (ou --sans-trace)   rien dans leur dépôt ; tout va dans le
+#       $HOME de l'environnement de Raphaël (~/.cockpit, ~/.claude/settings.json) ;
+#   --voie branches (ou --branches-raphael) [--branches "claude/* …"]  les
+#       fichiers du cockpit sur les branches de Raphaël seulement, garde pre-push ;
+#   --voie normale                        avec leur accord : comme un dépôt à Raphaël.
+# La clé service_role ne va JAMAIS dans leur dépôt ni dans un environnement
+# qu'ils voient : elle reste dans l'environnement cloud de Raphaël.
 set -euo pipefail
 ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 slug=""; nom=""; depot=""; url_site=""; dossier="$PWD"; forcer=0; couleur=""; maj=0
+voie=""; motifs=""; garde_seulement=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --projet) slug="${2:-}"; shift 2 ;;
@@ -35,15 +47,147 @@ while [ $# -gt 0 ]; do
     # améliorations du cockpit doivent être partout, sans que j'aie à le
     # demander »). Ne touche pas à la base, n'imprime que ce qui a changé.
     --maj) maj=1; shift ;;
-    -h|--help) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --voie) voie="${2:-}"; shift 2 ;;
+    --sans-trace) voie=invisible; shift ;;
+    --branches-raphael) voie=branches; shift ;;
+    --branches) motifs="${2:-}"; shift 2 ;;
+    # --garde-seulement : voie 2, pose la garde pre-push et rien d'autre (hook de
+    # démarrage, sur une branche qui n'est pas à Raphaël).
+    --garde-seulement) garde_seulement=1; maj=1; shift ;;
+    -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$slug" ] || { echo "--projet <slug> manque (minuscules, chiffres, tirets)." >&2; exit 2; }
-[ -d "$dossier" ] || { echo "Dossier introuvable : $dossier" >&2; exit 2; }
+case "$voie" in 1|invisible|sans-trace) voie=invisible ;; 2|branches) voie=branches ;; 3|normale|accord) voie=normale ;; "") ;;
+  *) echo "--voie inconnue : $voie (invisible, branches ou normale)." >&2; exit 2 ;; esac
+[ -d "$dossier" ] || [ "$voie" = invisible ] || { echo "Dossier introuvable : $dossier" >&2; exit 2; }
 nom="${nom:-$slug}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 SQL="$ICI/scripts/sql.sh"
+# owner/repo d'un dossier : UNE règle, celle du lanceur (cockpit_depot_de).
+depot_de() { COCKPIT_PROJET=_ bash -c 'source "$1" && cockpit_depot_de "$2"' _ "$ICI/modeles/cockpit-lanceur.sh" "$1" 2>/dev/null || true; }
+[ -n "$depot" ] || [ ! -d "$dossier" ] || depot=$(depot_de "$dossier")
+depot=$(printf '%s' "$depot" | tr 'A-Z' 'a-z')
+reglages_env() { # une clé de l'env du .claude/settings.json du projet
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("env",{}).get(sys.argv[2],""))' "$dossier/.claude/settings.json" "$1" 2>/dev/null || true; }
+if [ -z "$voie" ]; then
+  if [ "$maj" = 1 ]; then
+    # Mise à jour : la voie choisie au branchement (réglages du projet, sinon config git locale).
+    voie=$(reglages_env COCKPIT_VOIE); [ -n "$voie" ] || voie=$(git -C "$dossier" config --get cockpit.voie 2>/dev/null || true)
+    voie="${voie:-normale}"
+  else
+    proprio=$(printf '%s' "${COCKPIT_PROPRIETAIRE:-rnab26}" | tr 'A-Z' 'a-z')
+    if [ -n "$depot" ] && [ "${depot%%/*}" != "$proprio" ]; then
+      cat >&2 <<VOIES
+Le dépôt $depot n'est pas à $proprio : choisis la voie (relance avec --voie) :
+  --voie invisible  rien dans leur dépôt ; le cockpit vit dans TON environnement cloud
+                    (relancé par son script d'installation ; une session ailleurs ne l'a pas).
+  --voie branches   les fichiers du cockpit sur tes branches seulement (--branches, défaut
+                    « claude/* ») ; une garde refuse de les pousser ailleurs ;
+                    PR = scripts/cockpit-greffe.sh --branche-propre <nom>.
+  --voie normale    avec leur accord : comme tes dépôts, ils voient les fichiers du cockpit.
+Rien n'a été écrit.
+VOIES
+      exit 3
+    fi
+    voie=normale
+  fi
+fi
+if [ "$voie" = branches ] && [ -z "$motifs" ]; then
+  motifs=$(reglages_env COCKPIT_BRANCHES); [ -n "$motifs" ] || motifs=$(git -C "$dossier" config --get cockpit.branches 2>/dev/null || true)
+  motifs="${motifs:-claude/*}"
+fi
+
+# VOIE 2 : la garde pre-push, dans .git/hooks (jamais versionné, invisible dans
+# leur dépôt). Si le dépôt range ses hooks ailleurs (core.hooksPath, husky…),
+# rien n'est posé là-bas (ce serait une trace) : on le dit.
+poser_garde() {
+  git -C "$dossier" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "   garde : pas un dépôt git, non posée"; return 0; }
+  git -C "$dossier" config cockpit.voie branches
+  git -C "$dossier" config cockpit.branches "$motifs"
+  local hp gd dest
+  hp=$(git -C "$dossier" config --get core.hooksPath 2>/dev/null || true)
+  if [ -n "$hp" ]; then echo "   ATTENTION garde NON posée : ce dépôt range ses hooks git dans $hp (core.hooksPath). Ne pousse que des branches propres."; return 0; fi
+  gd=$(git -C "$dossier" rev-parse --path-format=absolute --git-common-dir); mkdir -p "$gd/hooks"
+  dest="$gd/hooks/pre-push"
+  # Le pre-push qu'ils avaient : gardé à côté et toujours joué après le nôtre.
+  if [ -f "$dest" ] && ! grep -q "cockpit-pre-push" "$dest"; then
+    [ -e "$gd/hooks/pre-push.avant-cockpit" ] || mv "$dest" "$gd/hooks/pre-push.avant-cockpit"
+  fi
+  if ! cmp -s "$ICI/modeles/cockpit-pre-push.sh" "$dest" 2>/dev/null; then
+    cp "$ICI/modeles/cockpit-pre-push.sh" "$dest"; chmod +x "$dest"; echo "   garde posée : .git/hooks/pre-push (branches de Raphaël : $motifs)"
+  fi
+}
+if [ "$garde_seulement" = 1 ]; then poser_garde; exit 0; fi
+
+# VOIE 1 : la greffe invisible. RIEN dans le dossier du projet : tout va dans
+# $COCKPIT_HOME (~/.cockpit) et les réglages UTILISATEUR de Claude Code.
+if [ "$voie" = invisible ]; then
+  [ -n "$depot" ] || { echo "--depot owner/repo manque (le projet se reconnaît à son dépôt)." >&2; exit 2; }
+  H="${COCKPIT_HOME:-$HOME/.cockpit}"; RU="${COCKPIT_REGLAGES_UTILISATEUR:-$HOME/.claude/settings.json}"
+  etat() { [ -d "$dossier" ] && git -C "$dossier" status --porcelain --untracked-files=all --ignored 2>/dev/null | md5sum; }
+  avant=$(etat || true)
+  if [ "$maj" = 1 ]; then exec 3>&1 1>/dev/null; fi
+  echo "1. Projet « $slug » en base (greffe invisible sur $depot)"
+  [ "$maj" = 1 ] || "$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', '$(q "$depot")', $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
+  echo "2. Commandes et hooks dans $H/bin (hors du dépôt)"
+  mkdir -p "$H/bin" "$(dirname "$RU")"
+  for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction greffe greffe-hook; do
+    cmp -s "$ICI/modeles/cockpit-$n.sh" "$H/bin/cockpit-$n.sh" || { cp "$ICI/modeles/cockpit-$n.sh" "$H/bin/cockpit-$n.sh"; echo "   ok : $H/bin/cockpit-$n.sh"; }
+    chmod +x "$H/bin/cockpit-$n.sh"
+  done
+  touch "$H/greffes"
+  if ! awk -v d="$depot" -v s="$slug" '$1 == d && $2 == s { t = 1 } END { exit !t }' "$H/greffes"; then
+    awk -v d="$depot" '$1 != d' "$H/greffes" > "$H/greffes.tmp"; printf '%s %s\n' "$depot" "$slug" >> "$H/greffes.tmp"; mv "$H/greffes.tmp" "$H/greffes"
+    echo "   ok : $H/greffes ($depot → $slug)"
+  fi
+  echo "3. Hooks déclarés dans les réglages utilisateur ($RU)"
+  [ -f "$RU" ] || echo '{}' > "$RU"
+  python3 - "$RU" "$H/bin/cockpit-greffe-hook.sh" <<'PYG'
+import json, sys
+p, crochet = sys.argv[1], sys.argv[2]
+d = json.load(open(p)); avant = json.dumps(d, sort_keys=True)
+hooks = d.setdefault("hooks", {})
+def declarer(ev, nom, timeout=None, matcher=None):
+    cmd = f'bash "{crochet}" {nom}'
+    lst = hooks.setdefault(ev, [])
+    if any(x.get("command") == cmd for h in lst for x in h.get("hooks", [])): return
+    x = {"type": "command", "command": cmd}
+    if timeout: x["timeout"] = timeout
+    e = {"hooks": [x]}
+    if matcher: e["matcher"] = matcher
+    lst.append(e)
+declarer("SessionStart", "session-start")
+declarer("UserPromptSubmit", "prompt-rappel")
+for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse", "StopFailure", "SessionEnd"):
+    declarer(ev, "suivi", 10, "*" if ev == "PostToolUse" else None)
+declarer("Stop", "autonome", 15)
+d["autoContinueAtUsageLimit"] = True
+if json.dumps(d, sort_keys=True) != avant:
+    json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
+    print("   ok : hooks du cockpit (ils ne parlent que dans un dépôt greffé)")
+else:
+    print("   déjà à jour")
+PYG
+  apres=$(etat || true)
+  if [ "$avant" != "$apres" ]; then echo "ERREUR : le dossier du projet a changé alors que la greffe est invisible. Vérifie git status dans $dossier." >&2; exit 1; fi
+  if [ "$maj" = 1 ]; then exec 1>&3 3>&-; exit 0; fi
+  cat <<FIN
+   vérifié : aucun fichier du dépôt touché.
+
+À FAIRE PAR RAPHAËL (une fois) — sans ça, la greffe disparaît au prochain conteneur :
+  1. claude.ai/code › menu de l'environnement cloud (barre de titre d'une session) › Edit.
+  2. Dans « Setup script », ajoute ces deux lignes :
+     git clone -q --depth 1 https://github.com/rnab26/Cockpit-General "\$HOME/.cockpit/src" 2>/dev/null || git -C "\$HOME/.cockpit/src" pull -q
+     bash "\$HOME/.cockpit/src/scripts/brancher.sh" --voie invisible --maj --projet $slug --depot $depot
+  3. Garde SUPABASE_SERVICE_ROLE_KEY dans les variables de CET environnement (le tien), jamais ailleurs.
+  4. Enregistre, puis ouvre une nouvelle session sur $depot : le cockpit s'y charge.
+
+Vérifie tout de suite (cette session) : cd $dossier && CLAUDE_PROJECT_DIR=$dossier bash "$H/bin/cockpit-greffe-hook.sh" session-start </dev/null | jq -r .hookSpecificOutput.additionalContext | head -20
+FIN
+  exit 0
+fi
 
 if [ "$maj" = 1 ]; then exec 3>&1 1>/tmp/cockpit-brancher-$$.log; fi
 echo "1. Projet « $slug » en base"
@@ -71,7 +215,7 @@ poser() { # modèle, destination
   else echo "   EXISTE, n'est pas au cockpit, conservé (relance avec --forcer pour remplacer) : ${2#$dossier/}"; fi
 }
 mkdir -p "$dossier/scripts" "$dossier/.claude/hooks"
-for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
+for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction greffe; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
 # Ancienne aide de l'installation par copie : plus utilisée.
 if [ -f "$dossier/scripts/cockpit-progression_tableau.py" ]; then rm -f "$dossier/scripts/cockpit-progression_tableau.py"; echo "   retiré (ancienne copie) : scripts/cockpit-progression_tableau.py"; fi
 # Ancien mode : un projet SANS sql.sh recevait notre sql.sh sous son nom. Il est à nous : on le laisse
@@ -87,12 +231,16 @@ poser "$ICI/modeles/cockpit-suivi.sh" "$dossier/.claude/hooks/cockpit-suivi.sh"
 poser "$ICI/modeles/cockpit-autonome.sh" "$dossier/.claude/hooks/cockpit-autonome.sh"
 reglages="$dossier/.claude/settings.json"
 [ -f "$reglages" ] || echo '{}' > "$reglages"
-python3 - "$reglages" "$slug" <<'PY'
+python3 - "$reglages" "$slug" "$voie" "$motifs" <<'PY'
 import json, sys
-p, slug = sys.argv[1], sys.argv[2]
+p, slug, voie, motifs = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 d = json.load(open(p))
 avant = json.dumps(d, sort_keys=True)
 d.setdefault("env", {})["COCKPIT_PROJET"] = slug
+# Voie 2 (dépôt d'autrui) : la voie et les branches de Raphaël voyagent avec les
+# réglages, pour que le hook de démarrage d'un clone neuf repose la garde.
+if voie == "branches":
+    d["env"]["COCKPIT_VOIE"] = "branches"; d["env"]["COCKPIT_BRANCHES"] = motifs
 hooks = d.setdefault("hooks", {})
 ss = hooks.setdefault("SessionStart", [])
 cmd = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-session-start.sh"
@@ -134,6 +282,8 @@ else:
     json.dump(d, open(p, "w"), indent=2, ensure_ascii=False); open(p, "a").write("\n")
     print("   ok : .claude/settings.json (env COCKPIT_PROJET, hooks démarrage / rappel / suivi / mode autonome, reprise auto après limite)")
 PY
+
+[ "$voie" = branches ] && poser_garde
 
 echo "4. CLAUDE.md"
 claude="$dossier/CLAUDE.md"; [ -f "$claude" ] || touch "$claude"

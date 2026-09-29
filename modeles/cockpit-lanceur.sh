@@ -13,11 +13,40 @@
 # brute du dépôt), COCKPIT_CACHE (dossier), COCKPIT_TTL (secondes).
 COCKPIT_SOURCE="${COCKPIT_SOURCE:-https://raw.githubusercontent.com/rnab26/Cockpit-General/main}"
 COCKPIT_CACHE="${COCKPIT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/cockpit-general}"
-COCKPIT_FICHIERS=(scripts/sql.sh scripts/demander.sh scripts/progression.sh scripts/progression_tableau.py scripts/chantier.sh hooks/session-start.sh hooks/prompt-rappel.sh hooks/suivi.sh hooks/autonome.sh scripts/passe.sh scripts/media.sh scripts/chef.sh scripts/verdict.sh scripts/revue-a-toi.sh scripts/renfort.sh scripts/reproduction.sh)
+COCKPIT_FICHIERS=(scripts/sql.sh scripts/demander.sh scripts/progression.sh scripts/progression_tableau.py scripts/chantier.sh hooks/session-start.sh hooks/prompt-rappel.sh hooks/suivi.sh hooks/autonome.sh scripts/passe.sh scripts/media.sh scripts/chef.sh scripts/verdict.sh scripts/revue-a-toi.sh scripts/renfort.sh scripts/reproduction.sh scripts/greffe.sh modeles/cockpit-pre-push.sh)
 
 # Noms des commandes tels qu'on les tape DANS le projet (affichés par le hook).
 export COCKPIT_SQL_CMD="scripts/cockpit-sql.sh" COCKPIT_PROG_CMD="scripts/cockpit-progression.sh" COCKPIT_DEM_CMD="scripts/cockpit-demander.sh" COCKPIT_CHANTIER_CMD="scripts/cockpit-chantier.sh" COCKPIT_MEDIA_CMD="scripts/cockpit-media.sh" COCKPIT_CHEF_CMD="scripts/cockpit-chef.sh" COCKPIT_VERDICT_CMD="scripts/cockpit-verdict.sh" COCKPIT_RENFORT_CMD="scripts/cockpit-renfort.sh" COCKPIT_REPRO_CMD="scripts/cockpit-reproduction.sh"
 export COCKPIT_SQL="$COCKPIT_CACHE/scripts/sql.sh"
+export COCKPIT_GREFFE_CMD="scripts/cockpit-greffe.sh"
+
+# VOIE 1 — greffe invisible (30 sept. 2026, chantier f31ae3ec) : un dépôt qui
+# n'est pas à Raphaël ne reçoit AUCUN fichier du cockpit. Les commandes vivent
+# dans $COCKPIT_HOME/bin (posées par brancher.sh --voie invisible, relancé par
+# le script d'installation de SON environnement cloud) et le projet se
+# reconnaît à son dépôt git : une ligne « owner/repo slug » dans
+# $COCKPIT_HOME/greffes. Un projet branché normalement (COCKPIT_PROJET posé par
+# son .claude/settings.json) n'est jamais concerné.
+COCKPIT_HOME="${COCKPIT_HOME:-$HOME/.cockpit}"
+cockpit_depot_de() { # dossier → owner/repo (minuscules), d'après l'adresse de origin
+  local url; url=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+  url="${url%/}"; url="${url%.git}"
+  printf '%s\n' "$url" | awk -F'[/:]' 'NF >= 2 { print tolower($(NF-1) "/" $NF) }'
+}
+cockpit_greffe_slug() { # dossier → slug du projet greffé, ou rien
+  local f="$COCKPIT_HOME/greffes" d; [ -f "$f" ] || return 1
+  d=$(cockpit_depot_de "$1") && [ -n "$d" ] || return 1
+  awk -v d="$d" '$1 == d { print $2; exit }' "$f" | grep .
+}
+if [ -z "${COCKPIT_PROJET:-}" ] && _cockpit_s=$(cockpit_greffe_slug "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null); then
+  export COCKPIT_PROJET="$_cockpit_s" COCKPIT_SANS_TRACE=1
+fi
+if [ "${COCKPIT_SANS_TRACE:-}" = 1 ]; then
+  # Les commandes montrées aux sessions : hors du dépôt, chemin complet.
+  for _cockpit_v in COCKPIT_SQL_CMD COCKPIT_PROG_CMD COCKPIT_DEM_CMD COCKPIT_CHANTIER_CMD COCKPIT_MEDIA_CMD COCKPIT_CHEF_CMD COCKPIT_VERDICT_CMD COCKPIT_RENFORT_CMD COCKPIT_REPRO_CMD COCKPIT_GREFFE_CMD; do
+    export "$_cockpit_v=$COCKPIT_HOME/bin/${!_cockpit_v#scripts/}"
+  done
+fi
 
 cockpit_a_jour() {
   local repere="$COCKPIT_CACHE/.maj" age

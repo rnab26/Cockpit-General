@@ -49,7 +49,36 @@ fi
 # dans le dépôt du cockpit lui-même. Ce qui a changé est dit à la session, qui
 # le commite ; la base garde la preuve que le projet est branché et à jour.
 maj=""; commit_maj=""
-if [ -n "${COCKPIT_CACHE:-}" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -f "$COCKPIT_CACHE/scripts/brancher.sh" ]; then
+# DÉPÔT QUI N'EST PAS À RAPHAËL (30 sept. 2026, chantier f31ae3ec) :
+# - voie 1, greffe invisible (COCKPIT_SANS_TRACE, posé par le lanceur de
+#   ~/.cockpit) : AUCUNE mise à jour ni aucun commit dans le dépôt, les
+#   consignes arrivent ici ;
+# - voie 2, branches de Raphaël (COCKPIT_VOIE=branches) : mise à jour et commit
+#   SEULEMENT sur une de ses branches ; ailleurs, la garde pre-push seulement.
+ICI_HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+voie="${COCKPIT_VOIE:-normale}"; [ "${COCKPIT_SANS_TRACE:-}" = 1 ] && voie=invisible
+br_courante=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
+branche_ok=1; bloc_voie=""
+if [ "$voie" = branches ]; then
+  motifs="${COCKPIT_BRANCHES:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" config --get cockpit.branches 2>/dev/null || echo 'claude/*')}"
+  branche_ok=0; set -f
+  for m in $motifs; do case "$br_courante" in $m) branche_ok=1 ;; esac; done
+  set +f
+  if [ "$branche_ok" = 0 ] && [ -n "${COCKPIT_CACHE:-}" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -f "$COCKPIT_CACHE/scripts/brancher.sh" ]; then
+    timeout 10 bash "$COCKPIT_CACHE/scripts/brancher.sh" --garde-seulement --projet "$PROJET" --dossier "$CLAUDE_PROJECT_DIR" >/dev/null 2>&1 || true
+  fi
+  bloc_voie="## DÉPÔT D'AUTRUI (voie 2) : le cockpit ne vit que sur les branches de Raphaël ($motifs)
+Branche courante : ${br_courante:-aucune} — $([ "$branche_ok" = 1 ] && echo "à Raphaël." || echo "PAS à Raphaël : les fichiers du cockpit n'y sont ni mis à jour ni commités ; ne les y ajoute pas.")
+Une garde (.git/hooks/pre-push) refuse de pousser les fichiers du cockpit vers une autre branche. Pour une PR vers LEUR branche : ${COCKPIT_GREFFE_CMD:-scripts/greffe.sh} --branche-propre <nom> (un seul commit, sans le cockpit), pousse <nom> et ouvre la PR depuis elle. Ne fusionne jamais toi-même dans leur branche principale. La clé service_role ne va jamais dans ce dépôt.
+"
+elif [ "$voie" = invisible ]; then
+  bin="${COCKPIT_HOME:-$HOME/.cockpit}/bin"
+  bloc_voie="## GREFFE INVISIBLE : ce dépôt n'est PAS à Raphaël
+Rien du cockpit ne doit y apparaître : aucun fichier, aucun commit, aucune PR, aucun commentaire ni message de commit qui le mentionne ; la clé service_role n'y va jamais. Les commandes du cockpit sont HORS du dépôt, dans $bin : tape-les avec ce chemin complet. Ce dépôt n'a pas de bloc « Cockpit » dans son CLAUDE.md : ces consignes-ci font foi.
+$(sed -e "s/{{SLUG}}/$PROJET/g" -e "s#{{SQL}}#scripts/cockpit-sql.sh#g" "$ICI_HOOK/docs/bloc-CLAUDE.md" 2>/dev/null | grep -v '^<!--' | sed -e "s#\.claude/hooks/cockpit-session-start\.sh#$bin/cockpit-greffe-hook.sh#g" -e "s#scripts/cockpit-#$bin/cockpit-#g")
+"
+fi
+if [ "$voie" != invisible ] && [ "$branche_ok" = 1 ] && [ -n "${COCKPIT_CACHE:-}" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -f "$COCKPIT_CACHE/scripts/brancher.sh" ]; then
   # Les fichiers du cockpit dans le projet, et ceux qui étaient PROPRES avant la
   # mise à jour : seuls ceux-là seront commités (jamais un travail en cours de
   # Raphaël ou d'une session, mélangé à la mise à jour).
@@ -149,7 +178,7 @@ terminant (--termine → le chantier passe « à vérifier », seul un humain ce
 une question avec \`$DEM_CMD\` (jamais dans un artefact), et écris où tu en es
 dans le fil du chantier avant de t'arrêter.
 
-$bloc_maj
+$bloc_voie$bloc_maj
 ## Chantiers ouverts, par section
 $chantiers
 

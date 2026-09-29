@@ -61,7 +61,9 @@ renfort_marque=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-d
 if [ -s "$renfort_marque" ]; then
   rid=$(head -1 "$renfort_marque" | tr -cd '0-9a-f-')
   RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
-  suite=$(timeout 20 bash "${CLAUDE_PROJECT_DIR:-$PWD}/$RENF" --suivant "$rid" 2>/dev/null || true)
+  # Greffe invisible : la commande est hors du dépôt (chemin complet).
+  case "$RENF" in /*) ;; *) RENF="${CLAUDE_PROJECT_DIR:-$PWD}/$RENF" ;; esac
+  suite=$(timeout 20 bash "$RENF" --suivant "$rid" 2>/dev/null || true)
   case "$suite" in "RENFORT :"*) jq -n --arg r "$suite" '{decision: "block", reason: $r}' ;; esac
   exit 0
 fi
@@ -72,7 +74,8 @@ chef=$(timeout 8 "$SQL" "select chef_existe('$(q "$PROJET")') as e, est_chef('$(
 if [ "$(printf '%s' "$chef" | jq -r '.e // false')" = "true" ]; then
   [ "$(printf '%s' "$chef" | jq -r '.c // false')" = "true" ] || exit 0
   CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
-  passe=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 20 bash "$RACINE/${CHEF}" 2>/dev/null || true)
+  case "$CHEF" in /*) ;; *) CHEF="$RACINE/$CHEF" ;; esac # greffe invisible : chemin complet
+  passe=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 20 bash "$CHEF" 2>/dev/null || true)
   case "$passe" in ""|RIEN*) exit 0 ;; esac
   jq -n --arg r "$passe" '{decision: "block", reason: $r}'; exit 0
 fi
