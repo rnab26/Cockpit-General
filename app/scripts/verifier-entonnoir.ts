@@ -128,8 +128,8 @@ console.log('verifier-entonnoir')
 // 4. Compteurs d'une section et pastilles d'onglet
 {
   const c = compteursPresence(['personne', 'travaille', 'personne', 'attend_toi'])
-  verifie('compteurs : un par code présent, dans l’ordre de lecture (travaille, puis attend ta réponse, puis personne)',
-    c.map((x) => `${x.code}${x.n}`).join(' ') === 'travaille1 attend_toi1 personne2', c)
+  verifie('compteurs : un par code présent, dans l’ordre de lecture (🟢 puis 🔴 puis ⏸️)',
+    c.map((x) => `${x.icone}${x.n}`).join(' ') === '🟢1 🔴1 ⏸️2', c)
   verifie('compteurs : vide → rien', compteursPresence([]).length === 0)
   const p = pastillesProjet(chantiers, messages, activites, [], [], now, SILENCE, 'fp')
   verifie('pastilles FacePro : 1 session vivante, 1 chose à toi', p.travaillent === 1 && p.aToi === 1, p)

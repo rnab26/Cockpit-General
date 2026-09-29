@@ -49,9 +49,9 @@ const RAISONS_PAUSE: Record<string, string> = {
   max_output_tokens: 'réponse trop longue, coupée',
   unknown: 'arrêt inattendu',
 }
-/** « En pause — limite d'usage atteinte (…) », en français, jamais le code brut seul. */
+/** « ⏸️ En pause — limite d'usage atteinte (…) », en français, jamais le code brut seul. */
 export function libellePause(raison: string): string {
-  return `En pause — ${RAISONS_PAUSE[raison] ?? `arrêt (${raison})`}`
+  return `⏸️ En pause — ${RAISONS_PAUSE[raison] ?? `arrêt (${raison})`}`
 }
 
 /** En pause sur une limite, depuis moins de 6 h (0010). */
@@ -80,7 +80,7 @@ export function resteTache(tc: Pick<Tache, 'eta_secondes' | 'progres_at'>, now: 
 
 export interface VueTache {
   tache: Tache
-  /** « Agent : … » / « Commande : … » */
+  /** « 🤖 Agent : … » / « ⚙️ Commande : … » */
   libelle: string
   /** Depuis combien de temps elle tourne (« 12 min »). */
   duree: string
@@ -93,9 +93,9 @@ export interface VueTache {
 
 export function libelleTache(tc: Pick<Tache, 'type' | 'description' | 'sorte' | 'tache_id'>): string {
   const quoi = tc.description?.trim() || tc.sorte?.trim() || tc.tache_id.replace(/^prov:/, '')
-  if (tc.type === 'agent') return `Agent : ${quoi}`
-  if (tc.type === 'commande') return `Commande : ${quoi}`
-  return `Tâche : ${quoi}`
+  if (tc.type === 'agent') return `🤖 Agent : ${quoi}`
+  if (tc.type === 'commande') return `⚙️ Commande : ${quoi}`
+  return `🧩 Tâche : ${quoi}`
 }
 
 /** « 45 s », « 12 min », « 1 h 05 » : depuis quand une tâche tourne. */
@@ -120,10 +120,10 @@ export function vueTache(tc: Tache, chantiers: readonly Chantier[], now: Date): 
 
 export interface VueSession {
   session: SessionClaude
-  /** « Session <sujet ou branche> » */
+  /** « 💬 Session <sujet ou branche> » */
   titre: string
   repond: boolean
-  /** « répond en ce moment » / « attend ton prochain message » / « En pause — … » */
+  /** « répond en ce moment » / « attend ton prochain message » / « ⏸️ En pause — … » */
   etat: string
   /** Arrêtée sur une limite : le libellé de la pause (rien ne s'anime), et le détail donné par Claude Code. */
   pause: string | null
@@ -136,29 +136,11 @@ export interface VueSession {
   activites: Activite[]
 }
 
-/** Une session lancée par le mode autonome (elles commencent toutes par la même consigne). */
-export function estSessionAutonome(s: Pick<SessionClaude, 'sujet'>): boolean {
-  return /^\s*Tu es la SESSION AUTONOME/i.test(s.sujet ?? '')
-}
-
-/**
- * Le nom COURT d'une session, pour une sous-ligne (« Claude (session autonome) ») :
- * « autonome », sinon le début de son premier message, sinon sa branche sans
- * « claude/ », sinon « sans nom (abcd1234) ».
- */
-export function nomSession(s: Pick<SessionClaude, 'sujet' | 'branche' | 'id'>): string {
-  if (estSessionAutonome(s)) return 'autonome'
-  const sujet = s.sujet?.replace(/\s+/g, ' ').trim()
-  if (sujet) return sujet.length > 32 ? `${sujet.slice(0, 31).trimEnd()}…` : sujet
-  const b = s.branche?.trim().replace(/^claude\//, '').replace(/-[a-z0-9]{6}$/, '')
-  return b || `sans nom (${s.id.replace(/^[^a-z0-9]+/i, '').slice(0, 8)})`
-}
-
-/** « Session <son premier message> », sinon sa branche, sinon « sans nom (abcd1234) » — jamais un id nu. */
+/** « 💬 Session <son premier message> », sinon sa branche, sinon « sans nom (abcd1234) » — jamais un id nu. */
 export function titreSession(s: Pick<SessionClaude, 'sujet' | 'branche' | 'id'>): string {
   // Les sessions lancées par le mode autonome commencent toutes par la même consigne : on les nomme.
-  if (estSessionAutonome(s)) return `Session autonome${s.branche ? ` (${s.branche})` : ''}`
-  return `Session ${s.sujet?.trim() || s.branche?.trim() || `sans nom (${s.id.replace(/^[^a-z0-9]+/i, '').slice(0, 8)})`}`
+  if (/^\s*Tu es la SESSION AUTONOME/i.test(s.sujet ?? '')) return `🤖 Session autonome${s.branche ? ` (${s.branche})` : ''}`
+  return `💬 Session ${s.sujet?.trim() || s.branche?.trim() || `sans nom (${s.id.replace(/^[^a-z0-9]+/i, '').slice(0, 8)})`}`
 }
 
 export interface QuiTravaille {
@@ -260,7 +242,7 @@ export function presenceAvecAgent(p: Presence, agent: Tache | null, now: Date): 
   const quoi = agent.description?.trim() || agent.sorte || 'agent'
   const quand = dateRelative(agent.progres_at, now) || 'à l’instant'
   return {
-    code: 'travaille', libelle: 'Un agent y travaille', teinte: 'ok',
+    code: 'travaille', libelle: '🟢 Un agent y travaille', teinte: 'ok',
     detail: `${quoi}${agent.etape ? ` · ${agent.etape}` : ''} · ${quand}`,
     barreVive: agent.pourcentage != null, aRelancer: false, tonAction: null,
   }

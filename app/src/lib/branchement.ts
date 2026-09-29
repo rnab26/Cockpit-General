@@ -24,22 +24,22 @@ export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: numb
   const t = (iso?: string | null) => (iso ? new Date(iso).getTime() : NaN)
   const vu = t(p.branchement_vu_at)
   if (Number.isNaN(vu)) {
-    lignes.push({ texte: 'Aucune session Claude n’a encore démarré avec le cockpit dans ce projet', teinte: 'attention' })
+    lignes.push({ texte: '❌ Aucune session Claude n’a encore démarré avec le cockpit dans ce projet', teinte: 'attention' })
   } else {
     const quand = dateRelative(p.branchement_vu_at!, now) || 'à l’instant'
     const recent = now.getTime() - vu < JOUR
     lignes.push({
-      texte: `${recent ? 'Sessions branchées' : 'Plus aucune session depuis'} — dernier démarrage ${quand} · ${chantiersDeSessions} chantier${chantiersDeSessions > 1 ? 's' : ''} ouvert${chantiersDeSessions > 1 ? 's' : ''} depuis les sessions`,
+      texte: `${recent ? '🔌 Sessions branchées' : '⚠️ Plus aucune session depuis'} — dernier démarrage ${quand} · ${chantiersDeSessions} chantier${chantiersDeSessions > 1 ? 's' : ''} ouvert${chantiersDeSessions > 1 ? 's' : ''} depuis les sessions`,
       teinte: recent ? 'ok' : 'attention',
     })
   }
   const maj = t(p.branchement_maj_at)
   if (!Number.isNaN(maj) && now.getTime() - maj < JOUR) {
-    lignes.push({ texte: `Mis à jour automatiquement ${dateRelative(p.branchement_maj_at!, now) || 'à l’instant'} (nouvelle version du cockpit)`, teinte: 'neutre' })
+    lignes.push({ texte: `🔄 Mis à jour automatiquement ${dateRelative(p.branchement_maj_at!, now) || 'à l’instant'} (nouvelle version du cockpit)`, teinte: 'neutre' })
   }
   const site = t(p.embed_vu_at)
   lignes.push(Number.isNaN(site)
-    ? { texte: 'Module du site : pas encore installé (les utilisateurs du site ne peuvent pas encore envoyer de demande)', teinte: 'neutre' }
-    : { texte: `Module du site : vu ${dateRelative(p.embed_vu_at!, now) || 'à l’instant'}`, teinte: 'ok' })
+    ? { texte: '🌐 Module du site : pas encore installé (les utilisateurs du site ne peuvent pas encore envoyer de demande)', teinte: 'neutre' }
+    : { texte: `🌐 Module du site : vu ${dateRelative(p.embed_vu_at!, now) || 'à l’instant'}`, teinte: 'ok' })
   return lignes
 }

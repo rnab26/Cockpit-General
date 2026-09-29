@@ -28,21 +28,21 @@ export function silenceMsDe(valeur: unknown): number {
 }
 
 export type CodePresence =
-  | 'travaille'      // preuve de vie récente
-  | 'silencieux'     // réservé, mais plus rien depuis le délai
-  | 'personne'       // ouvert, personne dessus
-  | 'attend_toi'     // une question t'attend
-  | 'a_verifier'     // livré, à toi de vérifier
-  | 'a_cadrer'       // à cadrer avec toi
-  | 'bloque'         // bloqué
-  | 'reporte'        // mis de côté exprès
-  | 'termine'        // certifié
+  | 'travaille'      // 🟢 preuve de vie récente
+  | 'silencieux'     // 🟡 réservé, mais plus rien depuis le délai
+  | 'personne'       // ⏸️ ouvert, personne dessus
+  | 'attend_toi'     // 🔴 une question t'attend
+  | 'a_verifier'     // 🧪 livré, à toi de vérifier
+  | 'a_cadrer'       // 🗣️ à cadrer avec toi
+  | 'bloque'         // ⛔
+  | 'reporte'        // 💤
+  | 'termine'        // ✅ certifié
 
 export type Teinte = 'ok' | 'attention' | 'alerte' | 'info' | 'neutre'
 
 export interface Presence {
   code: CodePresence
-  /** La phrase qui se lit sans rien déplier (sans emoji : l'icône vient de l'écran). */
+  /** La phrase, avec l'emoji, qui se lit sans rien déplier. */
   libelle: string
   /** Le complément (qui, depuis quand, dernier avancement connu). */
   detail: string | null
@@ -87,35 +87,35 @@ export function presenceChantier(
   const reserve = !!c.pris_par && (ms(c.pris_jusqu_a) ?? 0) > now.getTime()
   const base = { barreVive: false, aRelancer: false, detail: null as string | null, tonAction: null as string | null }
 
-  if (c.etat === 'valide') return { ...base, code: 'termine', libelle: 'Certifié', teinte: 'ok' }
-  if (questionEnAttente) return { ...base, code: 'attend_toi', libelle: 'Attend ta réponse', teinte: 'alerte',
+  if (c.etat === 'valide') return { ...base, code: 'termine', libelle: '✅ Certifié', teinte: 'ok' }
+  if (questionEnAttente) return { ...base, code: 'attend_toi', libelle: '🔴 Attend ta réponse', teinte: 'alerte',
     detail: vie ? `Claude attend ta réponse pour continuer (${activite!.session})` : null,
     tonAction: 'Claude attend ta réponse : réponds à la question en rouge ci-dessous.' }
-  if (c.etat === 'a_verifier') return { ...base, code: 'a_verifier', libelle: 'À toi de vérifier', teinte: 'attention',
+  if (c.etat === 'a_verifier') return { ...base, code: 'a_verifier', libelle: '🧪 À toi de vérifier', teinte: 'attention',
     tonAction: 'C’est livré : suis « Comment vérifier » ci-dessous, puis dis si ça fonctionne.' }
-  if (c.etat === 'a_cadrer') return { ...base, code: 'a_cadrer', libelle: 'À cadrer avec toi', teinte: 'info',
+  if (c.etat === 'a_cadrer') return { ...base, code: 'a_cadrer', libelle: '🗣️ À cadrer avec toi', teinte: 'info',
     detail: dernierAvancement(activite, now), aRelancer: true,
     tonAction: 'Claude a besoin de ta décision avant de commencer. Écris-la ci-dessous.' }
-  if (c.etat === 'bloque') return { ...base, code: 'bloque', libelle: 'Bloqué', teinte: 'alerte',
+  if (c.etat === 'bloque') return { ...base, code: 'bloque', libelle: '⛔ Bloqué', teinte: 'alerte',
     detail: dernierAvancement(activite, now), tonAction: 'Lis ce qui bloque dans le fil, puis réponds ci-dessous.' }
   // Retour de Raphaël, 29 sept. : un chantier reporté, fil vide, et rien ne disait qu'il n'avait RIEN à faire.
-  if (c.etat === 'reporte') return { ...base, code: 'reporte', libelle: 'Reporté', teinte: 'neutre', detail: dernierAvancement(activite, now),
+  if (c.etat === 'reporte') return { ...base, code: 'reporte', libelle: '💤 Reporté', teinte: 'neutre', detail: dernierAvancement(activite, now),
     tonAction: 'Mis de côté exprès. Rien à faire de ta part, sauf si tu veux le relancer.' }
 
   if (vie) return { ...base, code: 'travaille', teinte: 'ok', barreVive: true,
-    libelle: 'Claude y travaille',
+    libelle: '🟢 Claude y travaille',
     detail: `${activite!.session} · ${dateRelative(activite!.updated_at, now) || 'à l’instant'}` }
 
   if (reserve) {
     const derniere = activite ? dateRelative(activite.updated_at, now) : null
     return { ...base, code: 'silencieux', teinte: 'attention', aRelancer: true,
-      libelle: 'Pris, mais silencieux',
+      libelle: '🟡 Pris, mais silencieux',
       detail: `réservé par ${c.pris_par}${derniere ? ` · dernier signe ${derniere}` : ' · aucun avancement signalé'}`,
       tonAction: 'La session s’est peut-être arrêtée : demande où ça en est, ou relance-la.' }
   }
 
   return { ...base, code: 'personne', teinte: 'neutre', aRelancer: true,
-    libelle: 'Personne dessus',
+    libelle: '⏸️ Personne dessus',
     detail: [c.etat === 'a_trier' ? 'pas encore examiné' : null, dernierAvancement(activite, now)].filter(Boolean).join(' · ') || null,
     tonAction: 'Personne dessus. Relance-le avec « Copier la consigne », ou écris une précision ci-dessous.' }
 }
