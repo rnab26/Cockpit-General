@@ -109,6 +109,15 @@ conteneur de la chef s'arrête, ses agents s'arrêtent : chantiers réservés
 3 h, repris au réveil suivant (abandon détecté). Jamais `git add -A` dans un
 dossier partagé avec un agent (incident du 29 sept., commit 964528e).
 
+## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
+
+« Ce sont des correctifs généraux, peu importe le repo ou le projet que je
+brancherai ; le modèle de cockpit doit être réutilisable et branchable sans
+correctif par projet. » Tout se corrige ICI (app, base, scripts, hooks,
+modèles), jamais dans un projet branché ; un projet ne reçoit que ce que
+propagent le lanceur et `brancher.sh`. Et toute session qui travaille ici se
+voit dans le cockpit (chantier + `progression.sh` à chaque étape).
+
 ## Réponses courtes (Raphaël, 29 sept. 2026)
 
 « Je veux des réponses simples, courtes, nettes et précises. » Dans la
