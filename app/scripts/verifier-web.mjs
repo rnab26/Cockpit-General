@@ -401,7 +401,8 @@ try {
   verifie('une ligne vivante n’a pas de bouton « Relancer »', await ligneP1.getByTestId('ouvrir-relance').count() === 0)
   // Raphaël répond sur un chantier « à vérifier » que personne ne tient (0017) : sa réponse se VOIT dans « Ça avance ».
   const RP1 = creerTest('réponse sans session', { etat: 'a_verifier' })
-  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at, created_at) values ('${projet.id}', '${RP1.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} On continue ?`)}', 'Oui', now(), now() - interval '5 minutes')`)
+  // answered_by posé : depuis 0018, seule une réponse donnée DEPUIS L'APP est « sans suite ».
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at, answered_by, created_at) values ('${projet.id}', '${RP1.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} On continue ?`)}', 'Oui', now(), '${moiId}', now() - interval '5 minutes')`)
   await actualiser()
   const lRP1 = await ligneAvance(RP1.id)
   verifie('réponse sur un chantier sans session : « Ta réponse est reçue : Claude va la reprendre » dans « Ça avance », sans « Relancer »',
