@@ -219,7 +219,7 @@ export function MediasMessage({ medias, petit = false, onAnnote, apercu = false,
     return () => { vivant = false }
   }, [cle]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!medias.length) return null
-  const taille = petit ? 'h-12 w-12' : apercu ? 'h-28 w-28' : 'h-20 w-20'
+  const taille = petit ? 'h-12 w-12' : apercu ? 'h-32 w-44' : 'h-20 w-20'
   return (
     <>
       <ul className="flex flex-wrap gap-2" data-testid={testId}>
@@ -231,7 +231,7 @@ export function MediasMessage({ medias, petit = false, onAnnote, apercu = false,
             <li key={m.chemin} className="relative">
               <button type="button" onClick={ouvrir} data-testid="media" data-genre={genre} title={`${m.nom} · ${tailleLisible(m.taille)}`}
                 className={`flex ${taille} items-center justify-center overflow-hidden rounded-lg border border-bord bg-carte-2`}>
-                {url && genre === 'image' ? <img src={url} alt={m.nom} loading="lazy" className="h-full w-full object-cover" />
+                {url && genre === 'image' ? <img src={url} alt={m.nom} loading="lazy" className={`h-full w-full object-cover ${apercu ? 'object-top' : ''}`} />
                   : url && genre === 'video' ? <video src={`${url}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
                   : <span className="px-1 text-center text-[10px] leading-tight text-texte-2"><IconeMedia genre={genre} />{m.nom.slice(0, 14)}</span>}
               </button>

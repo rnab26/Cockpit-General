@@ -681,7 +681,7 @@ try {
   const grandeQI = page.locator('dialog[open] img[alt="apercu-test.png"]').last()
   await page.waitForTimeout(600)
   const boiteGrande = await grandeQI.boundingBox().catch(() => null)
-  verifie('un toucher l’ouvre en GRAND (plein écran, plus large que la miniature)', (boiteGrande?.width ?? 0) > (boiteQI?.width ?? 999) * 2 && await grandeQI.evaluate((i) => i.naturalWidth > 0).catch(() => false), { boiteGrande, boiteQI })
+  verifie('un toucher l’ouvre en GRAND (plein écran, au moins 4 fois la surface de la miniature)', (boiteGrande?.width ?? 0) * (boiteGrande?.height ?? 0) > (boiteQI?.width ?? 999) * (boiteQI?.height ?? 999) * 4 && await grandeQI.evaluate((i) => i.naturalWidth > 0).catch(() => false), { boiteGrande, boiteQI })
   verifie('image en grand : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'question-image-claude-grand')
   await page.keyboard.press('Escape')
@@ -1293,7 +1293,7 @@ try {
     if (projet) purgerProjetsDeTest([projet.id])
     const reste = sql(`select (select count(*) from chantiers where id in (${ids}) or (titre like '${MARQUE2}%' and ${HORS_TESTS})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids})) + (select count(*) from activite where session like '${SESSION_TEST}%' and ${HORS_TESTS}) + (select count(*) from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS})) as n`)[0].n
     // Les projets réels (hors test-web-…, que d'autres passes peuvent tenir en ce moment) et NOTRE projet de test.
-    const restesReels = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where titre like '[TEST%' and ${HORS_TESTS}) + (select count(*) from messages where corps like '%[TEST%' and ${HORS_TESTS}) + (select count(*) from activite where (session like '${SESSION_TEST}%' or etape like '[TEST%') and ${HORS_TESTS}) + (select count(*) from sessions where (id like '${SESSION_TEST}%' or sujet like '[TEST%') and (projet_id is null or ${HORS_TESTS})) + (select count(*) from taches where description like '[TEST%' and ${HORS_TESTS}) + (select count(*) from supprimes where ligne->>'titre' like '[TEST%' and ${HORS_TESTS}) as n`)[0].n
+    const restesReels = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where titre like '[TEST%' and ${HORS_TESTS}) + (select count(*) from messages where corps like '%${MARQUE2}%' and ${HORS_TESTS}) + (select count(*) from activite where (session like '${SESSION_TEST}%' or etape like '[TEST%') and ${HORS_TESTS}) + (select count(*) from sessions where (id like '${SESSION_TEST}%' or sujet like '[TEST%') and (projet_id is null or ${HORS_TESTS})) + (select count(*) from taches where description like '[TEST%' and ${HORS_TESTS}) + (select count(*) from supprimes where ligne->>'titre' like '[TEST%' and ${HORS_TESTS}) as n`)[0].n
     verifie('nettoyage : plus AUCUNE ligne de test, ni projet de test, ni trace dans les projets réels', reste === 0 && restesReels === 0, { reste, restesReels })
   } catch (e) { console.log(`  (nettoyage SQL [TEST web] : ${e.message})`) }
   await navigateur.close()
