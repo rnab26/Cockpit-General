@@ -154,8 +154,11 @@ async function liensSignes(chemins: string[]): Promise<Map<string, string>> {
   return new Map(chemins.flatMap((c) => liens.has(c) ? [[c, liens.get(c)!.url] as const] : []))
 }
 
-/** Les médias d'un message : vignettes ; un toucher ouvre l'image ou la vidéo en grand, un PDF ou un fichier dans un onglet. */
-export function MediasMessage({ medias, petit = false }: { medias: Media[]; petit?: boolean }) {
+/**
+ * Les médias d'un message : vignettes ; un toucher ouvre l'image ou la vidéo en grand, un PDF ou un fichier dans un onglet.
+ * `apercu` (0019) : les images que CLAUDE montre (question, « Comment vérifier ») — plus grandes, avec « touche pour agrandir ».
+ */
+export function MediasMessage({ medias, petit = false, apercu = false, testId = 'medias-message' }: { medias: Media[]; petit?: boolean; apercu?: boolean; testId?: string }) {
   const [urls, setUrls] = useState<Map<string, string>>(new Map())
   const [erreur, setErreur] = useState(false)
   const [grand, setGrand] = useState<Media | null>(null)
@@ -167,10 +170,10 @@ export function MediasMessage({ medias, petit = false }: { medias: Media[]; peti
     return () => { vivant = false }
   }, [cle]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!medias.length) return null
-  const taille = petit ? 'h-12 w-12' : 'h-20 w-20'
+  const taille = petit ? 'h-12 w-12' : apercu ? 'h-28 w-28' : 'h-20 w-20'
   return (
     <>
-      <ul className="flex flex-wrap gap-2" data-testid="medias-message">
+      <ul className="flex flex-wrap gap-2" data-testid={testId}>
         {medias.map((m) => {
           const url = urls.get(m.chemin)
           const genre = genreMedia(m.type, m.nom)
@@ -187,6 +190,7 @@ export function MediasMessage({ medias, petit = false }: { medias: Media[]; peti
           )
         })}
       </ul>
+      {apercu && !erreur ? <p className="mt-1 text-xs text-texte-2">Touche l’image pour l’agrandir.</p> : null}
       {erreur ? <p className="text-xs text-texte-2">Certains fichiers ne sont pas lisibles (droits ou fichier supprimé).</p> : null}
       <Dialog ouvert={!!grand} onFermer={() => setGrand(null)} titre={grand?.nom ?? ''} large>
         {grand && urls.get(grand.chemin) ? (

@@ -863,6 +863,61 @@ async function controle18_reponses_prises() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+async function controle19_images_session() {
+  section("19. Claude MONTRE une image (0019) : question, « Comment vérifier », fil — vrais scripts");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const dossier = mkdtempSync(join(tmpdir(), "verif-images-"));
+  const png = join(dossier, "écran test.png");
+  writeFileSync(png, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+  const txt = join(dossier, "notes.txt"); writeFileSync(txt, "pas une image");
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (script, args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts", script), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const nMessages = async () => (await une(`select count(*)::int as n from messages where projet_id = ${q(P1)}`)).n;
+  try {
+    const c = await creerChantier(P1, { titre: "Images de test", etat: "en_cours" });
+    const opts = ["--option", "Bleu|Le bouton devient bleu.|recommande", "--option", "Vert|Le bouton devient vert."];
+    // Refus AVANT toute écriture.
+    const avant = await nMessages();
+    const rType = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur ?", "--pourquoi", "Test.", ...opts, "--image", txt]);
+    const rAbsent = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur ?", "--pourquoi", "Test.", ...opts, "--image", join(dossier, "absent.png")]);
+    const rTrop = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur ?", "--pourquoi", "Test.", ...opts, ...Array(5).fill(["--image", png]).flat()]);
+    verifie("demander.sh --image REFUSE un fichier qui n'est pas une image, absent, ou plus de 4, sans rien écrire",
+      rType.code === 2 && rAbsent.code === 2 && rTrop.code === 2 && (await nMessages()) === avant, { rType, rAbsent, rTrop });
+    // Question avec image.
+    const rQ = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur pour ce bouton ?", "--pourquoi", "Test.", ...opts, "--image", png]);
+    const qm = await une(`select id, medias from messages where chantier_id = ${q(c)} and kind = 'question' order by created_at desc limit 1`);
+    const m0 = qm?.medias?.[0];
+    verifie("demander.sh --image : la question porte l'image (messages.medias, chemin du chantier, image/png)",
+      rQ.code === 0 && qm?.medias?.length === 1 && m0.chemin.startsWith(`${P1}/${c}/`) && m0.type === "image/png" && m0.nom === "écran test.png" && m0.taille > 0, { rQ, qm });
+    const luMembre = m0 ? await stockage(`authenticated/cockpit-medias/${m0.chemin}`, { jwt }) : null;
+    verifie("un MEMBRE du projet lit l'image déposée par la session (droits du chantier)", luMembre?.status === 200, luMembre?.status);
+    const luAnon = m0 ? await fetch(`${URL_}/storage/v1/object/authenticated/cockpit-medias/${m0.chemin}`, { headers: { apikey: CLE_PUBLIQUE } }) : null;
+    verifie("un visiteur anonyme ne la lit PAS (stockage privé)", luAnon && luAnon.status >= 400, luAnon?.status);
+    const depAnon = await fetch(`${URL_}/storage/v1/object/cockpit-medias/${P1}/${c}/${randomUUID()}-x.png`, { method: "POST", headers: { apikey: CLE_PUBLIQUE, Authorization: `Bearer ${CLE_PUBLIQUE}`, "Content-Type": "image/png" }, body: "x" });
+    verifie("un visiteur anonyme ne DÉPOSE pas dans cockpit-medias", depAnon.status >= 400, depAnon.status);
+    // « Comment vérifier » avec image.
+    const rP0 = lancer("progression.sh", ["--chantier", c, "--etape", "en cours", "--image", png]);
+    verifie("progression.sh --image hors --termine est refusé (il n'accompagne que « Comment vérifier »)", rP0.code === 2, rP0);
+    const rP = lancer("progression.sh", ["--chantier", c, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton bleu.", "--pas-en-ligne", "test", "--image", png]);
+    const l = await chantier(c);
+    verifie("progression.sh --termine … --image : chantiers.verifier_medias porte l'image, le chantier passe « à vérifier »",
+      rP.code === 0 && l.etat === "a_verifier" && l.verifier_medias?.length === 1 && l.verifier_medias[0].chemin.startsWith(`${P1}/${c}/`), { rP: rP.sortie.slice(0, 400), l: { etat: l.etat, vm: l.verifier_medias } });
+    const vu = await rest(`chantiers?id=eq.${c}&select=verifier_medias`, { jwt });
+    verifie("le membre lit verifier_medias par l'API (ce que l'app affiche)", vu.status === 200 && vu.json?.[0]?.verifier_medias?.length === 1, vu);
+    await sql(`update chantiers set etat = 'en_cours' where id = ${q(c)}`);
+    lancer("progression.sh", ["--chantier", c, "--termine", "Relivré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+    verifie("un nouveau --termine SANS image efface les anciennes (périmées)", ((await chantier(c)).verifier_medias ?? []).length === 0);
+    // Fil.
+    const rE = lancer("media.sh", ["--envoyer", "--chantier", c, "--texte", "Voici l'écran actuel.", "--image", png, "--image", png]);
+    const fm = await une(`select corps, auteur_type, kind, medias from messages where chantier_id = ${q(c)} and kind = 'info' and auteur_type = 'session' order by created_at desc limit 1`);
+    verifie("media.sh --envoyer : un message de Claude dans le fil, avec ses 2 images",
+      rE.code === 0 && fm?.corps === "Voici l'écran actuel." && fm.medias?.length === 2, { rE, fm });
+  } finally { rmSync(dossier, { recursive: true, force: true }); }
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -881,7 +936,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises,
+    controle18_reponses_prises, controle19_images_session,
   ];
   for (const etape of etapes) {
     try { await etape(); }

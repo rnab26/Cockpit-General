@@ -206,6 +206,21 @@ pas de fichier : les médias partent dans un message `info` juste après. Une
 session les récupère avec `scripts/media.sh --message|--chantier <id>` (📎 dans
 le hook) et les REGARDE avant de répondre.
 
+**Et dans l'autre sens : montre, ne décris pas** (29 sept. 2026, migration
+0019, Raphaël : « montre-moi des images pour que je comprenne mieux, ou ce
+que je suis censé voir »). Une question ou une vérification qui porte sur
+quelque chose de visible → joins une capture : `demander.sh --image f.png`
+(dans `messages.medias`, miniature sous la question), `progression.sh
+--termine … --verifier … --image f.png` (`chantiers.verifier_medias`, « Ce que
+tu dois voir » sous les étapes ; un `--termine` sans image efface les
+anciennes), `media.sh --envoyer --chantier <id> --texte "…" --image f.png`
+(message du fil). Contrôle AVANT toute écriture (`media.sh
+--verifier-images` : png/jpg/webp/gif/mp4/webm, 4 au plus, 10 Mo) ; dépôt
+service_role dans `cockpit-medias` au chemin du chantier (les droits de
+lecture suivent donc ceux du chantier). Écran du cockpit : `node
+app/scripts/capture-ecran.mjs <url> <dossier>`. Pas encore affiché par le
+module embarqué (`embed/`) : seulement l'app.
+
 ## Sessions, agents, doublons : ce que Claude décide seul (29 sept. 2026)
 
 - **Session** = une conversation Claude Code ; **tâche** = un agent ou une
