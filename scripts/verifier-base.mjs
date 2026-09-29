@@ -28,7 +28,8 @@
 //   19. un chef PAR PROJET (0019) : la passe d'un projet ne sert jamais un autre projet
 //   21. aucun reste de banc de test (« [TEST… ») dans un projet RÉEL
 //   22. correctifs rangés tout seuls (0021)
-//   23. renforts (0022) : une session par section, exclusivité, jamais deux renforts sur un chantier
+//   23. « À toi » à jour (0022)
+//   24. renforts (0023) : une session par section, exclusivité, jamais deux renforts sur un chantier
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -998,15 +999,15 @@ async function controle19_chef_par_projet() {
   verifie("message de Raphaël dans une session de D → chef de D seulement (C inchangé)", await estChef(SLUG_D, "nouvelle-d") && await estChef(SLUG_C, "chef-c"));
 }
 
-// Un projet NEUF (E) pour les renforts : ses sections et ses chantiers seulement.
-const P5 = randomUUID();
-const SLUG_E = `test-verif-${rand}-e`;
-async function controle23_renforts() {
-  section("23. Renforts (0022) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E', 'rnab26/test-inexistant')`);
+// Un projet NEUF (F) pour les renforts : ses sections et ses chantiers seulement.
+const P6 = randomUUID();
+const SLUG_F = `test-verif-${rand}-f`;
+async function controle24_renforts() {
+  section("24. Renforts (0023) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P6)}, ${q(SLUG_F)}, 'Projet de test F', 'rnab26/test-inexistant')`);
   const S1 = randomUUID(), S2 = randomUUID();
-  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P5)}, 'Écran', 1), (${q(S2)}, ${q(P5)}, 'Base', 2)`);
-  const enSection = async (sec, titre, etat = "libre") => { const id = await creerChantier(P5, { titre, etat, demande: `travail ${titre}` }); if (sec) await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P6)}, 'Écran', 1), (${q(S2)}, ${q(P6)}, 'Base', 2)`);
+  const enSection = async (sec, titre, etat = "libre") => { const id = await creerChantier(P6, { titre, etat, demande: `travail ${titre}` }); if (sec) await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
   const e1 = [await enSection(S1, "E1 a"), await enSection(S1, "E1 b"), await enSection(S1, "E1 c", "a_trier")];
   const b1 = await enSection(S2, "B1 libre");
   const b2 = await enSection(S2, "B2 vérif", "a_verifier");
@@ -1017,13 +1018,13 @@ async function controle23_renforts() {
 
   // Réglages : bornes en base (0 à 4 sessions, 1 à 5 agents).
   verifie("regler_renforts refuse 5 sessions et 6 agents (bornes : 0 à 4, 1 à 5)",
-    !!(await erreurDe(`select regler_renforts(${q(SLUG_E)}, 5, 3)`)) && !!(await erreurDe(`select regler_renforts(${q(SLUG_E)}, 2, 6)`)));
-  await sql(`select regler_renforts(${q(SLUG_E)}, 2, 2)`);
-  const regl = await une(`select max_renforts, agents_par_renfort from chefs where projet_id = ${q(P5)}`);
+    !!(await erreurDe(`select regler_renforts(${q(SLUG_F)}, 5, 3)`)) && !!(await erreurDe(`select regler_renforts(${q(SLUG_F)}, 2, 6)`)));
+  await sql(`select regler_renforts(${q(SLUG_F)}, 2, 2)`);
+  const regl = await une(`select max_renforts, agents_par_renfort from chefs where projet_id = ${q(P6)}`);
   verifie("regler_renforts pose le réglage du projet (2 sessions, 2 agents), sans chef", regl?.max_renforts === 2 && regl?.agents_par_renfort === 2, regl);
 
   // L'attente par section : ce qui n'attend pas Raphaël seulement.
-  const etat0 = (await une(`select etat_renforts(${q(SLUG_E)}) as e`)).e;
+  const etat0 = (await une(`select etat_renforts(${q(SLUG_F)}) as e`)).e;
   // Un projet supprimé pendant que l'écran l'affiche : null, jamais une erreur (400 répétés dans l'app).
   verifie("etat_renforts d'un projet qui n'existe plus : null, pas une erreur",
     (await une(`select etat_renforts(${q(`test-verif-${rand}-disparu`)}) is null as ok`)).ok === true);
@@ -1034,28 +1035,28 @@ async function controle23_renforts() {
   verifie("attente : jamais « à cadrer » ni « à tester » (ils attendent Raphaël)", !tousIds.includes(cadrer) && !tousIds.includes(aTester), tousIds);
 
   // Le bouton : une demande par section, la plus chargée d'abord, dans la limite.
-  const d1 = (await une(`select demander_renforts(${q(SLUG_E)}) as d`)).d;
+  const d1 = (await une(`select demander_renforts(${q(SLUG_F)}) as d`)).d;
   verifie("demander_renforts : 2 demandes (Écran puis Base), la limite de 2 sessions respectée",
     d1.demandes.length === 2 && d1.demandes[0].section === "Écran" && d1.demandes[1].section === "Base" && d1.raison === null, d1);
-  const d2 = (await une(`select demander_renforts(${q(SLUG_E)}) as d`)).d;
+  const d2 = (await une(`select demander_renforts(${q(SLUG_F)}) as d`)).d;
   verifie("deuxième clic : aucune nouvelle demande, raison « plein »", d2.demandes.length === 0 && d2.raison === "plein", d2);
-  const rE = (await une(`select id from renforts where projet_id = ${q(P5)} and section_id = ${q(S1)}`)).id;
-  const rB = (await une(`select id from renforts where projet_id = ${q(P5)} and section_id = ${q(S2)}`)).id;
-  const doublon = await erreurDe(`insert into renforts (projet_id, section_id, prefixe) values (${q(P5)}, ${q(S1)}, 'renfort/doublon')`);
+  const rE = (await une(`select id from renforts where projet_id = ${q(P6)} and section_id = ${q(S1)}`)).id;
+  const rB = (await une(`select id from renforts where projet_id = ${q(P6)} and section_id = ${q(S2)}`)).id;
+  const doublon = await erreurDe(`insert into renforts (projet_id, section_id, prefixe) values (${q(P6)}, ${q(S1)}, 'renfort/doublon')`);
   verifie("une section = un seul renfort vivant (index unique)", !!doublon, doublon);
   const pr = await une(`select max_agents from renforts where id = ${q(rE)}`);
   verifie("chaque demande porte le réglage d'agents (2)", pr.max_agents === 2, pr);
 
   // Exclusivité : tant qu'un renfort tient une section, personne d'autre n'y prend.
-  const prenAutre = (await sql(`select id from chantiers_prenables(${q(P5)}, 'agent/autre')`)).map((r) => r.id);
+  const prenAutre = (await sql(`select id from chantiers_prenables(${q(P6)}, 'agent/autre')`)).map((r) => r.id);
   verifie("chantiers_prenables d'une autre branche : rien dans Écran ni Base, le « sans section » oui",
     prenAutre.length === 1 && prenAutre[0] === sans, prenAutre);
-  const verifAutre = (await sql(`select id from verifs_prenables(${q(P5)}, null)`)).map((r) => r.id);
+  const verifAutre = (await sql(`select id from verifs_prenables(${q(P6)}, null)`)).map((r) => r.id);
   verifie("verifs_prenables (passe de la chef) : la vérif de Base n'est plus à elle", !verifAutre.includes(b2), verifAutre);
 
   // Projets de test : jamais servis à une chef.
-  const aOuvrir = (await une(`select renforts_a_ouvrir(${q(SLUG_E)}) as r`)).r;
-  const aOuvrirTest = (await une(`select renforts_a_ouvrir(${q(SLUG_E)}, true) as r`)).r;
+  const aOuvrir = (await une(`select renforts_a_ouvrir(${q(SLUG_F)}) as r`)).r;
+  const aOuvrirTest = (await une(`select renforts_a_ouvrir(${q(SLUG_F)}, true) as r`)).r;
   verifie("renforts_a_ouvrir : un projet de test ne donne RIEN à ouvrir (aucune vraie session)", aOuvrir.ouvrir.length === 0 && aOuvrir.archiver.length === 0, aOuvrir);
   verifie("renforts_a_ouvrir (mode test) : les 2 demandes, avec dépôt et agents", aOuvrirTest.ouvrir.length === 2 && aOuvrirTest.ouvrir[0].depot === "rnab26/test-inexistant" && aOuvrirTest.ouvrir[0].agents === 2, aOuvrirTest);
   const cockpitOuvrir = (await une(`select renforts_a_ouvrir('cockpit') as r`)).r;
@@ -1086,7 +1087,7 @@ async function controle23_renforts() {
     prisB.length === 2 && prisB.includes(b1) && prisB.includes(b2) && pb.chantiers.find((c) => c.id === b2)?.verif === true && !prisB.some((id) => e1.includes(id)), pb);
   const volB = await une(`select reserver_chantier(${q(pris1[0])}, ${q((await une(`select prefixe from renforts where id = ${q(rB)}`)).prefixe + "/vol")}, 60) as ok`);
   verifie("jamais deux renforts sur un même chantier : Base ne peut pas réserver un chantier tenu par Écran", volB.ok === false, volB);
-  const tenus = await sql(`select pris_par from chantiers where projet_id = ${q(P5)} and pris_par like 'renfort/%' and pris_jusqu_a > now()`);
+  const tenus = await sql(`select pris_par from chantiers where projet_id = ${q(P6)} and pris_par like 'renfort/%' and pris_jusqu_a > now()`);
   verifie("aucun chantier tenu deux fois (une branche par chantier)", tenus.length === 4 && new Set(tenus.map((t) => t.pris_par)).size === 4, tenus);
 
   // Un agent finit : une place se libère → le chantier suivant ; puis tout fini → « fini ».
@@ -1098,35 +1099,35 @@ async function controle23_renforts() {
   const p4 = (await une(`select prochain_renfort(${q(rE)}) as r`)).r;
   const fini = await une(`select statut, faits, fini_at from renforts where id = ${q(rE)}`);
   verifie("section vide et plus rien en cours → FINI, 3 chantiers faits", p4.etat === "fini" && fini.statut === "fini" && fini.faits === 3 && !!fini.fini_at, { p4, fini });
-  const arch = (await une(`select renforts_a_ouvrir(${q(SLUG_E)}, true) as r`)).r.archiver;
+  const arch = (await une(`select renforts_a_ouvrir(${q(SLUG_F)}, true) as r`)).r.archiver;
   verifie("la chef voit le renfort fini à archiver (avec sa session)", arch.some((a) => a.id === rE && a.session === "session_test_e"), arch);
   verifie("renfort_archive : fini → archivé", (await une(`select renfort_archive(${q(rE)}) as ok`)).ok === true
     && (await une(`select statut from renforts where id = ${q(rE)}`)).statut === "archive");
 
   // Un renfort muet depuis 3 h rend sa section, et l'erreur se voit.
   await sql(`update renforts set vu_at = now() - interval '4 hours', created_at = now() - interval '5 hours' where id = ${q(rB)}`);
-  await une(`select demander_renforts(${q(SLUG_E)}) as d`);
+  await une(`select demander_renforts(${q(SLUG_F)}) as d`);
   const mort = await une(`select statut, erreur from renforts where id = ${q(rB)}`);
-  const verifLibre = (await sql(`select id from verifs_prenables(${q(P5)}, null)`)).length;
+  const verifLibre = (await sql(`select id from verifs_prenables(${q(P6)}, null)`)).length;
   verifie("renfort muet depuis 3 h → « erreur » visible, il ne tient plus sa section", mort.statut === "erreur" && /signe de vie/.test(mort.erreur ?? "") && verifLibre === 0, { mort, verifLibre });
-  const etat1 = (await une(`select etat_renforts(${q(SLUG_E)}) as e`)).e;
+  const etat1 = (await une(`select etat_renforts(${q(SLUG_F)}) as e`)).e;
   verifie("etat_renforts montre l'erreur et le fini (24 h)", etat1.renforts.some((r) => r.id === rB && r.statut === "erreur") && etat1.renforts.some((r) => r.id === rE && r.statut === "archive"), etat1.renforts);
   const nouv = etat1.renforts.find((r) => r.statut === "demande");
   if (nouv) {
     verifie("renfort_erreur : l'ouverture ratée se voit (texte gardé)", (await une(`select renfort_erreur(${q(nouv.id)}, 'create_session refusé') as ok`)).ok === true
       && (await une(`select erreur from renforts where id = ${q(nouv.id)}`)).erreur === "create_session refusé");
   } else verifie("une nouvelle demande a suivi le clic (sections rendues)", false, etat1);
-  await sql(`select regler_renforts(${q(SLUG_E)}, 0, 2)`);
-  const zero = (await une(`select demander_renforts(${q(SLUG_E)}) as d`)).d;
+  await sql(`select regler_renforts(${q(SLUG_F)}, 0, 2)`);
+  const zero = (await une(`select demander_renforts(${q(SLUG_F)}) as d`)).d;
   verifie("réglage à 0 : aucune demande, raison « reglage_zero »", zero.demandes.length === 0 && zero.raison === "reglage_zero", zero);
 
   // Droits : un membre (non admin) ne voit ni ne demande rien ; les fonctions de session lui sont fermées.
-  await sql(`insert into membres (projet_id, user_id) values (${q(P5)}, ${q(userId)}) on conflict do nothing`);
-  const mEtat = await rpcUtilisateur("etat_renforts", { p_projet: SLUG_E }, jwt);
-  const mDem = await rpcUtilisateur("demander_renforts", { p_projet: SLUG_E }, jwt);
+  await sql(`insert into membres (projet_id, user_id) values (${q(P6)}, ${q(userId)}) on conflict do nothing`);
+  const mEtat = await rpcUtilisateur("etat_renforts", { p_projet: SLUG_F }, jwt);
+  const mDem = await rpcUtilisateur("demander_renforts", { p_projet: SLUG_F }, jwt);
   const mProch = await rpcUtilisateur("prochain_renfort", { p_renfort: rB }, jwt);
-  const mLit = await rest(`renforts?select=id&projet_id=eq.${P5}`, { jwt });
-  const aProch = await rpcUtilisateur("renforts_a_ouvrir", { p_projet: SLUG_E }, CLE_PUBLIQUE);
+  const mLit = await rest(`renforts?select=id&projet_id=eq.${P6}`, { jwt });
+  const aProch = await rpcUtilisateur("renforts_a_ouvrir", { p_projet: SLUG_F }, CLE_PUBLIQUE);
   verifie("un membre : etat_renforts / demander_renforts refusés, prochain_renfort fermé, table renforts vide",
     mEtat.status >= 400 && mDem.status >= 400 && mProch.status >= 400 && Array.isArray(mLit.json) && mLit.json.length === 0, { mEtat, mDem, mProch, mLit });
   verifie("anon : renforts_a_ouvrir refusé", aProch.status >= 400, aProch);
@@ -1138,25 +1139,25 @@ async function controle23_renforts() {
     execFileSync("git", ["init", "-q", copie]);
     execFileSync("ln", ["-s", join(racine, "scripts"), join(copie, "scripts")]);
     execFileSync("ln", ["-s", join(racine, "hooks"), join(copie, "hooks")]);
-    await sql(`select regler_renforts(${q(SLUG_E)}, 1, 1)`);
-    await sql(`update renforts set statut = 'erreur' where projet_id = ${q(P5)} and statut in ('demande', 'actif')`);
+    await sql(`select regler_renforts(${q(SLUG_F)}, 1, 1)`);
+    await sql(`update renforts set statut = 'erreur' where projet_id = ${q(P6)} and statut in ('demande', 'actif')`);
     const s3 = await enSection(S1, "E1 d");
-    const dd = (await une(`select demander_renforts(${q(SLUG_E)}) as d`)).d;
+    const dd = (await une(`select demander_renforts(${q(SLUG_F)}) as d`)).d;
     const rid = dd.demandes[0]?.id;
-    const env = { ...process.env, COCKPIT_PROJET: SLUG_E, CLAUDE_PROJECT_DIR: copie };
+    const env = { ...process.env, COCKPIT_PROJET: SLUG_F, CLAUDE_PROJECT_DIR: copie };
     const renfort = (args) => execFileSync("bash", [join(copie, "scripts/renfort.sh"), ...args], { encoding: "utf8", env, cwd: copie });
     renfort(["--session", rid, "session_test_script"]);
     execFileSync("bash", [join(copie, "hooks/prompt-rappel.sh")], { encoding: "utf8", env, cwd: copie,
       input: JSON.stringify({ session_id: "session-renfort-p", prompt: "[cockpit-renfort] Tu es un RENFORT du cockpit" }) });
     verifie("la consigne d'ouverture « [cockpit-renfort] … » ne rend pas la session chef (avant même la marque)",
-      (await une(`select est_chef(${q(SLUG_E)}, 'session-renfort-p') as c`)).c === false);
+      (await une(`select est_chef(${q(SLUG_F)}, 'session-renfort-p') as c`)).c === false);
     const out = renfort(["--suivant", rid]);
     const marque = execFileSync("cat", [join(copie, ".git/cockpit-renfort")], { encoding: "utf8" }).trim();
     verifie("renfort.sh --suivant : consigne « RENFORT : lance 1 agent », le chantier d'Écran, sa branche, la marque posée",
       out.startsWith("RENFORT : lance 1 agent") && out.includes(s3) && out.includes("--suivant " + rid) && marque === rid, out.slice(0, 500));
     execFileSync("bash", [join(copie, "hooks/prompt-rappel.sh")], { encoding: "utf8", env, cwd: copie,
       input: JSON.stringify({ session_id: "session-renfort-e", prompt: "fais ceci" }) });
-    const devenu = await une(`select est_chef(${q(SLUG_E)}, 'session-renfort-e') as c`);
+    const devenu = await une(`select est_chef(${q(SLUG_F)}, 'session-renfort-e') as c`);
     verifie("une session renfort (marque posée) ne devient JAMAIS chef, même sur un message", devenu.c === false, devenu);
     const stop = execFileSync("bash", [join(copie, "hooks/autonome.sh")], { encoding: "utf8", env, cwd: copie,
       input: JSON.stringify({ hook_event_name: "Stop", session_id: "session-renfort-e" }) });
@@ -1168,14 +1169,14 @@ async function controle23_renforts() {
     const faux = join(copie, "faux-sql.sh");
     writeFileSync(faux, [
       "#!/usr/bin/env bash", 'if [ $# -gt 0 ]; then r="$1"; else r="$(cat)"; fi', 'case "$r" in',
-      `  *"left join chefs c on c.projet_id"*) echo '{"ok":true,"rows":[{"projet_id":"${P5}","slug":"${SLUG_E}","depot":"rnab26/test-inexistant","session_id":"chef-e","max_agents":3,"agents":3,"autonome":false}]}' ;;`,
+      `  *"left join chefs c on c.projet_id"*) echo '{"ok":true,"rows":[{"projet_id":"${P6}","slug":"${SLUG_F}","depot":"rnab26/test-inexistant","session_id":"chef-f","max_agents":3,"agents":3,"autonome":false}]}' ;;`,
       `  *"update chefs set"*) echo '{"ok":true,"rows":null}' ;;`,
-      `  *"renforts_a_ouvrir"*) echo '{"ok":true,"rows":[{"r":{"ouvrir":[{"id":"${rid}","section":"Écran","chantiers":3,"agents":2,"slug":"${SLUG_E}","depot":"rnab26/test-inexistant"}],"archiver":[{"id":"${rB}","session":"session_test_b","section":"Base","statut":"fini"}]}}]}' ;;`,
+      `  *"renforts_a_ouvrir"*) echo '{"ok":true,"rows":[{"r":{"ouvrir":[{"id":"${rid}","section":"Écran","chantiers":3,"agents":2,"slug":"${SLUG_F}","depot":"rnab26/test-inexistant"}],"archiver":[{"id":"${rB}","session":"session_test_b","section":"Base","statut":"fini"}]}}]}' ;;`,
       `  *) echo '{"ok":true,"rows":[]}' ;;`, "esac", "",
     ].join("\n"), { mode: 0o755 });
-    const chef = execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", env: { ...env, COCKPIT_SQL: faux, CLAUDE_CODE_SESSION_ID: "chef-e" } });
+    const chef = execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", env: { ...env, COCKPIT_SQL: faux, CLAUDE_CODE_SESSION_ID: "chef-f" } });
     verifie("chef.sh, aucune place d'agent : les gestes de renfort, et PAS « RIEN » (défaut du brouillon corrigé)",
-      !chef.startsWith("RIEN") && chef.includes(`Renfort · ${SLUG_E} · Écran — ne pas toucher`) && chef.includes('"cockpit-renfort"')
+      !chef.startsWith("RIEN") && chef.includes(`Renfort · ${SLUG_F} · Écran — ne pas toucher`) && chef.includes('"cockpit-renfort"')
         && chef.includes("[cockpit-renfort]") && chef.includes(`--session ${rid}`) && chef.includes('archive_session("session_test_b")') && chef.includes(`--archive ${rB}`), chef);
   } finally { rmSync(copie, { recursive: true, force: true }); }
 }
@@ -1184,6 +1185,95 @@ async function controle23_renforts() {
 // verifier-embed …] tri des clients » dans le cockpit de Raphaël, qui ne savait
 // pas s'il devait y répondre). Les bancs travaillent dans des projets `test-…`
 // (scripts/bancs.mjs) ; ce contrôle rougit si une ligne « [TEST… » vit ailleurs.
+// 23. « À toi » toujours à jour (0022, Raphaël : « des requêtes d'il y a 12 h déjà
+// répondues dans la session ; ça se marche dessus »). Projet NEUF (E) : rien des autres sections.
+const P5 = randomUUID(), SLUG_E = `test-verif-${rand}-e`;
+async function controle23_a_toi_a_jour() {
+  section("23. « À toi » à jour (0022) : sans objet retiré seul, revue des vieux et des dépassés, vrais scripts");
+  await sql(`insert into projets (id, slug, nom) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E')`);
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_E, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (script, args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts", script), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const ilYa = (h) => `now() - interval '${h} hours'`;
+  const message = (id) => une(`select answered_at, reponse, confirmee_at from messages where id = ${q(id)}`);
+  const revoir = async () => (await une(`select a_toi_a_revoir(${q(P5)}) as l`)).l ?? [];
+
+  // 1. Sans objet : certifié ou archivé → ses questions ouvertes et les fusions qui le citent se ferment seules.
+  const cc = await creerChantier(P5, { titre: "Certifié bientôt", etat: "a_verifier" });
+  const cAutre = await creerChantier(P5, { titre: "Autre sujet", etat: "libre" });
+  const qc = await creerMessage(P5, cc, { kind: "question", corps: "On garde le bleu ?" });
+  const fu = await une(`select suggerer_fusion(${q(cAutre)}, ${q(cc)}, 'test', 'verifier-base') as id`);
+  await sql(`select certifier_chantier(${q(cc)}, 'raphael')`);
+  const mq = await message(qc), mf = await message(fu.id);
+  verifie("certifié → sa question ouverte est retirée seule, la réponse dit pourquoi",
+    !!mq.answered_at && /^Retirée automatiquement : chantier certifié/.test(mq.reponse ?? ""), mq);
+  verifie("certifié → la fusion proposée qui le cite est « sans objet »", !!mf.answered_at && /^Sans objet/.test(mf.reponse ?? ""), mf);
+  const ca = await creerChantier(P5, { titre: "Archivé bientôt", etat: "bloque" });
+  const qa = await creerMessage(P5, ca, { kind: "action", corps: "Colle la clé" });
+  const qRep = await creerMessage(P5, ca, { kind: "question", corps: "Déjà répondue" });
+  await sql(`update messages set answered_at = now() - interval '1 hour', reponse = 'Oui' where id = ${q(qRep)}`);
+  await sql(`update chantiers set archived_at = now() where id = ${q(ca)}`);
+  const ma = await message(qa), mr = await message(qRep);
+  verifie("archivé → son action ouverte est retirée ; une réponse déjà donnée n'est pas touchée",
+    /^Retirée automatiquement : chantier archivé/.test(ma.reponse ?? "") && mr.reponse === "Oui", { ma, mr });
+
+  // 2. a_toi_a_revoir : la même règle que l'app (lib/entonnoir.ts).
+  const cQ = await creerChantier(P5, { titre: "Couleur du bouton d'accueil", etat: "libre" });
+  const qVieille = await creerMessage(P5, cQ, { kind: "question", corps: "Bleu ou vert ?" });
+  await sql(`update messages set created_at = ${ilYa(13)} where id = ${q(qVieille)}`);
+  const qNeuve = await creerMessage(P5, cQ, { kind: "question", corps: "Et la taille ?" });
+  const cB = await creerChantier(P5, { titre: "Envoi des factures clients", etat: "bloque" });
+  const b = await creerMessage(P5, cB, { kind: "blocage", corps: "Il manque la clé" });
+  await sql(`update messages set created_at = ${ilYa(1)} where id = ${q(b)}`);
+  await creerMessage(P5, cB, { kind: "info", corps: "Clé trouvée dans l'autre session" });
+  const cV = await creerChantier(P5, { titre: "Page de connexion", etat: "a_verifier" });
+  await sql(`update chantiers set livre_at = ${ilYa(1)} where id = ${q(cV)}`);
+  const fin = await creerMessage(P5, cV, { kind: "info", corps: "Livré" });
+  await sql(`update messages set created_at = ${ilYa(1)} + interval '1 minute' where id = ${q(fin)}`);
+  const cTenu = await creerChantier(P5, { titre: "Tenu par une session", etat: "bloque" });
+  await sql(`update chantiers set pris_par = 'claude/x', pris_jusqu_a = now() + interval '1 hour' where id = ${q(cTenu)}`);
+  const bT = await creerMessage(P5, cTenu, { kind: "blocage", corps: "Attend une clé" });
+  await sql(`update messages set created_at = ${ilYa(20)} where id = ${q(bT)}`);
+  // Un UPDATE remet updated_at à maintenant (trigger tracer_chantier) : le vieux « à cadrer » naît vieux.
+  const cD1 = randomUUID();
+  await sql(`insert into chantiers (id, projet_id, titre, etat, created_at, updated_at) values (${q(cD1)}, ${q(P5)}, 'Export des factures en PDF', 'a_cadrer', ${ilYa(30)}, ${ilYa(30)})`);
+  const cD2 = await creerChantier(P5, { titre: "Export PDF des factures", etat: "a_verifier" });
+  let l = await revoir();
+  const par = (id) => l.find((e) => e.id === id);
+  verifie("revue : une question de plus de 12 h y est, la question récente non", !!par(qVieille) && par(qVieille).heures >= 12 && !par(qNeuve), l.map((e) => e.id));
+  verifie("revue : un bloqué suivi de travail y est, avec « avancé depuis »", !!par(cB)?.avance_depuis, par(cB));
+  verifie("revue : le message de livraison (1 min après) ne compte pas comme « avancé »", !par(cV));
+  verifie("revue : un chantier qu'une session tient encore n'y est pas (c'est à elle)", !par(cTenu) && (await sql(`select 1 from chantiers where id = ${q(cTenu)} and pris_jusqu_a > now()`)).length === 1);
+  verifie("revue : un vieux « à cadrer » y est (30 h)", par(cD1)?.heures >= 29, par(cD1));
+  verifie("revue : le doublon probable est signalé (« proche »)", par(cD1)?.proche?.id === cD2, par(cD1)?.proche);
+  const refus = await rpcUtilisateur("a_toi_a_revoir", { p_projet: P5 }, jwt);
+  verifie("a_toi_a_revoir : refusée à un utilisateur connecté (service seulement)", refus.status >= 400, refus.status);
+
+  // 3. Les gestes de la revue, par les vrais scripts.
+  const rC = lancer("demander.sh", ["--confirmer", cD1]);
+  const vu = await chantier(cD1);
+  l = await revoir();
+  verifie("demander.sh --confirmer <chantier> : a_toi_revu_at posé, il quitte la revue", rC.code === 0 && !!vu.a_toi_revu_at && !par(cD1), { rC, a: vu.a_toi_revu_at });
+  const rD = lancer("demander.sh", ["--debloquer", cB, "Clé trouvée"]);
+  const db = await chantier(cB);
+  const dm = await une(`select corps from messages where chantier_id = ${q(cB)} order by created_at desc limit 1`);
+  verifie("demander.sh --debloquer : « libre », message dans le fil", rD.code === 0 && db.etat === "libre" && dm.corps === "Plus bloqué : Clé trouvée", { rD, etat: db.etat, dm });
+  const rD2 = lancer("demander.sh", ["--debloquer", cQ, "x"]);
+  verifie("demander.sh --debloquer refuse un chantier qui n'est pas bloqué", rD2.code === 1, rD2);
+  const rR = lancer("demander.sh", ["--retirer", qVieille, "Déjà répondu dans la session"]);
+  verifie("demander.sh --retirer : la vieille question quitte la revue", rR.code === 0 && !(await revoir()).some((e) => e.id === qVieille), rR);
+  await sql(`update messages set created_at = ${ilYa(14)} where id = ${q(qNeuve)}`);
+  const ap = lancer("revue-a-toi.sh", ["--apercu"]);
+  verifie("revue-a-toi.sh --apercu : la consigne cite l'élément et les gestes, sans rien marquer",
+    ap.code === 0 && ap.sortie.includes(qNeuve) && ap.sortie.includes("--retirer") && ap.sortie.includes("--suggerer-fusion")
+      && (await une(`select revue_a_toi_at from projets where id = ${q(P5)}`)).revue_a_toi_at === null, ap.sortie.slice(0, 300));
+  const r1 = lancer("revue-a-toi.sh", []), r2 = lancer("revue-a-toi.sh", []);
+  verifie("revue-a-toi.sh : une revue, puis « déjà revu » pendant une heure", r1.code === 0 && !r1.sortie.startsWith("RIEN") && r2.sortie.startsWith("RIEN") && /moins d'une heure/.test(r2.sortie), { r1: r1.sortie.slice(0, 120), r2: r2.sortie });
+}
+
 async function controle21_aucun_reste_de_test() {
   section("21. aucun reste de test dans un projet réel");
   const r = await restesDansLesVraisProjets(sql);
@@ -1250,7 +1340,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle21_aucun_reste_de_test, controle22_correctifs, controle23_renforts,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle21_aucun_reste_de_test, controle22_correctifs, controle24_renforts,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -1261,7 +1351,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -1269,8 +1359,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

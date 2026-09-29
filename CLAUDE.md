@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, renforts (§23)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, renforts (§24)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
@@ -139,7 +139,7 @@ L'ancienne table `chef` (id = 1) et ses fonctions sans projet restent en base,
 plus lues par les scripts à jour (pas de drop sans Raphaël).
 `verifier-base.mjs` §19.
 
-**Renforts** (29 sept., migration 0022, D-10). Raphaël : « lancer une session
+**Renforts** (29 sept., migration 0023, D-10). Raphaël : « lancer une session
 par secteur […] plusieurs agents dedans […] 5 maximum par session […] ne jamais
 se marcher dessus ». Bouton « Lancer des renforts » (`Renforts.tsx`), au-dessus
 de « Prêt à lancer » : `demander_renforts(slug)` (admin) pose UNE demande par
@@ -235,6 +235,22 @@ depuis : peut-être plus utile » ; la session la confirme (`demander.sh
 --confirmer`) ou la retire (`--retirer <id> "pourquoi"`), rappel du hook
 toutes les 15 min. Un assistant listé en cours reste « en cours » tant que sa
 session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`).
+
+**« À toi de jouer » à jour** (29 sept. 2026, migration 0022, Raphaël : « des
+requêtes d'il y a 12 h déjà répondues dans la session ; je ne sais pas
+lesquelles sont récentes ou vieilles »). Chaque ligne dit son âge (« il y a
+12 h », `ElementAToi.depuis`), le plus récent en haut (réglable, préférence
+`tri_a_toi`) ; « Claude a avancé depuis : peut-être plus à jour » vaut pour
+TOUS les types et passe en bas (`aToi`, `lib/entonnoir.ts`). En base : un
+chantier certifié ou archivé ferme seul ses questions et les fusions qui le
+citent (trigger `retirer_sans_objet`) ; `a_toi_a_revoir(projet, heures)` (même
+règle que l'app ; plus de 12 h, ou du travail depuis ; jamais un chantier
+qu'une session tient ; « proche » = doublon probable) ; `scripts/revue-a-toi.sh`
+en fait la consigne d'un agent, lancée par `chef.sh` sur une place libre ou
+par `passe.sh` quand il n'y a rien à coder, au plus une fois par heure et par
+projet (`projets.revue_a_toi_at`). Gestes : `demander.sh --retirer`,
+`--confirmer <question|chantier>` (`chantiers.a_toi_revu_at`), `--debloquer`,
+`chantier.sh --suggerer-fusion`. `verifier-base.mjs` §23.
 
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 

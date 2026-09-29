@@ -27,7 +27,9 @@ demandes des utilisateurs, progression des autres sessions.
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh
   --confirmer <id>` si elle compte encore, `--retirer <id> "pourquoi"` sinon.
-  Le hook te le rappelle ; l'app marque « Claude a avancé depuis ».
+  Le hook te le rappelle ; l'app marque « Claude a avancé depuis ». Pareil
+  pour un chantier « à vérifier / à cadrer / bloqué » (0022) : `--confirmer
+  <id du chantier>`, et `--debloquer <id> "pourquoi"` quand il ne l'est plus.
 - **RÈGLE DE CLARTÉ — tout ce que Raphaël lit dans le cockpit** (questions,
   constats à faire, « comment vérifier », titres, messages du fil) : le plus
   simple possible, pour quelqu'un qui ne code pas. On doit comprendre **le
@@ -71,7 +73,7 @@ demandes des utilisateurs, progression des autres sessions.
   le devient, la consigne dit de créer (ou déplacer) SON réveil horaire, puis
   de le noter : `scripts/cockpit-chef.sh --reveil <trig_…> --distante <session_…>`.
   `--etat` : qui dirige ; `--max <n>` : agents en parallèle pour ce projet.
-- **RENFORTS** (0022) : Raphaël les demande d'un bouton du cockpit (« Lancer
+- **RENFORTS** (0023) : Raphaël les demande d'un bouton du cockpit (« Lancer
   des renforts ») : une session cloud par SECTION en attente. La passe de la
   chef te dit d'ouvrir chaque demande (`create_session`, titre « Renfort ·
   <projet> · <section> — ne pas toucher », tags `cockpit-renfort`), de la

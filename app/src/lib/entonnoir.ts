@@ -107,58 +107,86 @@ export interface ElementAToi {
   /** La question/action pour « question » ; la suggestion pour « fusion » ; le dernier « blocage » pour « bloque ». */
   message: Message | null
   /**
-   * Question : Claude a avancé sur ce chantier APRÈS l'avoir posée, sans la
-   * confirmer (date du dernier travail). Elle est peut-être dépassée : la
-   * session doit la confirmer ou la retirer (demander.sh). Sinon null.
+   * Depuis quand ça t'attend (ISO) : posée, livrée, bloquée… ou reconfirmée
+   * par une session (0015 confirmee_at, 0022 a_toi_revu_at). Affiché « il y a
+   * 12 h » et sert au tri (le plus récent en haut).
+   */
+  depuis: string
+  /**
+   * Claude a travaillé sur ce chantier APRÈS `depuis` sans reconfirmer (date du
+   * dernier travail) : l'élément est peut-être dépassé. La session le confirme
+   * ou le retire (demander.sh --confirmer / --retirer ; la chef le fait revoir,
+   * a_toi_a_revoir). Sinon null.
    */
   avanceDepuis?: string | null
 }
 
 const estQuestionOuverte = (m: Pick<Message, 'kind' | 'answered_at'>) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
 
+/** Une session qui écrit juste après avoir posé l'élément (fin de tour, livraison) n'a pas « avancé depuis ». */
+export const GRACE_AVANCE_MS = 2 * 60_000
+const plusTard = (a: string | null | undefined, b: string | null | undefined): string => ((a ?? '') > (b ?? '') ? a ?? '' : b ?? '')
+
 /**
- * Tout ce qui attend un geste de Raphaël, trié : questions (la plus ancienne
- * d'abord : elle attend depuis le plus longtemps) → fusions que Claude propose
- * → à vérifier → à cadrer → bloqués (priorité haute d'abord, puis le plus
- * récemment touché).
+ * Le tri de « À toi » (Raphaël, 29 sept. 2026 : « je ne sais pas quelles sont
+ * les requêtes les plus récentes et les plus vieilles ») : d'abord ce qui est
+ * à jour, puis ce que Claude a peut-être dépassé ; dans chaque bloc, le plus
+ * récent en haut (ou le plus ancien, au choix de l'écran).
+ */
+export type TriAToi = 'recents' | 'anciens'
+export function trierAToi(elements: readonly ElementAToi[], tri: TriAToi = 'recents'): ElementAToi[] {
+  const sens = tri === 'recents' ? -1 : 1
+  return [...elements].sort((a, b) => Number(!!a.avanceDepuis) - Number(!!b.avanceDepuis) || sens * a.depuis.localeCompare(b.depuis) || a.cle.localeCompare(b.cle))
+}
+
+/**
+ * Tout ce qui attend un geste de Raphaël : questions, fusions que Claude
+ * propose, à vérifier, à cadrer, bloqués. Chaque élément dit depuis quand il
+ * attend et si Claude a avancé depuis ; trié par trierAToi.
  */
 export function aToi(chantiers: readonly ChantierE[], messages: readonly MessageE[], projetId: string | null = null,
-  activites: readonly Activite[] = [], taches: readonly Tache[] = []): ElementAToi[] {
+  activites: readonly Activite[] = [], taches: readonly Tache[] = [], tri: TriAToi = 'recents'): ElementAToi[] {
   const parId = new Map(chantiers.map((c) => [c.id, c]))
   // Le dernier travail d'une session sur un chantier : message de session, étape signalée, étape d'agent.
   const dernierTravail = (cid: string): string | null => {
     let d = ''
-    for (const m of messages) if (m.chantier_id === cid && m.auteur_type === 'session' && m.kind !== 'question' && m.kind !== 'action' && m.created_at > d) d = m.created_at
+    for (const m of messages) if (m.chantier_id === cid && m.auteur_type === 'session' && m.kind !== 'question' && m.kind !== 'action' && m.kind !== 'fusion' && m.created_at > d) d = m.created_at
     for (const a of activites) if (a.chantier_id === cid && a.updated_at > d) d = a.updated_at
     for (const t of taches) if (t.chantier_id === cid && t.progres_at && t.progres_at > d) d = t.progres_at
     return d || null
   }
-  const avance = (m: MessageE): string | null => {
-    if (!m.chantier_id) return null
-    const d = dernierTravail(m.chantier_id)
-    const reference = m.confirmee_at && m.confirmee_at > m.created_at ? m.confirmee_at : m.created_at
-    return d && d > reference ? d : null
+  const avance = (cid: string | null, depuis: string): string | null => {
+    if (!cid) return null
+    const d = dernierTravail(cid)
+    return d && new Date(d).getTime() > new Date(depuis).getTime() + GRACE_AVANCE_MS ? d : null
   }
   const dansProjet = (id: string) => !projetId || id === projetId
   const questions: ElementAToi[] = messages
     .filter((m) => estQuestionOuverte(m) && dansProjet(m.projet_id))
     .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && !c.archived_at) })
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((m) => ({ type: 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, avanceDepuis: avance(m) }))
+    .map((m) => {
+      const depuis = plusTard(m.created_at, m.confirmee_at)
+      return { type: 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis, avanceDepuis: avance(m.chantier_id, depuis) }
+    })
 
   // Une suggestion de fusion (0008) : Claude a trouvé deux chantiers qui sont le même sujet.
   const fusions: ElementAToi[] = messages
     .filter((m) => m.kind === 'fusion' && !m.answered_at && dansProjet(m.projet_id))
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((m) => ({ type: 'fusion' as const, cle: `f-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m }))
+    .map((m) => ({ type: 'fusion' as const, cle: `f-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis: m.created_at, avanceDepuis: null }))
 
   const ouverts = chantiers.filter((c) => !c.archived_at && dansProjet(c.projet_id))
-  const tri = (a: ChantierE, b: ChantierE) => (RANG_PRIORITE[a.priorite] ?? 1) - (RANG_PRIORITE[b.priorite] ?? 1) || b.updated_at.localeCompare(a.updated_at)
   const dernierBlocage = (id: string) => messages.filter((m) => m.chantier_id === id && m.kind === 'blocage').sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null
+  // Depuis quand un chantier attend Raphaël : livré ou jugé (à vérifier), dernier blocage (bloqué), dernière modification sinon.
+  const debut = (c: ChantierE, type: 'a_verifier' | 'a_cadrer' | 'bloque', blocage: MessageE | null): string =>
+    plusTard(type === 'a_verifier' ? plusTard(c.livre_at, c.verdict_at) || c.updated_at : type === 'bloque' ? blocage?.created_at ?? c.updated_at : c.updated_at, c.a_toi_revu_at)
   // « Vérifie pour moi » en cours (0016) : ce n'est plus à Raphaël de jouer, Claude juge.
-  const deType = (type: 'a_verifier' | 'a_cadrer' | 'bloque'): ElementAToi[] => ouverts.filter((c) => c.etat === type && !(type === 'a_verifier' && c.verif_demandee_at)).sort(tri)
-    .map((c) => ({ type, cle: `${type}-${c.id}`, projetId: c.projet_id, chantier: c, message: type === 'bloque' ? dernierBlocage(c.id) : null }))
-  return [...questions, ...fusions, ...deType('a_verifier'), ...deType('a_cadrer'), ...deType('bloque')]
+  const deType = (type: 'a_verifier' | 'a_cadrer' | 'bloque'): ElementAToi[] => ouverts.filter((c) => c.etat === type && !(type === 'a_verifier' && c.verif_demandee_at))
+    .map((c) => {
+      const message = type === 'bloque' ? dernierBlocage(c.id) : null
+      const depuis = debut(c, type, message)
+      return { type, cle: `${type}-${c.id}`, projetId: c.projet_id, chantier: c, message, depuis, avanceDepuis: avance(c.id, depuis) }
+    })
+  return trierAToi([...questions, ...fusions, ...deType('a_verifier'), ...deType('a_cadrer'), ...deType('bloque')], tri)
 }
 
 /** Les éléments regroupés par type, dans l'ordre de l'entonnoir, groupes vides retirés. */
@@ -255,10 +283,10 @@ export function pastillesProjet(
 
 /** Ce qu'on attend de toi, en mots simples, sous le titre d'une ligne « À toi de jouer ». */
 export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message' | 'avanceDepuis'>, now: Date = new Date()): string {
+  // Claude a travaillé dessus depuis (0015, généralisé 0022) : peut-être déjà réglé, la chef le fait revoir.
+  if (e.avanceDepuis) return `Claude a avancé depuis (${dateRelative(e.avanceDepuis, now)}) : peut-être plus à jour`
   switch (e.type) {
-    case 'question': return e.avanceDepuis
-      ? `Claude a avancé depuis (${dateRelative(e.avanceDepuis, now)}) : peut-être plus utile`
-      : e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
+    case 'question': return e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
     case 'fusion': return 'Claude propose de fusionner deux chantiers'
     case 'a_verifier': {
       if (e.chantier?.verdict_at && e.chantier.verdict_ok) return 'Claude a vérifié : c’est bon, confirme d’un toucher'

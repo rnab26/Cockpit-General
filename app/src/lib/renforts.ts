@@ -1,4 +1,4 @@
-// Les RENFORTS (29 sept. 2026, migration 0022, décision D-10). Raphaël : « une
+// Les RENFORTS (29 sept. 2026, migration 0023, décision D-10). Raphaël : « une
 // option visible et bien distincte de tout le reste, au-dessus de tous les
 // chantiers abandonnés, à l'arrêt ou libres […] : lancer une session par
 // secteur, […] plusieurs agents dedans en même temps. 5 maximum par session

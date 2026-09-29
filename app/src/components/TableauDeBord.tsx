@@ -1,13 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, CirclePause, Rocket, Settings2 } from 'lucide-react'
+import { ArrowDownUp, ChevronDown, ChevronRight, CirclePause, Rocket, Settings2 } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { attenteAToi, VERBE_A_TOI, type ElementAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
+import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
 import { ouJenSuis, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
-import { etaLisible, dateRelative } from '../lib/dates.ts'
+import { etaLisible, dateRelative, dateLongue } from '../lib/dates.ts'
+import { useToast } from '../ui/Toast.tsx'
 import { autonomeActif } from '../lib/autonome.ts'
 import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
@@ -45,7 +46,7 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
-      {/* Renforts (0022, D-10) : au-dessus de ce qui attend, bien distinct. */}
+      {/* Renforts (0023, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
     </div>
@@ -237,18 +238,38 @@ function Projet({ projetId }: { projetId: string }) {
 export const A_TOI_VISIBLES = 4
 
 function SectionAToi({ elements, avecProjet }: { elements: ElementAToi[]; avecProjet: boolean }) {
+  const g = useGlobal()
+  const toast = useToast()
   const [tout, setTout] = useState(false)
-  const visibles = tout ? elements : elements.slice(0, A_TOI_VISIBLES)
+  // Le plus récent en haut par défaut (Raphaël, 29 sept. : « je ne sais pas quelles sont les plus récentes ») ; réglable, retenu.
+  const tri: TriAToi = g.prefs.tri_a_toi === 'anciens' ? 'anciens' : 'recents'
+  const tries = useMemo(() => trierAToi(elements, tri), [elements, tri])
+  const visibles = tout ? tries : tries.slice(0, A_TOI_VISIBLES)
+  const nDepasses = elements.filter((e) => e.avanceDepuis).length
+  const basculer = async () => {
+    try { await g.poser('tri_a_toi', tri === 'recents' ? 'anciens' : 'recents') }
+    catch (err) { toast.erreur(`Tri non retenu : ${err instanceof Error ? err.message : String(err)}`) }
+  }
   return (
     <section aria-label="À toi de jouer" data-testid="a-toi">
       <TitreSection numero={1} titre="À toi de jouer" n={elements.length} testId="a-toi-total" />
       {elements.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
-        <Liste>
-          {visibles.map((e) => <LigneAToi key={e.cle} e={e} avecProjet={avecProjet} />)}
-          <VoirPlus reste={elements.length - visibles.length} onClick={() => setTout(true)} testId="voir-a-toi" />
-        </Liste>
+        <>
+          {elements.length > 1 ? (
+            <div className="mb-1 flex items-center justify-between gap-2 px-1 text-xs text-texte-2">
+              <span data-testid="a-toi-depasses">{nDepasses ? `${nDepasses} peut-être plus à jour, en bas : Claude les revoit` : ''}</span>
+              <button type="button" onClick={() => void basculer()} data-testid="tri-a-toi" data-tri={tri} className="inline-flex shrink-0 items-center gap-1 underline-offset-2 hover:underline">
+                <ArrowDownUp size={13} aria-hidden />{tri === 'recents' ? 'Plus récents d’abord' : 'Plus anciens d’abord'}
+              </button>
+            </div>
+          ) : null}
+          <Liste>
+            {visibles.map((e) => <LigneAToi key={e.cle} e={e} avecProjet={avecProjet} />)}
+            <VoirPlus reste={tries.length - visibles.length} onClick={() => setTout(true)} testId="voir-a-toi" />
+          </Liste>
+        </>
       )}
     </section>
   )
@@ -258,19 +279,20 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
   const g = useGlobal()
   const ouvrir = () => g.ouvrirChantier(e.projetId, e.chantier?.id ?? null)
   return (
-    <li data-testid="element-a-toi" data-type={e.type} data-element-chantier={e.chantier?.id ?? ''}>
+    <li data-testid="element-a-toi" data-type={e.type} data-element-chantier={e.chantier?.id ?? ''} data-depuis={e.depuis} data-depasse={e.avanceDepuis ? '1' : ''}>
       <div className="flex items-center gap-3 px-3 py-2.5">
         <button type="button" onClick={ouvrir} className="flex min-w-0 flex-1 items-center gap-3 text-left">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-bord"><IconeAToi type={e.type} /></span>
           <span className="min-w-0 flex-1">
-            <span className="line-clamp-2 text-[15px] font-medium leading-snug" data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
+            <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
-              <span data-testid="attente-a-toi">{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
+              <span className="whitespace-nowrap tabular-nums" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span><span aria-hidden> · </span>
+              <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
             </span>
           </span>
         </button>
-        <Button taille="sm" onClick={ouvrir} data-testid="verbe-a-toi" className="shrink-0">{VERBE_A_TOI[e.type]}</Button>
+        <Button taille="sm" variante={e.avanceDepuis ? 'discret' : undefined} onClick={ouvrir} data-testid="verbe-a-toi" className="shrink-0">{VERBE_A_TOI[e.type]}</Button>
       </div>
     </li>
   )

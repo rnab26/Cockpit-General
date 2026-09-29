@@ -204,13 +204,29 @@ ouverts sans section : passé sur cockpit et facepro le 29 sept., 0 rangé
 `verifier-reponses` 16/16, `verifier-embed` 80/80. App inchangée. Pas de
 réglage pour éteindre le tri par projet (à ajouter si Raphaël le veut).
 
-## 2 nonies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
+## 2 nonies. 29 sept. soir : « À toi de jouer » à jour (chantier `20a42f79`, migration 0022)
+
+Raphaël : des demandes de plus de 12 h déjà réglées ailleurs, sans savoir
+lesquelles sont récentes. Livré : l'âge sur chaque ligne, le plus récent en
+haut (bouton de tri), « peut-être plus à jour » pour tous les types, en bas ;
+en base, certifié/archivé ferme ses questions, `a_toi_a_revoir` +
+`scripts/revue-a-toi.sh` (chef.sh / passe.sh, 1 revue par heure et par
+projet), `demander.sh --confirmer <chantier>` et `--debloquer`. État relevé
+avant : cockpit 13 éléments (3 de plus de 12 h, aucun dépassé) ; FacePro 12
+(5 de plus de 12 h, 4 que Claude avait fait avancer depuis). Une question
+FacePro déjà répondue dans la session (« attends ») retirée. Reste :
+FacePro n'a pas de chef, donc sa revue ne tourne que via `passe.sh` (session
+autonome) tant que Raphaël n'écrit pas dans une session FacePro ; 2 bloqués
+FacePro « regroupés dans une autre session » sont des doublons à proposer en
+fusion par cette revue.
+
+## 2 decies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
 
 Bouton « Lancer des renforts » (au-dessus de « Prêt à lancer », vue projet et
 « Tout »), réglages (sessions 0-4, agents 1-5), états demande envoyée / en
-route / erreur / terminé. Migration 0022 appliquée (le brouillon 0020 de
-agent/646460 a été repris, renuméroté : 0020 et 0021 étaient pris).
-Voir CLAUDE.md « Renforts ». Vérifié : verifier-base §23,
+route / erreur / terminé. Migration 0023 appliquée (le brouillon 0020 de
+agent/646460 a été repris, renuméroté : 0020 à 0022 étaient pris).
+Voir CLAUDE.md « Renforts ». Vérifié : verifier-base §24,
 verifier-renforts 16/16, verifier-web 299/299 (section « renforts »).
 **Pas encore observé en vrai** : aucune session renfort n'a été ouverte. La
 première ouverture réelle sera faite par la session chef du cockpit (Raphaël
@@ -236,7 +252,7 @@ lanceur ; `cockpit-renfort.sh` arrive au prochain démarrage (brancher.sh --maj)
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - À cadrer avec Raphaël (dans le cockpit, `demander.sh`, pas d'artefact) :
-  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 nonies.)
+  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 decies.)
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
 
 ## 4. Pièges déjà payés (ne pas les repayer)

@@ -15,7 +15,7 @@ const SONDAGE_MS = 30_000
 const TEINTE: Record<CodeLigne, string> = { demande: 'text-info', en_route: 'text-ok', termine: 'text-texte-2', erreur: 'text-alerte' }
 
 /**
- * « Lancer des renforts » (0022, D-10) : au-dessus de « Prêt à lancer », bien
+ * « Lancer des renforts » (0023, D-10) : au-dessus de « Prêt à lancer », bien
  * distinct, un bloc par projet. Un clic demande une session par SECTION en
  * attente ; la session chef du projet les ouvre. Admin seulement (la base le
  * vérifie aussi). L'état vient de etat_renforts : ce que la base comptera.

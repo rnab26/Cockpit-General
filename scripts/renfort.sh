@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SESSIONS DE RENFORT (29 sept. 2026, migration 0022). Raphaël les demande d'un
+# SESSIONS DE RENFORT (29 sept. 2026, migration 0023). Raphaël les demande d'un
 # bouton dans l'app (« Lancer des renforts ») : une session cloud par SECTION
 # en attente, ouverte par la chef du projet, qui ne traite QUE les chantiers de
 # sa section, avec plusieurs agents à la fois (5 au plus), puis s'arrête.
