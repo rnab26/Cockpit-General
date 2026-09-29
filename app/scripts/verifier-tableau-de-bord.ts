@@ -51,6 +51,9 @@ const chantiers = [
   C('fini', 'valide', { valide_at: il(30) }),
   C('fini-vieux', 'valide', { valide_at: il(60 * 24 * 3) }),
   C('archive', 'libre', { archived_at: il(5) }),
+  // FacePro, 29 sept. : des agents travaillent sur un chantier qui attend AUSSI Raphaël.
+  C('agent-question', 'en_cours', { pris_par: 'claude/levers', pris_jusqu_a: dans(60) }),
+  C('agent-bloque', 'bloque', { pris_par: 'claude/talons', pris_jusqu_a: dans(60) }),
 ]
 const activites = [
   A('a1', 'vivant', 1, 'claude/auto-abc123', 60, 2700),
@@ -67,9 +70,12 @@ const sessions = [
 const taches = [
   T('t1', 's-agents', 'agent-pct', { pourcentage: 5, eta_secondes: 3360, etape: 'fusion main + preuves', progres_at: il(1) }),
   T('t2', 's-agents', 'agent-muet', { etape: 'lecture du code', progres_at: il(2) }),
+  T('t3', 's-agents', 'agent-question', { pourcentage: 35, etape: 'diagnostic', progres_at: il(2) }),
+  T('t4', 's-agents', 'agent-bloque', { pourcentage: 20, etape: 'banc objets', progres_at: il(3) }),
 ]
 const messages = [
   M('q', 'question', 'question'),
+  M('q2', 'agent-question', 'question'),
   M('b', 'bloque', 'blocage', { corps: 'Il manque la clé RunPod dans les variables d’environnement du projet' }),
 ]
 const d = { chantiers, messages, activites, sessions, taches }
@@ -81,15 +87,18 @@ const ids = (l: { c: { id: string } }[]) => l.map((x) => x.c.id)
 // 1. Les tuiles = les longueurs des listes
 verifie('tuiles = longueurs des listes (pour toi, ça avance, en pause, fini)',
   t.tuiles.pourToi === t.aToi.length && t.tuiles.caAvance === t.caAvance.length && t.tuiles.enPause === t.pretALancer.length && t.tuiles.fini === t.fini.length, t.tuiles)
-verifie('pour toi : question, à vérifier ×2, à cadrer, bloqué (5)', t.tuiles.pourToi === 5, t.aToi.map((e) => e.cle))
+verifie('pour toi : 2 questions, à vérifier ×2, à cadrer, 2 bloqués (7)', t.tuiles.pourToi === 7, t.aToi.map((e) => e.cle))
 verifie('fini : seulement le certifié du jour', t.fini.map((c) => c.id).join(',') === 'fini', t.fini.map((c) => c.id))
 
 // 2. Ça avance tout seul : par chantier, présence honnête
 const ca = new Map(t.caAvance.map((l) => [l.c.id, l]))
-verifie('ça avance : vivant, deux agents, silencieux, personne — ni libre, ni reporté, ni archivé',
-  ['vivant', 'agent-pct', 'agent-muet', 'silencieux', 'personne'].every((id) => ca.has(id)) && t.caAvance.length === 5, ids(t.caAvance))
+verifie('ça avance : vivant, quatre agents, silencieux, personne — ni libre, ni reporté, ni archivé',
+  ['vivant', 'agent-pct', 'agent-muet', 'agent-question', 'agent-bloque', 'silencieux', 'personne'].every((id) => ca.has(id)) && t.caAvance.length === 7, ids(t.caAvance))
+verifie('un agent vivant sur un chantier qui attend ta réponse (ou bloqué) est dans « ça avance » ET dans « à toi »',
+  ca.get('agent-question')?.vivant && ca.get('agent-bloque')?.vivant && ca.get('agent-question')?.activite?.pourcentage === 35
+  && t.aToi.some((e) => e.chantier?.id === 'agent-question') && t.aToi.some((e) => e.chantier?.id === 'agent-bloque'), [ca.get('agent-question'), ca.get('agent-bloque')])
 verifie('ordre : les vivants d’abord, puis silencieux, puis personne',
-  t.caAvance.slice(0, 3).every((l) => l.vivant) && t.caAvance[3].c.id === 'silencieux' && t.caAvance[4].c.id === 'personne', ids(t.caAvance))
+  t.caAvance.slice(0, 5).every((l) => l.vivant) && t.caAvance[5].c.id === 'silencieux' && t.caAvance[6].c.id === 'personne', ids(t.caAvance))
 const v = ca.get('vivant')!
 verifie('mode autonome : « Claude, en autonomie », sa barre et son étape', v.vivant && v.qui === 'Claude, en autonomie' && v.activite?.pourcentage === 60 && v.etape === 'étape a1', v)
 const ap = ca.get('agent-pct')!
