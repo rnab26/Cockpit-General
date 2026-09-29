@@ -10,6 +10,8 @@
 # Il ne fait JAMAIS échouer le démarrage : toute erreur devient une note.
 
 set -uo pipefail
+# L'entrée du hook (session_id) : sert à poser le curseur des réponses en direct.
+entree=""; [ -t 0 ] || entree=$(timeout 2 cat 2>/dev/null || true)
 RACINE="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # COCKPIT_SQL est posé par le lanceur (scripts/cockpit-lanceur.sh) dans un
 # projet branché : le sql.sh du projet peut viser une AUTRE base (FacePro/Neon).
@@ -32,6 +34,9 @@ fi
 
 un() { "$SQL" "$1" 2>/dev/null | jq -r 'if (.rows|type)!="array" or (.rows|length)==0 then "" else (.rows[0] | if type=="object" then (to_entries[0].value // "") else (. // "") end) end' 2>/dev/null || echo ""; }
 P="'$PROJET'"
+# Heure de la BASE avant de lire l'état : tout ce qui arrive ensuite sera remis
+# en direct par hooks/suivi.sh (curseur de cette session), rien n'est remis deux fois.
+debut_lecture=$(un "select now()")
 
 test=$(un "select nom from projets where slug = $P")
 if [ -z "$test" ]; then
@@ -91,7 +96,15 @@ chantiers=$(un "select coalesce(string_agg(bloc, chr(10)||chr(10) order by pos, 
 
 attente=$(un "select coalesce(string_agg(format('- [%s] %s%s — %s (posée par %s, %s)%s', m.id, case m.kind when 'action' then 'IL DOIT LE FAIRE : ' else 'IL DOIT DÉCIDER : ' end, m.corps, coalesce(c.titre, 'général'), m.auteur, to_char(m.created_at, 'DD/MM HH24:MI'), case when m.options is not null then chr(10) || '    options : ' || (select string_agg(o->>'libelle', ' / ') from jsonb_array_elements(m.options) o) else '' end), chr(10) order by m.created_at), '(rien)') from messages m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P and m.kind in ('question','action') and m.answered_at is null")
 
-reponses=$(un "select coalesce(string_agg(format('- %s | %s → « %s »%s (%s)', to_char(m.answered_at, 'DD/MM HH24:MI'), left(m.corps, 90), coalesce(m.reponse, m.etat, ''), case when coalesce(m.precision,'') <> '' then ' — précision : ' || m.precision else '' end, coalesce(c.titre, 'général')), chr(10) order by m.answered_at desc), '(aucune)') from (select * from messages where answered_at is not null order by answered_at desc limit 10) m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P")
+reponses=$(un "select coalesce(string_agg(format('- %s | %s → « %s »%s (%s)', to_char(m.answered_at, 'DD/MM HH24:MI'), left(m.corps, 90), coalesce(m.reponse, m.etat, ''), case when coalesce(m.precision,'') <> '' then ' — précision : ' || m.precision else '' end, coalesce(c.titre, 'général')), chr(10) order by m.answered_at desc), '(aucune)') from (select m.* from messages m join projets p on p.id = m.projet_id where p.slug = $P and m.answered_at is not null order by m.answered_at desc limit 10) m left join chantiers c on c.id = m.chantier_id")
+
+# Ses RÉPONSES que personne n'a encore prises (29 sept. 2026 : sur ses réponses du
+# jour, plusieurs sont restées sans suite — chantier que plus personne ne tenait,
+# ou question générale sans chantier). « Prise » = une session a écrit dans le fil
+# de ce chantier après sa réponse. Ce bloc revient à chaque démarrage tant que ce
+# n'est pas fait. Seules SES réponses depuis l'app (answered_by posé ; une réponse
+# notée par une session vient de sa conversation) ; chantier certifié : c'est clos.
+non_prises=$(un "select coalesce(string_agg(format('- [%s] %s | question « %s » → il a répondu « %s »%s', to_char(m.answered_at, 'DD/MM HH24:MI'), coalesce(c.titre || ' (' || c.id || ')', 'général'), left(replace(m.corps, chr(10), ' '), 120), m.reponse, case when coalesce(m.precision,'') <> '' then ' — précision : ' || left(m.precision, 200) else '' end), chr(10) order by m.answered_at), '(aucune)') from messages m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P and m.kind in ('question','action') and m.answered_at > now() - interval '7 days' and m.answered_by is not null and coalesce(m.reponse, '') not like 'Retirée par Claude%' and (c.id is null or (c.etat <> 'valide' and c.archived_at is null)) and not exists (select 1 from messages s where s.chantier_id is not distinct from m.chantier_id and s.projet_id = m.projet_id and s.auteur_type = 'session' and s.created_at > m.answered_at)")
 
 constats=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre,''), left(m.corps, 160)), chr(10) order by m.created_at desc), '(aucun)') from (select * from messages where kind = 'constat' order by created_at desc limit 8) m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P")
 
@@ -115,6 +128,9 @@ fusions=$(un "select coalesce(string_agg(format('- %s (suggérée le %s)', m.cor
 
 a_ranger=$(un "select coalesce(string_agg(format('- %s | %s', c.id, c.titre), chr(10) order by c.created_at), '(aucun)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.archived_at is null and c.section_id is null")
 
+sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
+[ -n "$sid" ] && [ -n "$debut_lecture" ] && printf '%s\n' "$debut_lecture" > "${TMPDIR:-/tmp}/cockpit-rep-$sid" 2>/dev/null
+
 emettre "$(cat <<FIN
 # Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
 
@@ -137,6 +153,9 @@ $chantiers
 
 ## Ce qui attend une RÉPONSE humaine (ne repose pas ces questions, ne code pas ce qui en dépend)
 $attente
+
+## Ses RÉPONSES que personne n'a encore prises — applique-les (sur le chantier concerné), puis écris dans son fil ce que tu en fais
+$non_prises
 
 ## Dernières réponses humaines (à appliquer avec jugement)
 $reponses

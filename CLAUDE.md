@@ -56,6 +56,7 @@ node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias (158 contrôles)
+node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 bash -n scripts/*.sh hooks/*.sh
 ```
 
@@ -147,8 +148,16 @@ puis ce qu'il doit faire. Pas de pavé, pas de détail technique non demandé.
 Quand Raphaël répond ou écrit dans le cockpit sur un chantier qu'une session
 tient (réservé à sa branche, ou suivi par un de ses agents), `hooks/suivi.sh`
 (PostToolUse, toutes les 20 s au plus, 3 s max) le met sous les yeux de la
-session avant son prochain pas. Une session à l'arrêt ne le voit qu'à son
-prochain réveil (la chef : au plus une heure) ou quand il lui écrit.
+session avant son prochain pas. Une session à l'arrêt le reçoit à son réveil
+(UserPromptSubmit, sans attendre les 20 s ; la chef : au plus une heure).
+Un agent reçoit les réponses de SES chantiers (`agent_id` + branche de son
+dossier), avec son propre curseur. Curseur = heure de la base au dernier
+passage réussi (une panne ne fait rien perdre). Nouvelle session : le hook de
+démarrage montre « Ses RÉPONSES que personne n'a encore prises » (répondues,
+7 jours, aucun message de session depuis dans le fil) et pose le curseur.
+Bilan du 29 sept. et preuve : `node scripts/verifier-reponses.mjs` (15
+contrôles, vrais hooks, vraie base, projet jetable). Le cas « personne ne
+tient le chantier » relève de `scripts/chef.sh` (chantier 6c8c6084).
 
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 

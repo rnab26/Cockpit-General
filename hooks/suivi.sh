@@ -26,41 +26,70 @@ ev=$(printf '%s' "$entree" | jq -r '.hook_event_name // empty' 2>/dev/null)
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 [ -n "$ev" ] && [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
+# Un appel venu d'un AGENT (agent_id présent, Claude Code 2.1.284) : ce qu'on lui
+# remet, ce sont SES chantiers (sa tâche, la branche de son dossier de travail),
+# avec son propre curseur — sinon l'agent A « consomme » la réponse destinée à B.
+agent=$(printf '%s' "$entree" | jq -r '.agent_id // empty' 2>/dev/null)
+branche_rep="$branche"
+if [ -n "$agent" ]; then
+  cwd=$(printf '%s' "$entree" | jq -r '.cwd // empty' 2>/dev/null)
+  [ -n "$cwd" ] && branche_rep=$(git -C "$cwd" symbolic-ref --short -q HEAD 2>/dev/null || echo "$branche")
+fi
 
 # RÉPONSES EN DIRECT (Raphaël, 29 sept. : « quand je réponds dans le cockpit,
 # la session doit le prendre en compte tout de suite, sinon elle avance sans
-# mes informations et on refait le travail deux fois »). Toutes les 20 s au
-# plus, pendant que la session (ou un de ses agents) travaille, on regarde si
-# Raphaël a répondu ou écrit sur un chantier qu'elle tient ; si oui, on le lui
-# met sous les yeux AVANT son prochain pas (additionalContext). 3 s au plus.
+# mes informations et on refait le travail deux fois »). Pendant que la session
+# (ou un de ses agents) travaille, toutes les 20 s au plus, et À CHAQUE réveil
+# (UserPromptSubmit : message de Raphaël, réveil horaire), on regarde si Raphaël
+# a répondu ou écrit sur un chantier qu'elle tient ; si oui, on le lui met sous
+# les yeux AVANT son prochain pas (additionalContext). 3 s au plus.
+# Curseur = l'heure de la BASE au dernier passage RÉUSSI (une requête en échec
+# ne fait rien perdre). Sans curseur (conteneur recyclé), on remet ce qui n'a
+# été suivi d'aucun message de session depuis 24 h. Le hook de démarrage pose
+# le curseur après avoir montré l'état : rien n'est remis deux fois.
 reponses_fraiches() {
-  local rep="${TMPDIR:-/tmp}/cockpit-rep-$sid" depuis texte sortie=""
-  if [ -f "$rep" ] && [ $(( $(date +%s) - $(stat -c %Y "$rep" 2>/dev/null || echo 0) )) -lt 20 ]; then return; fi
-  depuis=$(cat "$rep" 2>/dev/null); date -u +%Y-%m-%dT%H:%M:%SZ > "$rep" 2>/dev/null
-  [ -n "$depuis" ] || depuis=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # premier passage : pas d'historique
-  local qs qb; qs=$(printf '%s' "$sid" | sed "s/'/''/g"); qb=$(printf '%s' "$branche" | sed "s/'/''/g")
-  texte=$(timeout 3 "$SQL" "with mes as (
-      select id from chantiers where pris_par = '$qb' and '$qb' <> ''
+  local evn="$1" force="${2:-}" cle="$sid${agent:+-$agent}"
+  local cur="${TMPDIR:-/tmp}/cockpit-rep-$cle" rythme="${TMPDIR:-/tmp}/cockpit-repv-$cle" depuis cond brut texte sortie=""
+  if [ -z "$force" ] && [ -f "$rythme" ] && [ $(( $(date +%s) - $(stat -c %Y "$rythme" 2>/dev/null || echo 0) )) -lt "${COCKPIT_REP_INTERVALLE:-20}" ]; then return; fi
+  touch "$rythme" 2>/dev/null
+  depuis=$(grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9:.+Z-]+$' "$cur" 2>/dev/null | head -1)
+  local qs qb qa; qs=$(printf '%s' "$sid" | sed "s/'/''/g"); qb=$(printf '%s' "$branche_rep" | sed "s/'/''/g"); qa=$(printf '%s' "$agent" | sed "s/'/''/g")
+  local mes
+  if [ -n "$agent" ]; then
+    mes="select id from chantiers where pris_par = '$qb' and '$qb' <> ''
+      union select chantier_id from taches where session_id = '$qs' and tache_id = '$qa' and chantier_id is not null"
+  else
+    mes="select id from chantiers where pris_par = '$qb' and '$qb' <> ''
       union select chantier_id from taches where session_id = '$qs' and statut = 'en_cours' and chantier_id is not null
-      union select chantier_id from activite where session = '$qb' and '$qb' <> '' and updated_at > now() - interval '3 hours' and chantier_id is not null)
-    select string_agg(format('- « %s » : %s%s', c.titre,
+      union select chantier_id from activite where session = '$qb' and '$qb' <> '' and updated_at > now() - interval '3 hours' and chantier_id is not null"
+  fi
+  if [ -n "$depuis" ]; then
+    cond="coalesce(m.answered_at, m.created_at) > '$depuis'::timestamptz"
+  else
+    cond="coalesce(m.answered_at, m.created_at) > now() - interval '24 hours'
+      and not exists (select 1 from messages s where s.chantier_id = m.chantier_id and s.auteur_type = 'session' and s.created_at > coalesce(m.answered_at, m.created_at))"
+  fi
+  brut=$(timeout 3 "$SQL" "with mes as ($mes)
+    select now() as maintenant, string_agg(format('- « %s » : %s%s', c.titre,
         case when m.kind in ('question','action') then format('il a répondu à « %s » → %s%s', left(m.corps, 90), m.reponse, coalesce(' — ' || m.precision, ''))
              else left(m.corps, 400) end,
         case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) : media.sh --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by coalesce(m.answered_at, m.created_at)) as nouvelles
     from messages m join chantiers c on c.id = m.chantier_id
     where m.chantier_id in (select id from mes)
-      and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and m.created_at > '$depuis'::timestamptz)
-        or (m.kind in ('question','action') and m.answered_at > '$depuis'::timestamptz))" 2>/dev/null | jq -r '.rows[0].nouvelles // empty' 2>/dev/null)
+      and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat'))
+        or (m.kind in ('question','action') and m.answered_at is not null and coalesce(m.reponse, '') not like 'Retirée par Claude%'))
+      and $cond" 2>/dev/null)
+  local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
+  [ -n "$maintenant" ] && printf '%s\n' "$maintenant" > "$cur" 2>/dev/null   # seulement si la base a répondu
+  texte=$(printf '%s' "$brut" | jq -r '.rows[0].nouvelles // empty' 2>/dev/null)
   [ -n "$texte" ] && sortie="RÉPONSE DE RAPHAËL dans le cockpit, à l'instant — prends-la en compte MAINTENANT, avant ton prochain pas (et adapte ce que tu fais) :
 $texte"
   # Tes questions encore ouvertes sur ces chantiers, alors que tu as avancé depuis
   # (0015) : toutes les 15 min au plus, on te demande de les tenir à jour.
-  local rq="${TMPDIR:-/tmp}/cockpit-qst-$sid" qst
+  local rq="${TMPDIR:-/tmp}/cockpit-qst-$cle" qst
   if [ ! -f "$rq" ] || [ $(( $(date +%s) - $(stat -c %Y "$rq" 2>/dev/null || echo 0) )) -ge 900 ]; then
     touch "$rq" 2>/dev/null
-    qst=$(timeout 3 "$SQL" "with mes as (
-        select id from chantiers where pris_par = '$qb' and '$qb' <> ''
-        union select chantier_id from taches where session_id = '$qs' and statut = 'en_cours' and chantier_id is not null)
+    qst=$(timeout 3 "$SQL" "with mes as ($mes)
       select string_agg(format('- %s (posée %s) « %s »', m.id, to_char(m.created_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), left(m.corps, 100)), chr(10)) as questions
       from messages m where m.chantier_id in (select id from mes) and m.kind in ('question','action') and m.answered_at is null
         and greatest(m.created_at, coalesce(m.confirmee_at, m.created_at)) < now() - interval '15 minutes'" 2>/dev/null | jq -r '.rows[0].questions // empty' 2>/dev/null)
@@ -70,12 +99,12 @@ $texte"
 $qst"
   fi
   [ -n "$sortie" ] || return
-  jq -n --arg t "$sortie" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $t}}'
+  jq -n --arg t "$sortie" --arg e "$evn" '{hookSpecificOutput: {hookEventName: $e, additionalContext: $t}}'
 }
 
 case "$ev" in
   PostToolUse)
-    reponses_fraiches
+    reponses_fraiches PostToolUse
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
     # avec sa description. Sinon, un simple signe de vie, au plus 1 fois/minute.
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '
@@ -97,6 +126,10 @@ case "$ev" in
       charge=$(jq -cn --arg s "$sid" --arg b "$branche" '{session_id: $s, hook_event_name: "Vie", branche: $b}')
     fi ;;
   UserPromptSubmit)
+    # Le RÉVEIL d'une session (message de Raphaël, réveil horaire de la chef) :
+    # ce qu'il a répondu pendant qu'elle était à l'arrêt lui est remis tout de
+    # suite, avant son premier pas — sans attendre le rythme de 20 s.
+    reponses_fraiches UserPromptSubmit maintenant
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, prompt: ((.prompt // "") | .[0:200])}') ;;
   StopFailure)
     # Une réponse arrêtée par une erreur : limite d'usage (rate_limit), facturation,
