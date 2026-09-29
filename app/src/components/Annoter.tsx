@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Brush, Eraser, Undo2 } from 'lucide-react'
+import { useConfirmer } from '../ui/Confirm.tsx'
+import { CONFIRMER_ABANDON } from '../ui/Modale.ts'
 import {
   COULEURS_ANNOTATION, DESSIN_VIDE, ajouterTrait, annulerGeste, dimensionsSortie, largeurTrait, nomAnnote,
   toutEffacer, typeSortie, versImage, type Epaisseur, type Trait,
@@ -36,13 +38,21 @@ export function Annoter({ nom, type, charger, onFermer, onEnregistrer }: {
   const source = useRef(charger); source.current = charger
 
   // Plein écran au-dessus de tout (y compris d'une conversation déjà ouverte en <dialog>).
+  // Pas de fond à toucher (on dessine partout) ; Échap ferme, mais demande si un dessin serait perdu (ui/Modale.ts).
+  const confirmer = useConfirmer()
+  const aDessine = useRef(false); aDessine.current = dessin.traits.length > 0
   useEffect(() => {
     const d = dlg.current
     if (d && !d.open) d.showModal()
-    const onCancel = (e: Event) => { e.preventDefault(); fermer.current() }
+    const onCancel = (e: Event) => {
+      e.preventDefault()
+      if (!aDessine.current) { fermer.current(); return }
+      void confirmer({ ...CONFIRMER_ABANDON, titre: 'Quitter sans garder le dessin ?', texte: 'Ton dessin n’est pas enregistré. Si tu quittes, il sera perdu.', libelleOk: 'Quitter sans garder' })
+        .then((ok) => { if (ok) fermer.current() })
+    }
     d?.addEventListener('cancel', onCancel)
     return () => { d?.removeEventListener('cancel', onCancel); if (d?.open) d.close() }
-  }, [])
+  }, [confirmer])
 
   useEffect(() => {
     let vivant = true, url: string | null = null

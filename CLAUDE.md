@@ -250,6 +250,17 @@ le hook) et les REGARDE avant de répondre.
 après l'envoi elle part en nouveau message « Image annotée : … » du fil.
 `verifier-annotation.ts`, et les contrôles « crayon » de `verifier-web.mjs`.
 
+## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
+
+Raphaël : « quitter en appuyant sur les zones extérieures de la carte ».
+Règle unique, `app/src/ui/Modale.ts` : toucher le fond ferme (la conversation
+laisse une bande visible en haut sur téléphone ; une zone libre du fil ferme
+aussi), Échap et le retour du téléphone ferment, un menu se ferme en touchant
+ailleurs ou avec Échap (sans fermer ce qui est dessous). Un texte, un fichier
+ou un dessin non envoyé : « Quitter sans envoyer ? » d'abord (`Dialog
+brouillon`, `aUnBrouillon`). Toute nouvelle fenêtre passe par `Dialog` ou ces
+fonctions. `verifier-web.mjs` : « quitter une carte ».
+
 ## Sessions, agents, doublons : ce que Claude décide seul (29 sept. 2026)
 
 - **Session** = une conversation Claude Code ; **tâche** = un agent ou une

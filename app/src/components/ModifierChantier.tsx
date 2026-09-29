@@ -14,11 +14,12 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
   const toast = useToast()
   const [v, setV] = useState({ titre: '', demande: '', notes: '', resume_simple: '', comment_verifier: '', section_id: '', priorite: 'normale' as Priorite, etat: 'a_trier' as Etat, visible_utilisateurs: true })
   const [enCours, setEnCours] = useState(false)
-  useEffect(() => {
-    if (chantier) setV({ titre: chantier.titre, demande: chantier.demande ?? '', notes: chantier.notes ?? '', resume_simple: chantier.resume_simple ?? '',
-      comment_verifier: chantier.comment_verifier ?? '',
-      section_id: chantier.section_id ?? '', priorite: chantier.priorite, etat: chantier.etat, visible_utilisateurs: chantier.visible_utilisateurs })
-  }, [chantier])
+  const initiales = (c: Chantier) => ({ titre: c.titre, demande: c.demande ?? '', notes: c.notes ?? '', resume_simple: c.resume_simple ?? '',
+    comment_verifier: c.comment_verifier ?? '',
+    section_id: c.section_id ?? '', priorite: c.priorite, etat: c.etat, visible_utilisateurs: c.visible_utilisateurs })
+  useEffect(() => { if (chantier) setV(initiales(chantier)) }, [chantier])
+  // Une modification pas encore enregistrée : toucher le fond ou Échap demande avant de la perdre.
+  const brouillon = !!chantier && JSON.stringify(v) !== JSON.stringify(initiales(chantier))
 
   const enregistrer = async () => {
     if (!chantier) return
@@ -38,7 +39,7 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
   }
 
   return (
-    <Dialog ouvert={!!chantier} onFermer={onFermer} titre="Modifier le chantier"
+    <Dialog ouvert={!!chantier} onFermer={onFermer} titre="Modifier le chantier" brouillon={brouillon}
       pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} onClick={enregistrer}>Enregistrer</Button></>}>
       <div className="space-y-3">
         <Champ label="Titre"><Input value={v.titre} onChange={(e) => setV({ ...v, titre: e.target.value })} /></Champ>
