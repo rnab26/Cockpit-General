@@ -112,6 +112,11 @@ export interface Message {
   medias?: Media[] | null
   /** 0015 : la session a confirmé la question « toujours d'actualité » après avoir avancé. */
   confirmee_at?: string | null
+  /** 0022 : une demande « Où ça en est ? » (servie par sa propre voie). */
+  ou_en_est?: boolean
+  /** 0024 : reçu par une session (hook) ou pris par un assistant (`agent/…`), et quand. */
+  recu_at?: string | null
+  recu_par?: string | null
 }
 
 export interface Media {
