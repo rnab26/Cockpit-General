@@ -180,7 +180,31 @@ Reste : le module embarqué (`embed/`) n'affiche pas encore ces images.
 `verifier-web.mjs` ne purge plus que les projets de test de plus de 2 h
 (plusieurs agents le lançaient en même temps et se purgeaient l'un l'autre).
 
-## 2 septies. 29 sept. soir : « À toi de jouer » à jour (chantier `20a42f79`, migration 0022)
+## 2 septies. 29 sept. soir : pièces jointes dès la création (chantier `db78423d`, fusionné avec `e68e0efd`)
+
+« + Chantier » accepte tout type de fichier (aucun filtre `accept` ; bucket
+`cockpit-medias` : tout type, 50 Mo, limite écrite sous le bouton), crayon sur
+les images avant envoi. Le chantier est créé (id choisi par l'app), puis les
+pièces partent dans `<projet>/<chantier>/` et un message `info`. Dépôt en
+échec : pièces gardées, « Envoyer les pièces ». En ligne (PR #1, 9358916),
+verifier-web 299/299 (image + PDF + .dwg, `media.sh --chantier` les récupère).
+Reste : le module embarqué (`embed/`, « Nouvelle demande ») ne joint aucun
+fichier — à décider avec Raphaël.
+
+## 2 octies. 29 sept. soir : section « Correctifs » rangée toute seule (chantier `ea21b577`, migration 0021)
+
+Trigger `before insert` sur `chantiers` : un chantier créé sans section dont
+`est_correctif(titre, demande, origine)` est vrai va dans « Correctifs »
+(créée si besoin), toutes voies (app, session, module embarqué). Règle :
+mot visuel/ergonomie et aucun mot de gros chantier dans le titre (titre +
+demande pour un utilisateur final). `ranger_correctifs(slug)` pour les
+ouverts sans section : passé sur cockpit et facepro le 29 sept., 0 rangé
+(aucun chantier ouvert n'est un correctif visuel). Vérifié :
+`verifier-correctifs` 32/32, `verifier-base` 216/216 (§22),
+`verifier-reponses` 16/16, `verifier-embed` 80/80. App inchangée. Pas de
+réglage pour éteindre le tri par projet (à ajouter si Raphaël le veut).
+
+## 2 nonies. 29 sept. soir : « À toi de jouer » à jour (chantier `20a42f79`, migration 0022)
 
 Raphaël : des demandes de plus de 12 h déjà réglées ailleurs, sans savoir
 lesquelles sont récentes. Livré : l'âge sur chaque ligne, le plus récent en

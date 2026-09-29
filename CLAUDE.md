@@ -55,8 +55,9 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, « À toi » à jour, aucun reste de test (223 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour (232 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
+node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
 ```
 
@@ -228,7 +229,7 @@ en fait la consigne d'un agent, lancée par `chef.sh` sur une place libre ou
 par `passe.sh` quand il n'y a rien à coder, au plus une fois par heure et par
 projet (`projets.revue_a_toi_at`). Gestes : `demander.sh --retirer`,
 `--confirmer <question|chantier>` (`chantiers.a_toi_revu_at`), `--debloquer`,
-`chantier.sh --suggerer-fusion`. `verifier-base.mjs` §22.
+`chantier.sh --suggerer-fusion`. `verifier-base.mjs` §23.
 
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 
@@ -312,6 +313,21 @@ fonctions. `verifier-web.mjs` : « quitter une carte ».
   sans toucher au reste du fichier. Mais les hooks déclarés dans
   `.claude/settings.json` d'un projet ne se propagent PAS seuls : un nouvel
   événement de hook exige de relancer `brancher.sh` sur chaque projet branché.
+
+## Section « Correctifs » rangée toute seule (29 sept. 2026, migration 0021)
+
+Raphaël : « une section corrective pour les correctifs visuels, de mise en
+page, d'ergonomie, et que ça trie intelligemment ». Un trigger (`before
+insert` sur `chantiers`) range dans « Correctifs » (créée si besoin) tout
+chantier créé SANS section dont `cockpit.est_correctif(titre, demande,
+origine)` est vrai — toutes voies : app, session, module embarqué, reprise.
+Règle lisible, pas un devin : un mot visuel/ergonomie (`mots_correctif_visuel`)
+et aucun mot de gros chantier (`mots_gros_chantier` : refonte, fonctionnalité,
+moteur, migration…) dans le TITRE ; pour un utilisateur final (`origine =
+'utilisateur'`), titre + demande. Jamais sur une mise à jour : `--ranger`
+corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
+`ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
+`scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
 
 ## Limites d'usage et mode autonome (29 sept. 2026, migration 0010)
 
