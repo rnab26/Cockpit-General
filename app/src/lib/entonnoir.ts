@@ -15,6 +15,7 @@ import { chantiersEnAttente } from './ouJenSuis.ts'
 import { presenceChantier, preuveDeVie, derniereDemandeOuCaEnEst, type CodePresence, type Presence } from './presence.ts'
 import { activiteDeTache, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, tacheEnCoursVivante, estSessionAutonome, type QuiTravaille } from './sessions.ts'
 import { syntheseMiseEnLigne } from './jalons.ts'
+import { etatOuEnEst, chantierTenu, ouEnEstVisible, type EtatOuEnEst } from './ouEnEst.ts'
 import { extrait, nomCourtSession } from './texte.ts'
 import { dateRelative } from './dates.ts'
 
@@ -198,6 +199,8 @@ function sansPersonne(
     if (c.archived_at || (projetId && c.projet_id !== projetId)) continue
     const { presence, activite } = presenceDe(c, activites, enAttente, now, silenceMs, taches)
     if (presence.code !== 'personne' && presence.code !== 'silencieux') continue
+    // « Où ça en est ? » en attente (0022) : il est reparti, il se suit dans « Ça avance tout seul ».
+    if (ouEnEstVisible(etatOuEnEst(c, messages, false, now), now)) continue
     const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
     const l = { c, presence, activite, demandeLe: demande?.created_at ?? null }
     if (garder(l)) lignes.push(l)
@@ -295,6 +298,8 @@ export interface LigneCaAvance {
   demandeLe: string | null
   /** Une réponse de Raphaël attend d'être reprise, ou l'est en ce moment (0017) : pas de « Relancer ». */
   reprise?: RepriseReponse | null
+  /** Sa dernière demande « Où ça en est ? » et où elle en est (0022, lib/ouEnEst.ts). */
+  ouEnEst?: EtatOuEnEst | null
 }
 
 // ---------------------------------------------------------------- réponse reprise (0017)
@@ -358,6 +363,7 @@ export function caAvanceToutSeul(
 ): LigneCaAvance[] {
   const enAttente = chantiersEnAttente(messages)
   const lignes: LigneCaAvance[] = []
+  const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
   for (const c of chantiers) {
     if (c.archived_at || (projetId && c.projet_id !== projetId)) continue
     const { presence: presenceBase, activite } = presenceDe(c, activites, enAttente, now, silenceMs, taches)
@@ -377,7 +383,7 @@ export function caAvanceToutSeul(
       // « Vérifie pour moi » : sorti de « À toi », il avance ici, sous le même nom partout.
       const barre = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : parSession
       lignes.push({ c, presence, activite: barre, vivant: true, qui: presence.libelle,
-        etape: barre?.etape || agentVivant?.etape || null, pourquoi: null, demandeLe: null })
+        etape: barre?.etape || agentVivant?.etape || null, pourquoi: null, demandeLe: null, ouEnEst: etatOuEnEst(c, messages, true, now, tenus) })
     } else if (presence.code === 'travaille') {
       const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
       const morceaux: string[] = []
@@ -390,12 +396,17 @@ export function caAvanceToutSeul(
       const barre = parSession ?? (presence.barreVive ? (presenceBase.code === 'travaille' ? activite : agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : null) : null)
       const agent = agentVivant
       lignes.push({ c, presence, activite: barre, vivant: true, qui: morceaux.join(' · ') || 'Claude',
-        etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null })
+        etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null, ouEnEst: etatOuEnEst(c, messages, true, now, tenus) })
     } else if (repriseReponse(c, messages, activites, taches, now)) {
       // Raphaël a répondu, personne ne l'a encore suivie (ou la chef vient de la
       // reprendre) : ça avance, ce n'est ni « sans nouvelles » ni à relancer.
       const reprise = repriseReponse(c, messages, activites, taches, now)!
       lignes.push({ c, presence, activite: null, vivant: false, qui: '', etape: null, pourquoi: LIBELLE_REPRISE[reprise], demandeLe: null, reprise })
+    } else if (ouEnEstVisible(etatOuEnEst(c, messages, false, now, tenus), now)) {
+      // « Où ça en est ? » (0022) : sa demande le remet dans ce qui avance ;
+      // la ligne suit la demande (envoyée → en file / reçue → réponse), en direct.
+      const oe = etatOuEnEst(c, messages, false, now, tenus)!
+      lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: oe.libelle, demandeLe: oe.demande.created_at, ouEnEst: oe })
     } else if (estEnCoursSansNouvelles(c, presence)) {
       const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
       lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: presence.code === 'silencieux' ? 'Plus de nouvelles' : 'Personne dessus',

@@ -56,7 +56,7 @@ const messages = [
   M('q-archive', 'fp', 'fp-archive', 'question', 3),          // chantier archivé : hors jeu
   M('b-vieux', 'ck', 'ck-bloque', 'blocage', 90),
   M('b-recent', 'ck', 'ck-bloque', 'blocage', 20),
-  M('d-ou', 'fp', 'fp-objets', 'info', 7, { corps: MESSAGE_OU_CA_EN_EST }),
+  M('d-ou', 'fp', 'fp-objets', 'info', 130, { corps: MESSAGE_OU_CA_EN_EST, auteur_type: 'proprietaire' }), // périmée (> 2 h, 0022) : il reste « à lancer »
 ]
 
 console.log('verifier-entonnoir')
@@ -119,7 +119,7 @@ console.log('verifier-entonnoir')
   verifie('estEnCoursSansNouvelles : silencieux oui, personne+en_cours oui, personne+libre non',
     estEnCoursSansNouvelles({ etat: 'libre' }, { code: 'silencieux' }) && estEnCoursSansNouvelles({ etat: 'en_cours' }, { code: 'personne' }) && !estEnCoursSansNouvelles({ etat: 'libre' }, { code: 'personne' }))
   verifie('à lancer : ni le vivant, ni l’à vérifier, ni l’archivé', !ids.includes('fp-vivant') && !ids.includes('fp-verif') && !ids.includes('fp-archive'))
-  verifie('à lancer : « Demandé il y a … » retrouvé', fp.lignes.find((l) => l.c.id === 'fp-objets')?.demandeLe === il(7))
+  verifie('à lancer : « Demandé il y a … » retrouvé', fp.lignes.find((l) => l.c.id === 'fp-objets')?.demandeLe === il(130))
   const ck = r.find((g) => g.projetId === 'ck')
   verifie('à lancer : à cadrer, bloqué, question en attente et certifié n’y sont pas (ils sont « à toi » ou finis)',
     !!ck && ck.lignes.map((l) => l.c.id).join(',') === 'ck-libre', ck?.lignes.map((l) => l.c.id))
