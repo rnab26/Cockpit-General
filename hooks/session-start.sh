@@ -89,6 +89,8 @@ a_ranger=$(un "select coalesce(string_agg(format('- %s | %s', c.id, c.titre), ch
 emettre "$(cat <<FIN
 # Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
 
+RÉPONSES COURTES : à Raphaël, réponds simple, court, net et précis (la réponse d'abord, pas de pavé).
+
 RÈGLE DE CLARTÉ : tout ce que Raphaël lit ici (questions, constats, « comment vérifier ») se
 comprend d'un coup d'œil par quelqu'un qui ne code pas : le sujet, ce qu'il y a à faire, des
 réponses toutes prêtes. Pas de jargon ; le détail va dans le fil.
