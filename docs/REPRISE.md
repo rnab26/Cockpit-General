@@ -228,6 +228,25 @@ désactivé tant qu'on attend. Reçue : hook de suivi ; personne dessus : la che
 lance un assistant « Point » qui répond avec `progression.sh --point`. Voir
 CLAUDE.md. Reste : le module embarqué (`embed/`) n'a pas ce bouton.
 
+## 2 undecies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
+
+Bouton « Lancer des renforts » (au-dessus de « Prêt à lancer », vue projet et
+« Tout »), réglages (sessions 0-4, agents 1-5), états demande envoyée / en
+route / erreur / terminé. Migration 0024 appliquée (le brouillon 0020 de
+agent/646460 a été repris, renuméroté : 0020 à 0023 étaient pris).
+Voir CLAUDE.md « Renforts ». Vérifié : verifier-base §25,
+verifier-renforts 16/16, verifier-web (section « renforts »).
+**Pas encore observé en vrai** : aucune session renfort n'a été ouverte. La
+première ouverture réelle sera faite par la session chef du cockpit (Raphaël
+clique, la passe de `chef.sh` lui donne les `create_session`). À surveiller :
+que `create_session` accepte `tags`/`source_url` tels qu'écrits, que la
+session renfort charge bien les hooks du dépôt (marque posée par
+`renfort.sh --suivant`), qu'elle ne devienne pas chef (`chef.sh --etat`).
+Limites connues : la chef ne voit une demande qu'à son prochain passage (au
+plus 1 h, ou dès que Raphaël lui écrit) ; un renfort muet 3 h rend sa section
+(« erreur » visible). Les projets déjà branchés reçoivent `renfort.sh` par le
+lanceur ; `cockpit-renfort.sh` arrive au prochain démarrage (brancher.sh --maj).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
@@ -241,7 +260,7 @@ CLAUDE.md. Reste : le module embarqué (`embed/`) n'a pas ce bouton.
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - À cadrer avec Raphaël (dans le cockpit, `demander.sh`, pas d'artefact) :
-  bouton « session autonome » (D-10), rejeu de scénario (D-05).
+  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 undecies.)
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
 
 ## 4. Pièges déjà payés (ne pas les repayer)

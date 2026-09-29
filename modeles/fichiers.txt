@@ -8,6 +8,7 @@ scripts/media.sh
 scripts/chef.sh
 scripts/verdict.sh
 scripts/revue-a-toi.sh
+scripts/renfort.sh
 scripts/brancher.sh
 hooks/session-start.sh
 hooks/prompt-rappel.sh
@@ -23,6 +24,7 @@ modeles/cockpit-passe.sh
 modeles/cockpit-media.sh
 modeles/cockpit-chef.sh
 modeles/cockpit-verdict.sh
+modeles/cockpit-renfort.sh
 modeles/cockpit-session-start.sh
 modeles/cockpit-prompt-rappel.sh
 modeles/cockpit-suivi.sh

@@ -20,6 +20,7 @@ import { ouEnEstVisible } from '../lib/ouEnEst.ts'
 import { BlocSession } from './QuiTravaille.tsx'
 import { IconeAToi, PointProjet } from './Icones.tsx'
 import { useFlash } from './Vivant.tsx'
+import { Renforts, RenfortsTout } from './Renforts.tsx'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -46,6 +47,8 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
+      {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
+      {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
     </div>
   )

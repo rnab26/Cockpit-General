@@ -31,6 +31,16 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty'); [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
+# Une session de RENFORT (0024) ne prend que SA section : son hook Stop lui
+# redonne ses chantiers suivants s'il y en a (jamais ceux d'une autre section).
+renfort_marque=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort
+if [ -s "$renfort_marque" ]; then
+  rid=$(head -1 "$renfort_marque" | tr -cd '0-9a-f-')
+  RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
+  suite=$(timeout 20 bash "${CLAUDE_PROJECT_DIR:-$PWD}/$RENF" --suivant "$rid" 2>/dev/null || true)
+  case "$suite" in "RENFORT :"*) jq -n --arg r "$suite" '{decision: "block", reason: $r}' ;; esac
+  exit 0
+fi
 # Chef du projet (0014, 0019) : si CE projet a une chef, seule elle fait avancer
 # son travail, par des agents ; les autres sessions du projet n'enchaînent rien
 # (« elles se marchent dessus »). La chef d'un AUTRE projet ne compte pas ici.
