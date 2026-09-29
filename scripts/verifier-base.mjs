@@ -35,6 +35,7 @@
 //   27. certifier garde une question ouverte (0026), sa réponse reprise sans rouvrir le certifié
 //   28. ses messages dans une session arrivent dans le fil du chantier (0027), internes, jamais « à répondre »
 //   29. session et cockpit synchronisés (0028) : de côté / reporter / abandonner, chef relais, réveil immédiat
+//   30. agents fantômes (0030) : une ligne provisoire finit toujours, la chef ne se croit plus pleine
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -1722,6 +1723,70 @@ async function controle29_synchro() {
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
+// ------------------------------------- 30. agents fantômes (0030)
+async function controle30_agents_fantomes() {
+  section("30. Agents fantômes (0030) : une ligne provisoire finit toujours, la chef ne se croit plus pleine, réglages illisibles signalés");
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const sid = `test-prov-${rand}`;
+  const prov = (desc, chantier = null) => une(`select progression_tache(${q(SLUG_A)}, ${q(desc)}, 'Étape', 10, null, ${chantier ? `${q(chantier)}::uuid` : "null"}, 'en_cours', ${q(sid)}) as id`);
+  const statut = async (desc) => (await une(`select statut from taches where session_id = ${q(sid)} and tache_id = ${q("prov:" + desc)}`))?.statut;
+  const actifs = async () => (await une(`select agents_actifs(${q(sid)}, ${q(P1)}) as n`)).n;
+  const vieillir = (desc, min) => sql(`update taches set progres_at = now() - interval '${min} minutes', demarre_at = now() - interval '${min + 5} minutes', vu_at = now() - interval '${min} minutes' where session_id = ${q(sid)} and tache_id = ${q("prov:" + desc)}`);
+  const chef = (env = {}) => {
+    try { return execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A, CLAUDE_CODE_SESSION_ID: sid, ...env }, stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
+  };
+  await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
+  await sql(`update chefs set max_agents = 3 where projet_id = ${q(P1)}`);
+  for (const d of ["Fantôme 1", "Fantôme 2", "Fantôme 3"]) await prov(d);
+  verifie("trois agents qui viennent de signaler une étape comptent (agents_actifs = 3)", (await actifs()) === 3);
+  const plein = chef();
+  verifie("chef.sh : « 3 agent(s) travaillent déjà » tant qu'ils signalent", plein.includes("3 agent(s) travaillent déjà"), plein.slice(0, 300));
+  // Le cas du 30 sept. : plus aucun signal depuis 50 min, alors que la SESSION vit (trigger 0015).
+  for (const d of ["Fantôme 1", "Fantôme 2", "Fantôme 3"]) await vieillir(d, 50);
+  await sql(`update sessions set vu_at = now() where id = ${q(sid)}`);
+  verifie("la session vit : une ligne provisoire muette depuis 50 min passe « arrêtée » (le trigger ne la garde plus en vie)",
+    (await statut("Fantôme 1")) === "arrete" && (await statut("Fantôme 3")) === "arrete", await sql(`select tache_id, statut, vu_at from taches where session_id = ${q(sid)}`));
+  const sortie = chef();
+  verifie("chef.sh ne se croit plus pleine : 0 agent, places libres", (await actifs()) === 0 && !sortie.includes("travaillent déjà"), sortie.slice(0, 300));
+  // Le trigger rafraîchit les VRAIES tâches, pas les provisoires.
+  await execSql(`select suivre(${q(SLUG_A)}, ${q(JSON.stringify({ session_id: sid, hook_event_name: "SubagentStart", agent_id: "aVrai", agent_type: "general-purpose" }))}::jsonb)`);
+  await prov("Vivant");
+  await sql(`update taches set vu_at = now() - interval '10 minutes' where session_id = ${q(sid)} and tache_id in ('aVrai', 'prov:Vivant')`);
+  await sql(`update sessions set vu_at = now() + interval '1 second' where id = ${q(sid)}`);
+  const v = await sql(`select tache_id, statut, vu_at > now() - interval '1 minute' as frais from taches where session_id = ${q(sid)} and tache_id in ('aVrai', 'prov:Vivant') order by tache_id`);
+  verifie("session vivante : la vraie tâche est rafraîchie, la provisoire non (mais reste en cours : étape récente)",
+    v.length === 2 && v[0].tache_id === "aVrai" && v[0].frais === true && v[1].frais === false && v[1].statut === "en_cours", v);
+  verifie("agents_actifs = 2 (la vraie + la provisoire récente)", (await actifs()) === 2);
+  await vieillir("Vivant", 46);
+  verifie("au-delà de delai_tache_prov() (45 min) sans étape, agents_actifs la ferme et ne la compte plus",
+    (await actifs()) === 1 && (await statut("Vivant")) === "arrete");
+  // L'agent qui finit SON chantier ferme sa ligne provisoire (vrai progression.sh).
+  const c = await creerChantier(P1, { titre: "Chantier d'agent fantôme", etat: "en_cours" });
+  await prov("Finisseur", c);
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "agent/test-prov", CLAUDE_CODE_SESSION_ID: sid };
+  try {
+    execFileSync("bash", [join(racine, "scripts/progression.sh"), "--chantier", c, "--pas-en-ligne", "banc de test", "--termine", "Fini : test", "--verifier", "1. Rien à voir."],
+      { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) { verifie("progression.sh --termine a tourné", false, `${e.stdout ?? ""}${e.stderr ?? ""}`); }
+  verifie("progression.sh --chantier X --termine ferme la ligne provisoire de SA session sur X", (await statut("Finisseur")) === "termine");
+  // Droits : réservé aux sessions.
+  const pirate = await rpcUtilisateur("agents_actifs", { p_session: sid, p_projet: P1 }, jwt);
+  const pirate2 = await rpcUtilisateur("clore_taches_prov_perimees", { p_session: sid }, jwt);
+  verifie("agents_actifs / clore_taches_prov_perimees avec un JWT utilisateur → refusés", pirate.status >= 400 && pirate2.status >= 400, { pirate, pirate2 });
+  // Réglages illisibles (la cause du 30 sept.) : la chef le dit en tête de sa passe.
+  const dossier = mkdtempSync(join(tmpdir(), "reglages-casses-"));
+  try {
+    execFileSync("mkdir", ["-p", join(dossier, ".claude")]);
+    writeFileSync(join(dossier, ".claude/settings.json"), '{"env": {}}\n{"permissions": {}}\n');
+    verifie("chef.sh : .claude/settings.json invalide (deux objets collés) → ALERTE « aucun hook du projet ne tourne »",
+      /^ALERTE — .*AUCUN hook du projet ne tourne/m.test(chef({ CLAUDE_PROJECT_DIR: dossier })));
+    verifie("chef.sh : réglages valides → pas d'alerte", !chef({ CLAUDE_PROJECT_DIR: racine }).includes("ALERTE —"));
+    const vrais = spawnSync("python3", ["-c", "import json,sys; json.load(open(sys.argv[1]))", join(racine, ".claude/settings.json")]);
+    verifie("le .claude/settings.json du dépôt est du JSON valide", vrais.status === 0, String(vrais.stderr));
+  } finally { rmSync(dossier, { recursive: true, force: true }); }
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -1737,7 +1802,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes,
   ];
   for (const etape of etapes) {
     try { await etape(); }

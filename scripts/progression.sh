@@ -241,6 +241,11 @@ if [ -n "$chantier" ]; then
   pct_sql="null"; [ -n "$pct" ] && pct_sql="$pct"
   detail_sql="null"; [ -n "$detail" ] && detail_sql="'$(q "$detail")'"
   "$SQL" "select pourcentage, statut from signaler_activite('$(q "$projet")', '$id'::uuid, '$(q "$session")', '$(q "$etape")', $pct_sql, $eta_secondes, '$statut', $detail_sql)" >/dev/null
+  # L'agent qui finit SON chantier ferme sa ligne provisoire (0030) : sinon, si
+  # Claude Code ne l'a jamais nommée, elle comptait « en cours » chez la chef.
+  if [ "$statut" = "termine" ] || [ "$statut" = "echec" ]; then
+    [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && "$SQL" "select clore_taches_prov_chantier('$(q "$CLAUDE_CODE_SESSION_ID")', '$id'::uuid)" >/dev/null 2>&1
+  fi
   # Une session qui termine ou échoue rend aussi le chantier lisible dans la colonne etat.
   if [ "$statut" = "termine" ]; then
     # Les images vont avec CE texte : un nouveau --termine sans image efface celles d'avant (périmées).

@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
@@ -378,7 +378,16 @@ Une question ouverte que du travail a suivie s'affiche « Claude a avancé
 depuis : peut-être plus utile » ; la session la confirme (`demander.sh
 --confirmer`) ou la retire (`--retirer <id> "pourquoi"`), rappel du hook
 toutes les 15 min. Un assistant listé en cours reste « en cours » tant que sa
-session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`).
+session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`) — SAUF une
+ligne provisoire `prov:…` (migration 0030, 30 sept.) : elle ne vit que par
+ses étapes, passe « arrêtée » après `delai_tache_prov()` (45 min) sans étape,
+et `progression.sh --chantier X --termine|--echec` ferme celles de sa session
+sur X. `chef.sh` compte ses agents par `agents_actifs(session, projet)`.
+Incident : 5 agents fantômes bloquaient la chef parce que
+`.claude/settings.json` était du JSON invalide (deux objets collés, commit
+f2b6c98) : Claude Code ignore alors TOUS les hooks du projet, sans erreur
+visible. `chef.sh` affiche désormais une ALERTE, la CI rougit.
+`verifier-base` §30.
 
 **« À toi de jouer » à jour** (29 sept. 2026, migration 0022, Raphaël : « des
 requêtes d'il y a 12 h déjà répondues dans la session ; je ne sais pas

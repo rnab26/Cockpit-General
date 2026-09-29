@@ -109,9 +109,7 @@
       }
     ]
   },
-  "autoContinueAtUsageLimit": true
-}
-{
+  "autoContinueAtUsageLimit": true,
   "permissions": {
     "allow": [
       "Bash(scripts/sql.sh:*)",

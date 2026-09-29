@@ -68,6 +68,14 @@ if [ "$mode" = "relais_texte" ]; then relais_texte; exit 0; fi
 dossier="${CLAUDE_PROJECT_DIR:-$PWD}"
 branche=$(git -C "$dossier" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 un() { "$SQL" "$1" 2>/dev/null | jq -c '.rows[0] // {}'; }
+# Réglages du projet illisibles = AUCUN hook du projet ne tourne (30 sept. 2026 :
+# deux objets JSON collés dans .claude/settings.json, commit f2b6c98 ; Claude Code
+# l'ignorait, les agents n'étaient plus suivis ni fermés, la chef se croyait
+# pleine). `jq empty` accepte deux objets collés : on lit avec python.
+if { [ "$mode" = "passe" ] || [ "$mode" = "releve" ]; } && [ -f "$dossier/.claude/settings.json" ] \
+   && ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$dossier/.claude/settings.json" 2>/dev/null; then
+  echo "ALERTE — $dossier/.claude/settings.json n'est pas du JSON valide : Claude Code l'ignore, AUCUN hook du projet ne tourne (suivi des agents, arrêt, rappel). Répare-le d'abord (python3 -m json.tool .claude/settings.json montre l'erreur), commite, puis continue."
+fi
 # D-05 : la ligne « scénario capturé chez l'utilisateur » d'une consigne, vide s'il n'y en a pas.
 repro_ligne() { [ -n "${1:-}" ] || return 0; COCKPIT_SQL="$SQL" bash "$(dirname "${BASH_SOURCE[0]}")/reproduction.sh" --ligne "$1" 2>/dev/null || true; }
 if [ -z "$projet" ]; then
@@ -134,7 +142,7 @@ esac
 etat=$(un "select p.id as projet_id, p.slug, p.depot, c.session_id, c.branche, coalesce(c.max_agents, 3) as max_agents, c.reveil_trigger, c.actif,
   (p.autonome_toujours or coalesce(p.autonome_jusqu_a > now(), false)) as autonome,
   to_char(c.depuis at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI') as depuis,
-  (select count(*) from taches t where t.session_id = c.session_id and t.projet_id = p.id and t.type = 'agent' and t.statut = 'en_cours' and t.vu_at > now() - interval '3 hours')::int as agents
+  agents_actifs(c.session_id, p.id) as agents
   from projets p left join chefs c on c.projet_id = p.id where p.slug = $P")
 if [ "$mode" = "etat" ]; then printf '%s\n' "$etat" | jq .; exit 0; fi
 
@@ -161,7 +169,7 @@ if [ -z "$attente" ] && { [ -z "$chef" ] || [ "$chef" != "$sid" ]; }; then
 fi
 if [ -n "$attente" ]; then
   # Ses agents à ELLE ; jamais le signe de vie de la chef (elle la ferait paraître vivante).
-  agents=$(un "select count(*)::int as n from taches where session_id = '$(q "$sid")' and projet_id = '$pid' and type = 'agent' and statut = 'en_cours' and vu_at > now() - interval '3 hours'" | jq -r '.n // 0')
+  agents=$(un "select agents_actifs('$(q "$sid")', '$pid') as n" | jq -r '.n // 0')
 else
   "$SQL" "update chefs set vu_at = now() where projet_id = '$pid'" >/dev/null 2>&1
   agents=$(printf '%s' "$etat" | jq -r '.agents // 0')

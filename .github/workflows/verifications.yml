@@ -15,6 +15,9 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: bash -n scripts/*.sh hooks/*.sh
+      # Réglages illisibles = Claude Code ignore TOUS les hooks du projet (30 sept. 2026).
+      - name: .claude/settings.json est du JSON valide
+        run: for f in .claude/settings*.json; do [ -f "$f" ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f"; done
       - working-directory: app
         run: |
           npm ci

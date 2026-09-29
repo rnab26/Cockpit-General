@@ -27,6 +27,7 @@ jobs:
           set -e
           for f in app/scripts/verifier-*.ts; do [ -f "$f" ] && node --experimental-strip-types "$f"; done
           bash -n scripts/*.sh hooks/*.sh
+          for f in .claude/settings*.json; do [ -f "$f" ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f"; done
       - name: Build de l'app
         working-directory: app
         run: |
