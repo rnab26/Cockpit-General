@@ -94,6 +94,18 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
 
+## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
+
+« Toutes les questions, les constats, tout ce qui demande une interaction et
+de la lecture de ma part, donc tout le cockpit, synthétisé le plus simple
+possible : qu'on comprenne le sujet, ce qu'il y a à faire, et qu'on puisse
+donner des réponses claires. » Pas d'assistant payant pour « expliquer » :
+c'est à la source qu'on écrit clair. Appliquée par les scripts (refus avant
+toute écriture) : `demander.sh` (question ≤ 140 car., pourquoi ≤ 250, 2 à 4
+options avec aide ≤ 140), `progression.sh` (`--verifier` ≤ 5 étapes
+numérotées, ≤ 500 car. ; résumé de `--termine` ≤ 120), `chantier.sh` (titre
+≤ 80). Même exigence pour tout texte que l'app affiche.
+
 ## Médias dans les réponses (29 sept. 2026, migration 0013)
 
 Raphaël répond avec des cartes ET des photos/vidéos/fichiers (bouton 📎 sur

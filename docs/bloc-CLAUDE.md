@@ -7,6 +7,15 @@ Le hook `.claude/hooks/cockpit-session-start.sh` injecte l'état au démarrage :
 chantiers ouverts par section, questions en attente, réponses humaines,
 demandes des utilisateurs, progression des autres sessions.
 
+- **RÈGLE DE CLARTÉ — tout ce que Raphaël lit dans le cockpit** (questions,
+  constats à faire, « comment vérifier », titres, messages du fil) : le plus
+  simple possible, pour quelqu'un qui ne code pas. On doit comprendre **le
+  sujet**, **ce qu'il y a à faire**, et pouvoir **répondre d'un toucher**. Une
+  question = une phrase (140 car.) + un pourquoi en mots de tous les jours +
+  2 à 4 réponses toutes prêtes, chacune disant ce qui se passe si on la
+  choisit. Pas de jargon, pas d'identifiant, pas de chiffres techniques : le
+  détail va dans le fil. Les scripts refusent ce qui dépasse (Raphaël, 29 sept. :
+  « dans 80 % des cas je ne comprends pas, donc je ne peux pas répondre »).
 - **Chaque demande de travail de Raphaël → un chantier, AVANT de coder** :
   `scripts/cockpit-chantier.sh --ouvrir "<titre court>" --demande "<ses mots>" --section "<rubrique>"`.
   Il reprend (ou rouvre) le chantier existant au lieu d'en créer un doublon.

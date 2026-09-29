@@ -61,7 +61,7 @@ verifie('certifié = terminé, rien à faire', presenceChantier(ch('valide'), nu
 verifie('à cadrer : « Écris-la ci-dessous »', /Écris-la ci-dessous/.test(presenceChantier(ch('a_cadrer'), null, false, now).tonAction ?? ''))
 verifie('bloqué : « réponds ci-dessous »', /réponds ci-dessous/.test(presenceChantier(ch('bloque'), null, false, now).tonAction ?? ''))
 // Le badge reste court (il tient sur une ligne de téléphone) : « pas encore examiné » passe dans le détail.
-verifie('à trier sans personne le dit (dans le détail, badge court)', /pas encore examiné/.test(presenceChantier(ch('a_trier'), null, false, now).detail ?? '') && presenceChantier(ch('a_trier'), null, false, now).libelle === '⏸️ Personne dessus')
+verifie('à trier sans personne le dit (dans le détail, badge court)', /pas encore examiné/.test(presenceChantier(ch('a_trier'), null, false, now).detail ?? '') && presenceChantier(ch('a_trier'), null, false, now).libelle === 'Personne dessus')
 verifie('« libre » avec une barre à 90 % reste « Personne dessus »', presenceChantier(ch('libre'), act('attente', 300, 90), false, now).code === 'personne')
 // 8. Le bandeau du haut.
 verifie('bandeau : aucune session quand tout est vieux ou en attente', sessionsActives([act('attente', 1), act('en_cours', 300)], now).length === 0)

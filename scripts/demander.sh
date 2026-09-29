@@ -20,6 +20,17 @@
 # chaque session suivante. Avant de poser une question : relis le fil du
 # chantier, une question déjà répondue qu'on repose est ce qui l'épuise.
 
+# RÈGLE DE CLARTÉ (Raphaël, 29 sept. 2026) : « toutes les questions, les
+# constats, tout ce qui demande une interaction et de la lecture de ma part,
+# donc tout le cockpit, synthétisé le plus simple possible : qu'on comprenne le
+# sujet, ce qu'il y a à faire, et qu'on puisse donner des réponses claires ».
+# Ce script REFUSE donc un texte trop long ou une question sans réponses
+# toutes prêtes : le détail technique va dans le fil, pas dans la question.
+#   --question : une phrase, 140 caractères max (le sujet + ce qu'il faut décider/faire).
+#   --pourquoi : 250 max, en mots de tous les jours (ce qui dépend de la réponse).
+#   --option   : 2 à 4 pour une question ; libellé 45 max ; une aide OBLIGATOIRE
+#                (140 max) qui dit ce qui se passe si on choisit ça.
+
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
@@ -43,6 +54,26 @@ done
 [ -n "$projet" ]   || { echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2; }
 [ -n "$question" ] || { echo "--question manque." >&2; exit 2; }
 [ -n "$pourquoi" ] || { echo "--pourquoi manque, et il est obligatoire : dis ce qui dépend de la réponse." >&2; exit 2; }
+
+# Règle de clarté : on refuse AVANT d'écrire quoi que ce soit en base.
+CONSEIL="Écris pour quelqu'un qui ne code pas : le sujet, ce qu'il doit décider ou faire, sans jargon ni chiffres techniques ; le détail va dans le fil du chantier."
+trop_long() { # $1 = nom, $2 = texte, $3 = max
+  local n; n=$(printf '%s' "$2" | python3 -c 'import sys; print(len(sys.stdin.read()))')
+  if [ "$n" -gt "$3" ]; then echo "Refusé (règle de clarté) : $1 fait $n caractères, $3 au plus. $CONSEIL" >&2; exit 2; fi
+}
+trop_long "--question" "$question" 140
+trop_long "--pourquoi" "$pourquoi" 250
+if [ "$kind" = "question" ]; then
+  if [ ${#options[@]} -lt 2 ] || [ ${#options[@]} -gt 4 ]; then
+    echo "Refusé (règle de clarté) : une question propose 2 à 4 réponses toutes prêtes (--option \"libellé|ce qui se passe|recommande\"), pour que Raphaël réponde d'un toucher. $CONSEIL" >&2; exit 2
+  fi
+  for o in "${options[@]}"; do
+    lib="${o%%|*}"; reste="${o#*|}"; [ "$reste" = "$o" ] && reste=""; aide="${reste%%|*}"
+    trop_long "le libellé « $lib »" "$lib" 45
+    [ -n "${aide// /}" ] || { echo "Refusé (règle de clarté) : l'option « $lib » n'a pas d'aide. Dis en une phrase ce qui se passe si on la choisit : --option \"$lib|ce qui se passe|recommande\"." >&2; exit 2; }
+    trop_long "l'aide de « $lib »" "$aide" 140
+  done
+fi
 
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 

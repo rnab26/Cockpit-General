@@ -118,6 +118,16 @@ toi » = exactement la liste « À toi » (une seule règle, testée) ; écran c
 (0013, `Medias.tsx`, `scripts/media.sh`). Vérifié : 13 séries pures,
 verifier-base 158/158, verifier-web (voir le commit).
 
+## 2 ter. 29 sept. : règle de clarté (chantier `ca3a6877`)
+
+Raphaël refuse toute solution payante (assistant en direct) : « je veux
+simplement quelque chose de clair », pour TOUT le cockpit. Livré : refus dans
+demander.sh / progression.sh / chantier.sh (voir CLAUDE.md), règle dans
+docs/bloc-CLAUDE.md (propagée aux projets) et en tête du hook. Reste : les 4
+questions FacePro déjà posées sont longues (posées avant la règle, par une
+autre session) ; l'écran A + D (agent, branche `claude/ecran-a-plus-d`) doit
+aussi suivre la règle.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
