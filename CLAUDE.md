@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
@@ -283,9 +283,18 @@ requêtes d'il y a 12 h déjà répondues dans la session ; je ne sais pas
 lesquelles sont récentes ou vieilles »). Chaque ligne dit son âge (« il y a
 12 h », `ElementAToi.depuis`), le plus récent en haut (réglable, préférence
 `tri_a_toi`) ; « Claude a avancé depuis : peut-être plus à jour » vaut pour
-TOUS les types et passe en bas (`aToi`, `lib/entonnoir.ts`). En base : un
-chantier certifié ou archivé ferme seul ses questions et les fusions qui le
-citent (trigger `retirer_sans_objet`) ; `a_toi_a_revoir(projet, heures)` (même
+TOUS les types et passe en bas (`aToi`, `lib/entonnoir.ts`). En base (trigger
+`retirer_sans_objet`) : un chantier certifié ou archivé ferme les fusions qui
+le citent ; un chantier ARCHIVÉ ferme aussi ses questions, un CERTIFIÉ les
+GARDE (migration 0026, 29 sept. : une question sur une décision future,
+876ad67b, fermée en certifiant 450afa9e). « Ça marche » montre d'abord les
+questions ouvertes du chantier (répondre, ou « Certifier quand même » :
+`BlocValidation`, `questionsOuvertesDe`) ; elles restent dans « À toi ».
+Piège : `certifier_chantier` pose AUSSI `archived_at` (« Fini ») ; toute règle
+qui écarte les archivés garde les certifiés (`aToi`, `a_toi_a_revoir`,
+`reponses_sans_suite`). Une réponse à une question d'un certifié : la chef
+ouvre un chantier « Suite de ta réponse » (le certifié n'est jamais rouvert).
+`verifier-base.mjs` §27 ; `a_toi_a_revoir(projet, heures)` (même
 règle que l'app ; plus de 12 h, ou du travail depuis ; jamais un chantier
 qu'une session tient ; « proche » = doublon probable) ; `scripts/revue-a-toi.sh`
 en fait la consigne d'un agent, lancée par `chef.sh` sur une place libre ou

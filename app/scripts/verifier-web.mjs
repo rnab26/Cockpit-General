@@ -910,6 +910,47 @@ try {
   await capture(page, 'a-toi-certifie')
   await fermerConv()
   verifie('le chantier certifié quitte « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v1.id}"]`).count() === 0)
+  // Certifier avec une question encore ouverte (0026, 29 sept. : la question 876ad67b sur
+  // le réveil immédiat fermée seule en certifiant) : « Ça marche » la montre d'abord.
+  {
+    console.log('  — certifier avec une question ouverte')
+    const V5 = creerTest('verif avec question ouverte', { etat: 'a_verifier', priorite: 'haute', comment_verifier: '1. Regarde.' })
+    const optQ = JSON.stringify([{ libelle: 'Option A', recommande: true }, { libelle: 'Option B' }]).replace(/'/g, "''")
+    const [qA, qB] = [randomUUID(), randomUUID()]
+    sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, options, created_at) values ('${qA}', '${projet.id}', '${V5.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} Première question ?`)}', '${optQ}'::jsonb, now() - interval '3 minutes'), ('${qB}', '${projet.id}', '${V5.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} Je réveille Claude tout de suite ?`)}', null, now() - interval '2 minutes')`)
+    await actualiser()
+    await (await elementAToi(V5.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+    await attendreConv(V5.titre)
+    const blocV5 = conv().getByTestId('bloc-validation')
+    await blocV5.getByTestId('btn-certifier').click()
+    const etape = blocV5.getByTestId('certifier-questions')
+    await etape.waitFor({ timeout: 5000 }).catch(() => {})
+    verifie('« Ça marche » avec 2 questions ouvertes : « Il reste 2 questions sur ce chantier », pas encore « Je certifie »',
+      /Il reste 2 questions sur ce chantier/.test(await etape.textContent().catch(() => '')) && await blocV5.getByRole('button', { name: /Je certifie/ }).count() === 0)
+    verifie('…les deux questions avec leurs cartes, sans doublon dans le fil', await etape.getByTestId('bloc-question').count() === 2 && await conv().getByTestId('bloc-question').count() === 2,
+      { etape: await etape.getByTestId('bloc-question').count(), fil: await conv().getByTestId('bloc-question').count() })
+    verifie('…sur téléphone : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+    await captureUx(page, 'ux-certifier-question-ouverte')
+    // Il répond à la première depuis là.
+    const carteA = etape.getByTestId('bloc-question').first()
+    await carteA.getByRole('radio', { name: /Option A/ }).click()
+    await carteA.getByTestId('valider-reponse').click()
+    verifie('répondre depuis l’étape : toast visible', await toastAuPremierPlan(/Réponse enregistrée/), { auPremierPlan: dernierDessus })
+    await page.waitForFunction(() => /Il reste une question sur ce chantier/.test(document.querySelector('[data-testid="certifier-questions"]')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {})
+    verifie('…il reste UNE question, la réponse est en base', /Il reste une question sur ce chantier/.test(await etape.textContent().catch(() => ''))
+      && sql(`select reponse from messages where id = '${qA}'`)[0]?.reponse === 'Option A')
+    // « Certifier quand même » : la question restante est GARDÉE.
+    await blocV5.getByTestId('btn-certifier-quand-meme').click()
+    await blocV5.getByRole('button', { name: /Je certifie/ }).click()
+    verifie('« Certifier quand même » → « Je certifie » : toast visible', await toastAuPremierPlan(/certifié/), { auPremierPlan: dernierDessus })
+    await conv().getByTestId('bulle-certifie').waitFor({ timeout: 10000 }).catch(() => {})
+    const enBase = sql(`select (select etat from chantiers where id = '${V5.id}') as etat, (select answered_at from messages where id = '${qB}') as rep`)[0]
+    verifie('en base : certifié, et la question restante toujours ouverte', enBase?.etat === 'valide' && enBase?.rep === null, enBase)
+    verifie('le fil du certifié montre encore sa carte (réponse possible plus tard)', await conv().getByTestId('bloc-question').count() === 1)
+    await fermerConv()
+    await actualiser()
+    verifie('la question gardée est dans « À toi de jouer », rattachée au chantier certifié', await (await elementAToi(V5.id, 'question').catch(() => page.locator('#rien'))).count() === 1)
+  }
   // Sans étapes : la phrase et le bouton qui écrit la demande dans le fil.
   await (await elementAToi(v2.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
   await attendreConv(v2.titre)

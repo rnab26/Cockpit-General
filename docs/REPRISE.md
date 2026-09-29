@@ -258,6 +258,18 @@ quand il écrit (déclencheur API de routine, jeton à créer à la main) — qu
 posée dans le chantier. Le module embarqué montre seulement « la réponse
 arrivera ici » (pas l'ordre des cartes ni le prochain passage).
 
+## 2 terdecies. 29 sept. soir : certifier GARDE une question ouverte (chantier `4852f9e5`, migration 0026)
+
+En certifiant `450afa9e`, Raphaël a perdu la question `876ad67b` (réveil
+immédiat) : le trigger `retirer_sans_objet` (0022) l'avait fermée. Désormais
+seules les fusions sont fermées en certifiant ; « Ça marche » montre d'abord
+les questions ouvertes (répondre, ou « Certifier quand même ») et elles restent
+dans « À toi ». `876ad67b` rouverte en base (réponse vidée), une ligne dans le
+fil de `450afa9e`. Piège trouvé : `certifier_chantier` pose aussi
+`archived_at` — voir CLAUDE.md « À toi de jouer ». Branche
+`agent/question-gardee`. Le module embarqué (`embed/`) ne montre pas encore
+cette étape à l'utilisateur final (la base garde quand même sa question).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
