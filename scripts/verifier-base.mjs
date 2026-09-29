@@ -708,6 +708,25 @@ async function controle16_medias() {
   verifie("un message sans pièce jointe a medias = [] (jamais null)", (await une(`select count(*)::int as n from messages where medias is null`)).n === 0, sansMedias);
 }
 
+async function controle17_verifie_pour_moi() {
+  section("17. « Je ne sais pas : vérifie pour moi » et verdict de Claude (0016)");
+  const c = await creerChantier(P1, { titre: "À vérifier par Claude", etat: "a_verifier" });
+  const dem = await rpcUtilisateur("demander_verification", { p_id: c, p_par: "utilisateur test", p_mots: "voici ce que j'ai vu" }, jwt);
+  const l1 = await chantier(c);
+  verifie("un membre demande « vérifie pour moi » sur un chantier à vérifier", dem.status < 300 && !!l1.verif_demandee_at, { dem, l1 });
+  const pirate = await rpcUtilisateur("rendre_verdict", { p_id: c, p_par: "x", p_ok: true, p_texte: "je me certifie" }, jwt);
+  verifie("un membre ne peut PAS rendre le verdict (réservé aux sessions, 42501)", pirate.status >= 400 && pirate.json?.code === "42501", pirate);
+  await une(`select rendre_verdict(${q(c)}::uuid, 'session-test', true, 'Tout correspond') as r`);
+  const l2 = await chantier(c);
+  verifie("verdict « bon » : la demande est levée, le verdict est noté, il reste « à vérifier » pour le toucher humain", !l2.verif_demandee_at && l2.verdict_ok === true && l2.etat === "a_verifier", l2);
+  const c2 = await creerChantier(P1, { titre: "Mauvais résultat", etat: "a_verifier" });
+  await une(`select rendre_verdict(${q(c2)}::uuid, 'session-test', false, 'Il manque une section') as r`);
+  const l3 = await chantier(c2);
+  verifie("verdict « pas bon » : le chantier repart en correction (libre, demande complétée)", l3.etat === "libre" && /Il manque une section/.test(l3.demande ?? ""), l3);
+  const hors = await rpcUtilisateur("demander_verification", { p_id: await creerChantier(P1, { titre: "Pas livré" }), p_par: "u" }, jwt);
+  verifie("refusé sur un chantier qui n'est pas « à vérifier »", hors.status >= 400, hors);
+}
+
 async function controle15_limites_autonome() {
   section("15. limite d'usage (pause) et mode autonome (enchaînement) — 29 sept. 2026");
   const sid = `test-auto-${rand}`;
@@ -760,7 +779,7 @@ try {
     async () => { const c = await controle4_certifier(); await controle5_corriger(c); },
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
-    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias,
+    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
   ];
   for (const etape of etapes) {
     try { await etape(); }

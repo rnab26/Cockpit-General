@@ -713,6 +713,29 @@ try {
     v3Base?.etat === 'libre' && v3Msgs.some((m) => m.corps.includes('le bouton ne répond pas')) && v3Msgs.some((m) => (m.medias ?? []).length === 1), { v3Base, v3Msgs })
   await fermerConv()
 
+  // « Je ne sais pas : vérifie pour moi » (0016) : Raphaël colle ce qu'il a vu, Claude juge.
+  const v4 = creerTest('verifie pour moi', { etat: 'a_verifier', comment_verifier: '1. Ouvre la session. 2. Demande la liste. 3. Tu dois voir 13 chantiers.' })
+  await actualiser()
+  await (await elementAToi(v4.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+  await attendreConv(v4.titre)
+  const blocV4 = conv().getByTestId('bloc-validation')
+  verifie('« Je ne sais pas : vérifie pour moi » est proposé à côté de « Ça marche » / « Corriger »', await blocV4.getByTestId('btn-verifie-pour-moi').isVisible())
+  await blocV4.getByTestId('btn-verifie-pour-moi').click()
+  await blocV4.locator('textarea').fill(`${MARQUE2} voici la réponse de la session : 13 chantiers`)
+  await blocV4.getByTestId('envoyer-verification').click()
+  verifie('« Vérifie pour moi » : toast « Claude vérifie pour toi » visible', await toastAuPremierPlan(/Claude vérifie pour toi/), { auPremierPlan: dernierDessus })
+  const v4Base = sql(`select verif_demandee_at from chantiers where id = '${v4.id}'`)[0]
+  const v4Msg = sql(`select corps from messages where chantier_id = '${v4.id}' and kind = 'constat'`)[0]
+  verifie('« Vérifie pour moi » : en base, la demande est posée avec ce qu’il a collé', !!v4Base?.verif_demandee_at && /13 chantiers/.test(v4Msg?.corps ?? ''), { v4Base, v4Msg })
+  await blocV4.getByTestId('verification-en-cours').waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('l’écran dit « Claude vérifie pour toi » à la place du bouton', await blocV4.getByTestId('verification-en-cours').count() === 1 && await blocV4.getByTestId('btn-verifie-pour-moi').count() === 0)
+  await fermerConv()
+  verifie('pendant que Claude vérifie, le chantier sort de « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v4.id}"]`).count() === 0)
+  sql(`select rendre_verdict('${v4.id}'::uuid, 'test-web', true, '${esc(`${MARQUE2} Tout correspond à la base`)}')`)
+  await actualiser()
+  const elV4 = await elementAToi(v4.id, 'a_verifier')
+  verifie('après le verdict « bon », il revient : « Claude a vérifié : c’est bon, confirme d’un toucher »', /c’est bon, confirme/.test(await elV4.getByTestId('attente-a-toi').textContent()))
+
   // ===================================================================
   // 6. À cadrer et bloqué : « Décider » / « Débloquer », la barre d'écriture, « prêt à lancer »
   console.log('  — à cadrer, bloqué')

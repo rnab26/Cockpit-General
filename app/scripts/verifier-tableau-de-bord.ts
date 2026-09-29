@@ -56,6 +56,9 @@ const chantiers = [
   C('agent-bloque', 'bloque', { pris_par: 'claude/talons', pris_jusqu_a: dans(60) }),
   // 0015 : agent listé en cours par une session VIVANTE, sans étape depuis 40 min.
   C('agent-sans-etape', 'en_cours'),
+  // 0016 : « vérifie pour moi » en cours (hors « à toi »), puis verdict « c'est bon ».
+  C('verif-demandee', 'a_verifier', { verif_demandee_at: il(5) }),
+  C('verif-verdict', 'a_verifier', { verdict_at: il(2), verdict_ok: true, verdict_texte: 'OK' }),
 ]
 const activites = [
   A('a1', 'vivant', 1, 'claude/auto-abc123', 60, 2700),
@@ -90,7 +93,8 @@ const ids = (l: { c: { id: string } }[]) => l.map((x) => x.c.id)
 // 1. Les tuiles = les longueurs des listes
 verifie('tuiles = longueurs des listes (pour toi, ça avance, en pause, fini)',
   t.tuiles.pourToi === t.aToi.length && t.tuiles.caAvance === t.caAvance.length && t.tuiles.enPause === t.pretALancer.length && t.tuiles.fini === t.fini.length, t.tuiles)
-verifie('pour toi : 2 questions, à vérifier ×2, à cadrer, 2 bloqués (7)', t.tuiles.pourToi === 7, t.aToi.map((e) => e.cle))
+verifie('pour toi : 2 questions, à vérifier ×3, à cadrer, 2 bloqués (8) — sans le « vérifie pour moi » en cours', t.tuiles.pourToi === 8 && !t.aToi.some((e) => e.chantier?.id === 'verif-demandee'), t.aToi.map((e) => e.cle))
+verifie('0016 : après le verdict « c’est bon », la ligne dit de confirmer d’un toucher', /c’est bon, confirme/.test(attenteAToi(t.aToi.find((e) => e.chantier?.id === 'verif-verdict')!, now)))
 verifie('fini : seulement le certifié du jour', t.fini.map((c) => c.id).join(',') === 'fini', t.fini.map((c) => c.id))
 
 // 2. Ça avance tout seul : par chantier, présence honnête

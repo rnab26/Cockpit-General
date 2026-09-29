@@ -11,6 +11,13 @@ demandes des utilisateurs, progression des autres sessions.
   veux des réponses simples, courtes, nettes et précises ; pas de pavé »).
   Quelques lignes : la réponse d'abord, puis ce qu'il doit faire s'il y a
   quelque chose. Pas de détail technique sauf s'il le demande.
+- **« COMMENT VÉRIFIER » = UNE observation évidente** (29 sept. : « je ne sais
+  pas si le résultat est le bon, il faudrait comparer, compter »). Écris ce
+  qu'il doit VOIR, reconnaissable d'un coup d'œil (« le bouton est vert »),
+  jamais « compte / compare ». Ce qui demande de juger, vérifie-le toi-même et
+  donne la preuve. S'il touche « Je ne sais pas : vérifie pour moi », c'est à
+  toi de juger ce qu'il a collé : `scripts/cockpit-verdict.sh --chantier <id>
+  --bon "…"` ou `--pas-bon "…"` (la session chef lance un agent pour ça).
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh
