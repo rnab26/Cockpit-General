@@ -303,7 +303,24 @@ async function verifierNavigateur(cle) {
     // Si la base est vide (constaté le 28 sept. 2026) :
     //   certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n ccr-agent-proxy -i /root/.ccr/agent-proxy-ca.crt
     navigateur = await pw.chromium.launch({ channel: 'chromium' })
-    const page = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
+    // Et même ainsi, constaté le 29 sept. : ce Chromium refuse le proxy
+    // (ERR_CERT_AUTHORITY_INVALID). Les requêtes https passent donc par Node,
+    // qui vérifie le certificat — comme verifier-web.mjs ; jamais
+    // `ignoreHTTPSErrors`.
+    const nouvellePage = async (opts) => {
+      const ctx = await navigateur.newContext(opts)
+      await ctx.route(/^https:\/\//, async (route) => {
+        const r = route.request()
+        try {
+          const res = await fetch(r.url(), { method: r.method(), headers: r.headers(), body: r.postDataBuffer() ?? undefined })
+          const headers = Object.fromEntries(res.headers)
+          delete headers['content-encoding']; delete headers['content-length']
+          await route.fulfill({ status: res.status, headers, body: Buffer.from(await res.arrayBuffer()) })
+        } catch { await route.abort('failed') }
+      })
+      return ctx.newPage()
+    }
+    const page = await nouvellePage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
     const erreursJs = []
     page.on('pageerror', (e) => erreursJs.push(e.message))
     await page.goto('http://127.0.0.1:' + port + '/demo.html')
@@ -492,7 +509,7 @@ async function verifierNavigateur(cle) {
     // coupe le rechargement (data-intervalle=3600) et on avance l'horloge de
     // la page de 16 min ; seul le recalcul des 30 s peut changer l'écran.
     sql("select signaler_activite('cockpit', '" + jeu.idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
-    const horloge = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
+    const horloge = await nouvellePage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
     await horloge.route('**/demo.html', async (route) => {
       const rep = await route.fetch()
       await route.fulfill({ response: rep, body: (await rep.text()).replace('data-utilisateur="Démo"', 'data-utilisateur="Démo" data-intervalle="3600"') })
@@ -512,7 +529,7 @@ async function verifierNavigateur(cle) {
     await horloge.close()
 
     // --- thème sombre : le module suit prefers-color-scheme.
-    const sombre = await navigateur.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark' })
+    const sombre = await nouvellePage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark' })
     await sombre.goto('http://127.0.0.1:' + port + '/demo.html')
     await sombre.waitForFunction(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r && r.querySelector('.carte') }, null, { timeout: 20000 })
     const couleurSombre = await sombre.evaluate(() => getComputedStyle(document.querySelector('.cockpit-embed').shadowRoot.querySelector('.carte .titre')).color)
