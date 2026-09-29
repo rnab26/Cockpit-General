@@ -108,7 +108,7 @@ export interface ElementAToi {
   message: Message | null
   /**
    * Depuis quand ça t'attend (ISO) : posée, livrée, bloquée… ou reconfirmée
-   * par une session (0015 confirmee_at, 0021 a_toi_revu_at). Affiché « il y a
+   * par une session (0015 confirmee_at, 0022 a_toi_revu_at). Affiché « il y a
    * 12 h » et sert au tri (le plus récent en haut).
    */
   depuis: string
@@ -283,7 +283,7 @@ export function pastillesProjet(
 
 /** Ce qu'on attend de toi, en mots simples, sous le titre d'une ligne « À toi de jouer ». */
 export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message' | 'avanceDepuis'>, now: Date = new Date()): string {
-  // Claude a travaillé dessus depuis (0015, généralisé 0021) : peut-être déjà réglé, la chef le fait revoir.
+  // Claude a travaillé dessus depuis (0015, généralisé 0022) : peut-être déjà réglé, la chef le fait revoir.
   if (e.avanceDepuis) return `Claude a avancé depuis (${dateRelative(e.avanceDepuis, now)}) : peut-être plus à jour`
   switch (e.type) {
     case 'question': return e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'

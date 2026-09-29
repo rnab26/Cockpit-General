@@ -1000,11 +1000,11 @@ async function controle19_chef_par_projet() {
 // verifier-embed …] tri des clients » dans le cockpit de Raphaël, qui ne savait
 // pas s'il devait y répondre). Les bancs travaillent dans des projets `test-…`
 // (scripts/bancs.mjs) ; ce contrôle rougit si une ligne « [TEST… » vit ailleurs.
-// 22. « À toi » toujours à jour (0021, Raphaël : « des requêtes d'il y a 12 h déjà
+// 22. « À toi » toujours à jour (0022, Raphaël : « des requêtes d'il y a 12 h déjà
 // répondues dans la session ; ça se marche dessus »). Projet NEUF (E) : rien des autres sections.
 const P5 = randomUUID(), SLUG_E = `test-verif-${rand}-e`;
 async function controle22_a_toi_a_jour() {
-  section("22. « À toi » à jour (0021) : sans objet retiré seul, revue des vieux et des dépassés, vrais scripts");
+  section("22. « À toi » à jour (0022) : sans objet retiré seul, revue des vieux et des dépassés, vrais scripts");
   await sql(`insert into projets (id, slug, nom) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E')`);
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
   const env = { ...process.env, COCKPIT_PROJET: SLUG_E, COCKPIT_SESSION: "verifier-base" };

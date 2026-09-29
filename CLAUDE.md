@@ -214,7 +214,7 @@ depuis : peut-être plus utile » ; la session la confirme (`demander.sh
 toutes les 15 min. Un assistant listé en cours reste « en cours » tant que sa
 session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`).
 
-**« À toi de jouer » à jour** (29 sept. 2026, migration 0021, Raphaël : « des
+**« À toi de jouer » à jour** (29 sept. 2026, migration 0022, Raphaël : « des
 requêtes d'il y a 12 h déjà répondues dans la session ; je ne sais pas
 lesquelles sont récentes ou vieilles »). Chaque ligne dit son âge (« il y a
 12 h », `ElementAToi.depuis`), le plus récent en haut (réglable, préférence

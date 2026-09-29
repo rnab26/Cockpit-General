@@ -121,7 +121,7 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
   donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
 done
-# « À toi » à jour (0021) : une place libre de plus → un agent revoit ce qui attend Raphaël depuis trop
+# « À toi » à jour (0022) : une place libre de plus → un agent revoit ce qui attend Raphaël depuis trop
 # longtemps ou que du travail a suivi (retirer, confirmer, proposer une fusion). Au plus une revue par heure.
 revue=""
 if [ ${#donnes[@]} -lt "$libres" ]; then

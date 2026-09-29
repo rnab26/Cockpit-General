@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Revoir « À toi de jouer » d'un projet : ce qui attend Raphaël depuis trop
-# longtemps, ou que du travail a suivi depuis (migration 0021).
+# longtemps, ou que du travail a suivi depuis (migration 0022).
 #
 #   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh             consigne de revue, ou « RIEN »
 #   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh --liste     la liste seule (JSON), sans rien marquer

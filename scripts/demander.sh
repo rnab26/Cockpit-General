@@ -22,7 +22,7 @@
 
 #   scripts/demander.sh --confirmer <id>             la question reste utile (après avoir avancé)
 #   scripts/demander.sh --retirer <id> "pourquoi"    elle ne l'est plus : elle quitte « À toi »
-#   scripts/demander.sh --confirmer <id du chantier> un « à vérifier / à cadrer / bloqué » reste à lui (0021)
+#   scripts/demander.sh --confirmer <id du chantier> un « à vérifier / à cadrer / bloqué » reste à lui (0022)
 #   scripts/demander.sh --debloquer <id du chantier> "pourquoi"   il n'est plus bloqué : repasse « libre »
 #
 # RÈGLE DE CLARTÉ (Raphaël, 29 sept. 2026) : « toutes les questions, les
@@ -74,7 +74,7 @@ done
 if [ "$mode" != "poser" ]; then
   [[ "$cible" =~ ^[0-9a-f-]{36}$ ]] || { echo "Donne l'identifiant de la question (ou du chantier) après --$mode." >&2; exit 2; }
   qc=$(printf '%s' "$cible" | sed "s/'/''/g")
-  # 0021 : un élément de « À toi » qui est un CHANTIER (à vérifier, à cadrer, bloqué) se tient à jour aussi.
+  # 0022 : un élément de « À toi » qui est un CHANTIER (à vérifier, à cadrer, bloqué) se tient à jour aussi.
   est_chantier=$("$SQL" "select count(*) as n from chantiers where id = '$qc' and archived_at is null" | jq -r '.rows[0].n // 0')
   if [ "$mode" = "debloquer" ]; then
     [ "$est_chantier" = "1" ] || { echo "--debloquer attend l'identifiant d'un chantier." >&2; exit 2; }

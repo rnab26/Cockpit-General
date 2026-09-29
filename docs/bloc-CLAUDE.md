@@ -28,7 +28,7 @@ demandes des utilisateurs, progression des autres sessions.
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh
   --confirmer <id>` si elle compte encore, `--retirer <id> "pourquoi"` sinon.
   Le hook te le rappelle ; l'app marque « Claude a avancé depuis ». Pareil
-  pour un chantier « à vérifier / à cadrer / bloqué » (0021) : `--confirmer
+  pour un chantier « à vérifier / à cadrer / bloqué » (0022) : `--confirmer
   <id du chantier>`, et `--debloquer <id> "pourquoi"` quand il ne l'est plus.
 - **RÈGLE DE CLARTÉ — tout ce que Raphaël lit dans le cockpit** (questions,
   constats à faire, « comment vérifier », titres, messages du fil) : le plus

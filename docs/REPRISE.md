@@ -180,7 +180,7 @@ Reste : le module embarqué (`embed/`) n'affiche pas encore ces images.
 `verifier-web.mjs` ne purge plus que les projets de test de plus de 2 h
 (plusieurs agents le lançaient en même temps et se purgeaient l'un l'autre).
 
-## 2 septies. 29 sept. soir : « À toi de jouer » à jour (chantier `20a42f79`, migration 0021)
+## 2 septies. 29 sept. soir : « À toi de jouer » à jour (chantier `20a42f79`, migration 0022)
 
 Raphaël : des demandes de plus de 12 h déjà réglées ailleurs, sans savoir
 lesquelles sont récentes. Livré : l'âge sur chaque ligne, le plus récent en

@@ -30,7 +30,7 @@ autre=$("$SQL" "select count(*) as n from sessions s join projets p on p.id = s.
 if [ "${autre:-0}" -gt 0 ]; then echo "RIEN — une autre session travaille déjà sur $PROJET (elle enchaîne elle-même les chantiers). Termine ta réponse en une ligne, sans rien faire d'autre."; exit 0; fi
 r=$("$SQL" "select prochain_chantier_autonome('$(q "$PROJET")', $( [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "'$(q "$CLAUDE_CODE_SESSION_ID")'" || echo null ), '$(q "$branche")') as c" | jq -c '.rows[0].c // empty')
 if [ -z "$r" ] || [ "$r" = "null" ]; then
-  # Rien à coder : la session autonome revoit « À toi » à la place de la chef (0021), au plus une fois par heure.
+  # Rien à coder : la session autonome revoit « À toi » à la place de la chef (0022), au plus une fois par heure.
   revue=$(COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" bash "$RACINE/scripts/revue-a-toi.sh" 2>/dev/null)
   case "$revue" in RIEN*|"") ;; *) printf '%s\n' "$revue"; exit 0 ;; esac
 fi

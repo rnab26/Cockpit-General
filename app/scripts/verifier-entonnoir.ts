@@ -79,7 +79,7 @@ console.log('verifier-entonnoir')
 {
   const t = aToi(chantiers, messages)
   const types = t.map((e) => e.type)
-  // 0021 (Raphaël : « je ne sais pas quelles sont les plus récentes et les plus vieilles ») : un seul tri, le plus récent en haut.
+  // 0022 (Raphaël : « je ne sais pas quelles sont les plus récentes et les plus vieilles ») : un seul tri, le plus récent en haut.
   const dates = t.map((e) => e.depuis)
   verifie('à toi : le plus récent en haut, tous types confondus', dates.every((d, i) => i === 0 || dates[i - 1] >= d), t.map((e) => `${e.cle} ${e.depuis}`))
   verifie('à toi : chaque élément dit depuis quand il attend', t.every((e) => !!e.depuis && !Number.isNaN(new Date(e.depuis).getTime())))
@@ -235,7 +235,7 @@ console.log('verifier-entonnoir')
   verifie('tri : « Claude vérifie » avant « à vérifier »', ordre[0] === 'v-demande', ordre)
 }
 
-// 0021. « À toi » à jour (Raphaël, 29 sept. : « des requêtes d'il y a 12 h déjà réglées dans la session ») :
+// 0022. « À toi » à jour (Raphaël, 29 sept. : « des requêtes d'il y a 12 h déjà réglées dans la session ») :
 // tout élément sur lequel Claude a travaillé depuis est marqué et passe en bas ; reconfirmé, il redevient normal.
 {
   const cs = [
