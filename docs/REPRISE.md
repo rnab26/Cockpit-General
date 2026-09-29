@@ -335,6 +335,29 @@ api.anthropic.com (401 authentication_error enregistré). Reste :
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
+- **Se greffer sur un projet qui n'est pas à Raphaël** (chantier `f31ae3ec`,
+  « pas la priorité, note-le », 29 sept.). Rien de codé ; question posée dans
+  le chantier (choix de la voie). Ce qui gêne aujourd'hui : `brancher.sh` écrit
+  DANS le dépôt (bloc CLAUDE.md, `.claude/settings.json`, `scripts/cockpit-*`)
+  et le hook de démarrage les commite seul sur la branche courante — chez
+  autrui, c'est une trace non demandée. Et la clé `service_role` de la base
+  centrale ne doit JAMAIS aller dans un environnement cloud que le
+  propriétaire voit : toujours l'environnement de Raphaël. Trois voies :
+  1. **Greffe invisible** (recommandée) : rien dans leur dépôt. Le script
+     d'installation de l'environnement cloud de Raphaël clone Cockpit-General
+     et pose hooks + `COCKPIT_PROJET` dans `~/.claude/settings.json`
+     (niveau utilisateur) ; le bloc de règles arrive par le hook, pas par leur
+     CLAUDE.md ; l'auto-commit est coupé (option `--sans-trace` à ajouter à
+     `brancher.sh`/`session-start.sh`). Coût : ~½ journée ; limite : une
+     session hors de cet environnement n'a pas le cockpit.
+  2. **Greffe sur une branche à Raphaël** : branchement normal, mais les
+     fichiers du cockpit restent sur ses branches et sont retirés de chaque PR
+     vers leur `main`. Simple, mais fragile (un oubli et ça part chez eux).
+  3. **Branchement normal avec leur accord** : identique à FacePro ; le
+     propriétaire voit les fichiers du cockpit dans son dépôt.
+  Dans tous les cas : un projet en base par dépôt d'autrui (données
+  séparées), aucun membre extérieur ajouté sans Raphaël, et l'accès au dépôt
+  passe par GitHub (collaborateur ou fork), pas par le cockpit.
 
 ## 4. Pièges déjà payés (ne pas les repayer)
 
