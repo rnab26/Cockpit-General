@@ -31,6 +31,8 @@
 //   23. « À toi » à jour (0022)
 //   24. « où ça en est ? » (0023)
 //   25. renforts (0024) : une session par section, exclusivité, jamais deux renforts sur un chantier
+//   26. fil en discussion (0025)
+//   27. certifier garde une question ouverte (0026), sa réponse reprise sans rouvrir le certifié
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -1347,15 +1349,16 @@ async function controle23_a_toi_a_jour() {
   const message = (id) => une(`select answered_at, reponse, confirmee_at from messages where id = ${q(id)}`);
   const revoir = async () => (await une(`select a_toi_a_revoir(${q(P5)}) as l`)).l ?? [];
 
-  // 1. Sans objet : certifié ou archivé → ses questions ouvertes et les fusions qui le citent se ferment seules.
+  // 1. Sans objet : les fusions qui citent un chantier certifié ou archivé se ferment seules ;
+  //    ses questions ouvertes seulement à l'archivage (0026 : certifier les GARDE, voir §27).
   const cc = await creerChantier(P5, { titre: "Certifié bientôt", etat: "a_verifier" });
   const cAutre = await creerChantier(P5, { titre: "Autre sujet", etat: "libre" });
   const qc = await creerMessage(P5, cc, { kind: "question", corps: "On garde le bleu ?" });
   const fu = await une(`select suggerer_fusion(${q(cAutre)}, ${q(cc)}, 'test', 'verifier-base') as id`);
   await sql(`select certifier_chantier(${q(cc)}, 'raphael')`);
   const mq = await message(qc), mf = await message(fu.id);
-  verifie("certifié → sa question ouverte est retirée seule, la réponse dit pourquoi",
-    !!mq.answered_at && /^Retirée automatiquement : chantier certifié/.test(mq.reponse ?? ""), mq);
+  verifie("certifié → sa question ouverte RESTE ouverte (0026 : elle peut porter sur la suite)",
+    !mq.answered_at && mq.reponse === null, mq);
   verifie("certifié → la fusion proposée qui le cite est « sans objet »", !!mf.answered_at && /^Sans objet/.test(mf.reponse ?? ""), mf);
   const ca = await creerChantier(P5, { titre: "Archivé bientôt", etat: "bloque" });
   const qa = await creerMessage(P5, ca, { kind: "action", corps: "Colle la clé" });
@@ -1468,6 +1471,56 @@ async function controle22_correctifs() {
   verifie("section_correctifs n'est pas appelable par un utilisateur", anon.status >= 400, anon);
 }
 
+// 27. Certifier ne fait plus disparaître une question ouverte (0026, 29 sept. 2026 :
+// la question 876ad67b sur le « réveil immédiat » fermée seule en certifiant 450afa9e).
+// Projet NEUF (G) : reprendre_reponse ne sert que lui.
+const P7 = randomUUID(), SLUG_G = `test-verif-${rand}-g`;
+async function controle27_question_gardee() {
+  section("27. Certifier garde une question ouverte (0026) ; sa réponse est reprise sans rouvrir le certifié");
+  await sql(`insert into projets (id, slug, nom) values (${q(P7)}, ${q(SLUG_G)}, 'Projet de test G')`);
+  const message = (id) => une(`select chantier_id, answered_at, reponse from messages where id = ${q(id)}`);
+  const cc = await creerChantier(P7, { titre: "Fil en discussion", etat: "a_verifier" });
+  const cAutre = await creerChantier(P7, { titre: "Même sujet ailleurs", etat: "libre" });
+  const qo = await creerMessage(P7, cc, { kind: "question", corps: "Je réveille Claude tout de suite quand tu écris ?" });
+  const ac = await creerMessage(P7, cc, { kind: "action", corps: "Crée le jeton de la routine" });
+  const fu = await une(`select suggerer_fusion(${q(cAutre)}, ${q(cc)}, 'test', 'verifier-base') as id`);
+  await sql(`select certifier_chantier(${q(cc)}, 'raphael')`);
+  const [mq, ma, mf] = [await message(qo), await message(ac), await message(fu.id)];
+  verifie("certifié : la question ET l'action ouvertes restent ouvertes, sur le chantier certifié",
+    !mq.answered_at && !ma.answered_at && mq.chantier_id === cc && (await chantier(cc)).etat === "valide", { mq, ma });
+  verifie("certifié : la fusion qui le cite est toujours « sans objet »", !!mf.answered_at && /^Sans objet : chantier certifié/.test(mf.reponse ?? ""), mf);
+  // Il répond plus tard, depuis l'app (answered_by = lui) : sa réponse est reprise.
+  await sql(`update messages set reponse = 'Oui, tout de suite', answered_at = now(), answered_by = ${q(userId)} where id = ${q(qo)}`);
+  const sansSuite = await sql(`select message_id, chantier_id from reponses_sans_suite(${q(P7)})`);
+  verifie("réponse sur un chantier CERTIFIÉ : « sans suite » (plus écartée)", sansSuite.some((r) => r.message_id === qo), sansSuite);
+  const br = `agent/reponse-verif-${rand}`;
+  const rp = (await une(`select reprendre_reponse(${q(br)}, ${q(P7)}) as r`)).r;
+  const suite = rp?.id ? await chantier(rp.id) : null;
+  const apres = await chantier(cc);
+  verifie("reprise : un chantier « Suite de ta réponse » neuf, en cours, réservé à l'agent",
+    !!suite && suite.id !== cc && suite.etat === "en_cours" && suite.pris_par === br && /^Suite de ta réponse/.test(suite.titre)
+      && /Sur le chantier certifié « Fil en discussion »/.test(suite.demande ?? ""), { rp, suite });
+  verifie("reprise : le chantier certifié n'est JAMAIS rouvert ni réservé", apres.etat === "valide" && apres.pris_par === null, apres);
+  verifie("reprise : la question suit dans le nouveau chantier ; l'action ouverte reste sur le certifié",
+    (await message(qo)).chantier_id === rp?.id && (await message(ac)).chantier_id === cc);
+  const note = await une(`select corps from messages where chantier_id = ${q(cc)} and auteur_type = 'session' and kind = 'info' order by created_at desc limit 1`);
+  verifie("reprise : le fil du certifié dit où ça continue", /continue dans le chantier « Suite de ta réponse/.test(note?.corps ?? ""), note);
+  verifie("reprise : rien de plus à reprendre ensuite (pas de boucle)", (await une(`select reprendre_reponse(${q(br + "-2")}, ${q(P7)}) as r`)).r === null);
+  // La revue de « À toi » voit aussi l'action gardée (le certifié est archivé « Fini »).
+  await sql(`update messages set created_at = now() - interval '13 hours' where id = ${q(ac)}`);
+  const revue = (await une(`select a_toi_a_revoir(${q(P7)}) as l`)).l ?? [];
+  verifie("a_toi_a_revoir : l'action gardée sur le certifié y est (plus de 12 h)", revue.some((e) => e.id === ac), revue.map((e) => e.id));
+  // Archiver sans certifier (le sujet est abandonné) ferme toujours une question ouverte.
+  const cAr = await creerChantier(P7, { titre: "Abandonné", etat: "libre" });
+  const qAr = await creerMessage(P7, cAr, { kind: "question", corps: "Plus utile ?" });
+  await sql(`update chantiers set archived_at = now() where id = ${q(cAr)}`);
+  verifie("archivé sans certifier : sa question ouverte est retirée (sans objet)", /^Retirée automatiquement : chantier archivé/.test((await message(qAr)).reponse ?? ""));
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.reprendre_reponse(text,uuid)', 'execute') as a,
+                                   has_function_privilege('authenticated', 'cockpit.reponses_sans_suite(uuid,text)', 'execute') as b,
+                                   has_function_privilege('authenticated', 'cockpit.retirer_sans_objet()', 'execute') as c`);
+  verifie("droits : ni anon ni un utilisateur connecté n'exécutent ces fonctions", droits && !droits.a && !droits.b && !droits.c, droits);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -1486,7 +1539,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -1497,7 +1550,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -1505,8 +1558,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

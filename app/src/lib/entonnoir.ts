@@ -122,7 +122,16 @@ export interface ElementAToi {
   avanceDepuis?: string | null
 }
 
-const estQuestionOuverte = (m: Pick<Message, 'kind' | 'answered_at'>) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
+export const estQuestionOuverte = (m: Pick<Message, 'kind' | 'answered_at'>) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
+
+/**
+ * Les questions et actions encore ouvertes d'un chantier, la plus ancienne
+ * d'abord. Certifier ne les ferme pas (migration 0026) : l'app les montre à
+ * Raphaël quand il touche « Ça marche », pour qu'il y réponde ou certifie quand même.
+ */
+export function questionsOuvertesDe<T extends Pick<Message, 'kind' | 'answered_at' | 'chantier_id' | 'created_at'>>(chantierId: string, messages: readonly T[]): T[] {
+  return messages.filter((m) => m.chantier_id === chantierId && estQuestionOuverte(m)).sort((a, b) => a.created_at.localeCompare(b.created_at))
+}
 
 /** Une session qui écrit juste après avoir posé l'élément (fin de tour, livraison) n'a pas « avancé depuis ». */
 export const GRACE_AVANCE_MS = 2 * 60_000
@@ -164,7 +173,8 @@ export function aToi(chantiers: readonly ChantierE[], messages: readonly Message
   const dansProjet = (id: string) => !projetId || id === projetId
   const questions: ElementAToi[] = messages
     .filter((m) => estQuestionOuverte(m) && dansProjet(m.projet_id))
-    .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && !c.archived_at) })
+    // Un certifié est aussi archivé (« Fini ») : sa question gardée reste ici (0026). Un archivé l'a fermée en base.
+    .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && (!c.archived_at || c.etat === 'valide')) })
     .map((m) => {
       const depuis = plusTard(m.created_at, m.confirmee_at)
       return { type: 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis, avanceDepuis: avance(m.chantier_id, depuis) }

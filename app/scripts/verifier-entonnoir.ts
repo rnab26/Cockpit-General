@@ -2,7 +2,7 @@
 // sur deux projets à la fois. Le premier cas rejoue la capture de Raphaël du
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
-import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE } from '../src/lib/entonnoir.ts'
+import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
 
@@ -266,6 +266,27 @@ console.log('verifier-entonnoir')
   verifie('à jour : un nouveau blocage après le travail → plus marqué', !conf.find((e) => e.cle === 'bloque-z-bloque')?.avanceDepuis)
   const q = t.find((e) => e.message?.id === 'zq')!
   verifie('à jour : une question confirmée (confirmee_at) a l’âge de sa confirmation', aToi(cs, ms.map((m) => (m as { id: string }).id === 'zq' ? { ...(m as object), confirmee_at: il(5) } as never : m)).find((e) => e.message?.id === 'zq')?.depuis === il(5) && q.depuis === il(720))
+}
+
+// Certifier ne ferme pas une question ouverte (0026) : « Ça marche » la montre d'abord.
+{
+  console.log('\nquestions ouvertes d’un chantier (certifier les montre d’abord)')
+  const ms = [
+    M('qo2', 'ck', 'cv', 'question', 10), M('qo1', 'ck', 'cv', 'action', 30),
+    M('qr', 'ck', 'cv', 'question', 40, { answered_at: il(5), reponse: 'Oui' }),
+    M('qret', 'ck', 'cv', 'question', 50, { answered_at: il(5), reponse: 'Retirée par Claude : plus utile' }),
+    M('fu', 'ck', 'cv', 'fusion', 20), M('inf', 'ck', 'cv', 'info', 15), M('autre', 'ck', 'autre', 'question', 5),
+  ]
+  const ids = questionsOuvertesDe('cv', ms).map((m) => (m as { id: string }).id)
+  verifie('questions ouvertes : question et action non répondues, la plus ancienne d’abord', JSON.stringify(ids) === '["qo1","qo2"]', ids)
+  verifie('questions ouvertes : ni répondue, ni retirée, ni fusion, ni autre chantier', !ids.some((i) => ['qr', 'qret', 'fu', 'inf', 'autre'].includes(i)))
+  verifie('questions ouvertes : aucune → on certifie directement', questionsOuvertesDe('rien', ms).length === 0)
+  // Et une question d'un chantier CERTIFIÉ reste dans « À toi » (la base ne la ferme plus).
+  // certifier_chantier pose aussi archived_at (« Fini ») : c'est le cas réel.
+  const t = aToi([C('cv', 'ck', 'valide', { archived_at: il(1) }), C('ar', 'ck', 'libre', { archived_at: il(1) })],
+    [M('qv', 'ck', 'cv', 'question', 10), M('qa', 'ck', 'ar', 'question', 10)])
+  verifie('« À toi » : une question ouverte d’un chantier certifié (donc archivé « Fini ») y reste', t.some((e) => e.message?.id === 'qv'), t.map((e) => e.cle))
+  verifie('« À toi » : celle d’un chantier archivé sans être certifié n’y est pas', !t.some((e) => e.message?.id === 'qa'))
 }
 
 bilan('verifier-entonnoir')

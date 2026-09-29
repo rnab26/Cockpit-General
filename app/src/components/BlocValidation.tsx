@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Check, FlaskConical, HelpCircle, Pencil } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, FlaskConical, HelpCircle, MessageCircleQuestion, Pencil } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -10,15 +10,26 @@ import { Textarea } from '../ui/Champs.tsx'
 import { EncadreCommentVerifier } from './CommentVerifier.tsx'
 import { FriseMiseEnLigne, PhraseMiseEnLigne } from './MiseEnLigne.tsx'
 import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
+import { BlocQuestion } from './BlocQuestion.tsx'
+import { questionsOuvertesDe } from '../lib/entonnoir.ts'
 
 /**
  * Chantier « à vérifier » : certifier, ou corriger (mots obligatoires). Une
  * capture de ce qui ne marche pas (ou de ce qui marche) part dans le fil.
  */
-export function BlocValidation({ chantier, sansEntete = false }: { chantier: Chantier; sansEntete?: boolean }) {
-  const { par, admin, projet, recharger, now } = useCockpit()
+export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffichees }: {
+  chantier: Chantier; sansEntete?: boolean
+  /** Le fil cache ses propres cartes de question pendant qu'elles s'affichent ici (pas de doublon à l'écran). */
+  onQuestionsAffichees?: (affichees: boolean) => void
+}) {
+  const { par, admin, projet, recharger, now, messages } = useCockpit()
   const toast = useToast()
-  const [mode, setMode] = useState<'choix' | 'certifier' | 'corriger' | 'verifier'>('choix')
+  const [modeChoisi, setMode] = useState<'choix' | 'questions' | 'certifier' | 'corriger' | 'verifier'>('choix')
+  // Certifier ne ferme pas une question ouverte (migration 0026) : « Ça marche »
+  // la montre d'abord ; une fois toutes répondues, on passe seul à la certification.
+  const questions = useMemo(() => questionsOuvertesDe(chantier.id, messages), [chantier.id, messages])
+  const mode = modeChoisi === 'questions' && !questions.length ? 'certifier' : modeChoisi
+  useEffect(() => { onQuestionsAffichees?.(mode === 'questions') }, [mode, onQuestionsAffichees])
   const [mots, setMots] = useState('')
   const [enCours, setEnCours] = useState(false)
   const pj = useMediasAJoindre(projet.id, chantier.id)
@@ -89,13 +100,26 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
       ) : null}
       {enVerification ? null : mode === 'choix' ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button variante="ok" taille="lg" onClick={() => setMode('certifier')} data-testid="btn-certifier"><Check size={18} aria-hidden />Ça marche</Button>
+          <Button variante="ok" taille="lg" onClick={() => setMode(questions.length ? 'questions' : 'certifier')} data-testid="btn-certifier"><Check size={18} aria-hidden />Ça marche</Button>
           <Button variante="attention" taille="lg" onClick={() => setMode('corriger')} data-testid="btn-corriger"><Pencil size={18} aria-hidden />Corriger</Button>
           {enVerification ? null : (
             <Button taille="lg" onClick={() => setMode('verifier')} data-testid="btn-verifie-pour-moi" className="sm:col-span-2">
               <HelpCircle size={18} aria-hidden />Je ne sais pas : vérifie pour moi
             </Button>
           )}
+        </div>
+      ) : mode === 'questions' ? (
+        <div className="mt-2 space-y-2" data-testid="certifier-questions">
+          <p className="flex items-center gap-1.5 text-[15px] font-medium">
+            <MessageCircleQuestion size={16} className="shrink-0 text-alerte" aria-hidden />
+            {questions.length > 1 ? `Il reste ${questions.length} questions sur ce chantier` : 'Il reste une question sur ce chantier'}
+          </p>
+          <p className="text-sm text-texte-2">Réponds d’abord, ou certifie quand même : {questions.length > 1 ? 'elles restent' : 'elle reste'} dans « À toi ».</p>
+          {questions.map((m) => <BlocQuestion key={m.id} message={m} />)}
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setMode('choix')}>Annuler</Button>
+            <Button variante="ok" onClick={() => setMode('certifier')} data-testid="btn-certifier-quand-meme"><Check size={16} aria-hidden />Certifier quand même</Button>
+          </div>
         </div>
       ) : (
         <div className="mt-2 space-y-2">
