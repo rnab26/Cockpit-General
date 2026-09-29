@@ -99,12 +99,14 @@ attente=$(un "select coalesce(string_agg(format('- [%s] %s%s — %s (posée par 
 reponses=$(un "select coalesce(string_agg(format('- %s | %s → « %s »%s (%s)', to_char(m.answered_at, 'DD/MM HH24:MI'), left(m.corps, 90), coalesce(m.reponse, m.etat, ''), case when coalesce(m.precision,'') <> '' then ' — précision : ' || m.precision else '' end, coalesce(c.titre, 'général')), chr(10) order by m.answered_at desc), '(aucune)') from (select m.* from messages m join projets p on p.id = m.projet_id where p.slug = $P and m.answered_at is not null order by m.answered_at desc limit 10) m left join chantiers c on c.id = m.chantier_id")
 
 # Ses RÉPONSES que personne n'a encore prises (29 sept. 2026 : sur ses réponses du
-# jour, plusieurs sont restées sans suite — chantier que plus personne ne tenait,
-# ou question générale sans chantier). « Prise » = une session a écrit dans le fil
-# de ce chantier après sa réponse. Ce bloc revient à chaque démarrage tant que ce
-# n'est pas fait. Seules SES réponses depuis l'app (answered_by posé ; une réponse
-# notée par une session vient de sa conversation) ; chantier certifié : c'est clos.
-non_prises=$(un "select coalesce(string_agg(format('- [%s] %s | question « %s » → il a répondu « %s »%s', to_char(m.answered_at, 'DD/MM HH24:MI'), coalesce(c.titre || ' (' || c.id || ')', 'général'), left(replace(m.corps, chr(10), ' '), 120), m.reponse, case when coalesce(m.precision,'') <> '' then ' — précision : ' || left(m.precision, 200) else '' end), chr(10) order by m.answered_at), '(aucune)') from messages m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P and m.kind in ('question','action') and m.answered_at > now() - interval '7 days' and m.answered_by is not null and coalesce(m.reponse, '') not like 'Retirée par Claude%' and (c.id is null or (c.etat <> 'valide' and c.archived_at is null)) and not exists (select 1 from messages s where s.chantier_id is not distinct from m.chantier_id and s.projet_id = m.projet_id and s.auteur_type = 'session' and s.created_at > m.answered_at)")
+# jour, plusieurs sont restées sans suite). UNE seule règle, celle de la chef :
+# reponses_sans_suite() (0017, 0018) — SES réponses depuis l'app, que rien n'a
+# suivies (message de session, étape, étape d'agent), sur un chantier ouvert que
+# personne d'AUTRE ne tient (réservé à notre branche = le nôtre). Ne pas réécrire
+# la règle ici : la changer dans la fonction, par une nouvelle migration.
+branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
+brsql="null"; [ -n "$branche" ] && brsql="'$(printf '%s' "$branche" | sed "s/'/''/g")'"
+non_prises=$(un "select coalesce(string_agg(format('- [%s] %s | question « %s » → il a répondu « %s »%s', to_char(m.answered_at, 'DD/MM HH24:MI'), coalesce(c.titre || ' (' || c.id || ')', 'général'), left(replace(m.corps, chr(10), ' '), 120), m.reponse, case when coalesce(m.precision,'') <> '' then ' — précision : ' || left(m.precision, 200) else '' end), chr(10) order by m.answered_at), '(aucune)') from reponses_sans_suite((select id from projets where slug = $P), $brsql) r join messages m on m.id = r.message_id left join chantiers c on c.id = m.chantier_id")
 
 constats=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre,''), left(m.corps, 160)), chr(10) order by m.created_at desc), '(aucun)') from (select * from messages where kind = 'constat' order by created_at desc limit 8) m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P")
 
