@@ -4,3 +4,4 @@ app/node_modules/
 *.local
 .DS_Store
 *.tsbuildinfo
+.claude/worktrees/
