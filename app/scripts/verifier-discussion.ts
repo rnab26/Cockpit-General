@@ -1,4 +1,4 @@
-// Le fil = une discussion (0024) : ordre, carte à choisir en dernier, réponse attendue.
+// Le fil = une discussion (0025) : ordre, carte à choisir en dernier, réponse attendue.
 // node --experimental-strip-types app/scripts/verifier-discussion.ts
 import { verifie, bilan } from './_assert.ts'
 import { attenteReponse, estMessageLibre, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
