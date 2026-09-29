@@ -21,7 +21,10 @@ sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 # la main que sur un vrai message (pas de balise système en tête).
 chef_txt=""
 invite=$(printf '%s' "$entree" | jq -r '.prompt // ""' 2>/dev/null)
-if [ -n "$sid" ] && [ -x "$SQL" ] && ! printf '%s' "$invite" | grep -qE '^[[:space:]]*<(task-notification|system-reminder|wake)|Réveil (horaire|du chef)'; then
+# Une session de RENFORT (0024) ne dirige jamais : sa consigne commence par
+# « [cockpit-renfort] », puis renfort.sh pose sa marque dans le .git de sa copie.
+renfort_marque=$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort
+if [ -n "$sid" ] && [ -x "$SQL" ] && [ ! -s "$renfort_marque" ] && ! printf '%s' "$invite" | grep -qE '^[[:space:]]*(<(task-notification|system-reminder|wake)|\[cockpit-renfort\])|Réveil (horaire|du chef)'; then
   CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
   chef_txt=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
 fi

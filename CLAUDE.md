@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », fil en discussion (265 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
@@ -139,6 +139,27 @@ dossier partagé avec un agent (incident du 29 sept., commit 964528e).
 L'ancienne table `chef` (id = 1) et ses fonctions sans projet restent en base,
 plus lues par les scripts à jour (pas de drop sans Raphaël).
 `verifier-base.mjs` §19.
+
+**Renforts** (29 sept., migration 0024, D-10). Raphaël : « lancer une session
+par secteur […] plusieurs agents dedans […] 5 maximum par session […] ne jamais
+se marcher dessus ». Bouton « Lancer des renforts » (`Renforts.tsx`), au-dessus
+de « Prêt à lancer » : `demander_renforts(slug)` (admin) pose UNE demande par
+section qui attend (libres, pas triés, abandonnés, « vérifie pour moi » ; jamais
+ce qui attend Raphaël), dans la limite `chefs.max_renforts` (0 à 4, défaut 2),
+`chefs.agents_par_renfort` (1 à 5, défaut 3) ; `regler_renforts`,
+`etat_renforts` (l'écran ne compte rien lui-même). L'app ne crée pas de
+session : la passe de `chef.sh` (`renforts_a_ouvrir`, JAMAIS un projet de
+test) dit à la chef de faire `create_session` (titre « Renfort · <projet> ·
+<section> — ne pas toucher », tags `cockpit-renfort`), puis `renfort.sh
+--session|--erreur`, et d'archiver les finis (`archive_session` : accord de
+Raphaël donné d'avance, « se ferme tout seul une fois que c'est fini ») puis
+`--archive`. Le renfort : `renfort.sh --suivant <id>` → ses chantiers (sa
+section, un agent chacun, chaque chantier réservé à SA branche
+`renfort/<court>/<court>`), « ATTENDS » ou « FINI ». Tant qu'il vit (signe de
+vie < 3 h), personne d'autre ne prend dans sa section (`chantiers_prenables`,
+`verifs_prenables`). Un renfort ne devient JAMAIS chef : consigne préfixée
+« [cockpit-renfort] » et marque `cockpit-renfort` dans le `.git` de sa copie
+(lue par `prompt-rappel.sh` et `autonome.sh`). `verifier-base.mjs` §20.
 
 **Une réponse de Raphaël est toujours reprise** (29 sept., migration 0017,
 « je réponds, mais je ne sais pas si c'est pris en compte ») : la passe de
@@ -236,7 +257,7 @@ dans un fil = une réponse courte de Claude dans ce fil avant de continuer** (un
 laquelle passe aussi `repondre_ou_en_est` (repond_a : la demande « où ça en
 est » en attente, sinon son dernier message). UNE règle « message libre » :
 `cockpit.est_message_libre` = `estMessageLibre` (`lib/discussion.ts`),
-comparées par verifier-base §25 ; `messages_sans_reponse(projet, branche)` sert
+comparées par verifier-base §26 ; `messages_sans_reponse(projet, branche)` sert
 le hook de démarrage ET la chef (`reprendre_message` → agent « Répondre : … »,
 branche `agent/message-…`, chantier réservé 60 min sans changer d'état) ;
 `hooks/suivi.sh` le remet à la session qui tient le chantier et le marque reçu

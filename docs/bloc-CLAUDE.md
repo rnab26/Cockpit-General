@@ -82,6 +82,16 @@ demandes des utilisateurs, progression des autres sessions.
   le devient, la consigne dit de créer (ou déplacer) SON réveil horaire, puis
   de le noter : `scripts/cockpit-chef.sh --reveil <trig_…> --distante <session_…>`.
   `--etat` : qui dirige ; `--max <n>` : agents en parallèle pour ce projet.
+- **RENFORTS** (0024) : Raphaël les demande d'un bouton du cockpit (« Lancer
+  des renforts ») : une session cloud par SECTION en attente. La passe de la
+  chef te dit d'ouvrir chaque demande (`create_session`, titre « Renfort ·
+  <projet> · <section> — ne pas toucher », tags `cockpit-renfort`), de la
+  noter (`scripts/cockpit-renfort.sh --session <id> <session_…>`, ou
+  `--erreur`), et d'archiver les renforts finis (`archive_session`, accord
+  de Raphaël donné d'avance, puis `--archive <id>`). Tu es TOI-MÊME un renfort
+  (consigne « [cockpit-renfort] ») : `scripts/cockpit-renfort.sh --suivant
+  <id>` te donne tes chantiers (ta section seulement, un agent chacun), puis
+  ATTENDS ou FINI ; tu ne prends rien d'autre et tu ne dis rien à Raphaël ici.
 - **Limite d'usage et mode autonome** : la reprise de la tâche en cours quand
   une limite se lève est native (`autoContinueAtUsageLimit`, posé par
   brancher.sh). Si le projet est en « mode autonome » (allumé par Raphaël
