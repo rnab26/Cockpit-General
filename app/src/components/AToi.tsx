@@ -26,9 +26,9 @@ export function AToi({ projetId }: { projetId: string | null }) {
   const [tousVisibles, setTousVisibles] = useState<Set<TypeAToi>>(new Set())
   return (
     <section data-testid="a-toi" aria-label="À toi" className="space-y-2">
-      <h2 className="flex items-baseline justify-between px-1 text-base font-bold">
-        <span>👉 À toi</span>
-        <span className={`text-sm font-bold ${elements.length ? 'text-alerte' : 'text-texte-2'}`} data-testid="a-toi-total">{elements.length}</span>
+      <h2 className="flex items-baseline justify-between px-1 text-base font-semibold">
+        <span>À toi</span>
+        <span className="text-sm font-semibold text-texte-2" data-testid="a-toi-total">{elements.length}</span>
       </h2>
       {elements.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center font-semibold" data-testid="rien-ne-t-attend">✅ Rien ne t’attend.</p>
@@ -37,7 +37,7 @@ export function AToi({ projetId }: { projetId: string | null }) {
         const visibles = tout ? gr.elements : gr.elements.slice(0, PAR_GROUPE_A_TOI)
         return (
           <div key={gr.type} className="space-y-2" data-testid={`groupe-a-toi-${gr.type}`}>
-            <h3 className="flex items-baseline justify-between px-1 text-sm font-semibold text-texte-2">
+            <h3 className="flex items-baseline justify-between px-1 text-xs font-medium uppercase tracking-wide text-texte-2">
               <span>{TITRE_A_TOI[gr.type]}</span><span data-testid="compte-groupe">{gr.elements.length}</span>
             </h3>
             {visibles.map((e) => (
@@ -64,7 +64,7 @@ function VueElement({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) 
       <div className="flex items-center gap-1.5 px-1">
         {avecProjet ? <PastilleProjet projet={projet} /> : null}
         {e.chantier ? (
-          <button type="button" onClick={() => ouvrirChantier(e.chantier!.id)} className="min-w-0 flex-1 truncate text-left text-sm font-semibold underline-offset-2 hover:underline" title="Ouvrir le chantier">
+          <button type="button" onClick={() => ouvrirChantier(e.chantier!.id)} className="min-w-0 flex-1 truncate text-left text-sm font-medium underline-offset-2 hover:underline" title="Ouvrir le chantier">
             {e.chantier.titre}
           </button>
         ) : <span className="min-w-0 flex-1 truncate text-sm font-semibold text-texte-2">Question sur le projet</span>}
@@ -109,8 +109,8 @@ function BlocCadrer({ chantier }: { chantier: Chantier }) {
   const demande = chantier.resume_simple || chantier.demande
   const longue = (demande?.length ?? 0) > 160
   return (
-    <div data-testid="bloc-cadrer" className="space-y-2 rounded-xl border-2 border-info/50 bg-info/6 p-3">
-      <p className="text-sm font-semibold text-info">🗣️ Une décision de ta part est nécessaire avant qu’une session s’y mette.</p>
+    <div data-testid="bloc-cadrer" className="space-y-2 rounded-xl border border-l-4 border-bord border-l-info bg-carte p-3">
+      <p className="text-sm font-medium text-info">Une décision de ta part est nécessaire avant qu’une session s’y mette.</p>
       {demande ? (
         <div>
           <p className={`whitespace-pre-wrap text-[15px] leading-snug ${plus ? '' : 'line-clamp-3'}`}>{demande}</p>
@@ -129,8 +129,8 @@ function BlocCadrer({ chantier }: { chantier: Chantier }) {
 function BlocBloque({ chantier, blocage }: { chantier: Chantier; blocage: Message | null }) {
   const { now } = useCockpit()
   return (
-    <div data-testid="bloc-bloque" className="space-y-2 rounded-xl border-2 border-alerte/50 bg-alerte/6 p-3">
-      <p className="text-sm font-semibold text-alerte">⛔ Ce qui bloque{blocage ? ` (${dateRelative(blocage.created_at, now)})` : ''} :</p>
+    <div data-testid="bloc-bloque" className="space-y-2 rounded-xl border border-l-4 border-bord border-l-alerte bg-carte p-3">
+      <p className="text-sm font-medium text-alerte">Ce qui bloque{blocage ? ` (${dateRelative(blocage.created_at, now)})` : ''} :</p>
       {blocage ? <p className="whitespace-pre-wrap text-[15px] leading-snug">{blocage.corps}</p>
         : <p className="text-sm italic text-texte-2">Le fil ne dit pas ce qui bloque : demande-le ci-dessous.</p>}
       <DernierMot chantier={chantier} />
@@ -162,9 +162,9 @@ function BlocFusion({ message }: { message: Message }) {
     await recharger()
   }
   return (
-    <div data-testid="bloc-fusion" className="space-y-2 rounded-xl border-2 border-accent/50 bg-accent/6 p-3">
-      <p className="text-sm font-semibold text-accent">🔀 Claude propose de fusionner</p>
-      <p className="whitespace-pre-wrap text-[15px] font-semibold leading-snug">{message.corps}</p>
+    <div data-testid="bloc-fusion" className="space-y-2 rounded-xl border border-l-4 border-bord border-l-accent bg-carte p-3">
+      <p className="text-sm font-medium text-accent">Claude propose de fusionner</p>
+      <p className="whitespace-pre-wrap text-[15px] font-medium leading-snug">{message.corps}</p>
       {message.pourquoi ? <p className="whitespace-pre-wrap text-sm text-texte-2"><span className="font-medium">Pourquoi :</span> {message.pourquoi}</p> : null}
       {fusion?.aide ? <p className="text-xs text-texte-2">{fusion.aide}</p> : null}
       {admin ? (

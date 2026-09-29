@@ -8,8 +8,9 @@ const VARIANTES: Record<Variante, string> = {
   secondaire: 'bg-carte text-texte border-bord hover:bg-carte-2',
   discret: 'bg-transparent text-texte-2 border-transparent hover:bg-carte-2 hover:text-texte',
   danger: 'bg-alerte text-white border-transparent hover:opacity-90',
-  ok: 'bg-ok text-white border-transparent hover:opacity-90',
-  attention: 'bg-attention text-white border-transparent hover:opacity-90',
+  // Contour plutôt que plein (29 sept. : « très coloré, ça fait mal aux yeux ») : la couleur dit le sens, sans crier.
+  ok: 'bg-carte text-ok border-ok/60 hover:bg-ok/5',
+  attention: 'bg-carte text-attention border-attention/60 hover:bg-attention/5',
 }
 const TAILLES: Record<Taille, string> = {
   sm: 'h-8 px-2.5 text-sm gap-1',

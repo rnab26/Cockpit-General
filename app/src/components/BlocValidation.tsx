@@ -7,37 +7,54 @@ import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
 import { EncadreCommentVerifier } from './CommentVerifier.tsx'
 import { FriseMiseEnLigne, PhraseMiseEnLigne } from './MiseEnLigne.tsx'
+import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 
-/** Encadré orange d'un chantier « à vérifier » : certifier, ou corriger (mots obligatoires). */
+/**
+ * Chantier « à vérifier » : certifier, ou corriger (mots obligatoires). Une
+ * capture de ce qui ne marche pas (ou de ce qui marche) part dans le fil.
+ */
 export function BlocValidation({ chantier, sansEntete = false }: { chantier: Chantier; sansEntete?: boolean }) {
-  const { par, recharger } = useCockpit()
+  const { par, admin, projet, recharger } = useCockpit()
   const toast = useToast()
   const [mode, setMode] = useState<'choix' | 'certifier' | 'corriger'>('choix')
   const [mots, setMots] = useState('')
   const [enCours, setEnCours] = useState(false)
+  const pj = useMediasAJoindre(projet.id, chantier.id)
+  /** Les médias partent juste après la décision ; renvoie false si leur envoi a échoué (le toast le dit). */
+  const joindre = async (quoi: string) => {
+    if (!pj.medias.length) return true
+    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId: chantier.id, par, admin, medias: pj.medias, corps: `📎 ${quoi}` })
+    if (erreur) { toast.erreur(`Les fichiers ne sont pas partis : ${erreur}`); return false }
+    pj.vider()
+    return true
+  }
 
   const certifier = async () => {
+    if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     setEnCours(true)
     const { error } = await supabase.rpc('certifier_chantier', { p_id: chantier.id, p_par: par, p_mots: mots.trim() || null })
+    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    const ok = await joindre('Capture jointe à la certification')
     setEnCours(false)
-    if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes(`« ${chantier.titre} » certifié. Il passe dans ✅ Actif.`)
+    if (ok) toast.succes(`« ${chantier.titre} » certifié. Il passe dans ✅ Actif.`)
     await recharger()
   }
   const corriger = async () => {
     if (!mots.trim()) { toast.erreur('Dis ce qui ne marche pas : c’est ce que la session lira.'); return }
+    if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     setEnCours(true)
     const { error } = await supabase.rpc('corriger_chantier', { p_id: chantier.id, p_par: par, p_mots: mots.trim() })
+    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    const ok = await joindre('Ce qui ne marche pas, en image')
     setEnCours(false)
-    if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes('Correction envoyée : le chantier revient à la session.')
+    if (ok) toast.succes('Correction envoyée : le chantier revient à la session.')
     setMots(''); setMode('choix')
     await recharger()
   }
 
   return (
-    <div data-testid="bloc-validation" className="rounded-xl border-2 border-attention/60 bg-attention/8 p-3">
-      {sansEntete ? null : <p className="mb-2 text-sm font-semibold text-attention">🧪 Livré par la session : à toi de dire si ça marche.</p>}
+    <div data-testid="bloc-validation" className="rounded-xl border border-l-4 border-bord border-l-attention bg-carte p-3">
+      {sansEntete ? null : <p className="mb-2 text-sm font-medium text-attention">Livré par la session : à toi de dire si ça marche.</p>}
       <div className="space-y-2">
         <FriseMiseEnLigne chantier={chantier} />
         <EncadreCommentVerifier chantier={chantier} />
@@ -52,11 +69,12 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
         <div className="mt-2 space-y-2">
           <Textarea autoFocus rows={3} value={mots} onChange={(e) => setMots(e.target.value)}
             placeholder={mode === 'certifier' ? 'Tes mots (facultatif) : « testé sur mon téléphone, nickel »' : 'Ce qui ne marche pas, précisément (obligatoire)'} />
+          <ChoisirMedias ctrl={pj} testId="medias-validation" />
           <div className="flex justify-end gap-2">
-            <Button onClick={() => { setMode('choix'); setMots('') }}>Annuler</Button>
+            <Button onClick={() => { setMode('choix'); setMots(''); pj.vider() }}>Annuler</Button>
             {mode === 'certifier'
-              ? <Button variante="ok" chargement={enCours} onClick={certifier}>✅ Je certifie</Button>
-              : <Button variante="attention" chargement={enCours} onClick={corriger}>✏️ Envoyer la correction</Button>}
+              ? <Button variante="ok" chargement={enCours || pj.enCours} onClick={certifier}>✅ Je certifie</Button>
+              : <Button variante="attention" chargement={enCours || pj.enCours} onClick={corriger}>✏️ Envoyer la correction</Button>}
           </div>
         </div>
       )}

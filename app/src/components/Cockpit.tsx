@@ -11,6 +11,7 @@ import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { BarreProjet, ProjetsResume } from './BarreProjet.tsx'
 import { EnCeMoment } from './EnCeMoment.tsx'
+import { VueEnsemble } from './VueEnsemble.tsx'
 import { AToi } from './AToi.tsx'
 import { ALancer } from './ALancer.tsx'
 import { TousLesChantiers, cleDuChantier } from './TousLesChantiers.tsx'
@@ -171,6 +172,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-3" data-testid="vue-tout">
+              <VueEnsemble projetId={null} />
               <EnCeMoment projetId={null} />
               <AToi projetId={null} />
               <ALancer projetId={null} />
@@ -179,6 +181,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           ) : (
             <AvecProjet projetId={d.projet.id}>
               <div className="space-y-3" data-testid="vue-projet">
+                <VueEnsemble projetId={d.projet.id} />
                 <BarreProjet projet={d.projet} />
                 <EnCeMoment projetId={d.projet.id} />
                 <AToi projetId={d.projet.id} />

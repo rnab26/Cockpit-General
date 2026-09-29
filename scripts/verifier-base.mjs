@@ -652,6 +652,62 @@ async function controle14_sessions_agents_fusions() {
     (await chantier(c3)).doublon_de === null && (await une(`select reponse from messages where id = ${q(sug2.rows[0].m)}`)).reponse === "Garder séparés");
 }
 
+// ---------------------------------------------------- 16. médias (0013)
+async function stockage(chemin, { methode = "GET", jwt: j, corps, type = "text/plain" } = {}) {
+  const cle = j ? CLE_PUBLIQUE : CLE_SERVICE;
+  const r = await fetch(`${URL_}/storage/v1/object/${chemin}`, {
+    method: methode,
+    headers: { apikey: cle, Authorization: `Bearer ${j ?? CLE_SERVICE}`, ...(corps !== undefined ? { "Content-Type": type } : {}) },
+    body: corps,
+  });
+  const texte = await r.text();
+  let json = null; try { json = JSON.parse(texte); } catch { json = texte; }
+  return { status: r.status, json };
+}
+async function controle16_medias() {
+  section("16. médias joints aux réponses (0013) — stockage privé, droits par projet et chantier");
+  const b = await une(`select public, file_size_limit from storage.buckets where id = 'cockpit-medias'`);
+  verifie("le bucket cockpit-medias existe, PRIVÉ, 50 Mo par fichier", b && b.public === false && Number(b.file_size_limit) === 52428800, b);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.peut_lire_media(text)', 'execute') as anon_lit,
+                                   has_function_privilege('authenticated', 'cockpit.peut_lire_media(text)', 'execute') as auth_lit,
+                                   has_function_privilege('anon', 'cockpit.peut_deposer_media(text)', 'execute') as anon_depose`);
+  verifie("fonctions de droit des médias : EXECUTE refusé à anon, donné à authenticated", droits.anon_lit === false && droits.anon_depose === false && droits.auth_lit === true, droits);
+  const visible = await creerChantier(P1, { titre: "Médias : visible" });
+  const cache = await creerChantier(P1, { titre: "Médias : interne", visible: false });
+  const cheminOk = `${P1}/${visible}/${randomUUID()}-capture.txt`;
+  const dep = await stockage(`cockpit-medias/${cheminOk}`, { methode: "POST", jwt, corps: "photo de test" });
+  verifie("un membre dépose un média sur un chantier visible de SON projet", dep.status === 200, dep);
+  const cheminProjet = `${P1}/projet/${randomUUID()}-note.txt`;
+  const depP = await stockage(`cockpit-medias/${cheminProjet}`, { methode: "POST", jwt, corps: "niveau projet" });
+  verifie("un membre dépose un média de niveau projet (dossier « projet »)", depP.status === 200, depP);
+  const depCache = await stockage(`cockpit-medias/${P1}/${cache}/${randomUUID()}-x.txt`, { methode: "POST", jwt, corps: "x" });
+  verifie("REFUSÉ sur un chantier interne (visible_utilisateurs=false)", depCache.status >= 400, depCache);
+  const depB = await stockage(`cockpit-medias/${P2}/projet/${randomUUID()}-x.txt`, { methode: "POST", jwt, corps: "x" });
+  verifie("REFUSÉ dans un projet dont il n'est pas membre", depB.status >= 400, depB);
+  const depMal = await stockage(`cockpit-medias/pas-un-uuid/projet/x.txt`, { methode: "POST", jwt, corps: "x" });
+  verifie("REFUSÉ sur un chemin mal formé (sans erreur SQL)", depMal.status >= 400 && !/invalid input syntax/i.test(JSON.stringify(depMal.json)), depMal);
+  const lu = await stockage(`authenticated/cockpit-medias/${cheminOk}`, { jwt });
+  verifie("il relit son média", lu.status === 200 && lu.json === "photo de test", lu);
+  const cheminB = `${P2}/projet/${randomUUID()}-secret.txt`;
+  await stockage(`cockpit-medias/${cheminB}`, { methode: "POST", corps: "secret B" });   // service_role, comme une session
+  const luB = await stockage(`authenticated/cockpit-medias/${cheminB}`, { jwt });
+  verifie("il ne lit PAS un média d'un autre projet", luB.status >= 400 && luB.json !== "secret B", luB);
+  const cheminCache = `${P1}/${cache}/${randomUUID()}-interne.txt`;
+  await stockage(`cockpit-medias/${cheminCache}`, { methode: "POST", corps: "interne" });
+  const luCache = await stockage(`authenticated/cockpit-medias/${cheminCache}`, { jwt });
+  verifie("il ne lit PAS un média d'un chantier interne", luCache.status >= 400 && luCache.json !== "interne", luCache);
+  const luSession = await stockage(`authenticated/cockpit-medias/${cheminOk}`);
+  verifie("une session (service_role, scripts/media.sh) lit le média", luSession.status === 200 && luSession.json === "photo de test", luSession);
+  const suppr = await fetch(`${URL_}/storage/v1/object/cockpit-medias`, { method: "DELETE", headers: { apikey: CLE_PUBLIQUE, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: [cheminOk] }) });
+  const encore = await stockage(`authenticated/cockpit-medias/${cheminOk}`);
+  verifie("un membre ne supprime PAS un média (réservé à l'admin)", encore.status === 200, { suppr: suppr.status, encore: encore.status });
+  const medias = [{ chemin: cheminOk, nom: "capture.txt", type: "text/plain", taille: 13 }];
+  const msg = await rest("messages", { methode: "POST", jwt, prefer: "return=representation", corps: { projet_id: P1, chantier_id: visible, auteur: "utilisateur test", auteur_type: "utilisateur", kind: "info", corps: "📎 1 fichier", medias } });
+  verifie("il écrit un message qui porte ses médias (colonne medias)", msg.status === 201 && msg.json?.[0]?.medias?.[0]?.chemin === cheminOk, msg);
+  const sansMedias = await une(`select medias from messages where projet_id = ${q(P1)} and medias = '[]'::jsonb limit 1`).catch(() => null);
+  verifie("un message sans pièce jointe a medias = [] (jamais null)", (await une(`select count(*)::int as n from messages where medias is null`)).n === 0, sansMedias);
+}
+
 async function controle15_limites_autonome() {
   section("15. limite d'usage (pause) et mode autonome (enchaînement) — 29 sept. 2026");
   const sid = `test-auto-${rand}`;
@@ -704,7 +760,7 @@ try {
     async () => { const c = await controle4_certifier(); await controle5_corriger(c); },
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
-    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome,
+    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -716,6 +772,13 @@ try {
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
   try { await purgerProjetsDeTest([P1, P2]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
+  try {
+    const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
+    if (noms.length) await fetch(`${URL_}/storage/v1/object/cockpit-medias`, { method: "DELETE", headers: { apikey: CLE_SERVICE, Authorization: `Bearer ${CLE_SERVICE}`, "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: noms }) });
+    const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
+    if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
+  } catch (e) { problemes.push(`médias : ${e.message}`); }
   const restes = await une(`select (select count(*) from projets where slug like 'test-verif-%')::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);

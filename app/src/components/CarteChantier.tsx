@@ -34,7 +34,8 @@ const PLACEHOLDER: Record<string, string> = {
   a_verifier: 'Ce que tu as constaté, une correction…',
 }
 
-const BORD: Record<string, string> = { attend_toi: 'border-alerte/60', a_verifier: 'border-attention/60', travaille: 'border-ok/60' }
+// Un liseré à gauche, pas un cadre de couleur tout autour (29 sept. : « ça fait mal aux yeux »).
+const BORD: Record<string, string> = { attend_toi: 'border-l-4 border-l-alerte/70', a_verifier: 'border-l-4 border-l-attention/70', travaille: 'border-l-4 border-l-ok/70' }
 
 /**
  * Une carte de chantier. Repliée : le titre, le badge de PRÉSENCE (« 🟢 Claude
@@ -86,7 +87,7 @@ export function CarteChantier({ chantier, ouverte, onToggle }: { chantier: Chant
   return (
     <article data-testid="carte" data-chantier={chantier.id} data-etat={chantier.etat}
       data-presence={presence.code}
-      className={`scroll-mt-16 rounded-2xl border bg-carte transition ${BORD[presence.code] ?? 'border-bord'} ${coche ? 'ring-2 ring-accent' : ''} ${flash ? 'flash-etape' : ''}`}>
+      className={`scroll-mt-16 rounded-2xl border border-bord bg-carte transition ${BORD[presence.code] ?? ''} ${coche ? 'ring-2 ring-accent' : ''} ${flash ? 'flash-etape' : ''}`}>
       <div className="flex items-start gap-2 px-3 py-2.5">
         {selection.actif ? (
           <input type="checkbox" aria-label={`Choisir ${chantier.titre}`} checked={coche} onChange={() => selection.basculer(chantier.id)} className="mt-1 h-5 w-5 shrink-0 accent-accent" />
@@ -118,7 +119,7 @@ export function CarteChantier({ chantier, ouverte, onToggle }: { chantier: Chant
       {ouverte ? (
         <div className="space-y-3 border-t border-bord px-3 py-3" data-testid="carte-detail">
           {presence.tonAction ? (
-            <div className="rounded-xl border border-accent/40 bg-accent/8 px-3 py-2" data-testid="ton-action">
+            <div className="rounded-xl border border-bord bg-carte-2/60 px-3 py-2" data-testid="ton-action">
               <p className="text-[15px] leading-snug"><span className="font-bold text-accent">Ce qu’on attend de toi : </span>{presence.tonAction}</p>
               {presence.aRelancer ? <div className="mt-2"><BoutonsRelance chantier={chantier} /></div> : null}
               {presence.code === 'reporte' && admin ? (
@@ -138,10 +139,10 @@ export function CarteChantier({ chantier, ouverte, onToggle }: { chantier: Chant
           {chantier.etat !== 'a_verifier' ? <FriseMiseEnLigne chantier={chantier} /> : null}
           {chantier.demande ? <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{chantier.demande}</p> : <p className="text-sm italic text-texte-2">Pas de description.</p>}
           {chantier.resume_simple ? (
-            <div className="rounded-xl bg-accent/8 px-3 py-2 text-[15px]"><span className="font-semibold text-accent">En clair : </span>{chantier.resume_simple}</div>
+            <div className="rounded-xl bg-carte-2/60 px-3 py-2 text-[15px]"><span className="font-medium text-texte-2">En clair : </span>{chantier.resume_simple}</div>
           ) : null}
 
-          <div className={`rounded-xl border px-3 py-2.5 ${presence.code === 'a_cadrer' ? 'border-info/60 bg-info/6 ring-2 ring-info/30' : presence.code === 'bloque' ? 'border-alerte/50 bg-alerte/5' : 'border-bord bg-carte-2/40'}`} data-testid="ecrire-a-claude">
+          <div className={`rounded-xl border px-3 py-2.5 ${presence.code === 'a_cadrer' ? 'border-bord border-l-4 border-l-info bg-carte' : presence.code === 'bloque' ? 'border-bord border-l-4 border-l-alerte bg-carte' : 'border-bord bg-carte-2/40'}`} data-testid="ecrire-a-claude">
             <p className="mb-1.5 text-sm font-bold">✍️ Écrire à Claude</p>
             <EcrireDansFil chantierId={chantier.id} placeholder={PLACEHOLDER[presence.code] ?? 'Une précision, une correction…'} rows={2}
               succes="Message envoyé : Claude le lira au démarrage de la prochaine session sur ce projet."
@@ -153,7 +154,7 @@ export function CarteChantier({ chantier, ouverte, onToggle }: { chantier: Chant
             <Repliable titre={<span className="text-sm">📝 Notes de travail</span>}><p className="whitespace-pre-wrap text-sm text-texte-2">{chantier.notes}</p></Repliable>
           ) : null}
           {chantier.etat === 'valide' ? (
-            <div className="flex items-center justify-between gap-2 rounded-xl bg-ok/8 px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-carte-2/60 px-3 py-2 text-sm">
               <span>✅ Certifié{chantier.valide_par ? ` par ${chantier.valide_par}` : ''}{chantier.valide_at ? ` · ${dateRelative(chantier.valide_at, now)}` : ''}</span>
               <SignalerProbleme chantier={chantier} />
             </div>

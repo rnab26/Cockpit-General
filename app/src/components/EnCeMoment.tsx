@@ -33,7 +33,7 @@ export function EnCeMoment({ projetId }: { projetId: string | null }) {
   const personne = resume.sessions === 0
   const [aide, setAide] = useState(false)
   return (
-    <section data-testid="en-ce-moment" aria-label="En ce moment" className={`scroll-mt-16 rounded-2xl border px-3 py-2 ${personne ? 'border-bord bg-carte' : 'border-ok/50 bg-ok/5'}`}>
+    <section data-testid="en-ce-moment" aria-label="En ce moment" className="scroll-mt-16 rounded-2xl border border-bord bg-carte px-3 py-2">
       <div className="flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-texte-2">
           {personne ? null : <span className="point-vivant inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-ok" aria-hidden />}
@@ -48,14 +48,14 @@ export function EnCeMoment({ projetId }: { projetId: string | null }) {
       ) : null}
       {personne ? (
         <div data-testid="personne-ne-travaille" className="mt-0.5">
-          <p className="text-[15px] font-semibold">😴 Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment</p>
+          <p className="text-[15px] font-medium">Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment</p>
           <p className="mt-0.5 text-xs leading-snug text-texte-2">Pour faire avancer un chantier, ouvre-le dans « À lancer » et copie la consigne dans une session Claude du projet.</p>
         </div>
       ) : null}
       {!personne || nMuets ? (
-        <p className="mt-0.5 text-sm font-bold leading-snug">
-          {personne ? null : <span className="text-ok" data-testid="resume-travail">{resume.texte}</span>}
-          {nMuets ? <span className="text-attention" data-testid="resume-sans-nouvelles">{personne ? '' : ' · '}🟡 {nMuets} sans nouvelles</span> : null}
+        <p className="mt-0.5 text-sm font-medium leading-snug">
+          {personne ? null : <span className="text-texte" data-testid="resume-travail">{resume.texte}</span>}
+          {nMuets ? <span className="text-attention" data-testid="resume-sans-nouvelles">{personne ? '' : ' · '}{nMuets} sans nouvelles</span> : null}
         </p>
       ) : null}
       {projets.length ? (
@@ -131,14 +131,14 @@ function LigneSansNouvelles({ l }: { l: LigneALancer }) {
   const pourquoi = l.presence.code === 'silencieux' ? 'Pris, mais silencieux' : 'Personne dessus'
   const dernier = a ? ` · ${a.pourcentage} % ${dateRelative(a.updated_at, now)}` : ''
   return (
-    <div data-testid="ligne-sans-nouvelles" data-ligne-chantier={l.c.id} className="rounded-xl border border-attention/40 bg-attention/5 px-2.5 py-1">
+    <div data-testid="ligne-sans-nouvelles" data-ligne-chantier={l.c.id} className="rounded-xl border border-l-4 border-bord border-l-attention/70 bg-carte px-2.5 py-1">
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => ouvrirChantier(l.c.id)} className="min-w-0 flex-1 text-left">
-          <span className="block truncate text-sm font-semibold">🟡 {l.c.titre}</span>
+          <span className="block truncate text-sm font-medium">{l.c.titre}</span>
           <span className="block truncate text-xs text-attention">{pourquoi}{dernier}</span>
         </button>
         <button type="button" onClick={() => setRelance(!relance)} aria-expanded={relance} data-testid="ouvrir-relance"
-          className="shrink-0 rounded-lg border border-attention/40 px-2 py-1 text-xs font-semibold text-attention">Relancer</button>
+          className="shrink-0 rounded-lg border border-bord px-2 py-1 text-xs font-medium text-texte">Relancer</button>
       </div>
       {relance ? <div className="mt-1.5"><BoutonsRelance chantier={l.c} /></div> : null}
     </div>
@@ -153,8 +153,8 @@ function BlocSession({ vs, projetId }: { vs: VueSession; projetId: string }) {
   const taches = toutes ? vs.taches : vs.taches.slice(0, TACHES_VISIBLES)
   const cachees = vs.taches.length - taches.length
   return (
-    <div data-testid="session-active" data-session={vs.session.id} className={`rounded-xl border px-2.5 py-2 ${vs.pause ? 'border-attention/40 bg-attention/5' : 'border-bord bg-carte'}`}>
-      <p className="truncate text-sm font-semibold" title={vs.titre}>{vs.titre}</p>
+    <div data-testid="session-active" data-session={vs.session.id} className={`rounded-xl border px-2.5 py-2 ${vs.pause ? 'border-bord border-l-4 border-l-attention/70 bg-carte' : 'border-bord bg-carte'}`}>
+      <p className="truncate text-sm font-medium" title={vs.titre}>{vs.titre}</p>
       {vs.pause ? (
         <div data-testid="session-en-pause">
           <p className="text-xs font-semibold leading-snug text-attention" data-testid="etat-session">{vs.pause}</p>
@@ -162,7 +162,7 @@ function BlocSession({ vs, projetId }: { vs: VueSession; projetId: string }) {
         </div>
       ) : (
         <p className="truncate text-xs text-texte-2">
-          <span className={vs.repond ? 'font-semibold text-ok' : ''} data-testid="etat-session">{vs.repond ? '✍️ répond en ce moment' : vs.titre.startsWith('🤖 Session autonome') ? '💤 en veille — se réveille toute seule chaque heure' : '⏸️ attend ton prochain message'}</span>
+          <span className={vs.repond ? 'font-medium text-ok' : ''} data-testid="etat-session">{vs.repond ? '✍️ répond en ce moment' : vs.titre.startsWith('🤖 Session autonome') ? '💤 en veille — se réveille toute seule chaque heure' : '⏸️ attend ton prochain message'}</span>
           {' · '}{vs.dernierSigne}
         </p>
       )}
@@ -193,9 +193,9 @@ function LigneActivite({ a, projetId, dansSession = false }: { a: Activite; proj
   return (
     <button type="button" data-testid="ligne-en-ce-moment" data-chantier-ligne={chantier?.id ?? ''} data-flash={flash ? 'oui' : 'non'}
       onClick={() => chantier && g.ouvrirChantier(projetId, chantier.id)}
-      className={`block w-full rounded-xl text-left ${dansSession ? '' : 'border border-ok/40 bg-carte px-2.5 py-2'} ${flash ? 'flash-etape' : ''}`}>
+      className={`block w-full rounded-xl text-left ${dansSession ? '' : 'border border-bord bg-carte px-2.5 py-2'} ${flash ? 'flash-etape' : ''}`}>
       <span className="flex items-center gap-1.5">
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">📌 {chantier?.titre ?? a.detail ?? 'Travail hors chantier'}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{chantier?.titre ?? a.detail ?? 'Travail hors chantier'}</span>
         <PointTravaille />
         {chantier ? <span aria-hidden className="text-texte-2">›</span> : null}
       </span>
@@ -242,8 +242,8 @@ export function TachesDuChantier({ chantierId }: { chantierId: string }) {
   const liste = taches.filter((t) => t.chantier_id === chantierId && tacheEnCoursVivante(t, now))
   if (!liste.length) return null
   return (
-    <div className="space-y-1.5 rounded-xl border border-ok/40 bg-ok/5 px-3 py-2" data-testid="taches-du-chantier">
-      <p className="text-xs font-bold uppercase tracking-wide text-ok">En train d’y travailler</p>
+    <div className="space-y-1.5 rounded-xl border border-bord bg-carte px-3 py-2" data-testid="taches-du-chantier">
+      <p className="text-xs font-medium uppercase tracking-wide text-ok">En train d’y travailler</p>
       {liste.map((t) => <LigneTache key={t.id} v={vueTache(t, chantiers, now)} projetId={projet.id} sansChantier />)}
     </div>
   )

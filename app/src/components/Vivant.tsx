@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
  */
 export function PointTravaille({ className = '' }: { className?: string }) {
   return (
-    <span data-testid="point-travaille" className={`inline-flex shrink-0 items-center gap-1 rounded-full bg-ok/12 px-1.5 text-[11px] font-bold leading-5 text-ok ${className}`}>
+    <span data-testid="point-travaille" className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1 text-[11px] font-medium leading-5 text-ok ${className}`}>
       <span className="point-vivant inline-block h-2 w-2 rounded-full bg-ok" aria-hidden />travaille
     </span>
   )

@@ -47,6 +47,7 @@ demandes des utilisateurs, progression des autres sessions.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.
+- **Photos, vidéos, fichiers de Raphaël** (joints à ses réponses dans l'app, 📎 dans le hook) : `scripts/cockpit-media.sh --message <id>` ou `--chantier <id>` les télécharge ; REGARDE-les (Read sur l'image) avant de répondre.
 - **Le cycle** est une colonne `etat` : à trier → à cadrer → libre → en cours →
   à vérifier → validé (+ bloqué, reporté). **Seul un humain pose « validé »**
   (bouton « Ça fonctionne, je certifie » ; « Corriger » complète la demande sur

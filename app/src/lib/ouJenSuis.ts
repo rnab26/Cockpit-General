@@ -1,15 +1,20 @@
 // « Où j'en suis » : quatre nombres par section, pas cinq (leçon Jarvis :
 // une cinquième colonne oblige à relire un tableau au lieu de lire une
-// réponse). Bloqué / reporté ne compte nulle part, et une réservation
-// expirée non plus — elle ressort à part, pour être libérée.
+// réponse). « Pour toi » est EXACTEMENT la liste « À toi » de l'entonnoir
+// (questions, fusions, à vérifier, à cadrer, bloqués) : le nombre du tableau,
+// la pastille de l'onglet et le bloc « À toi » ne peuvent pas diverger
+// (29 sept. : 12 dans le tableau contre 14 sur l'onglet, pour le même projet).
+// Reporté ne compte nulle part, et une réservation expirée non plus — elle
+// ressort à part, pour être libérée.
 import type { Chantier, Message, Section } from './types.ts'
 import { reservationValide } from './dates.ts'
 import { dansFenetre, type Fenetre } from './fenetre.ts'
+import { aToi } from './entonnoir.ts'
 
 export interface QuatreNombres {
-  pourToi: number   // questions/actions sans réponse + chantiers à vérifier
+  pourToi: number   // les éléments de « À toi » (entonnoir.aToi)
   bouge: number     // en cours, réservation valide
-  dort: number      // libre / à trier / à cadrer, personne dessus
+  dort: number      // libre / à trier, personne dessus
   livre: number     // certifié dans la fenêtre
   expirees: number  // en cours mais réservation expirée : à libérer
 }
@@ -38,11 +43,10 @@ export function questionsSansChantier(messages: readonly Pick<Message, 'chantier
 export function ouJenSuis(
   sections: readonly Section[],
   chantiers: readonly Chantier[],
-  messages: readonly Pick<Message, 'chantier_id' | 'kind' | 'answered_at'>[],
+  messages: readonly Message[],
   fenetre: Fenetre,
   now: Date = new Date(),
 ): { lignes: LigneOuJenSuis[]; total: QuatreNombres } {
-  const attente = chantiersEnAttente(messages)
   const parSection = new Map<string | null, LigneOuJenSuis>()
   const ligne = (id: string | null, section: Section | null) => {
     let l = parSection.get(id)
@@ -67,19 +71,22 @@ export function ouJenSuis(
     if (c.archived_at && c.etat !== 'valide') continue   // doublon ou archivé : hors jeu
     if (c.etat === 'valide') continue
 
-    if (attente.has(c.id) || c.etat === 'a_verifier') compte('pourToi')
     if (c.etat === 'en_cours') {
       if (reservationValide(c.pris_jusqu_a, now)) compte('bouge')
       else compte('expirees')
-    } else if (c.etat === 'libre' || c.etat === 'a_trier' || c.etat === 'a_cadrer') {
+    } else if (c.etat === 'libre' || c.etat === 'a_trier') {
       if (!reservationValide(c.pris_jusqu_a, now)) compte('dort')
       else compte('bouge')  // réservé mais l'état n'a pas suivi : quelqu'un est dessus
     }
-    // bloque / reporte : nulle part, volontairement.
+    // à cadrer / bloqué : dans « pour toi » (ci-dessous) ; reporté : nulle part, volontairement.
   }
-  // Les questions de projet (sans chantier) attendent aussi une réponse.
-  const sansChantier = questionsSansChantier(messages)
-  if (sansChantier) { ligne(null, null).nombres.pourToi += sansChantier; total.pourToi += sansChantier }
+  // « Pour toi » : un par élément de « À toi » ; la liste derrière le nombre donne ses chantiers.
+  for (const e of aToi(chantiers, messages)) {
+    const sid = e.chantier?.section_id && sectionsConnues.has(e.chantier.section_id) ? e.chantier.section_id : null
+    const l = ligne(sid, sid ? ordre.find((s) => s.id === sid)! : null)
+    l.nombres.pourToi++; total.pourToi++
+    if (e.chantier && !l.ids.pourToi.includes(e.chantier.id)) l.ids.pourToi.push(e.chantier.id)
+  }
 
   // « Sans section » n'apparaît que si elle porte quelque chose.
   const lignes = [...parSection.values()].filter((l) => l.section !== null || Object.values(l.nombres).some((n) => n > 0))

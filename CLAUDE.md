@@ -55,14 +55,21 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel (118 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias (158 contrôles)
 bash -n scripts/*.sh hooks/*.sh
 ```
 
 Le compte de test des parcours navigateur est un admin nommé
 `test-cockpit@cockpit.local` (mot de passe hors dépôt, dans l'environnement
 de la session qui l'a créé) : ce n'est pas une personne, ne l'ajoute à aucun
-projet.
+projet. Sans ce mot de passe, `verifier-web.mjs` se connecte par un lien
+magique (clé service_role) ; `app/scripts/capture-ecran.mjs <url> <dossier>`
+capture l'écran réel sur un téléphone (clair, ou `SCHEMA=dark`).
+
+**Chromium du conteneur et proxy TLS (29 sept.)** : il ne fait pas confiance
+au proxy (`ERR_CERT_AUTHORITY_INVALID`, y compris sur le site en ligne). Les
+deux scripts font passer les requêtes https par Node (`ctx.route` + `fetch`),
+qui vérifie le certificat : ne jamais « corriger » avec `ignoreHTTPSErrors`.
 
 **Deux pièges payés le 28 sept. 2026.**
 - Une fonction `security definer` contourne la RLS : elle doit vérifier
@@ -86,6 +93,17 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 `node scripts/verifier-embed.mjs`. Une modification de `embed/cockpit-embed.js`
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
+
+## Médias dans les réponses (29 sept. 2026, migration 0013)
+
+Raphaël répond avec des cartes ET des photos/vidéos/fichiers (bouton 📎 sur
+une question, « Écrire à Claude », certifier/corriger). Stockage PRIVÉ
+`cockpit-medias` (le bucket `cockpit` est à Jarvis), chemin
+`<projet>/<chantier|projet>/<uuid>-<nom>`, droits par `peut_lire_media` /
+`peut_deposer_media` ; colonne `messages.medias`. Les RPC de réponse ne portent
+pas de fichier : les médias partent dans un message `info` juste après. Une
+session les récupère avec `scripts/media.sh --message|--chantier <id>` (📎 dans
+le hook) et les REGARDE avant de répondre.
 
 ## Sessions, agents, doublons : ce que Claude décide seul (29 sept. 2026)
 
