@@ -117,6 +117,8 @@ export interface Message {
   ou_en_est?: boolean | null
   recu_at?: string | null
   recu_par?: string | null
+  /** 0027 : écrit par Raphaël dans une SESSION Claude (hook de suivi), recopié dans le fil. Déjà lu et répondu là-bas. */
+  via_session?: boolean | null
 }
 
 export interface Media {

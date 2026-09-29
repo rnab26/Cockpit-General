@@ -163,7 +163,7 @@ if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
 fi
 # « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, dans CE projet.
 while [ ${#donnes[@]} -lt "$libres" ]; do
-  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
+  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and not m.via_session and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
     from verifs_prenables('$pid', null) c join projets p on p.id = c.projet_id
     where c.verif_demandee_at is not null and p.actif order by c.verif_demandee_at limit 1")
   vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break

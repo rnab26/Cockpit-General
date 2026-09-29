@@ -33,6 +33,7 @@
 //   25. renforts (0024) : une session par section, exclusivité, jamais deux renforts sur un chantier
 //   26. fil en discussion (0025)
 //   27. certifier garde une question ouverte (0026), sa réponse reprise sans rouvrir le certifié
+//   28. ses messages dans une session arrivent dans le fil du chantier (0027), internes, jamais « à répondre »
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -1521,6 +1522,60 @@ async function controle27_question_gardee() {
   verifie("droits : ni anon ni un utilisateur connecté n'exécutent ces fonctions", droits && !droits.a && !droits.b && !droits.c, droits);
 }
 
+// ------------------------------------------------------------------ 28
+async function controle28_messages_de_session() {
+  section("28. Ses messages dans une SESSION arrivent dans le fil du chantier (0027), jamais comme « à répondre », jamais chez un utilisateur");
+  const br = `claude/sess-verif-${rand}`, sid = `test-sess-${rand}`;
+  const cTenu = await creerChantier(P1, { titre: "Test messages de session, tenu", etat: "en_cours" });
+  const cAutre = await creerChantier(P1, { titre: "Test messages de session, autre branche", etat: "en_cours" });
+  await sql(`update chantiers set pris_par = ${q(br)}, pris_jusqu_a = now() + interval '30 minutes' where id = ${q(cTenu)}`);
+  await sql(`update chantiers set pris_par = 'claude/une-autre', pris_jusqu_a = now() + interval '30 minutes' where id = ${q(cAutre)}`);
+  const n = (await une(`select consigner_message_session(${q(SLUG_A)}, ${q(sid)}, ${q(br)}, 'Fais le bouton plus grand, ma clé sk-ant-abcdefghijklmnopqrst') as n`)).n;
+  const fil = await sql(`select m.id, m.auteur_type, m.kind, m.corps, m.via_session, m.recu_at, m.chantier_id, m.medias, m.ou_en_est,
+      to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at, null as answered_at,
+      cockpit.est_message_libre(m) as libre_base from messages m where m.chantier_id = ${q(cTenu)}`);
+  verifie("déposé dans le fil du chantier que la session tient, marqué « via la session », côté Raphaël",
+    n === 1 && fil.length === 1 && fil[0].via_session === true && fil[0].auteur_type === "proprietaire" && fil[0].kind === "info", { n, fil });
+  verifie("un secret évident est masqué avant d'entrer en base", fil[0]?.corps === "Fais le bouton plus grand, ma clé [secret masqué]", fil[0]?.corps);
+  verifie("jamais dans le fil d'un chantier tenu par une AUTRE session",
+    (await une(`select count(*)::int as n from messages where chantier_id = ${q(cAutre)}`)).n === 0);
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const { estMessageLibre } = await import(join(racine, "app/src/lib/discussion.ts"));
+  verifie("pas un « message libre » qui attend une réponse : ni en base, ni dans l'app (même règle)",
+    fil[0]?.libre_base === false && estMessageLibre(fil[0], fil) === false, fil[0]);
+  verifie("pas dans la file des messages sans réponse (la session a répondu dans la session)",
+    !(await sql(`select chantier_id from messages_sans_reponse(${q(P1)}, ${q(br)})`)).some((r) => r.chantier_id === cTenu));
+  // Le cas normal : il écrit, PUIS Claude ouvre le chantier. Le message suit, à son heure.
+  await sql(`update messages_session_attente set created_at = now() - interval '2 minutes' where session_id = ${q(sid)}`);
+  const idNeuf = randomUUID();
+  await sql(`insert into chantiers (id, projet_id, titre, etat, origine, pris_par, pris_jusqu_a) values (${q(idNeuf)}, ${q(P1)}, 'Test messages de session, ouvert après', 'en_cours', 'session', ${q(br)}, now() + interval '30 minutes')`);
+  const neuf = await sql(`select corps, created_at < now() - interval '1 minute' as a_son_heure from messages where chantier_id = ${q(idNeuf)}`);
+  verifie("chantier ouvert par la session juste après : son message le rejoint, à l'heure où il l'a écrit",
+    neuf.length === 1 && neuf[0].a_son_heure === true && /bouton plus grand/.test(neuf[0].corps), neuf);
+  // Reprise d'un chantier existant (reserver_chantier) : même chose, une seule fois.
+  const cRepris = await creerChantier(P1, { titre: "Test messages de session, repris", etat: "libre" });
+  await reserver(cRepris, br);
+  await sql(`update chantiers set pris_par = null where id = ${q(cRepris)}`);
+  await reserver(cRepris, br);
+  verifie("chantier réservé ensuite : déposé une seule fois, même repris deux fois",
+    (await une(`select count(*)::int as n from messages where chantier_id = ${q(cRepris)} and via_session`)).n === 1);
+  await sql(`update messages_session_attente set created_at = now() - interval '20 minutes' where session_id = ${q(sid)}`);
+  const cTard = await creerChantier(P1, { titre: "Test messages de session, trop tard", etat: "libre" });
+  await reserver(cTard, br);
+  verifie("au-delà de 15 min, un vieux message ne rejoint plus un chantier pris plus tard",
+    (await une(`select count(*)::int as n from messages where chantier_id = ${q(cTard)}`)).n === 0);
+  verifie("rien de vide : un message blanc n'est pas déposé",
+    (await une(`select consigner_message_session(${q(SLUG_A)}, ${q(sid)}, ${q(br)}, '   ') as n`)).n === 0);
+  // Interne : un utilisateur membre du projet ne le lit jamais (le chantier lui est pourtant visible).
+  const lu = await rest(`messages?select=id,via_session&chantier_id=eq.${cTenu}`, { jwt });
+  verifie("un utilisateur membre ne lit pas ce que Raphaël écrit dans ses sessions (RLS)", lu.status === 200 && Array.isArray(lu.json) && lu.json.length === 0, lu);
+  const r = await rpcUtilisateur("consigner_message_session", { p_projet: SLUG_A, p_session: "x", p_branche: "x", p_texte: "faux" }, jwt);
+  verifie("consigner_message_session : interdit à un utilisateur (sessions seulement)", r.status >= 400, { status: r.status });
+  const attente = await rest(`messages_session_attente?select=id`, { jwt });
+  verifie("la file d'attente n'est pas lisible par un utilisateur", attente.status >= 400 || (Array.isArray(attente.json) && attente.json.length === 0), attente);
+  await sql(`delete from messages_session_attente where session_id = ${q(sid)}`);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -1539,7 +1594,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session,
   ];
   for (const etape of etapes) {
     try { await etape(); }

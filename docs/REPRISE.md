@@ -284,6 +284,26 @@ Sessions : `scripts/reproduction.sh --chantier <id>`, cité dans les consignes
 nettoyage : `app/scripts/verifier-reproduction.ts`. Hors v1 : rejouer les clics
 tout seul, test synthétique automatique, capture dans l'app elle-même (« + Chantier »).
 
+## 2 quindecies. 29 sept. soir : ses messages de SESSION dans le fil du chantier (chantier FacePro `2190e53b`, migration 0027)
+
+Raphaël : « les messages que j'envoie dans une session pour des chantiers que
+j'ouvre ne sont pas importés dans le chat du chantier, on s'y perd ». Livré :
+`hooks/suivi.sh` (UserPromptSubmit, `consigner_message`) envoie chacun de SES
+vrais messages (pas une notification, un réveil, une consigne de renfort ni
+une commande seule ; jamais depuis une session de renfort) à
+`consigner_message_session` : déposé tel quel (secrets évidents masqués,
+`masquer_secrets`) dans le fil des chantiers que la session tient, et gardé
+15 min dans `messages_session_attente` pour rejoindre le chantier qu'elle
+prend juste après (trigger `chantiers_messages_session`, toutes voies, à
+l'heure où il a été écrit, une seule fois par fil). `messages.via_session` :
+jamais « message libre » (base ET app), jamais remis à la session comme « il
+t'écrit », jamais lu par un utilisateur final (RLS `membre_messages_lit` +
+filtre de `cockpit-embed`). App : bulle « Toi · dans la session claude ».
+Vérifié : verifier-base §28 (326/326), verifier-reponses §12 (46/46).
+Limite : un message qui porte sur un AUTRE sujet que le chantier tenu y est
+quand même déposé (la session ne sait qu'après) ; il rejoint aussi le
+nouveau chantier si la session l'ouvre dans les 15 min.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

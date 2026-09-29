@@ -79,7 +79,7 @@ reponses_fraiches() {
       string_agg(m.id::text, ',') filter (where m.recu_at is null and (m.ou_en_est or cockpit.est_message_libre(m))) as a_marquer
     from messages m join chantiers c on c.id = m.chantier_id
     where m.chantier_id in (select id from mes)
-      and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat'))
+      and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and not m.via_session)
         or (m.kind in ('question','action') and m.answered_at is not null and coalesce(m.reponse, '') not like 'Retirée par Claude%'))
       and $cond" 2>/dev/null)
   local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
@@ -112,6 +112,29 @@ $qst"
   jq -n --arg t "$sortie" --arg e "$evn" '{hookSpecificOutput: {hookEventName: $e, additionalContext: $t}}'
 }
 
+# SES MESSAGES DANS LA SESSION → LE FIL DU CHANTIER (0027 ; Raphaël, 29 sept. :
+# « les messages que j'envoie dans une session pour des chantiers que j'ouvre ne
+# sont pas importés dans le chat du chantier, on s'y perd sur le contexte »).
+# Un VRAI message de lui seulement : jamais une notification, un réveil, une
+# consigne de renfort ni une commande seule (même filtre que prompt-rappel.sh
+# pour « c'est un message de Raphaël »), jamais dans une session de renfort.
+# La base le dépose dans les chantiers que la session tient, et dans celui
+# qu'elle prendra dans les 15 min (trigger). En arrière-plan, sans attendre.
+consigner_message() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  local invite marque
+  invite=$(printf '%s' "$entree" | jq -r '.prompt // ""' 2>/dev/null)
+  [ -n "${invite//[[:space:]]/}" ] || return 0
+  marque="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort"
+  [ -s "$marque" ] && return 0
+  printf '%s' "$invite" | grep -qE '^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event)|\[cockpit-renfort\])|Réveil (horaire|du chef)' && return 0
+  printf '%s' "$invite" | grep -qxE '[[:space:]]*/[A-Za-z0-9:_-]+[[:space:]]*' && return 0
+  local qp qs qb qt
+  qp=$(printf '%s' "$PROJET" | sed "s/'/''/g"); qs=$(printf '%s' "$sid" | sed "s/'/''/g")
+  qb=$(printf '%s' "$branche" | sed "s/'/''/g"); qt=$(printf '%s' "$invite" | head -c 16000 | sed "s/'/''/g")
+  ( setsid "$SQL" "select consigner_message_session('$qp', '$qs', '$qb', '$qt')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
 case "$ev" in
   PostToolUse)
     reponses_fraiches PostToolUse
@@ -140,6 +163,7 @@ case "$ev" in
     # ce qu'il a répondu pendant qu'elle était à l'arrêt lui est remis tout de
     # suite, avant son premier pas — sans attendre le rythme de 20 s.
     reponses_fraiches UserPromptSubmit maintenant
+    consigner_message
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, prompt: ((.prompt // "") | .[0:200])}') ;;
   StopFailure)
     # Une réponse arrêtée par une erreur : limite d'usage (rate_limit), facturation,
