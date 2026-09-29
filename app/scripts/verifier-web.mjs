@@ -41,6 +41,7 @@ import { tmpdir } from 'node:os'
 import { deflateSync, crc32 } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { AGE_RESTE_MIN, EST_TEST, projetsDeTestAbandonnes, purgerMarquesDansLesVraisProjets, restesDansLesVraisProjets } from '../../scripts/bancs.mjs'
 
 const ici = path.dirname(fileURLToPath(import.meta.url))
 const racineApp = path.resolve(ici, '..')
@@ -138,20 +139,19 @@ const purgerProjetsDeTest = (ids) => {
   sql(`delete from historique where chantier_id in (select chantier_id from supprimes where projet_id in (${liste}))`)
   sql(`delete from supprimes where projet_id in (${liste})`)
 }
-// Plusieurs agents lancent ce script EN MÊME TEMPS (29 sept. 2026 : une passe purgeait le projet
-// d'une autre en plein parcours) : on ne purge que les projets de test vieux de plus de 2 h, et les
-// restes des anciennes versions seulement HORS des projets de test (ceux d'une passe vivante).
-const HORS_TESTS = `projet_id not in (select id from projets where slug like 'test-web-%')`
-const vieux = sql(`select id, slug from projets where slug like 'test-web-%' and created_at < now() - interval '2 hours'`)
+// Seulement les projets ABANDONNÉS (plus de AGE_RESTE_MIN min) : la passe
+// vivante d'un autre agent, dans son propre test-web-…, n'est jamais touchée.
+const vieux = await projetsDeTestAbandonnes(sql, 'test-web-')
 if (vieux.length) { console.log(`  (purge de ${vieux.length} projet(s) de test d’une passe précédente : ${vieux.map((v) => v.slug).join(', ')})`); purgerProjetsDeTest(vieux.map((v) => v.id)) }
 // Les restes des anciennes versions de ce script (qui écrivaient dans « cockpit ») :
-sql(`delete from messages where corps like '${MARQUE}%' and ${HORS_TESTS}`)
-sql(`delete from chantiers where titre like '${MARQUE}%' and ${HORS_TESTS}`)
-sql(`delete from historique where chantier_id in (select id from chantiers where titre like '${MARQUE2}%' and ${HORS_TESTS}) or chantier_id in (select chantier_id from supprimes where ligne->>'titre' like '${MARQUE2}%' and ${HORS_TESTS})`)
-sql(`delete from chantiers where titre like '${MARQUE2}%' and ${HORS_TESTS}`)
-sql(`delete from supprimes where ligne->>'titre' like '${MARQUE2}%' and ${HORS_TESTS}`)
-sql(`delete from activite where session like '${SESSION_TEST}%' and ${HORS_TESTS}`)
-sql(`delete from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS})`)
+// uniquement dans les projets RÉELS, jamais dans le projet de test d'une autre passe.
+const REELS = `projet_id in (select id from projets where not ${EST_TEST()})`
+await purgerMarquesDansLesVraisProjets(sql, MARQUE)
+await purgerMarquesDansLesVraisProjets(sql, MARQUE2)
+sql(`delete from messages where corps like '${MARQUE}%' and ${REELS}`)
+sql(`delete from supprimes where (ligne->>'titre' like '${MARQUE}%' or ligne->>'titre' like '${MARQUE2}%') and ${REELS} and deleted_at < now() - interval '${AGE_RESTE_MIN} minutes'`)
+sql(`delete from activite where session like '${SESSION_TEST}%' and (${REELS} or updated_at < now() - interval '${AGE_RESTE_MIN} minutes')`)
+sql(`delete from sessions where id like '${SESSION_TEST}%' and (${REELS} or vu_at < now() - interval '${AGE_RESTE_MIN} minutes')`)
 const moiId = sql(`select id from auth.users where email = '${esc(EMAIL)}'`)[0]?.id
 if (!moiId) throw new Error('compte de test introuvable dans auth.users')
 const prefDoublonsExistait = sql(`select cle from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`).length > 0
@@ -587,14 +587,17 @@ try {
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, demarre_at, vu_at) values ('${SID}', '${projet.id}', 'cmd-1', 'commande', '${esc(`${MARQUE2} commande muette`)}', 'en_cours', now() - interval '3 minutes', now())`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, demarre_at, vu_at, fini_at) values ('${SID}', '${projet.id}', 'fini-1', 'agent', '${esc(`${MARQUE2} agent fini`)}', 'termine', now() - interval '20 minutes', now(), now() - interval '2 minutes')`)
   // Une conversation qui répond sans chantier : une ligne discrète « hors chantier ».
+  // Sujets suffixés par l'id de CETTE passe : le compte de test voit tous les projets de
+  // test, donc aussi ceux d'une autre passe qui tourne en même temps (un agent).
   const SIDH = `${SESSION_TEST}hors-${randomUUID().slice(0, 8)}`
-  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at) values ('${SIDH}', '${projet.id}', '${esc(`${MARQUE2} ranger la doc`)}', true, now())`)
+  const SUJET_H = `${MARQUE2} ranger la doc ${SLUG.slice(-4)}`   // ≤ 32 car. : nomSession tronque au-delà
+  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at) values ('${SIDH}', '${projet.id}', '${esc(SUJET_H)}', true, now())`)
   await actualiser()
   const lP4 = await ligneAvance(P4.id)
   verifie('un agent qui a signalé : la ligne du CHANTIER dit « 1 assistant de Claude · « Étape de test » »', (await lP4.getAttribute('data-vivant')) === 'oui' && /1 assistant de Claude · « Étape de test »/.test(await lP4.textContent()), await lP4.textContent())
   verifie('…sa barre vive, 40 %, et le temps restant signalé', await lP4.locator('[data-vive="oui"]').count() === 1 && /40 % · reste ~\d+ min/.test(await lP4.textContent()), await lP4.textContent())
-  const hors = page.getByTestId('hors-chantier').filter({ hasText: 'ranger la doc' })
-  verifie('le travail hors chantier : une ligne discrète « Claude travaille sur autre chose (« … ») »', await hors.count() === 1 && /Claude travaille sur autre chose \(« \[TEST web\] ranger la doc »\)/.test(await hors.textContent()), await hors.textContent().catch(() => null))
+  const hors = page.getByTestId('hors-chantier').filter({ hasText: SUJET_H })
+  verifie('le travail hors chantier : une ligne discrète « Claude travaille sur autre chose (« … ») »', await hors.count() === 1 && (await hors.textContent()).includes(`Claude travaille sur autre chose (« ${SUJET_H} »)`), await hors.textContent().catch(() => null))
   verifie('résumé en mots simples (conversations · assistants · commandes), replié', /Qui travaille : \d+ conversations? · \d+ assistants? · \d+ commandes?/.test(await page.getByTestId('resume-travail').textContent()) && (await page.getByTestId('detail-sessions').getAttribute('aria-expanded')) === 'false', await page.getByTestId('resume-travail').textContent())
   await page.getByTestId('detail-sessions').click()
   const blocSession = page.locator(`[data-testid="session-active"][data-session="${SID}"]`)
@@ -622,10 +625,10 @@ try {
 
   // Une session arrêtée sur une limite (0010) : « En pause », rien ne s'anime.
   const SIDP = `${SESSION_TEST}pause-${randomUUID().slice(0, 8)}`
-  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at, pause_raison, pause_at, pause_detail) values ('${SIDP}', '${projet.id}', '${esc(`${MARQUE2} session en pause`)}', false, now() - interval '90 minutes', 'rate_limit', now() - interval '80 minutes', 'Limite atteinte, reprise à 4 h')`)
+  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at, pause_raison, pause_at, pause_detail) values ('${SIDP}', '${projet.id}', '${esc(`${MARQUE2} session en pause ${SLUG.slice(-4)}`)}', false, now() - interval '90 minutes', 'rate_limit', now() - interval '80 minutes', 'Limite atteinte, reprise à 4 h')`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, etape, pourcentage, progres_at, vu_at) values ('${SIDP}', '${projet.id}', 'agent-p', 'agent', '${esc(`${MARQUE2} agent arrêté`)}', 'en_cours', 'Étape', 30, now(), now())`)
   await actualiser()
-  const horsPause = page.getByTestId('hors-chantier').filter({ hasText: 'session en pause' })
+  const horsPause = page.getByTestId('hors-chantier').filter({ hasText: `session en pause ${SLUG.slice(-4)}` })
   await horsPause.waitFor({ timeout: 15000 }).catch(() => {})
   verifie('session en pause : une ligne « … en pause — limite d’usage atteinte (reprend toute seule quand la limite se lève) »',
     await horsPause.count() === 1 && (await horsPause.textContent()).includes('en pause — limite d’usage atteinte (reprend toute seule quand la limite se lève)'), await horsPause.textContent().catch(() => null))
@@ -1445,28 +1448,29 @@ try {
   await capture(page, 'echec').catch(() => {})
 } finally {
   // Nettoyage des lignes de test, quoi qu'il arrive.
-  try { sql(`delete from messages where corps like '${MARQUE}%'`); sql(`delete from chantiers where titre like '${MARQUE}%'`); sql(`delete from supprimes where ligne->>'titre' like '${MARQUE}%'`) } catch (e) { console.log(`  (nettoyage SQL : ${e.message})`) }
   // Chantiers de test (messages et activités suivent en cascade), leur historique,
   // leur trace de suppression, les paires « pas un doublon » et le réglage de silence.
   try {
     const ids = idsTest.length ? idsTest.map((i) => `'${i}'`).join(', ') : `'00000000-0000-0000-0000-000000000000'`
-    // Jamais les lignes d'une AUTRE passe en cours (ses projets test-web-… : HORS_TESTS) ; le nôtre part en cascade plus bas.
-    sql(`delete from messages where chantier_id in (${ids}) or (corps like '%${MARQUE2}%' and ${HORS_TESTS})`)
-    sql(`delete from activite where chantier_id in (${ids}) or (session like '${SESSION_TEST}%' and ${HORS_TESTS})`)
-    sql(`delete from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS}${projet ? ` or projet_id = '${projet.id}'` : ''})`)
+    // Seulement CE projet de test et SES chantiers : une autre passe qui tourne garde les siens.
+    const monProjet = `'${projet ? projet.id : '00000000-0000-0000-0000-000000000000'}'`
+    sql(`delete from messages where chantier_id in (${ids}) or projet_id = ${monProjet}`)
+    sql(`delete from activite where chantier_id in (${ids}) or projet_id = ${monProjet}`)
+    sql(`delete from sessions where projet_id = ${monProjet}`)
     sql(`delete from ce_qui_marche where chantier_id in (${ids})`)
-    sql(`delete from chantiers where id in (${ids}) or (titre like '${MARQUE2}%' and ${HORS_TESTS})`)
+    sql(`delete from chantiers where id in (${ids})`)
     sql(`delete from historique where chantier_id in (${ids})`)
-    sql(`delete from supprimes where chantier_id in (${ids}) or (ligne->>'titre' like '${MARQUE2}%' and ${HORS_TESTS})`)
+    sql(`delete from supprimes where chantier_id in (${ids})`)
     if (!prefDoublonsExistait) sql(`delete from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`)
     else if (idsTest.length) sql(`update preferences set valeur = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements_text(valeur) e where not (e ~ '${idsTest.join('|')}')) where user_id = '${moiId}' and cle = 'doublons_ignores'`)
     if (!prefSilenceAvant) sql(`delete from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)
     else sql(`update preferences set valeur = '${esc(JSON.stringify(prefSilenceAvant.valeur))}'::jsonb where user_id = '${moiId}' and cle = 'silence_minutes'`)
     if (projet) purgerProjetsDeTest([projet.id])
-    const reste = sql(`select (select count(*) from chantiers where id in (${ids}) or (titre like '${MARQUE2}%' and ${HORS_TESTS})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids})) + (select count(*) from activite where session like '${SESSION_TEST}%' and ${HORS_TESTS}) + (select count(*) from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS})) as n`)[0].n
-    // Les projets réels (hors test-web-…, que d'autres passes peuvent tenir en ce moment) et NOTRE projet de test.
-    const restesReels = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where titre like '[TEST%' and ${HORS_TESTS}) + (select count(*) from messages where corps like '%${MARQUE2}%' and ${HORS_TESTS}) + (select count(*) from activite where (session like '${SESSION_TEST}%' or etape like '[TEST%') and ${HORS_TESTS}) + (select count(*) from sessions where (id like '${SESSION_TEST}%' or sujet like '[TEST%') and (projet_id is null or ${HORS_TESTS})) + (select count(*) from taches where description like '[TEST%' and ${HORS_TESTS}) + (select count(*) from supprimes where ligne->>'titre' like '[TEST%' and ${HORS_TESTS}) as n`)[0].n
-    verifie('nettoyage : plus AUCUNE ligne de test, ni projet de test, ni trace dans les projets réels', reste === 0 && restesReels === 0, { reste, restesReels })
+    const reste = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where id in (${ids})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids}) or projet_id = ${monProjet}) + (select count(*) from activite where projet_id = ${monProjet}) + (select count(*) from sessions where projet_id = ${monProjet}) as n`)[0].n
+    // Les restes d'un banc dans un projet RÉEL (même règle que verifier-base.mjs) : une
+    // passe récente interrompue d'une ANCIENNE version peut y être pour ≤ AGE_RESTE_MIN.
+    const restesReels = await restesDansLesVraisProjets(sql)
+    verifie('nettoyage : plus AUCUNE ligne de ce test, ni son projet, ni trace dans les projets réels', reste === 0 && restesReels.total === 0, { reste, restesReels })
   } catch (e) { console.log(`  (nettoyage SQL [TEST web] : ${e.message})`) }
   await navigateur.close()
   arreterServeur()

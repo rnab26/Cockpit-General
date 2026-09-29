@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { purgerPassesPrecedentes, purgerProjetsDeTest } from "./bancs.mjs";
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SQL = join(RACINE, "scripts/sql.sh");
@@ -67,6 +68,7 @@ function question(chantier, corps) {
 const ecrit = (chantier, corps) => sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(P)}, ${q(chantier)}, 'Raphaël', 'proprietaire', 'info', ${q(corps)})`);
 
 try {
+  await purgerPassesPrecedentes(sql, "test-verif-rep-"); // passes interrompues (> 30 min), jamais une passe vivante
   sql(`insert into projets (id, slug, nom) values (${q(P)}, ${q(SLUG)}, 'Test réponses en direct')`);
   const C1 = randomUUID(), C2 = randomUUID(), C3 = randomUUID();
   sql(`insert into chantiers (id, projet_id, titre, etat) values (${q(C1)}, ${q(P)}, 'Chantier de la session', 'libre'), (${q(C2)}, ${q(P)}, 'Chantier de l''agent', 'libre'), (${q(C3)}, ${q(P)}, 'Chantier d''un autre', 'libre')`);
@@ -150,12 +152,7 @@ try {
   console.log("\nnettoyage");
   await attendre(3000); // les envois en arrière-plan du hook (suivre) se posent avant la purge
   try {
-    const reels = sql(`select id from projets where id = ${q(P)} and slug not like 'test-verif-%'`);
-    if (reels.length) throw new Error("REFUS : pas un projet de test");
-    sql(`delete from sessions where projet_id = ${q(P)}`);
-    sql(`delete from projets where id = ${q(P)} and slug like 'test-verif-%'`);
-    sql(`delete from historique where chantier_id in (select chantier_id from supprimes where projet_id = ${q(P)})`);
-    sql(`delete from supprimes where projet_id = ${q(P)}`);
+    await purgerProjetsDeTest(sql, [P], "test-verif-rep-"); // refuse tout ce qui n'est pas un projet de test
     const reste = sql(`select (select count(*) from projets where id = ${q(P)})::int + (select count(*) from sessions where projet_id = ${q(P)})::int as n`)[0].n;
     verifie("projet de test, sessions et traces supprimés", reste === 0, reste);
   } catch (e) { verifie("nettoyage", false, e.message); }
