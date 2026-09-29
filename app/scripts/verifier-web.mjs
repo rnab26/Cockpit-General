@@ -430,6 +430,8 @@ try {
   sql(`update chantiers set etat = 'en_cours', pris_par = 'agent/reponse-test', pris_jusqu_a = now() + interval '1 hour' where id = '${RP1.id}'`)
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${RP1.id}', 'agent/reponse-test', 'session', 'info', 'Claude reprend ta réponse « Oui » : un assistant s''en occupe.')`)
   await actualiser()
+  // Attendre que l'écran ait relu la base (700 ms fixes ne suffisaient pas toujours : échec intermittent du 29 sept.).
+  for (let i = 0; i < 20 && (await lRP1.getByTestId('reprise-reponse').getAttribute('data-reprise').catch(() => null)) !== 'reprise'; i++) await page.waitForTimeout(500)
   verifie('…reprise par la chef : « Claude reprend ta réponse », toujours visible, jamais « sans nouvelles »',
     (await lRP1.getByTestId('reprise-reponse').getAttribute('data-reprise').catch(() => null)) === 'reprise' && await lRP1.getByTestId('sans-nouvelles').count() === 0, await lRP1.textContent().catch(() => null))
   // Ce qui travaille scintille, rien d'autre.
@@ -1084,6 +1086,48 @@ try {
   await fermerConv()
 
   // ===================================================================
+  // 6c. « Pour reproduire » (D-05) : la capture du site, repliée, avec « Rejouer »
+  console.log('  — pour reproduire (D-05)')
+  const REPRO = {
+    v: 1, contexte: 'creation', page: { url: 'https://site.exemple/export?format=pdf', titre: 'Export des factures' },
+    ecran: { largeur: 390, hauteur: 844, ratio: 3 }, appareil: { resume: 'iPhone · Safari 17', ua: 'Mozilla/5.0 (iPhone)', tactile: true },
+    langue: 'fr-FR', fuseau: 'Asia/Jerusalem', heure: new Date().toISOString(), version: 'c0ffee1', recu_at: new Date().toISOString(),
+    actions: [{ t: new Date().toISOString(), type: 'page', quoi: 'page', libelle: 'https://site.exemple/factures' }, { t: new Date().toISOString(), type: 'clic', quoi: 'bouton', libelle: 'Exporter' }],
+    erreurs: [{ t: new Date().toISOString(), message: 'TypeError: facture is undefined', source: 'https://site.exemple/app.js:10:5' }],
+  }
+  const U1 = creerTest('demande avec capture', { etat: 'libre', origine: 'utilisateur', demande: 'Le bouton Exporter ne fait rien.', reproduction: JSON.stringify(REPRO) })
+  await ctx.route('https://site.exemple/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Export</title><p>Page d’origine</p>' }))
+  await allerCockpit()
+  await actualiser()
+  await deplierTout()
+  await ligneId(U1.id).waitFor({ timeout: 15000 })
+  await ligneId(U1.id).getByTestId('ouvrir-chantier').click()
+  await attendreConv(U1.titre)
+  const repro = conv().getByTestId('pour-reproduire')
+  verifie('« Pour reproduire » : présent sur une demande capturée, replié', await repro.count() === 1 && await repro.getByTestId('rejouer').count() === 0)
+  await repro.locator('button').first().click()
+  await repro.getByTestId('rejouer').waitFor({ timeout: 5000 })
+  const texteRepro = await repro.textContent()
+  verifie('…en mots simples : page, appareil + écran, version', /Export des factures/.test(await repro.getByTestId('repro-page').textContent())
+    && /iPhone · Safari 17 — écran 390 × 844/.test(await repro.getByTestId('repro-appareil').textContent())
+    && /c0ffee1/.test(await repro.getByTestId('repro-version').textContent()), texteRepro)
+  const etapesRepro = await repro.getByTestId('repro-etape').allTextContents()
+  verifie('…les étapes numérotées, dans l’ordre', etapesRepro.length === 2 && /1\.Ouvre la page \/factures/.test(etapesRepro[0]) && /2\.Touche le bouton « Exporter »/.test(etapesRepro[1]), etapesRepro)
+  verifie('…et les erreurs de la page', /TypeError: facture is undefined/.test(await repro.getByTestId('repro-erreurs').textContent()))
+  const rejouer = repro.getByTestId('rejouer')
+  const bRej = await rejouer.boundingBox()
+  verifie('« Rejouer » : visible, entier sur l’écran du téléphone, nouvel onglet sans lien avec le cockpit',
+    await rejouer.isVisible() && bRej && bRej.x >= 0 && bRej.x + bRej.width <= 390 && (await rejouer.getAttribute('target')) === '_blank' && /noopener/.test(await rejouer.getAttribute('rel')), bRej)
+  verifie('conversation avec « Pour reproduire » : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await repro.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await capture(page, 'pour-reproduire')
+  const [ongletRejeu] = await Promise.all([page.waitForEvent('popup', { timeout: 10000 }), rejouer.click()])
+  await ongletRejeu.waitForLoadState('domcontentloaded').catch(() => {})
+  verifie('« Rejouer » ouvre la page d’origine dans un nouvel onglet', ongletRejeu.url() === 'https://site.exemple/export?format=pdf', ongletRejeu.url())
+  await ongletRejeu.close()
+  await fermerConv()
+
+  // ===================================================================
   // 7. Un chantier reporté : « Écrire à Claude » avec une photo, « Relancer maintenant »
   console.log('  — reporté, écrire à Claude')
   const R1 = creerTest('reporte', { etat: 'reporte', demande: 'Mis de côté pour la v2.' })
@@ -1093,6 +1137,7 @@ try {
   await ligneId(R1.id).waitFor({ timeout: 15000 })
   await ligneId(R1.id).getByTestId('ouvrir-chantier').click()
   await attendreConv(R1.titre)
+  verifie('pas de capture → pas de bloc « Pour reproduire »', await conv().getByTestId('pour-reproduire').count() === 0)
   verifie('reporté : « Rien à faire de ta part, sauf si tu veux le relancer »', /Rien à faire de ta part/.test(await conv().getByTestId('bulle-reporte').textContent()))
   const ecrire = conv().getByTestId('ecrire-a-claude')
   verifie('« Écrire à Claude… » toujours visible en bas de la conversation', await ecrire.isVisible() && /Écrire à Claude/.test(await ecrire.locator('textarea').getAttribute('placeholder')))

@@ -44,6 +44,15 @@
  * passe précédente interrompue sont purgés (scripts/bancs.mjs). Il n'écrit
  * que dans le schéma cockpit, via scripts/sql.sh.
  *
+ *  3c. reproduction (D-05) : `creer` / `corriger` acceptent ce que le module
+ *     capture, le serveur le borne et le nettoie (jetons, e-mails, taille),
+ *     `etat` ne le renvoie jamais, reproduction.sh et la consigne d'un agent
+ *     le citent ;
+ *  5. dans Chromium : un parcours sur la page hôte (clic, champs, mot de
+ *     passe, lien, erreur JS) arrive avec la demande — libellés seulement,
+ *     aucune valeur saisie ni jeton, version lue sur /health — et rien du
+ *     tout avec data-reproduction="non".
+ *
  * À RELANCER après toute modification de supabase/functions/cockpit-embed/,
  * embed/cockpit-embed.js, ou des RPC certifier/corriger/repondre.
  */
@@ -253,6 +262,185 @@ async function verifierApi(cle) {
     verifie(cF && cF.messages.filter((m) => m.kind === 'constat').length === 2 && cF.messages.some((m) => m.kind === 'info' && m.auteur === 'verifier-embed'), 'le fil porte les deux constats et le message')
   } finally {
     if (chantierId) nettoyer(chantierId)
+  }
+}
+
+// ------------------------------------------------------ reproduction (D-05)
+// Ce que le module capture pour rejouer une demande : la fonction serveur le
+// borne et le nettoie (même si on lui envoie n'importe quoi), ne le renvoie
+// jamais au navigateur, et les sessions le lisent (reproduction.sh, consignes).
+const JWT_TEST = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
+async function verifierReproductionApi(cle) {
+  console.log('\n3c. Reproduction : bornée, nettoyée, jamais renvoyée')
+  const ids = []
+  try {
+    const repro = {
+      page: { url: 'https://site.fr/export?token=abc&format=pdf#access_token=' + JWT_TEST, titre: 'Export des factures' },
+      ecran: { largeur: 390, hauteur: 844, ratio: 3 },
+      appareil: { resume: 'iPhone · Safari 17', ua: 'Mozilla/5.0 (iPhone)', tactile: true },
+      langue: 'fr-FR', fuseau: 'Asia/Jerusalem', heure: new Date().toISOString(), version: 'abc1234',
+      actions: [
+        { t: new Date().toISOString(), type: 'page', quoi: 'page', libelle: 'https://site.fr/clients?password=motdepasse' },
+        { t: new Date().toISOString(), type: 'clic', quoi: 'bouton', libelle: 'Exporter' },
+      ],
+      erreurs: [{ t: new Date().toISOString(), message: 'TypeError: jean@exemple.fr introuvable', source: 'https://site.fr/app.js?sig=zz:10:5' }],
+      pirate: 'ne doit pas passer',
+    }
+    const cr = await appel('creer', { titre: MARQUE + ' reproduction', demande: 'Avec capture.', reproduction: repro }, cle)
+    verifie(cr.statut === 200 && cr.corps.chantier, 'creer avec reproduction → 200', cr.statut + ' ' + (cr.corps && cr.corps.erreur || ''))
+    const id = cr.corps.chantier && cr.corps.chantier.id
+    if (!id) return
+    ids.push(id)
+    verifie(!('reproduction' in cr.corps.chantier), 'creer ne renvoie pas la reproduction')
+    const r = sql("select reproduction from chantiers where id = '" + id + "'")[0].reproduction
+    const brut = JSON.stringify(r)
+    verifie(r && r.page.url === 'https://site.fr/export?format=pdf', 'adresse stockée sans token ni access_token', r && r.page.url)
+    verifie(!/token=|eyJ|motdepasse|jean@exemple|sig=/.test(brut), 'aucun secret ni e-mail dans ce qui est stocké', brut.slice(0, 200))
+    verifie(r && !('pirate' in r) && r.contexte === 'creation' && r.v === 1 && r.recu_at, 'liste blanche des champs, contexte « creation », recu_at posé par le serveur')
+    verifie(r && r.actions.length === 2 && r.actions[1].libelle === 'Exporter' && r.version === 'abc1234' && r.appareil.resume === 'iPhone · Safari 17', 'actions, version, appareil gardés')
+    const etat = await appel('etat', {}, cle)
+    const fuite = [...clesProfondes(etat.corps)].includes('reproduction')
+    verifie(!fuite, 'etat ne renvoie jamais la reproduction')
+
+    // Bornage : un envoi énorme ne passe pas tel quel.
+    const enorme = {
+      page: { url: 'https://site.fr/', titre: 'T'.repeat(10000) },
+      appareil: { ua: 'U'.repeat(10000) },
+      actions: Array.from({ length: 1000 }, (_, i) => ({ type: 'clic', quoi: 'bouton', libelle: 'B' + i + ' ' + 'x'.repeat(500) })),
+      erreurs: Array.from({ length: 200 }, () => ({ message: 'E'.repeat(10000) })),
+    }
+    const gros = await appel('creer', { titre: MARQUE + ' reproduction énorme', reproduction: enorme }, cle)
+    verifie(gros.statut === 200, 'un envoi énorme ne fait pas échouer la demande', String(gros.statut))
+    if (gros.corps.chantier) {
+      ids.push(gros.corps.chantier.id)
+      const g = sql("select length(reproduction::text) as n, jsonb_array_length(reproduction->'actions') as a, jsonb_array_length(reproduction->'erreurs') as e from chantiers where id = '" + gros.corps.chantier.id + "'")[0]
+      verifie(g.n <= 13000 && g.a <= 20 && g.e <= 5, 'borné : ≤ 12 000 caractères, ≤ 20 actions, ≤ 5 erreurs', JSON.stringify(g))
+    }
+    const faux = await appel('creer', { titre: MARQUE + ' reproduction illisible', reproduction: 'pas un objet' }, cle)
+    verifie(faux.statut === 200, 'une reproduction illisible est ignorée, la demande passe', String(faux.statut))
+    if (faux.corps.chantier) {
+      ids.push(faux.corps.chantier.id)
+      verifie(sql("select reproduction is null as v from chantiers where id = '" + faux.corps.chantier.id + "'")[0].v === true, '… et rien n’est stocké')
+    }
+
+    // Une correction remplace le scénario (c'est celui qui plante maintenant).
+    sql("update chantiers set etat = 'a_verifier' where id = '" + id + "'")
+    const corr = await appel('corriger', { chantier_id: id, mots: 'toujours cassé', reproduction: { ...repro, page: { url: 'https://site.fr/export?format=csv', titre: 'Export' } } }, cle)
+    verifie(corr.statut === 200, 'corriger avec reproduction → 200', corr.statut + ' ' + (corr.corps && corr.corps.erreur || ''))
+    const rc = sql("select reproduction from chantiers where id = '" + id + "'")[0].reproduction
+    verifie(rc && rc.contexte === 'correction' && rc.page.url === 'https://site.fr/export?format=csv', 'la correction remplace le scénario (contexte « correction »)', rc && rc.contexte)
+
+    // Les sessions le lisent.
+    const lu = execFileSync(path.join(RACINE, 'scripts/reproduction.sh'), ['--chantier', id], { encoding: 'utf8', cwd: RACINE })
+    verifie(/Pour reproduire/.test(lu) && /iPhone · Safari 17/.test(lu) && /Touche le bouton « Exporter »/.test(lu) && /https:\/\/site\.fr\/export\?format=csv/.test(lu), 'reproduction.sh --chantier l’affiche lisiblement', lu.split('\n').slice(0, 3).join(' / '))
+    const ligne = execFileSync(path.join(RACINE, 'scripts/reproduction.sh'), ['--ligne', id], { encoding: 'utf8', cwd: RACINE })
+    verifie(ligne.includes('--chantier ' + id), 'reproduction.sh --ligne donne la ligne de consigne', ligne.trim())
+    const sans = execFileSync(path.join(RACINE, 'scripts/reproduction.sh'), ['--ligne', faux.corps.chantier ? faux.corps.chantier.id : randomUUID()], { encoding: 'utf8', cwd: RACINE })
+    verifie(sans.trim() === '', '… et rien sans reproduction')
+    const consigne = execFileSync('bash', [path.join(RACINE, 'hooks/autonome.sh'), '--texte'], { input: JSON.stringify({ id, titre: 't', demande: 'd', jusqu_a: 'tout le temps', reste: 0 }), encoding: 'utf8', cwd: RACINE })
+    verifie(consigne.includes('Scénario capturé chez l’utilisateur') && consigne.includes(id), 'la consigne d’un agent cite la reproduction')
+  } finally {
+    for (const id of ids) nettoyer(id)
+  }
+}
+
+// Dans un vrai navigateur : ce que la page hôte a vécu arrive avec la demande,
+// sans valeur saisie ni secret, et rien du tout avec data-reproduction="non".
+async function verifierReproductionNavigateur(cle) {
+  console.log('\n5. Reproduction capturée par le module (navigateur 390 × 844)')
+  process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers'
+  let pw
+  try { pw = await import('playwright') } catch {
+    const global = '/opt/node22/lib/node_modules/playwright/index.mjs'
+    if (!existsSync(global)) { ko('Playwright introuvable'); return }
+    pw = await import(pathToFileURL(global).href)
+  }
+  const port = await portLibre()
+  const site = mkdtempSync(path.join(tmpdir(), 'embed-repro-'))
+  copyFileSync(path.join(RACINE, 'embed/cockpit-embed.js'), path.join(site, 'cockpit-embed.js'))
+  const demo = readFileSync(path.join(RACINE, 'embed/demo.html'), 'utf8').replace(/data-cle="[^"]*"/, 'data-cle="' + cle + '"')
+  writeFileSync(path.join(site, 'demo.html'), demo)
+  writeFileSync(path.join(site, 'demo-non.html'), demo.replace('data-utilisateur=', 'data-reproduction="non" data-utilisateur='))
+  const serveur = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: site, stdio: 'ignore' })
+  await new Promise((r) => setTimeout(r, 700))
+  const crees = []
+  let navigateur
+  try {
+    navigateur = await pw.chromium.launch({ channel: 'chromium' })
+    const nouvellePage = async () => {
+      const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
+      await ctx.route(/^https:\/\//, async (route) => {
+        const r = route.request()
+        try {
+          const res = await fetch(r.url(), { method: r.method(), headers: r.headers(), body: r.postDataBuffer() ?? undefined })
+          const headers = Object.fromEntries(res.headers)
+          delete headers['content-encoding']; delete headers['content-length']
+          await route.fulfill({ status: res.status, headers, body: Buffer.from(await res.arrayBuffer()) })
+        } catch { await route.abort('failed') }
+      })
+      // Le site hôte expose sa version sur /health (comme FacePro sur Render).
+      await ctx.route('http://127.0.0.1:' + port + '/health', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, commit: 'c0ffee1' }) }))
+      return ctx.newPage()
+    }
+    const creerAEcran = async (page, titre) => {
+      await page.waitForFunction(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r && r.querySelector('.carte, .vide') }, null, { timeout: 20000 })
+      await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; [...r.querySelectorAll('.btn')].find((b) => /Nouvelle demande/.test(b.textContent)).click() })
+      await page.locator('.cockpit-embed').locator('[data-focus="nouveau-titre"]').fill(titre)
+      await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; [...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).click() })
+      await page.waitForFunction((t) => [...document.querySelector('.cockpit-embed').shadowRoot.querySelectorAll('.carte .titre')].some((el) => el.textContent === t), titre, { timeout: 20000 })
+      const l = sql("select id, reproduction from chantiers where titre = '" + lit(titre) + "'")[0]
+      if (l) crees.push(l.id)
+      return l
+    }
+
+    // Le parcours d'un utilisateur sur la page hôte, AVANT d'écrire sa demande.
+    const page = await nouvellePage()
+    await page.goto('http://127.0.0.1:' + port + '/demo.html?session=' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6' + '&vue=liste')
+    await page.evaluate(() => {
+      const main = document.querySelector('main')
+      const zone = document.createElement('div')
+      zone.innerHTML = '<button id="exporter">Exporter la facture</button> <label for="courriel">Email</label><input id="courriel" type="email"> <input id="mdp" type="password" name="motdepasse"> <a href="#/clients?token=abc123&tri=nom">Clients</a>'
+      main.prepend(zone)
+    })
+    await page.click('#exporter')
+    await page.fill('#courriel', 'jean@exemple.fr'); await page.press('#courriel', 'Tab')
+    await page.fill('#mdp', 'SuperSecret123'); await page.press('#mdp', 'Tab')
+    await page.click('a[href^="#/clients"]')
+    await page.evaluate(() => setTimeout(() => { throw new Error('Boum de test pour jean@exemple.fr') }, 0))
+    await page.waitForTimeout(200)
+    const ligne = await creerAEcran(page, MARQUE + ' capturée par le navigateur')
+    const r = ligne && ligne.reproduction
+    const brut = JSON.stringify(r || {})
+    verifie(!!r, 'la demande créée à l’écran porte une reproduction')
+    if (r) {
+      verifie(r.page.url && r.page.url.startsWith('http://127.0.0.1:' + port + '/demo.html') && !/session=|token=/.test(r.page.url) && /vue=liste/.test(r.page.url) && /#\/clients\?tri=nom$/.test(r.page.url), 'adresse de la page sans jeton (paramètre ni fragment)', r.page.url)
+      verifie(r.page.titre === 'Exemple de site avec le cockpit', 'titre de la page', r.page.titre)
+      verifie(r.ecran.largeur === 390 && r.ecran.hauteur === 844 && r.ecran.ratio === 2, 'taille d’écran 390 × 844 ×2', JSON.stringify(r.ecran))
+      verifie(/·/.test(r.appareil.resume) && r.appareil.ua.length > 20 && r.langue, 'appareil, navigateur et langue', r.appareil.resume + ' / ' + r.langue)
+      verifie(r.version === 'c0ffee1', 'version lue sur /health du site', r.version)
+      const libelles = r.actions.map((a) => a.type + ':' + a.libelle)
+      verifie(libelles.includes('clic:Exporter la facture'), 'le clic « Exporter la facture » est noté par son libellé', libelles.join(' | '))
+      verifie(libelles.includes('saisie:Email') && libelles.includes('saisie:mot de passe'), 'les champs remplis sont notés par leur NOM', libelles.join(' | '))
+      verifie(libelles.includes('clic:Clients'), 'le lien touché est noté', libelles.join(' | '))
+      verifie(!/SuperSecret123|jean@exemple\.fr|a1B2c3D4e5F6|abc123/.test(brut), 'aucune valeur saisie, mot de passe, e-mail ni jeton capturé', brut.slice(0, 300))
+      verifie(!libelles.some((l) => /Nouvelle demande|Ajouter la demande/.test(l)), 'les touchers dans le module lui-même ne sont pas notés')
+      verifie(r.erreurs.some((e) => /Boum de test pour \(e-mail\)/.test(e.message)), 'l’erreur JavaScript de la page est notée (e-mail masqué)', JSON.stringify(r.erreurs))
+      verifie(r.actions.length <= 20 && r.erreurs.length <= 5, '20 actions et 5 erreurs au plus')
+    }
+
+    // Désactivé par le site : rien n'est capturé, rien ne part.
+    const page2 = await nouvellePage()
+    await page2.goto('http://127.0.0.1:' + port + '/demo-non.html')
+    await page2.evaluate(() => { const b = document.createElement('button'); b.textContent = 'Un bouton'; document.querySelector('main').prepend(b); b.click() })
+    const ligne2 = await creerAEcran(page2, MARQUE + ' sans capture')
+    verifie(ligne2 && ligne2.reproduction === null, 'data-reproduction="non" : aucune reproduction jointe', ligne2 && JSON.stringify(ligne2.reproduction))
+    const stocke = await page2.evaluate(() => { try { return sessionStorage.getItem('cockpit-embed-repro') } catch { return 'erreur' } })
+    verifie(stocke === null, '… et rien n’est noté dans l’onglet', stocke)
+  } finally {
+    if (navigateur) await navigateur.close()
+    serveur.kill()
+    rmSync(site, { recursive: true, force: true })
+    for (const id of crees) nettoyer(id)
   }
 }
 
@@ -591,7 +779,9 @@ try {
   projetTest = creerProjetTest()
   await verifierPresenceParite()
   await verifierApi(projetTest.cle)
+  await verifierReproductionApi(projetTest.cle)
   if (!process.env.SANS_NAVIGATEUR) await verifierNavigateur(projetTest.cle)
+  if (!process.env.SANS_NAVIGATEUR) await verifierReproductionNavigateur(projetTest.cle)
 } catch (e) {
   ko('exception', e.stack || String(e))
 } finally {

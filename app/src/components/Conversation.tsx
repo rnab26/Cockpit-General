@@ -19,6 +19,7 @@ import { BlocQuestion } from './BlocQuestion.tsx'
 import { BlocValidation, SignalerProbleme } from './BlocValidation.tsx'
 import { BlocBloque, BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
 import { CommentVerifierReplie } from './CommentVerifier.tsx'
+import { PourReproduire } from './PourReproduire.tsx'
 import { FriseMiseEnLigne } from './MiseEnLigne.tsx'
 import { Historique } from './Historique.tsx'
 import { BoutonsRelance } from './Relance.tsx'
@@ -431,6 +432,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
             {c.archived_at ? <span>archivé</span> : null}
           </p>
           {c.notes ? <Repliable titre={<span className="text-sm font-medium">Notes de travail de Claude</span>}><p className="whitespace-pre-wrap text-sm text-texte-2">{c.notes}</p></Repliable> : null}
+          <PourReproduire chantier={c} />
           {admin ? <Historique chantierId={c.id} signal={signalHistorique} /> : null}
         </div>
 

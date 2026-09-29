@@ -120,6 +120,7 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
                 </div>
                 <pre className="mt-2 overflow-x-auto rounded-lg bg-carte px-2 py-1.5 text-[11px] leading-relaxed"><code>{extraitEmbed(cleVisible ? projet.cle_embed : '…')}</code></pre>
                 <div className="mt-2 flex justify-end"><Button taille="sm" onClick={() => copier(extraitEmbed(projet.cle_embed), 'Extrait')}>Copier l’extrait</Button></div>
+                <p className="mt-2 text-xs text-texte-2" data-testid="embed-confidentialite">Pour rejouer une demande, le module joint la page (sans jetons ni e-mails), l’appareil, la version du site, les 20 dernières actions (libellés seulement, jamais ce qui est tapé) et les erreurs de la page. Pour ne rien joindre : ajoute <code>data-reproduction="non"</code>.</p>
               </section>
               <section>
                 <h3 className="mb-2 text-sm font-semibold">Membres (utilisateurs finaux)</h3>
