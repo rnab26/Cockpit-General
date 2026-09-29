@@ -178,7 +178,8 @@
     const url = nettoyerUrl(location.href)
     if (url && url !== journal.derniere) { journal.derniere = url; noter('page', 'page', url) }
   }
-  // Le libellé VISIBLE d'un élément touché, jamais sa valeur.
+  // Le libellé d'un élément touché (son texte tel qu'écrit dans la page, pas
+  // mis en capitales par le style du site), jamais sa valeur.
   function libelleDe(el) {
     const tag = el.tagName.toLowerCase()
     const aria = el.getAttribute('aria-label') || el.getAttribute('title') || ''
@@ -190,7 +191,7 @@
       if ((type === 'submit' || type === 'button') && el.value) lab = lab || el.value
       return lab || aria || el.getAttribute('placeholder') || el.getAttribute('name') || el.id || type || tag
     }
-    return aria || (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() || el.getAttribute('alt') || tag
+    return aria || (el.textContent || '').replace(/\s+/g, ' ').trim() || el.getAttribute('alt') || tag
   }
   function quoiDe(el) {
     const tag = el.tagName.toLowerCase(), role = el.getAttribute('role') || ''

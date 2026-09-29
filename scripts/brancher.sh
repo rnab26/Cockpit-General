@@ -176,6 +176,8 @@ cat <<FIN
 
 5. Module embarqué — à coller dans une page du site (la clé est propre à ce projet) :
    <script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js" data-cle="$cle" data-utilisateur="Prénom"></script>
+   Il joint à chaque demande de quoi la rejouer (page sans jetons, appareil, version, 20 dernières
+   actions par leur libellé — jamais ce qui est tapé —, erreurs JS) ; data-reproduction="non" pour rien joindre.
 
 Terminé. Vérifie : cd $dossier && COCKPIT_PROJET=$slug bash .claude/hooks/cockpit-session-start.sh | jq -r .hookSpecificOutput.additionalContext | head -30
 Le projet apparaît maintenant dans l'app : https://rnab26.github.io/Cockpit-General/

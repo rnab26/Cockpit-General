@@ -73,6 +73,21 @@ pas), il parle à la fonction serveur `cockpit-embed` qui tient la clé de
 service. La clé d'un projet se lit dans l'app (Projets & membres) ; elle ne
 donne accès qu'aux chantiers visibles de ce projet.
 
+**Confidentialité — ce qui part avec une demande (D-05, pour la rejouer).**
+Quand un utilisateur envoie une demande ou une correction, le module joint :
+l'adresse de la page (paramètres qui ressemblent à des secrets retirés :
+jetons, mots de passe, codes, e-mails), son titre, la taille de l'écran,
+l'appareil et le navigateur, la langue et le fuseau, l'heure, la version servie
+(lue sur `/health` du site, ou `data-version="<commit>"`), les 20 dernières
+actions (pages visitées, boutons et liens touchés par leur libellé, champs
+remplis par leur NOM — jamais ce qui est tapé) et les 5 dernières erreurs
+JavaScript de la page. Rien ne part avant l'envoi d'une demande ; le journal
+vit dans l'onglet (`sessionStorage`). La fonction serveur refait le tri et
+borne la taille ; ces données ne sont jamais renvoyées au site, seulement
+montrées dans l'app (« Pour reproduire ») et aux sessions
+(`scripts/reproduction.sh --chantier <id>`). Pour ne rien joindre :
+`data-reproduction="non"` sur la balise.
+
 ## Développer le cockpit lui-même
 
 Le cockpit se suit dans le cockpit (projet `cockpit`). Voir `CLAUDE.md`.
