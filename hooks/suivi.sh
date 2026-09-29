@@ -27,8 +27,38 @@ sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 [ -n "$ev" ] && [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 
+# RÉPONSES EN DIRECT (Raphaël, 29 sept. : « quand je réponds dans le cockpit,
+# la session doit le prendre en compte tout de suite, sinon elle avance sans
+# mes informations et on refait le travail deux fois »). Toutes les 20 s au
+# plus, pendant que la session (ou un de ses agents) travaille, on regarde si
+# Raphaël a répondu ou écrit sur un chantier qu'elle tient ; si oui, on le lui
+# met sous les yeux AVANT son prochain pas (additionalContext). 3 s au plus.
+reponses_fraiches() {
+  local rep="${TMPDIR:-/tmp}/cockpit-rep-$sid" depuis texte
+  if [ -f "$rep" ] && [ $(( $(date +%s) - $(stat -c %Y "$rep" 2>/dev/null || echo 0) )) -lt 20 ]; then return; fi
+  depuis=$(cat "$rep" 2>/dev/null); date -u +%Y-%m-%dT%H:%M:%SZ > "$rep" 2>/dev/null
+  [ -n "$depuis" ] || return   # premier passage : on part de maintenant, pas d'historique
+  local qs qb; qs=$(printf '%s' "$sid" | sed "s/'/''/g"); qb=$(printf '%s' "$branche" | sed "s/'/''/g")
+  texte=$(timeout 3 "$SQL" "with mes as (
+      select id from chantiers where pris_par = '$qb' and '$qb' <> ''
+      union select chantier_id from taches where session_id = '$qs' and statut = 'en_cours' and chantier_id is not null
+      union select chantier_id from activite where session = '$qb' and '$qb' <> '' and updated_at > now() - interval '3 hours' and chantier_id is not null)
+    select string_agg(format('- « %s » : %s%s', c.titre,
+        case when m.kind in ('question','action') then format('il a répondu à « %s » → %s%s', left(m.corps, 90), m.reponse, coalesce(' — ' || m.precision, ''))
+             else left(m.corps, 400) end,
+        case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) : media.sh --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by coalesce(m.answered_at, m.created_at)) as nouvelles
+    from messages m join chantiers c on c.id = m.chantier_id
+    where m.chantier_id in (select id from mes)
+      and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and m.created_at > '$depuis'::timestamptz)
+        or (m.kind in ('question','action') and m.answered_at > '$depuis'::timestamptz))" 2>/dev/null | jq -r '.rows[0].nouvelles // empty' 2>/dev/null)
+  [ -n "$texte" ] || return
+  jq -n --arg t "RÉPONSE DE RAPHAËL dans le cockpit, à l'instant — prends-la en compte MAINTENANT, avant ton prochain pas (et adapte ce que tu fais) :
+$texte" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $t}}'
+}
+
 case "$ev" in
   PostToolUse)
+    reponses_fraiches
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
     # avec sa description. Sinon, un simple signe de vie, au plus 1 fois/minute.
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '

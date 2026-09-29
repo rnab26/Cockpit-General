@@ -109,6 +109,20 @@ conteneur de la chef s'arrête, ses agents s'arrêtent : chantiers réservés
 3 h, repris au réveil suivant (abandon détecté). Jamais `git add -A` dans un
 dossier partagé avec un agent (incident du 29 sept., commit 964528e).
 
+## Réponses courtes (Raphaël, 29 sept. 2026)
+
+« Je veux des réponses simples, courtes, nettes et précises. » Dans la
+conversation comme dans le cockpit : la réponse d'abord, en quelques lignes,
+puis ce qu'il doit faire. Pas de pavé, pas de détail technique non demandé.
+
+## Réponses du cockpit en direct (29 sept. 2026)
+
+Quand Raphaël répond ou écrit dans le cockpit sur un chantier qu'une session
+tient (réservé à sa branche, ou suivi par un de ses agents), `hooks/suivi.sh`
+(PostToolUse, toutes les 20 s au plus, 3 s max) le met sous les yeux de la
+session avant son prochain pas. Une session à l'arrêt ne le voit qu'à son
+prochain réveil (la chef : au plus une heure) ou quand il lui écrit.
+
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 
 « Toutes les questions, les constats, tout ce qui demande une interaction et

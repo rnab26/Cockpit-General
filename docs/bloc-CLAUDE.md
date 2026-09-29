@@ -7,6 +7,10 @@ Le hook `.claude/hooks/cockpit-session-start.sh` injecte l'état au démarrage :
 chantiers ouverts par section, questions en attente, réponses humaines,
 demandes des utilisateurs, progression des autres sessions.
 
+- **RÉPONSES À RAPHAËL : simples, courtes, nettes, précises** (29 sept. : « je
+  veux des réponses simples, courtes, nettes et précises ; pas de pavé »).
+  Quelques lignes : la réponse d'abord, puis ce qu'il doit faire s'il y a
+  quelque chose. Pas de détail technique sauf s'il le demande.
 - **RÈGLE DE CLARTÉ — tout ce que Raphaël lit dans le cockpit** (questions,
   constats à faire, « comment vérifier », titres, messages du fil) : le plus
   simple possible, pour quelqu'un qui ne code pas. On doit comprendre **le
