@@ -92,7 +92,9 @@ Ce que cette refonte doit livrer (demandes de Raphaël des 28-29 sept.) :
 9. **État des déploiements** par projet : logique prête et testée
    (`app/src/lib/deploiement.ts`, `app/scripts/verifier-deploiement.ts`
    18/18), composant à faire (API GitHub anonyme, dépôts publics ; FacePro
-   est sur Render, pas visible par GitHub : le dire). Chantier
+   est sur Render, pas visible par GitHub : le dire). 29 sept. : + ligne
+   « 🌐 Site en ligne — version X » lue sur `<url_site>/health` (FacePro
+   renvoie son commit Render, CORS ouvert sur cette route). Chantier
    `b3ba035a-0484-434d-bfe2-dcc695f91f2d`.
 
 Avant de publier : les contrôles ci-dessus au vert, parcours sur écran de

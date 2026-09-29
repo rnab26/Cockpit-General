@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { Projet } from '../lib/types.ts'
-import { etatDuProjet, type ExecutionGitHub } from '../lib/deploiement.ts'
+import { etatDuProjet, phraseSite, type ExecutionGitHub, type LectureSite } from '../lib/deploiement.ts'
 
 /**
  * « L'état du déploiement du site, ou s'il y a un déploiement en cours »
@@ -38,6 +38,46 @@ async function charger(depot: string): Promise<void> {
   cache.set(depot, suite); prevenir()
 }
 
+// Version servie par le site lui-même (`<url_site>/health` -> { commit }) :
+// seul moyen de voir « en ligne » pour un site hors GitHub (FacePro sur Render)
+// ou un dépôt privé. Même cache partagé et même rythme que GitHub.
+const SITE_VIDE: LectureSite & { chargement: boolean } = { commit: null, lu: null, erreur: null, chargement: false }
+const cacheSite = new Map<string, LectureSite & { chargement: boolean }>()
+
+async function chargerSite(url: string): Promise<void> {
+  const avant = cacheSite.get(url) ?? SITE_VIDE
+  if (avant.chargement) return
+  cacheSite.set(url, { ...avant, chargement: true }); prevenir()
+  let suite: LectureSite & { chargement: boolean }
+  try {
+    const r = await fetch(`${url.replace(/\/+$/, '')}/health`, { cache: 'no-store' })
+    const j = r.ok ? await r.json() as { commit?: string } : null
+    suite = j?.commit
+      ? { commit: j.commit, lu: Date.now(), erreur: null, chargement: false }
+      : { ...avant, chargement: false, erreur: r.ok ? 'Le site ne dit pas quelle version il sert.' : `Le site n’a pas répondu (erreur ${r.status}).` }
+  } catch {
+    suite = { ...avant, chargement: false, erreur: 'Site injoignable (en redémarrage ?).' }
+  }
+  cacheSite.set(url, suite); prevenir()
+}
+
+function useSite(url: string | null): LectureSite & { chargement: boolean } {
+  const e = useSyncExternalStore((f) => { auditeurs.add(f); return () => { auditeurs.delete(f) } }, () => (url ? cacheSite.get(url) : undefined) ?? SITE_VIDE)
+  useEffect(() => {
+    if (!url) return
+    const siPerime = () => {
+      if (document.visibilityState !== 'visible') return
+      const c = cacheSite.get(url)
+      if (!c?.lu || Date.now() - c.lu >= RAFRAICHISSEMENT_MS - 1000) void chargerSite(url)
+    }
+    siPerime()
+    const t = window.setInterval(siPerime, RAFRAICHISSEMENT_MS)
+    document.addEventListener('visibilitychange', siPerime)
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', siPerime) }
+  }, [url])
+  return e
+}
+
 function useEtatDepot(depot: string): Etat {
   return useSyncExternalStore((f) => { auditeurs.add(f); return () => { auditeurs.delete(f) } }, () => cache.get(depot) ?? VIDE)
 }
@@ -67,19 +107,25 @@ function EtatDepot({ depot, projet, now }: { depot: string; projet: Projet; now:
   useSuiviDepot(depot)
   const e = useEtatDepot(depot)
   const [ouvert, setOuvert] = useState(false)
+  const urlSite = projet.url_site?.trim() || null
+  const site = useSite(urlSite)
+  const ligneSite = phraseSite(site, now)
+  // Dépôt privé ou site hors GitHub : l'erreur GitHub n'est plus une alerte
+  // quand le site dit lui-même ce qui est en ligne.
+  const erreurDiscrete = !!(e.erreur && !e.runs && site.commit)
   const synthese = useMemo(() => (e.runs ? etatDuProjet(e.runs, 'main', now) : null), [e.runs, now])
-  const couleur = synthese?.etat === 'en_cours' ? 'text-info' : synthese?.etat === 'echoue' ? 'text-alerte' : synthese?.etat === 'reussi' ? 'text-ok' : 'text-texte-2'
+  const couleur = erreurDiscrete ? 'text-ok' : synthese?.etat === 'en_cours' ? 'text-info' : synthese?.etat === 'echoue' ? 'text-alerte' : synthese?.etat === 'reussi' ? 'text-ok' : 'text-texte-2'
   return (
-    <div data-testid="deploiement" data-etat={synthese?.etat ?? (e.erreur ? 'erreur' : 'chargement')} className="text-sm">
+    <div data-testid="deploiement" data-etat={synthese?.etat ?? (erreurDiscrete ? 'site' : e.erreur ? 'erreur' : 'chargement')} className="text-sm">
       <div className="flex items-start gap-2">
         <button type="button" onClick={() => setOuvert(!ouvert)} aria-expanded={ouvert} disabled={!synthese?.lignes.length}
           className={`min-w-0 flex-1 text-left font-semibold leading-snug ${couleur}`} data-testid="deploiement-titre">
           {synthese?.enCours ? <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-info align-middle" aria-hidden /> : null}
-          {synthese ? synthese.titre : e.erreur ? `⚠️ ${e.erreur}` : 'Lecture de GitHub…'}
+          {synthese ? synthese.titre : erreurDiscrete ? ligneSite : e.erreur ? `⚠️ ${e.erreur}` : 'Lecture de GitHub…'}
           {synthese?.lignes.length ? <span className="ml-1 text-xs font-normal text-texte-2">{ouvert ? '▲' : '▼'}</span> : null}
         </button>
-        <button type="button" onClick={() => void charger(depot)} aria-label="Relire GitHub" title="Relire GitHub" data-testid="deploiement-relire"
-          className={`shrink-0 rounded-lg px-1.5 text-texte-2 hover:bg-carte-2 ${e.chargement ? 'animate-spin' : ''}`}>↻</button>
+        <button type="button" onClick={() => { void charger(depot); if (urlSite) void chargerSite(urlSite) }} aria-label="Relire" title="Relire GitHub et le site" data-testid="deploiement-relire"
+          className={`shrink-0 rounded-lg px-1.5 text-texte-2 hover:bg-carte-2 ${e.chargement || site.chargement ? 'animate-spin' : ''}`}>↻</button>
       </div>
       {synthese && e.erreur ? <p className="text-xs text-attention">⚠️ {e.erreur} (état affiché : le dernier lu)</p> : null}
       {ouvert && synthese ? (
@@ -92,7 +138,8 @@ function EtatDepot({ depot, projet, now }: { depot: string; projet: Projet; now:
           ))}
         </ul>
       ) : null}
-      {projet.slug === 'facepro' ? <p className="text-[11px] text-texte-2">Le site FacePro est publié par Render : son déploiement n’est pas encore visible ici.</p> : null}
+      {ligneSite && !erreurDiscrete ? <p className="text-xs text-texte-2" data-testid="deploiement-site">{ligneSite}</p> : null}
+      {erreurDiscrete ? <p className="text-[11px] text-texte-2" data-testid="deploiement-site">Mise en ligne en cours : non visible ici (dépôt privé ou hébergeur hors GitHub) — seule la version servie par le site l’est.</p> : null}
     </div>
   )
 }
