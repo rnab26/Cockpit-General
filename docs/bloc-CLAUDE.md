@@ -23,6 +23,15 @@ demandes des utilisateurs, progression des autres sessions.
   t'arrive en direct : suis-la tout de suite (un message ou une étape). Sur un
   chantier que personne ne tient, la session chef du projet la confie à un agent
   (« Claude reprend ta réponse » dans le fil) : ne la reprends pas en doublon.
+- **UN MESSAGE DE RAPHAËL DANS UN FIL = UNE RÉPONSE COURTE DE CLAUDE DANS CE
+  FIL, AVANT DE CONTINUER** (29 sept. : « je pose des questions du type "je n'ai
+  pas compris ta demande" et je n'ai pas de retour […] comme une discussion
+  WhatsApp »). Une étape ne compte PAS : il faut un message écrit, la réponse
+  d'abord, 400 caractères au plus :
+  `scripts/cockpit-progression.sh --chantier <id> --point "…"` (fil du projet :
+  sans `--chantier`). Son écran affiche « réponse en attente » jusque-là. Sur un
+  fil que personne ne tient, la session chef confie la réponse à un agent
+  (« Répondre : … ») : ne réponds pas en doublon.
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh

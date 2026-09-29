@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est » (249 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », fil en discussion (265 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
@@ -223,6 +223,31 @@ file (position) → un assistant regarde (la chef : `prendre_ou_en_est`, branche
 --point`, `repondre_ou_en_est`, `repond_a`). Dans l'app, le chantier passe
 dans « Ça avance tout seul » avec une frise, bouton désactivé tant qu'on
 attend ; la réponse y reste un quart d'heure. `verifier-reponses` §7-8.
+
+## Chaque fil est une discussion (29 sept. 2026, migration 0025)
+
+Raphaël : « la même logique qu'une discussion dans une session […] je pose des
+questions du type "je n'ai pas compris ta demande" et je n'ai pas de retour […]
+que le dernier artefact où je dois choisir des cartes se mette toujours en
+dernier […] comme une discussion WhatsApp. » **Règle : un message de Raphaël
+dans un fil = une réponse courte de Claude dans ce fil avant de continuer** (une
+étape ne compte pas). UNE commande : `progression.sh --point "…"` (avec
+`--chantier <id>`, ou sans pour le fil du projet) → `repondre_dans_fil`, par
+laquelle passe aussi `repondre_ou_en_est` (repond_a : la demande « où ça en
+est » en attente, sinon son dernier message). UNE règle « message libre » :
+`cockpit.est_message_libre` = `estMessageLibre` (`lib/discussion.ts`),
+comparées par verifier-base §25 ; `messages_sans_reponse(projet, branche)` sert
+le hook de démarrage ET la chef (`reprendre_message` → agent « Répondre : … »,
+branche `agent/message-…`, chantier réservé 60 min sans changer d'état) ;
+`hooks/suivi.sh` le remet à la session qui tient le chantier et le marque reçu
+(`marquer_messages_recus`). App (`Conversation.tsx`) : chronologique, plus
+récent en bas, ouverture en bas, Claude à gauche / toi à droite, les cartes
+(question, fusion, vérification, décision) TOUJOURS en dernier, et après son
+message « réponse en attente » (qui, et le prochain passage de la chef :
+`prochain_passage_chef`, `chefs.reveil_minute` posé par `chef.sh --reveil …
+--minute`). Réveil immédiat quand il écrit : possible par le déclencheur API
+d'une routine (doc Claude Code « routines », `/fire`, jeton créé à la main sur
+claude.ai), question posée à Raphaël le 29 sept. `verifier-reponses` §9-11.
 
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 

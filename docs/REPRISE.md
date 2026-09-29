@@ -228,6 +228,17 @@ désactivé tant qu'on attend. Reçue : hook de suivi ; personne dessus : la che
 lance un assistant « Point » qui répond avec `progression.sh --point`. Voir
 CLAUDE.md. Reste : le module embarqué (`embed/`) n'a pas ce bouton.
 
+## 2 undecies. 29 sept. soir : chaque fil est une discussion (chantier `450afa9e`, migration 0025)
+
+Un message libre de Raphaël dans un fil attend une réponse ÉCRITE de Claude
+(`progression.sh --point`, avec ou sans `--chantier`) ; la chef la confie à un
+agent « Répondre : … » si personne ne tient le fil. L'app : chronologique, en
+bas, cartes toujours en dernier, « réponse en attente / prochain passage vers
+HH h MM ». Branche `agent/discussion`. Ouvert : réveil immédiat de la chef
+quand il écrit (déclencheur API de routine, jeton à créer à la main) — question
+posée dans le chantier. Le module embarqué montre seulement « la réponse
+arrivera ici » (pas l'ordre des cartes ni le prochain passage).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
