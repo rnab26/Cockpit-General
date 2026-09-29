@@ -1,7 +1,7 @@
 import { ChevronDown, RefreshCw, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { Projet } from '../lib/types.ts'
-import { etatDuProjet, phraseSite, type ExecutionGitHub, type LectureSite } from '../lib/deploiement.ts'
+import { etatDuProjet, phraseSite, siteASonder, type ExecutionGitHub, type LectureSite } from '../lib/deploiement.ts'
 
 /**
  * « L'état du déploiement du site, ou s'il y a un déploiement en cours »
@@ -108,7 +108,7 @@ function EtatDepot({ depot, projet, now }: { depot: string; projet: Projet; now:
   useSuiviDepot(depot)
   const e = useEtatDepot(depot)
   const [ouvert, setOuvert] = useState(false)
-  const urlSite = projet.url_site?.trim() || null
+  const urlSite = siteASonder(projet.url_site)
   const site = useSite(urlSite)
   const ligneSite = phraseSite(site, now)
   // Dépôt privé ou site hors GitHub : l'erreur GitHub n'est plus une alerte
