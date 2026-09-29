@@ -647,7 +647,8 @@ try {
   const tCmd = blocSession.locator('[data-testid="tache"]', { hasText: 'commande muette' })
   verifie('agent qui a signalé : « Agent : … », barre vive, temps restant', (await tAgent.textContent()).includes('Agent :') && await tAgent.locator('[data-vive="oui"]').count() === 1 && /reste ~\d+ min/.test(await tAgent.textContent()), await tAgent.textContent())
   verifie('commande muette : « Commande : … », « avancement non signalé », AUCUNE barre', (await tCmd.textContent()).includes('Commande :') && await tCmd.getByTestId('non-signale').count() === 1 && await tCmd.getByRole('progressbar').count() === 0)
-  verifie('chaque tâche dit depuis quand elle tourne', /depuis 12 min/.test(await tAgent.textContent()) && /depuis 3 min/.test(await tCmd.textContent()))
+  // Une minute de marge : entre l'insertion et la lecture, le réseau peut prendre plus de 60 s (échec intermittent du 29 sept.).
+  verifie('chaque tâche dit depuis quand elle tourne', /depuis 1[23] min/.test(await tAgent.textContent()) && /depuis [34] min/.test(await tCmd.textContent()), [await tAgent.textContent(), await tCmd.textContent()])
   verifie('la tâche liée à un chantier le nomme', (await tAgent.textContent()).includes(P4.titre))
   verifie('les tâches finies depuis peu sont repliées sous la session', (await blocSession.getByTestId('taches-finies').textContent()).includes('1 fini'))
   verifie('l’aide « c’est quoi ? » est là, repliée, et s’ouvre', await page.getByTestId('vocabulaire').count() === 1 && (await page.getByTestId('vocabulaire').getAttribute('aria-expanded')) === 'false')
@@ -810,7 +811,10 @@ try {
   const blocQI = conv().getByTestId('bloc-question')
   const vigQI = blocQI.locator('[data-testid="images-question"] [data-testid="media"] img').first()
   await vigQI.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  // L'image arrive par une URL signée : attendre son chargement réel, pas un
+  // délai fixe (800 ms ne suffisaient pas toujours, échec intermittent du 29 sept.).
+  await vigQI.evaluate((i) => i.complete && i.naturalWidth > 0 ? true : new Promise((ok) => { i.addEventListener('load', () => ok(true), { once: true }); i.addEventListener('error', () => ok(false), { once: true }) })).catch(() => {})
+  await page.waitForTimeout(300)
   const boiteQI = await vigQI.boundingBox().catch(() => null)
   verifie('question de Claude : l’image s’affiche en miniature SOUS la question (chargée, ≥ 100 px)',
     await vigQI.count() === 1 && await vigQI.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false) && (boiteQI?.width ?? 0) >= 100, boiteQI)
