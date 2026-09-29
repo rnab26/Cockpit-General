@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, UsersRound } from 'lucide-react'
+import { ChevronDown, Play, UsersRound } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
+import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
   AGENTS_MAX, SESSIONS_MAX, blocUtile, boutonRenforts, erreurReglageRenforts, ligneRenfort, messageDemande,
   type CodeLigne, type EtatRenforts, type ResultatDemande,
@@ -94,6 +95,8 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
   const b = boutonRenforts(etat)
   const nAttente = etat.attente.reduce((n, a) => n + a.n, 0)
   return (
+    <>
+    <TraiterCeProjet projet={projet} etat={etat} avecNom={avecNom} />
     <section aria-label={`Renforts${avecNom ? ` · ${projet.nom}` : ''}`} data-testid="renforts" data-projet={projet.slug}
       className="rounded-2xl border-2 border-accent/50 bg-carte px-3 py-3">
       <div className="flex items-start gap-2.5">
@@ -136,6 +139,41 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
         <ChevronDown size={14} className={`transition ${reglages ? 'rotate-180' : ''}`} aria-hidden />
       </button>
       {reglages ? <ReglagesRenforts projet={projet} etat={etat} onFini={() => { setReglages(false); void charger() }} /> : null}
+    </section>
+    </>
+  )
+}
+
+/**
+ * « Traiter ce projet » : un toucher copie la phrase et ouvre Claude Code ; la session qui reçoit
+ * un premier message devient la chef du projet et prend les chantiers en lot (voir lib/traiter.ts).
+ * Aucun réglage par projet : tout vient du projet lui-même (nom, dépôt) et de l'état de la base.
+ */
+function TraiterCeProjet({ projet, etat, avecNom }: { projet: Projet; etat: EtatRenforts; avecNom: boolean }) {
+  const g = useGlobal()
+  const toast = useToast()
+  const [copie, setCopie] = useState<'oui' | 'non' | null>(null)
+  const phrase = phraseTraiter(projet.nom)
+  const lancer = async () => {
+    let ok = false
+    try { await navigator.clipboard.writeText(phrase); ok = true } catch { ok = false }
+    setCopie(ok ? 'oui' : 'non')
+    if (ok) toast.succes('Phrase copiée : colle-la dans la nouvelle session.')
+    else toast.erreur('Copie impossible : sélectionne la phrase ci-dessous et copie-la à la main.')
+    window.open(LIEN_CLAUDE_CODE, '_blank', 'noopener')
+  }
+  return (
+    <section aria-label={`Traiter ce projet${avecNom ? ` · ${projet.nom}` : ''}`} data-testid="traiter" data-projet={projet.slug}
+      className="rounded-2xl border-2 border-accent bg-carte px-3 py-3">
+      <h2 className="text-[15px] font-semibold">Traiter ce projet{avecNom ? <span className="ml-1.5 text-sm font-normal text-texte-2">{projet.nom}</span> : null}</h2>
+      <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="traiter-etat">{etatTraiter(etat, g.now)}</p>
+      <Button variante="primaire" pleine className="mt-2.5" onClick={() => void lancer()} data-testid="traiter-lancer">
+        <Play size={16} aria-hidden />Copier la phrase et ouvrir Claude Code
+      </Button>
+      <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-snug text-texte-2" data-testid="traiter-etapes">
+        {etapesTraiter(projet.depot).map((e) => <li key={e}>{e}</li>)}
+      </ol>
+      <p className={`mt-2 select-all rounded-lg border px-2 py-1.5 text-xs leading-snug ${copie === 'non' ? 'border-alerte text-alerte' : 'border-bord bg-carte-2/40'}`} data-testid="traiter-phrase">{phrase}</p>
     </section>
   )
 }

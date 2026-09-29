@@ -161,6 +161,18 @@ vie < 3 h), personne d'autre ne prend dans sa section (`chantiers_prenables`,
 « [cockpit-renfort] » et marque `cockpit-renfort` dans le `.git` de sa copie
 (lue par `prompt-rappel.sh` et `autonome.sh`). `verifier-base.mjs` §20.
 
+**« Traiter ce projet »** (29 sept., Raphaël : « j'appuie sur un bouton, ça lance une
+session […] plus d'heures à ouvrir des sessions et à configurer »). Bloc au-dessus des
+renforts (`Renforts.tsx::TraiterCeProjet`, logique `lib/traiter.ts`, test
+`verifier-traiter.ts` + `verifier-web.mjs`) : dit où en est le projet (session ? combien de
+chantiers, par section), copie la phrase « Traite le projet X en lot… » et ouvre
+`claude.ai/code`. Aucun réglage par projet : nom et dépôt viennent de la ligne `projets`.
+Mécanisme (vérifié dans `hooks/prompt-rappel.sh`) : le premier message d'une session ouverte sur le dépôt
+d'un projet branché la rend chef de CE projet. **Limite** : aucun lien de la doc Claude Code ne
+préremplit dépôt + message ; ne pas en inventer, l'app copie la phrase et ouvre la page.
+**Brancher un projet** = ouvrir une session sur son dépôt et dire « branche le cockpit »
+(skill `cockpit` → `scripts/brancher.sh`) ; puis « Traiter ce projet » suffit.
+
 **Une réponse de Raphaël est toujours reprise** (29 sept., migration 0017,
 « je réponds, mais je ne sais pas si c'est pris en compte ») : la passe de
 `chef.sh` sert D'ABORD `reprendre_reponse` — une question ou action répondue
