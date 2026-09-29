@@ -191,6 +191,19 @@ verifier-web 299/299 (image + PDF + .dwg, `media.sh --chantier` les récupère).
 Reste : le module embarqué (`embed/`, « Nouvelle demande ») ne joint aucun
 fichier — à décider avec Raphaël.
 
+## 2 octies. 29 sept. soir : section « Correctifs » rangée toute seule (chantier `ea21b577`, migration 0021)
+
+Trigger `before insert` sur `chantiers` : un chantier créé sans section dont
+`est_correctif(titre, demande, origine)` est vrai va dans « Correctifs »
+(créée si besoin), toutes voies (app, session, module embarqué). Règle :
+mot visuel/ergonomie et aucun mot de gros chantier dans le titre (titre +
+demande pour un utilisateur final). `ranger_correctifs(slug)` pour les
+ouverts sans section : passé sur cockpit et facepro le 29 sept., 0 rangé
+(aucun chantier ouvert n'est un correctif visuel). Vérifié :
+`verifier-correctifs` 32/32, `verifier-base` 216/216 (§22),
+`verifier-reponses` 16/16, `verifier-embed` 80/80. App inchangée. Pas de
+réglage pour éteindre le tri par projet (à ajouter si Raphaël le veut).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

@@ -8,6 +8,8 @@
 #   scripts/chantier.sh --ouvrir "…" --demande "…" --nouveau       # vraiment un sujet neuf
 #   scripts/chantier.sh --chercher "bouche hybride"                # voir les proches, sans rien écrire
 #   scripts/chantier.sh --ranger <id> --section "Tête entière"     # le ranger (section créée si besoin)
+#   (un correctif visuel / mise en page / ergonomie est rangé TOUT SEUL dans
+#    « Correctifs » à la création, migration 0021 ; --ranger corrige un faux tri)
 #   scripts/chantier.sh --suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi "…"
 #
 # C'EST TOI QUI TRANCHES (Raphaël, 29 sept. 2026) : « personne mieux que
@@ -110,7 +112,13 @@ case "$(printf '%s' "$r" | jq -r .action)" in
 esac
 cid=$(jq -r .id <<<"$r")
 if [ -n "$section" ]; then ranger_dans "$cid" "$section" || true
-elif [ "$("$SQL" "select section_id is null as n from chantiers where id = '$cid'" | jq -r '.rows[0].n')" = "true" ]; then
-  echo "À RANGER par toi (Raphaël ne trie pas) : ${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh} --ranger $cid --section \"<rubrique>\". Sections existantes : $(sections). Une nouvelle est créée si besoin."
+else
+  sec_actuelle="$("$SQL" "select coalesce(s.nom, '') as nom from chantiers c left join sections s on s.id = c.section_id where c.id = '$cid'" | jq -r '.rows[0].nom')"
+  if [ -z "$sec_actuelle" ]; then
+    echo "À RANGER par toi (Raphaël ne trie pas) : ${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh} --ranger $cid --section \"<rubrique>\". Sections existantes : $(sections). Une nouvelle est créée si besoin."
+  elif [ "$sec_actuelle" = "Correctifs" ]; then
+    # Rangé par le trigger de 0021 (cockpit.est_correctif : correctif visuel / mise en page / ergonomie).
+    echo "Rangé tout seul dans « Correctifs » (correctif visuel, de mise en page ou d'ergonomie). Si ce n'en est pas un : ${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh} --ranger $cid --section \"<rubrique>\"."
+  fi
 fi
 echo "Ensuite : scripts/progression.sh --chantier <id> --etape … à chaque étape ; jalons « pousse », « ci-ok », « en-ligne » ; puis --termine avec --verifier."
