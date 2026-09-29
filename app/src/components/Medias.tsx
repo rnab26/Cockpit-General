@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { File, FileText, Film, Image, Mic, Paperclip, X, type LucideIcon } from 'lucide-react'
+import { File, FileText, Film, Image, Mic, Paperclip, PenLine, X, type LucideIcon } from 'lucide-react'
 import type { Media } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { ACCEPT_MEDIAS, BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
+import { Annoter } from './Annoter.tsx'
 
 /**
  * Médias joints à une réponse (0013). Le fichier part dans le stockage DÈS
@@ -20,7 +21,17 @@ export interface MediasAJoindre {
   ajouter: (fichiers: File[]) => void
   retirer: (id: string) => void
   reessayer: (id: string) => void
+  /** Le crayon : l'image annotée remplace la pièce (déposée d'abord ; l'ancienne n'est retirée qu'ensuite). null = fait, sinon l'erreur. */
+  remplacer: (id: string, fichier: File) => Promise<string | null>
   vider: () => void
+}
+
+/** Dépose un fichier dans le stockage privé : le média, ou l'erreur lisible. */
+export async function deposerMedia(projetId: string, chantierId: string | null, id: string, fichier: File): Promise<{ media: Media } | { erreur: string }> {
+  const chemin = cheminMedia(projetId, chantierId, id, fichier.name)
+  const { error } = await supabase.storage.from(BUCKET_MEDIAS).upload(chemin, fichier, { contentType: fichier.type || undefined, upsert: false })
+  if (error) return { erreur: messageErreur(error) }
+  return { media: { chemin, nom: fichier.name, type: fichier.type || 'application/octet-stream', taille: fichier.size } }
 }
 
 export function useMediasAJoindre(projetId: string, chantierId: string | null): MediasAJoindre {
@@ -32,12 +43,11 @@ export function useMediasAJoindre(projetId: string, chantierId: string | null): 
   useEffect(() => () => { for (const p of liste.current) if (p.apercu) URL.revokeObjectURL(p.apercu) }, [])
 
   const envoyer = useCallback(async (p: Piece) => {
-    const chemin = cheminMedia(projetId, chantierId, p.id, p.fichier.name)
-    const { error } = await supabase.storage.from(BUCKET_MEDIAS).upload(chemin, p.fichier, { contentType: p.fichier.type || undefined, upsert: false })
-    setPieces((l) => l.map((x) => x.id !== p.id ? x : error
-      ? { ...x, etat: 'erreur', erreur: messageErreur(error) }
-      : { ...x, etat: 'ok', media: { chemin, nom: p.fichier.name, type: p.fichier.type || 'application/octet-stream', taille: p.fichier.size } }))
-    if (error) toast.erreur(`« ${p.fichier.name} » n’a pas pu être envoyé : ${messageErreur(error)}`)
+    const r = await deposerMedia(projetId, chantierId, p.id, p.fichier)
+    setPieces((l) => l.map((x) => x.id !== p.id ? x : 'erreur' in r
+      ? { ...x, etat: 'erreur', erreur: r.erreur }
+      : { ...x, etat: 'ok', media: r.media }))
+    if ('erreur' in r) toast.erreur(`« ${p.fichier.name} » n’a pas pu être envoyé : ${r.erreur}`)
   }, [projetId, chantierId, toast])
 
   const ajouter = useCallback((fichiers: File[]) => {
@@ -67,13 +77,28 @@ export function useMediasAJoindre(projetId: string, chantierId: string | null): 
     void envoyer(p)
   }, [envoyer])
 
+  const remplacer = useCallback(async (id: string, fichier: File) => {
+    const ancienne = liste.current.find((x) => x.id === id)
+    if (!ancienne) return 'la pièce n’est plus là.'
+    const nouvelle: Piece = { id: crypto.randomUUID(), fichier, etat: 'ok', media: null, apercu: null }
+    const r = await deposerMedia(projetId, chantierId, nouvelle.id, fichier)
+    if ('erreur' in r) return r.erreur
+    nouvelle.media = r.media
+    nouvelle.apercu = URL.createObjectURL(fichier)
+    if (ancienne.apercu) URL.revokeObjectURL(ancienne.apercu)
+    setPieces((l) => l.map((x) => x.id === id ? nouvelle : x))
+    // L'originale n'est plus jointe : retirée du stockage (admin seulement, comme « retirer »).
+    if (ancienne.media) void supabase.storage.from(BUCKET_MEDIAS).remove([ancienne.media.chemin])
+    return null
+  }, [projetId, chantierId])
+
   const vider = useCallback(() => {
     for (const p of liste.current) if (p.apercu) URL.revokeObjectURL(p.apercu)
     setPieces([])
   }, [])
 
   return {
-    pieces, ajouter, retirer, reessayer, vider,
+    pieces, ajouter, retirer, reessayer, remplacer, vider,
     medias: pieces.filter((p) => p.etat === 'ok' && p.media).map((p) => p.media!),
     enCours: pieces.some((p) => p.etat === 'envoi'),
   }
@@ -98,6 +123,8 @@ export function ChoisirMedias({ ctrl, testId = 'choisir-medias' }: { ctrl: Media
 
 /** Les vignettes de ce qui est joint (envoi en cours, erreur avec « réessayer », retirer). */
 export function VignettesPieces({ ctrl }: { ctrl: MediasAJoindre }) {
+  const toast = useToast()
+  const [annotee, setAnnotee] = useState<Piece | null>(null)
   return (
     <>
       {ctrl.pieces.length ? (
@@ -114,12 +141,30 @@ export function VignettesPieces({ ctrl }: { ctrl: MediasAJoindre }) {
                 ) : null}
               </div>
               <button type="button" onClick={() => ctrl.retirer(p.id)} aria-label={`Retirer ${p.fichier.name}`}
-                className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-bord bg-carte text-texte-2 shadow-sm"><X size={14} /></button>
+                className="absolute -left-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-bord bg-carte text-texte-2 shadow-sm"><X size={14} /></button>
+              {p.etat === 'ok' && genreMedia(p.fichier.type, p.fichier.name) === 'image' ? <BoutonCrayon nom={p.fichier.name} onClick={() => setAnnotee(p)} /> : null}
             </li>
           ))}
         </ul>
       ) : null}
+      {annotee ? (
+        <Annoter nom={annotee.fichier.name} type={annotee.fichier.type} charger={() => Promise.resolve(annotee.fichier)}
+          onFermer={() => setAnnotee(null)}
+          onEnregistrer={async (f) => {
+            const err = await ctrl.remplacer(annotee.id, f)
+            if (!err) { setAnnotee(null); toast.succes('Image annotée : elle remplace la pièce jointe.') }
+            return err
+          }} />
+      ) : null}
     </>
+  )
+}
+
+/** Le crayon, en haut à droite d'une image jointe : ouvre l'image pour dessiner dessus. */
+function BoutonCrayon({ nom, onClick }: { nom: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={`Dessiner sur ${nom}`} title="Dessiner dessus" data-testid="crayon-media"
+      className="absolute -right-1.5 -top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-bord bg-carte text-texte shadow-sm"><PenLine size={14} aria-hidden /></button>
   )
 }
 
@@ -154,8 +199,12 @@ async function liensSignes(chemins: string[]): Promise<Map<string, string>> {
   return new Map(chemins.flatMap((c) => liens.has(c) ? [[c, liens.get(c)!.url] as const] : []))
 }
 
-/** Les médias d'un message : vignettes ; un toucher ouvre l'image ou la vidéo en grand, un PDF ou un fichier dans un onglet. */
-export function MediasMessage({ medias, petit = false }: { medias: Media[]; petit?: boolean }) {
+/**
+ * Les médias d'un message : vignettes ; un toucher ouvre l'image ou la vidéo en grand, un PDF ou un fichier dans un onglet.
+ * `onAnnote` (images jointes par Raphaël) : un crayon sur chaque image ; l'image annotée part comme une NOUVELLE pièce.
+ */
+export function MediasMessage({ medias, petit = false, onAnnote }: { medias: Media[]; petit?: boolean; onAnnote?: (fichier: File) => Promise<string | null> }) {
+  const [annotee, setAnnotee] = useState<Media | null>(null)
   const [urls, setUrls] = useState<Map<string, string>>(new Map())
   const [erreur, setErreur] = useState(false)
   const [grand, setGrand] = useState<Media | null>(null)
@@ -176,17 +225,27 @@ export function MediasMessage({ medias, petit = false }: { medias: Media[]; peti
           const genre = genreMedia(m.type, m.nom)
           const ouvrir = () => { if (!url) return; if (genre === 'image' || genre === 'video') setGrand(m); else window.open(url, '_blank', 'noopener') }
           return (
-            <li key={m.chemin}>
+            <li key={m.chemin} className="relative">
               <button type="button" onClick={ouvrir} data-testid="media" data-genre={genre} title={`${m.nom} · ${tailleLisible(m.taille)}`}
                 className={`flex ${taille} items-center justify-center overflow-hidden rounded-lg border border-bord bg-carte-2`}>
                 {url && genre === 'image' ? <img src={url} alt={m.nom} loading="lazy" className="h-full w-full object-cover" />
                   : url && genre === 'video' ? <video src={`${url}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
                   : <span className="px-1 text-center text-[10px] leading-tight text-texte-2"><IconeMedia genre={genre} />{m.nom.slice(0, 14)}</span>}
               </button>
+              {onAnnote && url && genre === 'image' ? <BoutonCrayon nom={m.nom} onClick={() => setAnnotee(m)} /> : null}
             </li>
           )
         })}
       </ul>
+      {annotee && onAnnote ? (
+        <Annoter nom={annotee.nom} type={annotee.type} onFermer={() => setAnnotee(null)}
+          charger={async () => {
+            const { data, error } = await supabase.storage.from(BUCKET_MEDIAS).download(annotee.chemin)
+            if (error || !data) throw error ?? new Error('illisible')
+            return data
+          }}
+          onEnregistrer={async (f) => { const err = await onAnnote(f); if (!err) setAnnotee(null); return err }} />
+      ) : null}
       {erreur ? <p className="text-xs text-texte-2">Certains fichiers ne sont pas lisibles (droits ou fichier supprimé).</p> : null}
       <Dialog ouvert={!!grand} onFermer={() => setGrand(null)} titre={grand?.nom ?? ''} large>
         {grand && urls.get(grand.chemin) ? (
