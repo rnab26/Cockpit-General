@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowDownUp, ChevronDown, ChevronRight, CirclePause, Rocket, Settings2 } from 'lucide-react'
+import { ArrowDownUp, ChevronDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
@@ -21,6 +21,7 @@ import { BlocSession } from './QuiTravaille.tsx'
 import { IconeAToi, PointProjet } from './Icones.tsx'
 import { useFlash } from './Vivant.tsx'
 import { Renforts, RenfortsTout } from './Renforts.tsx'
+import { ReveilImmediat } from './ReveilImmediat.tsx'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -45,12 +46,39 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
   return (
     <div className="space-y-5">
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
+      {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
       <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
     </div>
+  )
+}
+
+// ---------------------------------------------------------------- écrire au projet
+
+/**
+ * « Écrire à Claude » au niveau du PROJET (0027, Raphaël : « créer des chantiers
+ * et une ligne avec un chat sur chaque sujet évoqué ») : un message libre, même
+ * sur plusieurs sujets ; Claude en fait un chantier par sujet et répond dans
+ * chaque fil. Ouvre la discussion du projet (fil sans chantier).
+ */
+function EcrireAuProjet({ projetId }: { projetId: string }) {
+  const g = useGlobal()
+  const fil = g.messages.filter((m) => m.projet_id === projetId && !m.chantier_id)
+  const dernier = fil.reduce<typeof fil[number] | null>((a, m) => (!a || m.created_at > a.created_at ? m : a), null)
+  return (
+    <button type="button" onClick={() => g.ouvrirChantier(projetId, null)} data-testid="ecrire-projet"
+      className="flex w-full items-center gap-2.5 rounded-2xl border border-bord bg-carte px-3 py-2.5 text-left transition hover:bg-carte-2 active:scale-[.99]">
+      <MessageSquareText size={18} className="shrink-0 text-accent" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] text-texte-2">Écrire à Claude sur ce projet…</span>
+        <span className="block truncate text-xs text-texte-2" data-testid="ecrire-projet-aide">
+          {dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${dernier.corps}` : 'Plusieurs sujets ? Claude ouvre un fil par sujet et répond dans chacun.'}
+        </span>
+      </span>
+    </button>
   )
 }
 
@@ -500,6 +528,7 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
     <Repliable testId="reglages-projet" titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}
       badge={auto ? <span className="text-xs text-info">autonome</span> : null}>
       <BarreProjet projet={p} nu />
+      {g.admin ? <div className="mt-2"><ReveilImmediat projet={p} /></div> : null}
     </Repliable>
   )
 }

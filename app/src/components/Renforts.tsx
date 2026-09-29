@@ -117,7 +117,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
       {etat.renforts.length ? (
         <ul className="mt-2 divide-y divide-bord/70 rounded-xl border border-bord" data-testid="renforts-liste">
           {etat.renforts.map((r) => {
-            const l = ligneRenfort(r, etat.chef, g.now)
+            const l = ligneRenfort(r, etat.chef, g.now, { projet: etat.projet ?? projet.nom, relais: etat.relais, relais_passage: etat.relais_passage })
             return (
               <li key={r.id} className="px-2.5 py-2" data-testid="renfort" data-code={l.code}>
                 <p className="flex items-baseline justify-between gap-2 text-sm">

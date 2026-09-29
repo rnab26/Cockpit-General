@@ -63,6 +63,8 @@ export interface Chantier {
   verdict_at?: string | null
   /** 0022 : une session a revu cet élément de « À toi » et l'a confirmé toujours utile (demander.sh --confirmer). */
   a_toi_revu_at?: string | null
+  /** 0027 : reporté jusqu'à cette date (revient seul dans « Prêt à lancer ») ; null = mis de côté sans date. */
+  reporte_jusqu_a?: string | null
   /** Étapes de mise en ligne (0007) : code, pousse, ci_ok|ci_ko, en_ligne|pas_en_ligne → {at, detail}. Lire avec lib/jalons.ts. */
   jalons: unknown
   etat: Etat

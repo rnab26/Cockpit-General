@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, CheckCheck, CircleCheck, Clock, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -15,6 +15,8 @@ import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { attenteReponse, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
+import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
+import { Dialog } from '../ui/Dialog.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
 import { BlocValidation, SignalerProbleme } from './BlocValidation.tsx'
 import { BlocBloque, BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
@@ -333,8 +335,24 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   const confirmer = useConfirmer()
   const fermeture = useContext(FermetureCtx)
   const [ouvert, setOuvert] = useState(false)
+  const [reporter, setReporter] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
+  // Mettre de côté / reporter / abandonner (0027) : une fonction de la base, une ligne dans le fil.
+  const deCote = async (jusqua: Date | null) => {
+    const { error } = await supabase.rpc('mettre_de_cote', { p_id: chantier.id, p_jusqu_a: jusqua ? jusqua.toISOString() : null, p_raison: null })
+    if (error) { toast.erreur(messageErreur(error)); return false }
+    toast.succes(jusqua ? `Reporté au ${jusqua.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : il reviendra tout seul dans « Prêt à lancer ».` : 'Mis de côté. « Relancer maintenant » le rouvre.')
+    await recharger(); return true
+  }
+  const abandonner = async () => {
+    const ok = await confirmer({ titre: 'Abandonner ce chantier ?', libelleOk: 'Abandonner',
+      texte: <p>« <b>{chantier.titre}</b> » est archivé, avec une ligne « Abandonné » dans son fil. Rien n’est supprimé : « Désarchiver » le rend.</p> })
+    if (!ok) return
+    const { error } = await supabase.rpc('abandonner_chantier', { p_id: chantier.id, p_raison: null })
+    if (error) { toast.erreur(messageErreur(error)); return }
+    toast.succes(`« ${chantier.titre} » abandonné (archivé).`); await recharger()
+  }
   const maj = async (valeurs: Partial<Chantier>, succes: string) => {
     const { error } = await supabase.from('chantiers').update(valeurs).eq('id', chantier.id)
     if (error) { toast.erreur(messageErreur(error)); return }
@@ -368,13 +386,45 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
           {item(<History size={17} className={ic} />, 'Historique', onHistorique, 'ouvrir-historique')}
           {!chantier.doublon_de ? item(<Copy size={17} className={ic} />, 'C’est un doublon de…', () => ouvrirDoublonDe(chantier), 'doublon-de') : null}
           {chantier.pris_par ? item(<LockOpen size={17} className={ic} />, 'Libérer la réservation', liberer, 'liberer') : null}
+          {chantier.etat !== 'reporte' || chantier.reporte_jusqu_a ? item(<CirclePause size={17} className={ic} />, 'Mettre de côté', () => void deCote(null), 'mettre-de-cote') : null}
+          {item(<CalendarClock size={17} className={ic} />, chantier.reporte_jusqu_a ? 'Changer la date de report…' : 'Reporter…', () => setReporter(true), 'reporter')}
+          {!chantier.archived_at ? item(<Ban size={17} className={ic} />, 'Abandonner', () => void abandonner(), 'abandonner') : null}
           {chantier.archived_at
             ? item(<ArchiveRestore size={17} className={ic} />, 'Désarchiver', () => maj({ archived_at: null }, 'Chantier désarchivé.'), 'archiver')
             : item(<Archive size={17} className={ic} />, 'Archiver', () => maj({ archived_at: new Date().toISOString() }, 'Chantier archivé.'), 'archiver')}
           {item(<Trash2 size={17} className="shrink-0" />, 'Supprimer', supprimer, 'supprimer', true)}
         </div>
       ) : null}
+      <DialogueReporter ouvert={reporter} onFermer={() => setReporter(false)} onChoisir={async (d) => { if (await deCote(d)) setReporter(false) }} />
     </div>
+  )
+}
+
+/** « Reporter… » : quatre choix d'un toucher, ou une date. Il revient tout seul ce jour-là. */
+function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; onFermer: () => void; onChoisir: (d: Date) => Promise<void> }) {
+  const [saisie, setSaisie] = useState('')
+  const [envoi, setEnvoi] = useState(false)
+  const now = new Date()
+  const dSaisie = saisie ? dateSaisie(saisie, now) : null
+  const choisir = async (d: Date) => { setEnvoi(true); await onChoisir(d); setEnvoi(false) }
+  return (
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre="Reporter à quand ?">
+      <div className="space-y-2" data-testid="dialogue-reporter">
+        <p className="text-sm text-texte-2">Ce jour-là, il revient tout seul dans « Prêt à lancer ». D’ici là, personne ne le prend.</p>
+        <div className="grid grid-cols-2 gap-2">
+          {CHOIX_REPORT.map((c) => (
+            <Button key={c.cle} disabled={envoi} onClick={() => void choisir(dateDeReport(c.jours, now))} data-testid={`reporter-${c.cle}`}>{c.libelle}</Button>
+          ))}
+        </div>
+        <label className="block text-sm">
+          <span className="text-texte-2">Ou une date :</span>
+          <input type="date" value={saisie} onChange={(e) => setSaisie(e.target.value)} data-testid="reporter-date"
+            className="mt-1 h-10 w-full rounded-lg border border-bord bg-carte px-2 text-[15px]" />
+        </label>
+        {saisie && !dSaisie ? <p className="text-xs text-alerte">Une date à venir, dans l’année.</p> : null}
+        <Button variante="primaire" pleine disabled={!dSaisie || envoi} chargement={envoi} onClick={() => dSaisie && void choisir(dSaisie)} data-testid="reporter-valider">Reporter à cette date</Button>
+      </div>
+    </Dialog>
   )
 }
 
@@ -405,7 +455,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const section = c.section_id ? sections.find((s) => s.id === c.section_id) : null
   const dernierBlocage = [...fil].reverse().find((m) => m.kind === 'blocage') ?? null
   const relancer = async () => {
-    const { error } = await supabase.from('chantiers').update({ etat: 'libre' }).eq('id', c.id)
+    const { error } = await supabase.from('chantiers').update({ etat: 'libre', reporte_jusqu_a: null, archived_at: null }).eq('id', c.id)
     if (error) { toast.erreur(messageErreur(error)); return }
     toast.succes(`« ${c.titre} » relancé : il passe dans « Prêt à lancer ».`); await recharger()
   }
@@ -454,8 +504,8 @@ function FilChantier({ chantierId }: { chantierId: string }) {
           </Bulle>
         ) : null}
         {c.etat === 'reporte' ? (
-          <Bulle cote="gauche" auteur="Mis de côté" testId="bulle-reporte">
-            <p className="text-sm">{presence.tonAction}</p>
+          <Bulle cote="gauche" auteur={c.archived_at ? 'Abandonné' : c.reporte_jusqu_a ? 'Reporté' : 'Mis de côté'} testId="bulle-reporte">
+            <p className="text-sm" data-testid="texte-reporte">{texteReporte(c, now) ?? presence.tonAction}</p>
             {admin ? <Button taille="sm" className="mt-2" onClick={relancer} data-testid="relancer-maintenant"><Play size={15} aria-hidden />Relancer maintenant</Button> : null}
           </Bulle>
         ) : null}
@@ -504,9 +554,9 @@ function FilProjet() {
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient: false, prochainPassage })
   return (
     <>
-      <EnTete titre="Questions sur le projet" sousTitre={<p className="text-xs text-texte-2">Ce qui ne porte sur aucun chantier en particulier</p>} />
+      <EnTete titre="Discussion du projet" sousTitre={<p className="text-xs text-texte-2">Écris ce que tu veux, même plusieurs sujets : Claude ouvre un fil par sujet et te répond dans chacun</p>} />
       <Corps chantierId={null} placeholder="Écrire à Claude…" cle={cle}>
-        {fil.length ? null : <p className="text-sm text-texte-2">Rien pour l’instant.</p>}
+        {fil.length ? null : <p className="text-sm text-texte-2" data-testid="fil-projet-vide">Rien pour l’instant. Écris en bas : une idée, un problème, plusieurs sujets à la fois.</p>}
         {historique.map((m) => <BulleMessage key={m.id} m={m} />)}
         {attente ? <BulleAttente attente={attente} /> : null}
         {aChoisir.map((m) => m.kind === 'fusion'
