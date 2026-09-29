@@ -25,6 +25,7 @@
 //   13. exec_sql : le search_path est porté par la fonction (profil cockpit)
 //   …
 //   18. réponses de Raphaël reprises par la chef (0017), projets de test jamais servis
+//   19. un chef PAR PROJET (0019) : la passe d'un projet ne sert jamais un autre projet
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -815,15 +816,18 @@ async function controle18_reponses_prises() {
   const racineChef = dirname(dirname(fileURLToPath(import.meta.url)));
   const chefSh = (await import("node:fs")).readFileSync(join(racineChef, "scripts/chef.sh"), "utf8");
   verifie("reponses_sans_suite() tous projets n'inclut JAMAIS un projet de test", !(await sql(`select chantier_id from reponses_sans_suite()`)).some((r) => r.chantier_id === c));
-  const reqProjets = chefSh.match(/"(select slug from projets where [^"]*)"/)?.[1];
+  // Depuis 0019 (un chef par projet), chef.sh ne parcourt plus « tous les
+  // projets » : il ne sert que le sien. La chef du cockpit ne voit donc jamais
+  // un projet de test ; on rejoue sa requête « vérifie pour moi » pour le projet
+  // cockpit, avec le chantier de test en tête de file.
   const reqVerif = chefSh.match(/un "(select c\.id, c\.titre, p\.slug[\s\S]*?limit 1)"/)?.[1];
+  const cockpitId = (await une(`select id from projets where slug = 'cockpit'`))?.id;
   await sql(`update projets set autonome_toujours = true where id = ${q(P1)}`);
   const cV = await creerChantier(P1, { titre: "Test vérifie pour moi", etat: "a_verifier" });
   await sql(`update chantiers set verif_demandee_at = now() - interval '10 years' where id = ${q(cV)}`);
-  const projetsChef = reqProjets ? (await sql(reqProjets)).map((r) => r.slug) : null;
-  const verifChef = reqVerif ? await sql(reqVerif) : null;
-  verifie("chef.sh : la liste des projets à servir exclut les projets de test (même en mode autonome)", !!projetsChef && !projetsChef.includes(SLUG_A), { reqProjets, projetsChef });
-  verifie("chef.sh : « vérifie pour moi » d'un projet de test jamais donné", !!verifChef && !verifChef.some((r) => r.id === cV), { trouvee: !!reqVerif, verifChef });
+  const verifChef = reqVerif && cockpitId ? await sql(reqVerif.replaceAll("'$pid'", q(cockpitId))) : null;
+  verifie("chef.sh ne parcourt plus tous les projets (0019) : aucune liste « select slug from projets »", !/select slug from projets where actif/.test(chefSh));
+  verifie("chef.sh du cockpit : « vérifie pour moi » d'un projet de test jamais donné", !!verifChef && !verifChef.some((r) => r.id === cV), { trouvee: !!reqVerif, verifChef });
   await sql(`update projets set autonome_toujours = false where id = ${q(P1)}`);
   await sql(`update chantiers set verif_demandee_at = null where id = ${q(cV)}`);
   // Une question SANS chantier (niveau projet), répondue, que personne n'a suivie.
@@ -835,9 +839,9 @@ async function controle18_reponses_prises() {
   const pirate2 = await rpcUtilisateur("reponses_sans_suite", {}, jwt);
   verifie("un membre ne peut ni reprendre une réponse ni lister celles de tous les projets", pirate.status >= 400 && pirate2.status >= 400, { pirate, pirate2 });
 
-  // scripts/chef.sh de bout en bout, borné au projet de test : un faux sql.sh
-  // répond « tu es la chef, 0 agent, aucun autre chantier » et limite
-  // reprendre_reponse au projet de test ; tout le reste va à la vraie base.
+  // scripts/chef.sh de bout en bout, sur le projet de test : un faux sql.sh
+  // répond « tu es la chef, 0 agent, mode autonome éteint, aucun « vérifie pour
+  // moi » » ; reprendre_reponse (borné au projet par chef.sh) va à la vraie base.
   const racine = dirname(dirname(fileURLToPath(import.meta.url)));
   const vrai = join(racine, "scripts/sql.sh");
   const dossier = mkdtempSync(join(tmpdir(), "chef-test-"));
@@ -846,20 +850,19 @@ async function controle18_reponses_prises() {
     "#!/usr/bin/env bash",
     'if [ $# -gt 0 ]; then r="$1"; else r="$(cat)"; fi',
     'case "$r" in',
-    `  *"from chef c where c.id = 1"*) echo '{"ok":true,"rows":[{"session_id":"chef-test","max_agents":3,"agents":0}]}' ;;`,
-    `  *"update chef set"*) echo '{"ok":true,"rows":null}' ;;`,
-    `  *"select slug from projets where actif"*|*"verif_demandee_at is not null"*) echo '{"ok":true,"rows":[]}' ;;`,
-    `  *"reprendre_reponse("*) exec "${vrai}" "$(printf '%s' "$r" | sed "s/') as r/', '${P1}') as r/")" ;;`,
+    `  *"left join chefs c on c.projet_id"*) echo '{"ok":true,"rows":[{"projet_id":"${P1}","slug":"${SLUG_A}","depot":"","session_id":"chef-test","max_agents":3,"agents":0,"autonome":false}]}' ;;`,
+    `  *"update chefs set"*) echo '{"ok":true,"rows":null}' ;;`,
+    `  *"verif_demandee_at is not null"*) echo '{"ok":true,"rows":[]}' ;;`,
     `  *) exec "${vrai}" "$r" ;;`,
     "esac", "",
   ].join("\n"), { mode: 0o755 });
-  const chef = () => execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", env: { ...process.env, COCKPIT_SQL: faux, CLAUDE_CODE_SESSION_ID: "chef-test" } });
+  const chef = () => execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", env: { ...process.env, COCKPIT_SQL: faux, COCKPIT_PROJET: SLUG_A, CLAUDE_CODE_SESSION_ID: "chef-test" } });
   try {
     const sortie = chef();
     const l = await chantier(c);
     const fil = await sql(`select corps from messages where chantier_id = ${q(c)} and auteur_type = 'session' and kind = 'info'`);
     verifie("chef.sh donne une consigne d'agent : la question, la réponse, « Fais ce que cette réponse annonce »",
-      sortie.includes("SESSION CHEF : lance 2 agent") && sortie.includes("Je lance le banc GPU de test ?") && sortie.includes("« Oui, ~0,9 $ »")
+      sortie.includes(`SESSION CHEF de ${SLUG_A} : lance 2 agent`) && sortie.includes("Je lance le banc GPU de test ?") && sortie.includes("« Oui, ~0,9 $ »")
         && sortie.includes("Fais ce que cette réponse annonce") && sortie.includes(c), sortie);
     verifie("une réponse qui engage une dépense rappelle les barrières de budget", /DÉPENSE.*plafond de durée.*annulation automatique.*job par job/s.test(sortie), sortie);
     verifie("le chantier repart « en cours », réservé à la branche agent/reponse-… citée dans la consigne",
@@ -872,6 +875,65 @@ async function controle18_reponses_prises() {
         && sortie.includes("question de projet, sans chantier") && sortie.includes(cP.id), { cP, sortie });
     verifie("reprise UNE seule fois : la passe suivante ne la redonne pas", /^RIEN/.test(chef()));
   } finally { rmSync(dossier, { recursive: true, force: true }); }
+}
+
+// Deux projets NEUFS (C et D) : rien des sections précédentes dans leur file.
+const P3 = randomUUID(), P4 = randomUUID();
+const SLUG_C = `test-verif-${rand}-c`, SLUG_D = `test-verif-${rand}-d`;
+async function controle19_chef_par_projet() {
+  section("19. Un chef PAR PROJET (0019) : chaque projet dans sa propre session, jamais un chantier d'un autre projet");
+  await sql(`insert into projets (id, slug, nom, autonome_toujours) values (${q(P3)}, ${q(SLUG_C)}, 'Projet de test C', true), (${q(P4)}, ${q(SLUG_D)}, 'Projet de test D', true)`);
+  const prendre = (slug, s) => une(`select prendre_chef(${q(slug)}, ${q(s)}, 'agent/test', '') as r`);
+  const estChef = async (slug, s) => (await une(`select est_chef(${q(slug)}, ${q(s)}) as c`)).c;
+  await prendre(SLUG_C, "chef-c");
+  await prendre(SLUG_D, "chef-d");
+  verifie("deux projets ont chacun LEUR chef, en même temps", await estChef(SLUG_C, "chef-c") && await estChef(SLUG_D, "chef-d"));
+  verifie("la chef de C n'est pas chef de D (et inversement)", !(await estChef(SLUG_D, "chef-c")) && !(await estChef(SLUG_C, "chef-d")));
+  const r = (await prendre(SLUG_C, "chef-c2")).r;
+  verifie("une nouvelle session de C prend la main sur C seulement (D garde sa chef)",
+    r.change === true && r.ancienne === "chef-c" && await estChef(SLUG_C, "chef-c2") && await estChef(SLUG_D, "chef-d"), r);
+  await prendre(SLUG_C, "chef-c");
+  const e = await une(`select chef_existe(${q(SLUG_C)}) as c, chef_existe(${q(SLUG_A)}) as a`);
+  verifie("chef_existe est par projet (C oui, A jamais pris : non → fonctionnement par session)", e.c === true && e.a === false, e);
+  const pirate = await rpcUtilisateur("prendre_chef", { p_projet: SLUG_C, p_session: "pirate", p_branche: "x", p_distante: "" }, jwt);
+  const lu = await rest(`chefs?select=projet_id`, { jwt });
+  verifie("un membre ne peut ni prendre la main ni lire les chefs (service / admin seulement)",
+    pirate.status >= 400 && Array.isArray(lu.json) && lu.json.length === 0, { pirate, lu });
+
+  // Du travail dans les DEUX projets : un chantier libre, une réponse sans suite,
+  // un « vérifie pour moi ».
+  const libre = {}, rep = {}, verif = {};
+  for (const [P, S] of [[P3, "C"], [P4, "D"]]) {
+    libre[S] = await creerChantier(P, { titre: `Libre ${S}`, etat: "libre", demande: `travail ${S}` });
+    rep[S] = await creerChantier(P, { titre: `Réponse ${S}`, etat: "bloque" });
+    const m = await creerMessage(P, rep[S], { kind: "question", corps: `Question ${S} ?` });
+    await sql(`update messages set reponse = 'Oui', answered_at = now(), answered_by = ${q(userId)} where id = ${q(m)}`);
+    verif[S] = await creerChantier(P, { titre: `Vérif ${S}`, etat: "a_verifier" });
+    await sql(`update chantiers set verif_demandee_at = now() where id = ${q(verif[S])}`);
+  }
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const lancer = (projet, session, args = []) => execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args],
+    { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_CODE_SESSION_ID: session } });
+  verifie("la chef de C lancée sur D : RIEN (elle ne dirige pas D)", /^RIEN — cette session n'est pas la session chef de /.test(lancer(SLUG_D, "chef-c")));
+  verifie("--max règle le projet courant seulement", /pour .*: 8/.test(lancer(SLUG_C, "chef-c", ["--max", "8"]))
+    && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 3);
+  const sortieC = lancer(SLUG_C, "chef-c");
+  const idsD = [libre.D, rep.D, verif.D];
+  verifie("la passe de C sert SES trois sortes de travail (réponse, chantier libre, vérifie pour moi)",
+    sortieC.includes(`SESSION CHEF de ${SLUG_C}`) && sortieC.includes(rep.C) && sortieC.includes(libre.C) && sortieC.includes(verif.C), sortieC.slice(0, 600));
+  verifie("la passe de C ne propose RIEN de D (ni chantier, ni réponse, ni vérif)", !idsD.some((id) => sortieC.includes(id)) && !sortieC.includes(SLUG_D), sortieC.slice(0, 600));
+  const dIntacts = await sql(`select id, pris_par from chantiers where projet_id = ${q(P4)} and pris_par is not null`);
+  verifie("aucun chantier de D n'a été réservé par la passe de C", dIntacts.length === 0, dIntacts);
+  // Le hook Stop d'une session de D qui n'est pas sa chef : jamais bloquée, ni pilotée par la chef de C.
+  const stop = (projet, session) => execFileSync("bash", [join(racine, "hooks/autonome.sh")],
+    { encoding: "utf8", input: JSON.stringify({ hook_event_name: "Stop", session_id: session }), env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_PROJECT_DIR: racine } });
+  verifie("hook Stop : la chef de C, dans une session de D, n'est ni bloquée ni pilotée", stop(SLUG_D, "chef-c").trim() === "");
+  const sortieD = lancer(SLUG_D, "chef-d");
+  verifie("la passe de D sert D, et rien de C", sortieD.includes(libre.D) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
+  // Le hook de message : Raphaël écrit dans une session de D → elle devient chef de D, C garde la sienne.
+  execFileSync("bash", [join(racine, "hooks/prompt-rappel.sh")],
+    { encoding: "utf8", input: JSON.stringify({ session_id: "nouvelle-d", prompt: "fais ceci" }), env: { ...process.env, COCKPIT_PROJET: SLUG_D, CLAUDE_PROJECT_DIR: racine } });
+  verifie("message de Raphaël dans une session de D → chef de D seulement (C inchangé)", await estChef(SLUG_D, "nouvelle-d") && await estChef(SLUG_C, "chef-c"));
 }
 
 // ------------------------------------------------------------------ main
@@ -892,7 +954,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises,
+    controle18_reponses_prises, controle19_chef_par_projet,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -903,7 +965,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -912,7 +974,7 @@ try {
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
   const restes = await une(`select (select count(*) from projets where slug like 'test-verif-%')::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}))::int as supprimes,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

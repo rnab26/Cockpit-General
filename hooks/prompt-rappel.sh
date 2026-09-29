@@ -15,14 +15,15 @@ CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"; PROG_CMD="${COCKPIT
 [ -n "$PROJET" ] || exit 0
 entree=$(cat 2>/dev/null || true)
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
-# Session chef (0014) : là où Raphaël écrit, là est le chef. Une notification ou
-# un réveil programmé n'est pas un message de lui : on ne prend la main que sur
-# un vrai message (pas de balise système en tête).
+# Chef du projet (0014, 0019) : là où Raphaël écrit, là est le chef DE CE PROJET
+# (et de lui seul : chaque projet a le sien, dans sa propre session). Une
+# notification ou un réveil programmé n'est pas un message de lui : on ne prend
+# la main que sur un vrai message (pas de balise système en tête).
 chef_txt=""
 invite=$(printf '%s' "$entree" | jq -r '.prompt // ""' 2>/dev/null)
 if [ -n "$sid" ] && [ -x "$SQL" ] && ! printf '%s' "$invite" | grep -qE '^[[:space:]]*<(task-notification|system-reminder|wake)|Réveil (horaire|du chef)'; then
   CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
-  chef_txt=$(CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
+  chef_txt=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
 fi
 branche=$(git -C "$RACINE" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 tenus=""

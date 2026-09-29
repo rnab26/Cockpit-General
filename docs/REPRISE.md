@@ -161,6 +161,14 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
   supprimé avec l'accord de Raphaël. Chef actuelle : session
   `session_016AmT87i4pCEQKCLesesihr`.
 
+- **29 sept. 16 h : un chef PAR PROJET (0019, chantier b78b8ba3)**. Raphaël ne
+  veut plus tous les projets dans la session du cockpit. `cockpit.chefs` (une
+  ligne par projet), `chef.sh` ne sert que `COCKPIT_PROJET`. La chef du
+  cockpit a été reprise telle quelle (réveil `trig_01VseAzWomoQETWZcXtquBpB`,
+  5 agents). FacePro n'a pas de chef tant que Raphaël n'écrit pas dans une
+  session FacePro : elle le deviendra et créera SON réveil (consigne de
+  `--prendre`). D'ici là, FacePro garde le fonctionnement par session.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
