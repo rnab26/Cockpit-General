@@ -28,7 +28,7 @@ export type EtatDeploiement = 'en_cours' | 'reussi' | 'echoue' | 'annule' | 'inc
 export interface LigneWorkflow {
   nom: string
   etat: EtatDeploiement
-  /** « ⏳ En cours depuis 2 min », « ✅ Réussi il y a 5 min », « ❌ Échoué il y a 1 h » */
+  /** « En cours depuis 2 min », « Réussi il y a 5 min », « Échoué il y a 1 h » */
   phrase: string
   commit: string
   titre: string | null
@@ -69,11 +69,11 @@ function phraseLigne(etat: EtatDeploiement, r: ExecutionGitHub, now: Date): stri
   const debut = new Date(r.run_started_at || r.created_at).getTime()
   const fin = new Date(r.updated_at).getTime()
   switch (etat) {
-    case 'en_cours': return `⏳ En cours depuis ${duree(now.getTime() - debut)}`
-    case 'reussi': return `✅ Réussi il y a ${duree(now.getTime() - fin)}`
-    case 'echoue': return `❌ Échoué il y a ${duree(now.getTime() - fin)}`
-    case 'annule': return `⏹️ Annulé il y a ${duree(now.getTime() - fin)}`
-    default: return '❔ État inconnu'
+    case 'en_cours': return `En cours depuis ${duree(now.getTime() - debut)}`
+    case 'reussi': return `Réussi il y a ${duree(now.getTime() - fin)}`
+    case 'echoue': return `Échoué il y a ${duree(now.getTime() - fin)}`
+    case 'annule': return `Annulé il y a ${duree(now.getTime() - fin)}`
+    default: return 'État inconnu'
   }
 }
 
@@ -107,11 +107,11 @@ export function etatDuProjet(runs: readonly ExecutionGitHub[], brancheProd = 'ma
   let titre: string
   let etat: EtatDeploiement
   if (ref.some((l) => l.etat === 'en_cours')) {
-    etat = 'en_cours'; titre = '🚀 Mise en ligne en cours — attends qu’elle se termine avant de vérifier'
+    etat = 'en_cours'; titre = 'Mise en ligne en cours — attends qu’elle se termine avant de vérifier'
   } else if (ref.some((l) => l.etat === 'echoue')) {
-    etat = 'echoue'; titre = '❌ La dernière mise en ligne a échoué — ce qui est en ligne est la version d’avant'
+    etat = 'echoue'; titre = 'La dernière mise en ligne a échoué — ce qui est en ligne est la version d’avant'
   } else if (ref[0].etat === 'reussi') {
-    etat = 'reussi'; titre = `✅ En ligne — dernière mise en ligne réussie il y a ${duree(now.getTime() - new Date(ref[0].quand).getTime())}`
+    etat = 'reussi'; titre = `En ligne — dernière mise en ligne réussie il y a ${duree(now.getTime() - new Date(ref[0].quand).getTime())}`
   } else {
     etat = ref[0].etat; titre = ref[0].phrase
   }
@@ -141,8 +141,8 @@ export function phraseSite(l: LectureSite, now: Date = new Date()): string | nul
   if (l.commit && l.lu !== null) {
     const quand = now.getTime() - l.lu < 60_000 ? 'à l’instant' : `il y a ${duree(now.getTime() - l.lu)}`
     const version = /^[0-9a-f]{7,40}$/i.test(l.commit) ? `version ${l.commit.slice(0, 7)}` : `version « ${l.commit.slice(0, 20)} »`
-    return `🌐 Site en ligne — ${version} (lu sur le site ${quand})`
+    return `Site en ligne — ${version} (lu sur le site ${quand})`
   }
-  if (l.erreur) return `⚠️ ${l.erreur}`
+  if (l.erreur) return l.erreur
   return null
 }

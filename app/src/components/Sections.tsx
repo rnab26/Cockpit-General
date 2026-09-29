@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Section } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
@@ -72,7 +73,7 @@ export function Sections({ ouvert, onFermer }: { ouvert: boolean; onFermer: () =
   }
 
   return (
-    <Dialog ouvert={ouvert} onFermer={onFermer} titre="🗂️ Sections" pied={<Button onClick={onFermer}>Fermer</Button>}>
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre="Sections" pied={<Button onClick={onFermer}>Fermer</Button>}>
       <div className="space-y-4">
         <ul className="space-y-2">
           {sections.map((s, i) => (
@@ -89,10 +90,10 @@ export function Sections({ ouvert, onFermer }: { ouvert: boolean; onFermer: () =
                     <div className="font-semibold">{s.nom} <span className="text-xs font-normal text-texte-2">· {nb(s)}</span></div>
                     {s.description ? <div className="truncate text-xs text-texte-2">{s.description}</div> : null}
                   </div>
-                  <Button taille="sm" variante="discret" aria-label="Monter" disabled={i === 0 || enCours} onClick={() => deplacer(s, -1)}>↑</Button>
-                  <Button taille="sm" variante="discret" aria-label="Descendre" disabled={i === sections.length - 1 || enCours} onClick={() => deplacer(s, 1)}>↓</Button>
-                  <Button taille="sm" variante="discret" onClick={() => setEdition({ id: s.id, nom: s.nom, description: s.description ?? '' })}>✏️</Button>
-                  <Button taille="sm" variante="discret" className="text-alerte" aria-label="Supprimer" onClick={() => supprimer(s)}>🗑️</Button>
+                  <Button taille="sm" variante="discret" aria-label="Monter" disabled={i === 0 || enCours} onClick={() => deplacer(s, -1)}><ArrowUp size={16} /></Button>
+                  <Button taille="sm" variante="discret" aria-label="Descendre" disabled={i === sections.length - 1 || enCours} onClick={() => deplacer(s, 1)}><ArrowDown size={16} /></Button>
+                  <Button taille="sm" variante="discret" aria-label="Renommer" onClick={() => setEdition({ id: s.id, nom: s.nom, description: s.description ?? '' })}><Pencil size={16} /></Button>
+                  <Button taille="sm" variante="discret" className="text-alerte" aria-label="Supprimer" onClick={() => supprimer(s)}><Trash2 size={16} /></Button>
                 </div>
               )}
             </li>

@@ -128,6 +128,30 @@ questions FacePro déjà posées sont longues (posées avant la règle, par une
 autre session) ; l'écran A + D (agent, branche `claude/ecran-a-plus-d`) doit
 aussi suivre la règle.
 
+## 2 quater. 29 sept. : écran A + D (chantier `6e651d23`, branche `claude/ecran-a-plus-d`)
+
+Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
+- **Accueil = modèle A** (`TableauDeBord.tsx`, « Tout » ET vue projet) : quatre
+  tuiles (pour toi · ça avance · en pause · fini) = LONGUEURS des listes
+  (`lib/tableauDeBord.ts`, testé) ; détail par projet/section replié qui compte
+  les mêmes chantiers (`ouJenSuis(..., classesDe(t))`) ; « À toi de jouer » (une
+  ligne, le sujet, ce qu'on attend en mots simples, UN verbe) ; « Ça avance tout
+  seul » par CHANTIER (`caAvanceToutSeul`, jamais une vieille barre sous une
+  ligne vivante) + hors chantier + détail des sessions replié ; « Prêt à
+  lancer ». Vue projet : + « Tous les chantiers » en lignes compactes,
+  « Réglages du projet » replié.
+- **Chaque chantier = une conversation** (`Conversation.tsx`, modèle D) :
+  feuille plein écran (téléphone) / dialogue (ordinateur), par-dessus l'écran,
+  le « retour » du téléphone la ferme (entrée d'historique posée dans
+  Cockpit.tsx). Bulles, demande d'abord, ce qu'il faut faire en dernier et on y
+  arrive positionné ; barre « Écrire à Claude… » (seule façon d'écrire) ; menu ⋯.
+- Morts et supprimés : CarteChantier, Fil, EcrireDansFil, EnCeMoment, ALancer,
+  AToi (→ BlocsAToi), VueEnsemble. Libellés des libs SANS emoji ; icônes lucide
+  (`Icones.tsx`). Mots simples (conversation / assistant ; aide « c'est quoi ? »).
+- **Attention fusion** : main a reçu 964528e (revert des fichiers app/ que
+  256f351 avait embarqués par erreur) : en fusionnant cette branche, garder SA
+  version de app/.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

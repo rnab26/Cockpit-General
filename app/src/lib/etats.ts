@@ -6,24 +6,24 @@ export type Teinte = 'neutre' | 'ok' | 'attention' | 'alerte' | 'info' | 'accent
 
 export interface InfoEtat {
   etat: Etat
-  libelle: string        // avec l'emoji, tel qu'affiché
+  libelle: string        // tel qu'affiché (sans emoji, 29 sept. : « des logos plutôt que des emojis »)
   court: string          // sans emoji, pour les menus
   teinte: Teinte
   aide: string
 }
 
 export const ETATS: readonly InfoEtat[] = [
-  { etat: 'a_trier',    libelle: '⏳ Pas encore examinée',      court: 'Pas encore examinée', teinte: 'neutre',    aide: 'Une demande arrivée, que personne n’a encore lue.' },
-  { etat: 'a_cadrer',   libelle: '🗣️ À cadrer avec Raphaël',    court: 'À cadrer',           teinte: 'info',      aide: 'À discuter avant de coder : coût, périmètre, accès.' },
-  { etat: 'libre',      libelle: '📋 Libre',                    court: 'Libre',              teinte: 'ok',        aide: 'Spécifiée, prête à être prise par une session.' },
-  { etat: 'en_cours',   libelle: '🔧 En cours',                 court: 'En cours',           teinte: 'attention', aide: 'Une session travaille dessus.' },
-  { etat: 'a_verifier', libelle: '🧪 Codée, à vérifier',        court: 'Codée, à vérifier',  teinte: 'attention', aide: 'Livrée par la session : à toi de certifier ou corriger.' },
-  { etat: 'valide',     libelle: '✅ Certifiée',                court: 'Certifiée',          teinte: 'ok',        aide: 'Un humain a constaté que ça marche.' },
-  { etat: 'bloque',     libelle: '⛔ Bloquée',                  court: 'Bloquée',            teinte: 'alerte',    aide: 'Quelque chose d’extérieur empêche d’avancer.' },
-  { etat: 'reporte',    libelle: '💤 Reportée',                 court: 'Reportée',           teinte: 'neutre',    aide: 'Volontairement mise de côté.' },
+  { etat: 'a_trier',    libelle: 'Pas encore examinée',      court: 'Pas encore examinée', teinte: 'neutre',    aide: 'Une demande arrivée, que personne n’a encore lue.' },
+  { etat: 'a_cadrer',   libelle: 'À cadrer avec Raphaël',    court: 'À cadrer',           teinte: 'info',      aide: 'À discuter avant de coder : coût, périmètre, accès.' },
+  { etat: 'libre',      libelle: 'Libre',                    court: 'Libre',              teinte: 'ok',        aide: 'Spécifiée, prête à être prise par une session.' },
+  { etat: 'en_cours',   libelle: 'En cours',                 court: 'En cours',           teinte: 'attention', aide: 'Une session travaille dessus.' },
+  { etat: 'a_verifier', libelle: 'Codée, à vérifier',        court: 'Codée, à vérifier',  teinte: 'attention', aide: 'Livrée par la session : à toi de certifier ou corriger.' },
+  { etat: 'valide',     libelle: 'Certifiée',                court: 'Certifiée',          teinte: 'ok',        aide: 'Un humain a constaté que ça marche.' },
+  { etat: 'bloque',     libelle: 'Bloquée',                  court: 'Bloquée',            teinte: 'alerte',    aide: 'Quelque chose d’extérieur empêche d’avancer.' },
+  { etat: 'reporte',    libelle: 'Reportée',                 court: 'Reportée',           teinte: 'neutre',    aide: 'Volontairement mise de côté.' },
 ]
 
-export const BADGE_REPONSE_ATTENDUE = '🔴 Réponse attendue'
+export const BADGE_REPONSE_ATTENDUE = 'Réponse attendue'
 
 const PAR_ETAT: Record<Etat, InfoEtat> = Object.fromEntries(ETATS.map((e) => [e.etat, e])) as Record<Etat, InfoEtat>
 
@@ -39,7 +39,7 @@ export function badgeChantier(c: Pick<Chantier, 'etat'>, questionEnAttente: bool
 }
 
 export const PRIORITES: readonly { priorite: Priorite; libelle: string }[] = [
-  { priorite: 'haute', libelle: '🔥 Haute' },
+  { priorite: 'haute', libelle: 'Haute' },
   { priorite: 'normale', libelle: 'Normale' },
   { priorite: 'basse', libelle: 'Basse' },
 ]
@@ -64,7 +64,6 @@ export function bacDe(c: Pick<Chantier, 'etat' | 'archived_at'>): Bac {
   return 'optimisation'
 }
 
-export const ICONE_AUTEUR: Record<string, string> = { session: '🤖', proprietaire: '👤', utilisateur: '🙋' }
 export const LIBELLE_KIND: Record<string, string> = {
   info: 'info', question: 'question', reponse: 'réponse', blocage: 'blocage', action: 'action', constat: 'constat', fusion: 'fusion',
 }

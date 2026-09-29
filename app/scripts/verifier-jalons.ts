@@ -20,7 +20,7 @@ verifie('jsonb mal formé : ignoré sans planter', frise('n’importe quoi', now
   const j = { ...J('code', a(13, 40)), ...J('pousse', a(13, 50), 'abc1234'), ...J('ci_ok', a(13, 58)), ...J('en_ligne', a(14, 2), 'https://rnab26.github.io/Cockpit-General/') }
   const f = frise(j, now)!
   verifie('complet : 4 étapes, toutes « fait »', f.length === 4 && f.every((e) => e.etat === 'fait'), f.map((e) => e.etat))
-  verifie('complet : les libellés en mots d’enfant', f.map((e) => e.libelle).join(' | ') === '✍️ Codé | 📤 Envoyé | 🤖 Vérifié par les robots | 🌐 En ligne', f.map((e) => e.libelle))
+  verifie('complet : les libellés en mots d’enfant', f.map((e) => e.libelle).join(' | ') === 'Codé | Envoyé | Vérifié par les robots | En ligne', f.map((e) => e.libelle))
   verifie('complet : l’adresse en ligne est cliquable', f[3].url === 'https://rnab26.github.io/Cockpit-General/')
   verifie('complet : chaque étape a son heure', f[0].heure === '13 h 40' && f[3].heure === '14 h 02', f.map((e) => e.heure))
   const s = syntheseMiseEnLigne(j, now)!
@@ -53,10 +53,10 @@ verifie('jsonb mal formé : ignoré sans planter', frise('n’importe quoi', now
 {
   const rien = { ...J('code', a(15, 0)), ...J('pas_en_ligne', a(15, 5), 'documentation seulement') }
   const f = frise(rien, now)!
-  verifie('pas en ligne : dernière étape « ℹ️ Rien à mettre en ligne : documentation seulement »', f[3].etat === 'info' && f[3].libelle === 'ℹ️ Rien à mettre en ligne : documentation seulement', f[3].libelle)
+  verifie('pas en ligne : dernière étape « Rien à mettre en ligne : documentation seulement »', f[3].etat === 'info' && f[3].libelle === 'Rien à mettre en ligne : documentation seulement', f[3].libelle)
   verifie('pas en ligne : la phrase dit qu’il peut vérifier', syntheseMiseEnLigne(rien, now)!.code === 'rien' && syntheseMiseEnLigne(rien, now)!.peutVerifier)
   const geste = J('pas_en_ligne', a(15, 5), 'installe la nouvelle APK sur ton téléphone')
-  verifie('geste : « 👉 Il faut ton geste : … »', frise(geste, now)![3].libelle.startsWith('👉 Il faut ton geste : installe'))
+  verifie('geste : « 👉 Il faut ton geste : … »', frise(geste, now)![3].libelle.startsWith('Il faut ton geste : installe'))
   verifie('geste : la phrase le dit, il ne peut pas encore vérifier', syntheseMiseEnLigne(geste, now)!.code === 'geste' && !syntheseMiseEnLigne(geste, now)!.peutVerifier)
   verifie('demandeUnGeste : « Raphaël doit activer Pages » oui, « aucun changement déployable » non', demandeUnGeste('Raphaël doit activer Pages') && !demandeUnGeste('aucun changement déployable'))
 }

@@ -5,7 +5,7 @@ import { ETATS, infoEtat, badgeChantier, BADGE_REPONSE_ATTENDUE, bacDe, teintePr
 console.log('verifier-etats')
 verifie('les huit états du schéma ont un libellé', ETATS.length === 8 &&
   ['a_trier','a_cadrer','libre','en_cours','a_verifier','valide','bloque','reporte'].every((e) => ETATS.some((x) => x.etat === e)))
-verifie('chaque libellé commence par un emoji et diffère du code', ETATS.every((e) => /^\p{Extended_Pictographic}/u.test(e.libelle) && e.libelle !== e.etat))
+verifie('chaque libellé est en mots, SANS emoji (29 sept. : « des logos plutôt que des emojis »), et diffère du code', ETATS.every((e) => !/\p{Extended_Pictographic}/u.test(e.libelle) && e.libelle !== e.etat))
 verifie('a_trier se lit « Pas encore examinée »', infoEtat('a_trier').libelle.includes('Pas encore examinée'))
 verifie('a_verifier se lit « Codée, à vérifier »', infoEtat('a_verifier').libelle.includes('Codée, à vérifier'))
 verifie('valide se lit « Certifiée »', infoEtat('valide').libelle.includes('Certifiée'))

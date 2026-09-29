@@ -7,14 +7,12 @@ import type { Theme } from '../hooks/useTheme.ts'
 import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { pastillesProjet } from '../lib/entonnoir.ts'
+import { Layers, Lock } from 'lucide-react'
 import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
-import { BarreProjet, ProjetsResume } from './BarreProjet.tsx'
-import { EnCeMoment } from './EnCeMoment.tsx'
-import { VueEnsemble } from './VueEnsemble.tsx'
-import { AToi } from './AToi.tsx'
-import { ALancer } from './ALancer.tsx'
-import { TousLesChantiers, cleDuChantier } from './TousLesChantiers.tsx'
+import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
+import { Conversation, type CibleConversation } from './Conversation.tsx'
+import { TousLesChantiers } from './TousLesChantiers.tsx'
 import { NouveauChantier } from './NouveauChantier.tsx'
 import { ModifierChantier } from './ModifierChantier.tsx'
 import { Sections } from './Sections.tsx'
@@ -27,21 +25,22 @@ import { Button } from '../ui/Button.tsx'
 
 type Dialogue = 'nouveau' | 'sections' | 'doublons' | 'reglages' | 'projets' | null
 
-/** La présence se recalcule toute seule, même sans événement : une session qui se tait passe de 🟢 à 🟡. */
+/** La présence se recalcule toute seule, même sans événement : une session qui se tait passe de « travaille » à « plus de nouvelles ». */
 export const TIC_PRESENCE_MS = 30_000
 
 /**
- * L'écran unique. Deux vues, le même entonnoir (En ce moment / À toi / À
- * lancer) : l'onglet « Tout » (tous les projets, l'accueil) et la vue d'un
- * projet, qui ajoute « Tous les chantiers » en dessous. Tient l'état
- * d'interface (cartes et sections ouvertes, sélection, dialogues).
+ * L'écran unique. Deux vues, le même tableau de bord (modèle A : tuiles, À toi
+ * de jouer, Ça avance tout seul, Prêt à lancer) : l'onglet « Tout » (tous les
+ * projets, l'accueil) et la vue d'un projet, qui ajoute « Tous les chantiers »
+ * et ses réglages. Chaque chantier s'ouvre en conversation (modèle D), par-dessus,
+ * sans changer d'onglet. Tient l'état d'interface (conversation ouverte,
+ * sections dépliées, sélection, dialogues).
  */
 export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi; theme: Theme; changerTheme: (t: Theme) => void; seDeconnecter: () => Promise<void> }) {
   const d = useDonnees(true)
   const { prefs, poser } = usePreferences(moi.user_id)
-  const [ouverts, setOuverts] = useState<Set<string>>(new Set())
   const [sectionsOuvertes, setSectionsOuvertes] = useState<Set<string>>(new Set())
-  const [cible, setCible] = useState<string | null>(null)
+  const [conversation, setConversation] = useState<CibleConversation | null>(null)
   const [dialogue, setDialogue] = useState<Dialogue>(null)
   const [aModifier, setAModifier] = useState<Chantier | null>(null)
   const [doublonDe, setDoublonDe] = useState<Chantier | null>(null)
@@ -64,40 +63,33 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     sessions: d.sessions.filter((x) => x.projet_id === p.id),
     taches: d.taches.filter((x) => x.projet_id === p.id),
   }])), [d.projets, d.sections, d.chantiers, d.messages, d.activites, d.sessions, d.taches])
-  const sectionsConnues = useMemo(() => new Set(d.sections.map((s) => s.id)), [d.sections])
   const vue = d.vue ?? VUE_TOUT
   const vueTout = vue === VUE_TOUT
 
   const changerVue = useCallback((id: string) => {
     d.choisirVue(id)
-    setOuverts(new Set()); setSelectionActive(false); setSelectionIds(new Set())
+    setSelectionActive(false); setSelectionIds(new Set())
     window.scrollTo({ top: 0 })
   }, [d.choisirVue]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ouvrirChantier = useCallback((projetId: string, chantierId: string) => {
-    if (vue !== projetId) changerVue(projetId)
-    setOuverts((s) => new Set(s).add(chantierId))
-    const c = d.chantiers.find((x) => x.id === chantierId)
-    if (c) setSectionsOuvertes((s) => new Set(s).add(cleDuChantier(c, sectionsConnues)))
-    setCible(chantierId)
-  }, [vue, changerVue, d.chantiers, sectionsConnues])
-
-  // Faire défiler jusqu'à la carte ouverte, une fois qu'elle est rendue (changement de vue, section dépliée).
+  // Une conversation s'ouvre PAR-DESSUS l'écran (pas de changement d'onglet) ; le geste « retour »
+  // du téléphone la ferme : une entrée d'historique est posée à l'ouverture, retirée à la fermeture.
+  const ouvrirChantier = useCallback((projetId: string, chantierId: string | null) => {
+    setConversation((avant) => {
+      if (!avant) history.pushState({ conversation: true }, '', location.href)
+      return { projetId, chantierId }
+    })
+  }, [])
+  const fermerConversation = useCallback(() => {
+    if ((history.state as { conversation?: boolean } | null)?.conversation) history.back()
+    else setConversation(null)
+  }, [])
   useEffect(() => {
-    if (!cible) return
-    let essais = 0
-    let t = 0
-    const essayer = () => {
-      const el = document.querySelector(`[data-testid="tous-les-chantiers"] [data-chantier="${cible}"]`)
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); setCible(null) }
-      else if (essais++ < 25) t = window.setTimeout(essayer, 60)
-      else setCible(null)
-    }
-    t = window.setTimeout(essayer, 30)
-    return () => window.clearTimeout(t)
-  }, [cible])
+    const surRetour = () => setConversation(null)
+    window.addEventListener('popstate', surRetour)
+    return () => window.removeEventListener('popstate', surRetour)
+  }, [])
 
-  const basculer = useCallback((id: string) => setOuverts((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }), [])
   const basculerSection = useCallback((cle: string) => setSectionsOuvertes((s) => { const n = new Set(s); if (n.has(cle)) n.delete(cle); else n.add(cle); return n }), [])
   const deplierTout = useCallback((cles: string[] | null) => setSectionsOuvertes((s) => {
     if (!cles) return new Set([...s].filter((k) => !k.startsWith(`${vue}:`) || k.endsWith(':__actif') || k.endsWith(':__archives')))
@@ -115,7 +107,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     if (!projet || !x) return null
     return {
       moi, admin, par: moi.email, projet, ...x, enAttente, now, silenceMs, recharger, prefs, poser, selection,
-      ouvrirModifier: setAModifier, ouvrirDoublonDe: setDoublonDe, ouvrirChantier: (id: string) => ouvrirChantier(projetId, id),
+      ouvrirModifier: setAModifier, ouvrirDoublonDe: setDoublonDe, ouvrirChantier: (id: string | null) => ouvrirChantier(projetId, id),
     }
   }, [d.projets, parProjet, moi, admin, enAttente, now, silenceMs, recharger, prefs, poser, selection, ouvrirChantier])
 
@@ -153,8 +145,8 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           {entete}
           <main className="mx-auto max-w-3xl p-4">
             {admin
-              ? <Vide emoji="🏗️" titre="Aucun projet" texte="Crée le premier : un nom, un slug, une couleur." action={<Button variante="primaire" onClick={() => setDialogue('projets')}>+ Créer un projet</Button>} />
-              : <Vide emoji="🔒" titre="Aucun projet pour toi" texte={<>Demande à Raphaël de t’ajouter à ton projet avec cette adresse : <b>{moi.email}</b>.</>} action={<Button onClick={() => void seDeconnecter()}>Se déconnecter</Button>} />}
+              ? <Vide icone={<Layers size={28} strokeWidth={1.5} />} titre="Aucun projet" texte="Crée le premier : un nom, un slug, une couleur." action={<Button variante="primaire" onClick={() => setDialogue('projets')}>+ Créer un projet</Button>} />
+              : <Vide icone={<Lock size={28} strokeWidth={1.5} />} titre="Aucun projet pour toi" texte={<>Demande à Raphaël de t’ajouter à ton projet avec cette adresse : <b>{moi.email}</b>.</>} action={<Button onClick={() => void seDeconnecter()}>Se déconnecter</Button>} />}
           </main>
           {reglages}
           {projetsMembres}
@@ -168,26 +160,20 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     <GlobalCtx.Provider value={global}>
       <div className={`min-h-dvh ${selectionActive && !vueTout ? 'pb-40' : 'pb-8'}`}>
         {entete}
-        <main className="mx-auto max-w-3xl space-y-3 px-3 pt-3">
+        <main className="mx-auto max-w-3xl space-y-3 px-3 pt-4">
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
-            <div className="space-y-3" data-testid="vue-tout">
-              <VueEnsemble projetId={null} />
-              <EnCeMoment projetId={null} />
-              <AToi projetId={null} />
-              <ALancer projetId={null} />
-              <ProjetsResume />
+            <div className="space-y-5" data-testid="vue-tout">
+              <TableauDeBord projetId={null} />
+              <ReglagesProjets />
             </div>
           ) : (
             <AvecProjet projetId={d.projet.id}>
-              <div className="space-y-3" data-testid="vue-projet">
-                <VueEnsemble projetId={d.projet.id} />
-                <BarreProjet projet={d.projet} />
-                <EnCeMoment projetId={d.projet.id} />
-                <AToi projetId={d.projet.id} />
-                <ALancer projetId={d.projet.id} />
-                <TousLesChantiers ouverts={ouverts} basculer={basculer} sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
+              <div className="space-y-5" data-testid="vue-projet">
+                <TableauDeBord projetId={d.projet.id} />
+                <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
                   deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />
+                <ReglagesProjet projetId={d.projet.id} />
               </div>
             </AvecProjet>
           )}
@@ -198,15 +184,21 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
             <NouveauChantier ouvert={dialogue === 'nouveau'} onFermer={() => setDialogue(null)} />
             {admin ? (
               <>
-                <ModifierChantier chantier={aModifier} onFermer={() => setAModifier(null)} />
                 <Sections ouvert={dialogue === 'sections'} onFermer={() => setDialogue(null)} />
                 <Doublons ouvert={dialogue === 'doublons'} onFermer={() => setDialogue(null)} />
-                <DoublonDe source={doublonDe} onFermer={() => setDoublonDe(null)} />
                 {selectionActive ? <BarreSelection onQuitter={() => { setSelectionActive(false); setSelectionIds(new Set()) }} /> : null}
               </>
             ) : null}
           </AvecProjet>
         ) : null}
+        {conversation ? (
+          <AvecProjet projetId={conversation.projetId}>
+            <Conversation key={`${conversation.projetId}:${conversation.chantierId}`} cible={conversation} onFermer={fermerConversation} />
+          </AvecProjet>
+        ) : null}
+        {/* Modifier / doublon : ouverts depuis une conversation, dans le projet du chantier (et par-dessus elle). */}
+        {admin && aModifier ? <AvecProjet projetId={aModifier.projet_id}><ModifierChantier chantier={aModifier} onFermer={() => setAModifier(null)} /></AvecProjet> : null}
+        {admin && doublonDe ? <AvecProjet projetId={doublonDe.projet_id}><DoublonDe source={doublonDe} onFermer={() => setDoublonDe(null)} /></AvecProjet> : null}
         {reglages}
         {projetsMembres}
       </div>

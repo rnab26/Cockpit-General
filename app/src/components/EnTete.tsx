@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
+import { SquareCheck, Copy, FolderTree, Layers, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
@@ -41,8 +41,8 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
     document.addEventListener('mousedown', fermer)
     return () => document.removeEventListener('mousedown', fermer)
   }, [menu])
-  const item = (a: ActionMenu, libelle: string) => (
-    <button type="button" role="menuitem" onClick={() => { setMenu(false); onMenu(a) }} className="block w-full px-3 py-2.5 text-left text-[15px] hover:bg-carte-2">{libelle}</button>
+  const item = (a: ActionMenu, libelle: string, I: LucideIcon) => (
+    <button type="button" role="menuitem" onClick={() => { setMenu(false); onMenu(a) }} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[15px] hover:bg-carte-2"><I size={17} className="shrink-0 text-texte-2" aria-hidden />{libelle}</button>
   )
   return (
     <header className="sticky top-0 z-30 border-b border-bord bg-fond/95 backdrop-blur" style={{ borderTopColor: (!vueTout && projet?.couleur) || undefined }}>
@@ -75,11 +75,11 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
           <Button variante="discret" taille="sm" aria-label="Menu" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} className="px-2" data-testid="menu"><MoreHorizontal size={20} /></Button>
           {menu ? (
             <div role="menu" className="absolute right-0 top-10 z-40 w-56 overflow-hidden rounded-xl border border-bord bg-carte py-1 shadow-xl">
-              {projet && !vueTout && admin ? item('sections', '🗂️ Sections') : null}
-              {projet && !vueTout && admin ? item('doublons', '🔁 Doublons') : null}
-              {projet && !vueTout && admin ? item('choisir', selectionActive ? '☑️ Terminer la sélection' : '☑️ Choisir (sélection groupée)') : null}
-              {admin ? item('projets', '🏗️ Projets & membres') : null}
-              {item('reglages', '⚙️ Réglages')}
+              {projet && !vueTout && admin ? item('sections', 'Sections', FolderTree) : null}
+              {projet && !vueTout && admin ? item('doublons', 'Doublons', Copy) : null}
+              {projet && !vueTout && admin ? item('choisir', selectionActive ? 'Terminer la sélection' : 'Choisir (sélection groupée)', SquareCheck) : null}
+              {admin ? item('projets', 'Projets & membres', Layers) : null}
+              {item('reglages', 'Réglages', Settings)}
             </div>
           ) : null}
         </div>

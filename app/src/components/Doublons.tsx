@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
@@ -44,8 +45,8 @@ export function Doublons({ ouvert, onFermer }: { ouvert: boolean; onFermer: () =
   }
 
   return (
-    <Dialog ouvert={ouvert} onFermer={onFermer} titre={`🔁 Doublons${paires.length ? ` (${paires.length})` : ''}`} large pied={<Button onClick={onFermer}>Fermer</Button>}>
-      {!paires.length ? <Vide emoji="✨" titre="Aucun doublon repéré" texte={ignorees.size ? `${ignorees.size} paire${ignorees.size > 1 ? 's' : ''} marquée${ignorees.size > 1 ? 's' : ''} « pas un doublon ».` : 'Les titres des chantiers ouverts ne se ressemblent pas.'} /> : (
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre={`Doublons${paires.length ? ` (${paires.length})` : ''}`} large pied={<Button onClick={onFermer}>Fermer</Button>}>
+      {!paires.length ? <Vide titre="Aucun doublon repéré" texte={ignorees.size ? `${ignorees.size} paire${ignorees.size > 1 ? 's' : ''} marquée${ignorees.size > 1 ? 's' : ''} « pas un doublon ».` : 'Les titres des chantiers ouverts ne se ressemblent pas.'} /> : (
         <div className="space-y-4">
           {paires.map(({ a, b, score, cle }) => {
             const choix = garder[cle] ?? a.id
@@ -56,7 +57,7 @@ export function Doublons({ ouvert, onFermer }: { ouvert: boolean; onFermer: () =
                   {[a, b].map((c) => (
                     <button key={c.id} type="button" onClick={() => setGarder({ ...garder, [cle]: c.id })}
                       className={`rounded-xl border-2 p-2 text-left text-sm ${choix === c.id ? 'border-accent bg-accent/8' : 'border-bord'}`}>
-                      <div className="mb-1 flex items-center gap-1 text-xs font-semibold">{choix === c.id ? '✅ On garde' : 'Fusionné dedans'}</div>
+                      <div className="mb-1 flex items-center gap-1 text-xs font-semibold">{choix === c.id ? <><Check size={14} className="text-ok" aria-hidden />On garde</> : 'Fusionné dedans'}</div>
                       <div className="font-semibold leading-snug">{c.titre}</div>
                       <div className="mt-1"><Badge teinte={infoEtat(c.etat).teinte}>{infoEtat(c.etat).libelle}</Badge></div>
                       <div className="mt-1 text-xs text-texte-2">{nomSection(c)} · {c.priorite}</div>
@@ -95,7 +96,7 @@ export function DoublonDe({ source, onFermer }: { source: Chantier | null; onFer
     toast.succes('Doublon fusionné.'); setCible(''); setNote(''); onFermer(); await recharger()
   }
   return (
-    <Dialog ouvert={!!source} onFermer={onFermer} titre="🔁 C’est un doublon de…"
+    <Dialog ouvert={!!source} onFermer={onFermer} titre="C’est un doublon de…"
       pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} disabled={!cible} onClick={fusionner}>Fusionner</Button></>}>
       <p className="mb-3 text-sm text-texte-2">« <b>{source?.titre}</b> » sera archivé comme doublon ; sa demande et ses messages rejoignent le chantier gardé.</p>
       <Champ label="Chantier à garder">

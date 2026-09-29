@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { History, Undo2 } from 'lucide-react'
 import type { Historique as LigneHistorique } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -18,13 +19,16 @@ const NOM_CHAMP: Record<string, string> = {
 }
 
 /** L'historique d'un chantier : chargé seulement à l'ouverture. Réservé à l'admin (RLS). */
-export function Historique({ chantierId }: { chantierId: string }) {
+/** `signal` : un nombre qui change quand on demande de l'ouvrir de l'extérieur (menu ⋯ d'une conversation). */
+export function Historique({ chantierId, signal = 0 }: { chantierId: string; signal?: number }) {
   const { par, sections, recharger } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
   const [ouvert, setOuvert] = useState(false)
   const [lignes, setLignes] = useState<LigneHistorique[] | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (signal) { setOuvert(true); window.setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50) } }, [signal])
 
   const charger = async () => {
     const { data, error } = await supabase.from('historique').select('*').eq('chantier_id', chantierId).order('changed_at', { ascending: false }).limit(100)
@@ -54,7 +58,8 @@ export function Historique({ chantierId }: { chantierId: string }) {
   }
 
   return (
-    <Repliable testId="historique" ouvert={ouvert} onToggle={setOuvert} titre={<span className="text-sm">🕓 Historique</span>}
+    <div ref={ref} className="scroll-mt-2">
+    <Repliable testId="historique" ouvert={ouvert} onToggle={setOuvert} titre={<span className="flex items-center gap-1.5 text-sm font-medium"><History size={16} className="text-texte-2" aria-hidden />Historique</span>}
       badge={lignes ? <span className="text-xs">{lignes.length} changement{lignes.length > 1 ? 's' : ''}</span> : null}>
       {erreur ? <p className="text-sm text-alerte">{erreur}</p> : lignes === null ? <p className="text-sm text-texte-2">Chargement…</p>
         : lignes.length === 0 ? <p className="text-sm text-texte-2">Aucun changement enregistré depuis la création.</p> : (
@@ -66,11 +71,12 @@ export function Historique({ chantierId }: { chantierId: string }) {
                   <span>{h.par ?? 'inconnu'} · {dateLongue(h.changed_at)}</span>
                 </div>
                 <div className="mt-0.5 break-words"><span className="text-texte-2 line-through decoration-alerte/60">{lisible(h.champ, h.ancienne)}</span> → <span>{lisible(h.champ, h.nouvelle)}</span></div>
-                {RESTAURABLES.has(h.champ) && h.ancienne ? <Button taille="sm" className="mt-1" onClick={() => restaurer(h)}>↩ Revenir à ce texte</Button> : null}
+                {RESTAURABLES.has(h.champ) && h.ancienne ? <Button taille="sm" className="mt-1" onClick={() => restaurer(h)}><Undo2 size={15} aria-hidden />Revenir à ce texte</Button> : null}
               </li>
             ))}
           </ul>
         )}
     </Repliable>
+    </div>
   )
 }

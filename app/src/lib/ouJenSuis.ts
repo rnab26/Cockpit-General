@@ -40,12 +40,24 @@ export function questionsSansChantier(messages: readonly Pick<Message, 'chantier
   return messages.filter((m) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at && !m.chantier_id).length
 }
 
+/** « Fini » : certifié dans la fenêtre choisie, archivé ou non. La règle unique des tuiles et du tableau. */
+export function estFiniDans(c: Pick<Chantier, 'etat' | 'valide_at'>, fenetre: Fenetre, now: Date = new Date()): boolean {
+  return c.etat === 'valide' && dansFenetre(c.valide_at, fenetre, now)
+}
+
+/**
+ * `classes` (tableau de bord, 29 sept. 2026) : quand l'écran connaît déjà
+ * « ça avance » et « en pause » (tableauDeBord.ts, présence comprise), le
+ * tableau par section compte EXACTEMENT ces chantiers-là — les tuiles et le
+ * détail ne peuvent pas diverger. Sans `classes`, la règle d'avant (réservation).
+ */
 export function ouJenSuis(
   sections: readonly Section[],
   chantiers: readonly Chantier[],
   messages: readonly Message[],
   fenetre: Fenetre,
   now: Date = new Date(),
+  classes?: { bouge: ReadonlySet<string>; dort: ReadonlySet<string> },
 ): { lignes: LigneOuJenSuis[]; total: QuatreNombres } {
   const parSection = new Map<string | null, LigneOuJenSuis>()
   const ligne = (id: string | null, section: Section | null) => {
@@ -67,9 +79,17 @@ export function ouJenSuis(
     const compte = (k: keyof QuatreNombres) => { l.nombres[k]++; total[k]++; l.ids[k].push(c.id) }
 
     // Livré : un certifié dans la fenêtre, archivé ou non.
-    if (c.etat === 'valide' && dansFenetre(c.valide_at, fenetre, now)) compte('livre')
+    if (estFiniDans(c, fenetre, now)) compte('livre')
     if (c.archived_at && c.etat !== 'valide') continue   // doublon ou archivé : hors jeu
     if (c.etat === 'valide') continue
+
+    if (classes) {
+      if (classes.bouge.has(c.id)) compte('bouge')
+      else if (classes.dort.has(c.id)) compte('dort')
+      // La réservation expirée reste signalée à part (note sous le tableau), même si la ligne « avance » la montre.
+      if (c.etat === 'en_cours' && !reservationValide(c.pris_jusqu_a, now)) compte('expirees')
+      continue
+    }
 
     if (c.etat === 'en_cours') {
       if (reservationValide(c.pris_jusqu_a, now)) compte('bouge')

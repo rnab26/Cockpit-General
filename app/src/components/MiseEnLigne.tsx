@@ -1,13 +1,15 @@
 import { useMemo } from 'react'
+import { Check, Circle, ExternalLink, Info, X } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { frise, syntheseMiseEnLigne } from '../lib/jalons.ts'
 
-const MARQUE = { fait: '✓', attente: '○', echec: '✕', info: 'ℹ' }
-const COULEUR_MARQUE = { fait: 'bg-ok text-white', attente: 'border border-bord text-texte-2/60', echec: 'bg-alerte text-white', info: 'bg-info text-white' }
+// Des marques fines, colorées seulement quand elles disent quelque chose (fait, échec).
+const MARQUE = { fait: Check, attente: Circle, echec: X, info: Info }
+const COULEUR_MARQUE = { fait: 'text-ok', attente: 'text-texte-2/50', echec: 'text-alerte', info: 'text-info' }
 
 /**
- * La frise « ✍️ Codé → 📤 Envoyé → 🤖 Vérifié par les robots → 🌐 En ligne »
+ * La frise « Codé → Envoyé → Vérifié par les robots → En ligne »
  * (jalons posés par la session, migration 0007). Rien pour un ancien
  * chantier sans jalon. Étapes pas encore atteintes : grises.
  */
@@ -19,9 +21,9 @@ export function FriseMiseEnLigne({ chantier }: { chantier: Chantier }) {
     <ol className="space-y-1 rounded-lg border border-bord bg-carte px-3 py-2" data-testid="frise-en-ligne" aria-label="Mise en ligne">
       {etapes.map((e) => (
         <li key={e.cle} data-testid="etape-en-ligne" data-etat={e.etat} className="flex items-start gap-2 text-sm leading-snug">
-          <span aria-hidden className={`mt-px inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${COULEUR_MARQUE[e.etat]}`}>{MARQUE[e.etat]}</span>
-          <span className={`min-w-0 flex-1 ${e.etat === 'attente' ? 'text-texte-2/70' : e.etat === 'echec' ? 'font-semibold text-alerte' : 'font-medium'}`}>
-            {e.url ? <a href={e.url} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2">{e.libelle} ↗</a> : e.libelle}
+          {(() => { const M = MARQUE[e.etat]; return <M size={16} strokeWidth={e.etat === 'fait' ? 2.5 : 2} aria-hidden className={`mt-px shrink-0 ${COULEUR_MARQUE[e.etat]}`} /> })()}
+          <span className={`min-w-0 flex-1 ${e.etat === 'attente' ? 'text-texte-2/70' : e.etat === 'echec' ? 'font-medium text-alerte' : ''}`}>
+            {e.url ? <a href={e.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent underline underline-offset-2">{e.libelle}<ExternalLink size={13} aria-hidden /></a> : e.libelle}
           </span>
           {e.heure ? <span className="shrink-0 text-xs tabular-nums text-texte-2">{e.heure}</span> : null}
         </li>

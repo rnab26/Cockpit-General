@@ -13,7 +13,9 @@ import type { Activite, Chantier, Message, Priorite, SessionClaude, Tache } from
 import { activiteDuChantier } from './activite.ts'
 import { chantiersEnAttente } from './ouJenSuis.ts'
 import { presenceChantier, preuveDeVie, derniereDemandeOuCaEnEst, type CodePresence, type Presence } from './presence.ts'
-import { activiteDeTache, agentVivantDuChantier, presenceAvecAgent, quiTravaille, resumeTravail } from './sessions.ts'
+import { activiteDeTache, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, tacheEnCoursVivante, estSessionAutonome, type QuiTravaille } from './sessions.ts'
+import { syntheseMiseEnLigne } from './jalons.ts'
+import { extrait, nomCourtSession } from './texte.ts'
 
 type ChantierE = Chantier
 type MessageE = Message
@@ -35,10 +37,6 @@ export function presenceDe(
   return { presence, activite: presence !== base && agent && agent.pourcentage != null ? activiteDeTache(agent, now) : activite }
 }
 
-export const ICONE_PRESENCE: Record<CodePresence, string> = {
-  travaille: '🟢', attend_toi: '🔴', a_verifier: '🧪', silencieux: '🟡', a_cadrer: '🗣️',
-  bloque: '⛔', personne: '⏸️', reporte: '💤', termine: '✅',
-}
 export const LIBELLE_COURT_PRESENCE: Record<CodePresence, string> = {
   travaille: 'Claude y travaille', attend_toi: 'attend ta réponse', a_verifier: 'à vérifier', silencieux: 'pris, silencieux',
   a_cadrer: 'à cadrer', bloque: 'bloqué', personne: 'personne dessus', reporte: 'reporté', termine: 'certifié',
@@ -58,11 +56,11 @@ export function trierParPresence<T extends { c: Pick<Chantier, 'priorite' | 'upd
     || a.c.titre.localeCompare(b.c.titre, 'fr'))
 }
 
-/** Compteurs par présence (en-tête de section) : seulement les codes présents, dans l'ordre de lecture. */
-export function compteursPresence(codes: readonly CodePresence[]): { code: CodePresence; icone: string; n: number }[] {
+/** Compteurs par présence (en-tête de section) : seulement les codes présents, dans l'ordre de lecture. L'icône vient de l'écran. */
+export function compteursPresence(codes: readonly CodePresence[]): { code: CodePresence; n: number }[] {
   const n = new Map<CodePresence, number>()
   for (const c of codes) n.set(c, (n.get(c) ?? 0) + 1)
-  return [...n.entries()].sort((a, b) => RANG_PRESENCE[a[0]] - RANG_PRESENCE[b[0]]).map(([code, k]) => ({ code, icone: ICONE_PRESENCE[code], n: k }))
+  return [...n.entries()].sort((a, b) => RANG_PRESENCE[a[0]] - RANG_PRESENCE[b[0]]).map(([code, k]) => ({ code, n: k }))
 }
 
 // ---------------------------------------------------------------- 1. En ce moment
@@ -94,8 +92,9 @@ export function enCeMoment(
 
 export type TypeAToi = 'question' | 'fusion' | 'a_verifier' | 'a_cadrer' | 'bloque'
 export const ORDRE_A_TOI: readonly TypeAToi[] = ['question', 'fusion', 'a_verifier', 'a_cadrer', 'bloque']
-export const TITRE_A_TOI: Record<TypeAToi, string> = {
-  question: '🔴 Questions', fusion: '🔀 Fusions proposées par Claude', a_verifier: '🧪 À vérifier', a_cadrer: '🗣️ À cadrer', bloque: '⛔ Bloqués',
+/** Le geste attendu, en UN verbe : le bouton de la ligne (modèle A, 29 sept. 2026). */
+export const VERBE_A_TOI: Record<TypeAToi, string> = {
+  question: 'Répondre', fusion: 'Trancher', a_verifier: 'Tester', a_cadrer: 'Décider', bloque: 'Débloquer',
 }
 
 export interface ElementAToi {
@@ -222,4 +221,124 @@ export function pastillesProjet(
     travaillent: resumeTravail(quiTravaille(sessions, taches, activites, chantiers, now, silenceMs, [], projetId)).sessions,
     aToi: aToi(chantiers, messages, projetId).length,
   }
+}
+
+// ---------------------------------------------------------------- tableau de bord (modèle A, 29 sept. 2026)
+// Raphaël : « des modèles plus compacts […] qu'un amateur, un enfant puisse
+// s'y retrouver ». Une ligne = le SUJET d'abord (titre du chantier), puis en
+// petit ce qu'on attend, puis UN bouton-verbe.
+
+/** Ce qu'on attend de toi, en mots simples, sous le titre d'une ligne « À toi de jouer ». */
+export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message'>, now: Date = new Date()): string {
+  switch (e.type) {
+    case 'question': return e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
+    case 'fusion': return 'Claude propose de fusionner deux chantiers'
+    case 'a_verifier': {
+      const s = e.chantier ? syntheseMiseEnLigne(e.chantier.jalons, now) : null
+      if (!s) return 'livré, à tester'
+      if (s.code === 'ci_ko') return 'livré, mais les robots ont trouvé un problème'
+      if (s.code === 'geste') return 'livré, il faut ton geste avant de tester'
+      return s.peutVerifier ? 'en ligne, à tester' : 'livré, pas encore en ligne'
+    }
+    case 'a_cadrer': return 'ta décision avant de coder'
+    case 'bloque': return e.message ? `bloqué : ${extrait(e.message.corps, 60)}` : 'bloqué, dis-lui quoi faire'
+  }
+}
+
+/** L'état de présence d'un chantier en mots, pour l'en-tête de sa conversation (« Claude y travaille — 60 % »). */
+export function presenceEnMots(p: Pick<Presence, 'code' | 'libelle'>, activite: Pick<Activite, 'pourcentage'> | null): string {
+  if (p.code === 'travaille') return activite ? `${p.libelle} — ${activite.pourcentage} %` : p.libelle
+  return LIBELLE_COURT_PRESENCE[p.code]
+}
+
+export interface LigneCaAvance {
+  c: Chantier
+  presence: Presence
+  /** La barre, SEULEMENT si un avancement a été signalé (grise si plus de nouvelles). */
+  activite: Activite | null
+  /** Preuve de vie : barre vive. Sinon « sans nouvelles » : à relancer. */
+  vivant: boolean
+  /** Qui avance, en mots de tous les jours : « Claude, en autonomie », « 1 assistant de Claude », « Claude (conversation « x ») · 2 assistants de Claude ». */
+  qui: string
+  /** La dernière étape signalée (« écran refait, tests en cours »), ou null. */
+  etape: string | null
+  /** Sans nouvelles : pourquoi (« Plus de nouvelles » / « Personne dessus »), et la dernière demande « où ça en est ». */
+  pourquoi: string | null
+  demandeLe: string | null
+}
+
+/**
+ * « Ça avance tout seul » : UNE ligne par CHANTIER (plus par session) — ce qui
+ * travaille vraiment (preuve de vie, règle de presence.ts + agents), puis les
+ * « en cours sans nouvelles », à relancer. Vivants d'abord (le plus récent en
+ * tête), puis silencieux, puis personne.
+ */
+export function caAvanceToutSeul(
+  chantiers: readonly ChantierE[], activites: readonly Activite[], messages: readonly MessageE[],
+  sessions: readonly SessionClaude[], taches: readonly Tache[], now: Date, silenceMs: number, projetId: string | null = null,
+): LigneCaAvance[] {
+  const enAttente = chantiersEnAttente(messages)
+  const lignes: LigneCaAvance[] = []
+  for (const c of chantiers) {
+    if (c.archived_at || (projetId && c.projet_id !== projetId)) continue
+    const { presence, activite } = presenceDe(c, activites, enAttente, now, silenceMs, taches)
+    if (presence.code === 'travaille') {
+      const act = activiteDuChantier(activites, c.id, now)
+      const parSession = act && preuveDeVie(act, now, silenceMs) ? act : null
+      const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
+      const morceaux: string[] = []
+      if (parSession) {
+        const s = sessions.find((x) => x.projet_id === c.projet_id && x.branche === parSession.session)
+        morceaux.push(s && estSessionAutonome(s) ? 'Claude, en autonomie' : `Claude (conversation « ${s ? nomSession(s) : nomCourtSession(parSession.session)} »)`)
+      }
+      if (agents) morceaux.push(`${agents} assistant${agents > 1 ? 's' : ''} de Claude`)
+      // Jamais une vieille barre sous une ligne vivante : celle de la session, ou celle de l'agent s'il a signalé un %.
+      const barre = parSession ?? (presence.barreVive ? activite : null)
+      const agent = agentVivantDuChantier(taches, c.id, now, silenceMs)
+      lignes.push({ c, presence, activite: barre, vivant: true, qui: morceaux.join(' · ') || 'Claude',
+        etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null })
+    } else if (estEnCoursSansNouvelles(c, presence)) {
+      const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
+      lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: presence.code === 'silencieux' ? 'Plus de nouvelles' : 'Personne dessus',
+        demandeLe: demande?.created_at ?? null })
+    }
+  }
+  const quand = (l: LigneCaAvance) => l.activite?.updated_at ?? l.c.updated_at ?? ''
+  return lignes.sort((a, b) => Number(b.vivant) - Number(a.vivant)
+    || RANG_PRESENCE[a.presence.code] - RANG_PRESENCE[b.presence.code]
+    || quand(b).localeCompare(quand(a)))
+}
+
+export interface LigneHorsChantier {
+  cle: string
+  projetId: string
+  texte: string
+  /** Arrêtée sur une limite d'usage : rien ne s'anime. */
+  pause: boolean
+}
+
+/**
+ * Le travail qu'aucun chantier ne porte : une session vivante dont aucune
+ * barre ni aucun agent n'est rattaché à un chantier, ou une barre sans
+ * chantier. Une ligne discrète chacune, dans les mots de ce qu'elle fait VRAIMENT.
+ */
+export function horsChantier(groupes: readonly QuiTravaille[]): LigneHorsChantier[] {
+  const r: LigneHorsChantier[] = []
+  for (const g of groupes) {
+    for (const vs of g.sessions) {
+      const surChantier = vs.activites.some((a) => a.chantier_id) || vs.taches.some((t) => t.chantier)
+      if (surChantier) continue
+      const nom = nomSession(vs.session)
+      const texte = vs.pause ? `Claude (« ${nom} ») ${vs.pause.charAt(0).toLowerCase()}${vs.pause.slice(1)}`
+        : vs.repond ? `Claude travaille sur autre chose (« ${nom} »)`
+        : estSessionAutonome(vs.session) ? 'Claude en autonomie : en veille, se réveille tout seul chaque heure'
+        : `Conversation « ${nom} » ouverte : attend ton message`
+      r.push({ cle: `s-${vs.session.id}`, projetId: g.projetId, texte, pause: !!vs.pause })
+    }
+    for (const a of g.activitesSeules) {
+      if (a.chantier_id) continue
+      r.push({ cle: `a-${a.id}`, projetId: g.projetId, texte: `Claude travaille sur autre chose (« ${nomCourtSession(a.session)} »)${a.etape ? ` · ${a.etape}` : ''}`, pause: false })
+    }
+  }
+  return r
 }
