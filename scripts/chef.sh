@@ -1,27 +1,30 @@
 #!/usr/bin/env bash
-# LA SESSION CHEF (29 sept. 2026) : une seule session dirige tous les projets ;
-# elle lance des AGENTS sur les chantiers au lieu d'avoir plusieurs sessions
-# autonomes qui se marchent dessus.
+# LE CHEF D'UN PROJET (29 sept. 2026, migration 0019) : dans chaque projet, UNE
+# session dirige (celle où Raphaël a écrit en dernier) ; elle lance des AGENTS
+# sur les chantiers DE SON PROJET, et seulement de lui.
 #
-# Raphaël : « une seule session maître, dessus tu me réponds, je réponds aussi
-# dans le cockpit ; elle ouvre des agents plutôt que plein de sessions
-# autonomes ; les agents travaillent en permanence ; si j'ouvre une nouvelle
-# session et laisse celle-là de côté, elle doit faire le même travail. »
+# Raphaël (0014) : « une seule session maître qui ouvre des agents plutôt que
+# plein de sessions autonomes qui se marchent dessus ». Puis (29/09, 16:00) :
+# « je ne veux pas gérer sur une seule session plein de projets en même temps.
+# S'il y a des ajouts qui doivent se faire, ça doit se faire dans la session
+# concernant le projet en question […] sinon ça mélange tous les contextes. »
 #
 #   scripts/chef.sh                 la passe : lance les agents qui manquent
 #                                   (appelée au réveil, et à la fin de CHAQUE agent)
-#   scripts/chef.sh --prendre       cette session devient chef (hook, message de Raphaël)
-#   scripts/chef.sh --etat          qui est chef, combien d'agents tournent
-#   scripts/chef.sh --reveil <trig_…> [--distante <session_…>]   note le réveil horaire
-#   scripts/chef.sh --max <n>       nombre d'agents en parallèle (1 à 8)
+#   scripts/chef.sh --prendre       cette session devient chef de SON projet (hook, message de Raphaël)
+#   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
+#   scripts/chef.sh --reveil <trig_…> [--distante <session_…>]   note le réveil horaire du projet
+#   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #
-# Session courante : $CLAUDE_CODE_SESSION_ID (ou --session <id>).
+# Projet : $COCKPIT_PROJET (posé par brancher.sh), --projet <slug>, sinon le
+# dépôt courant (projets.depot). Session : $CLAUDE_CODE_SESSION_ID (ou --session <id>).
 set -uo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
+CHEF_CMD="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
-sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max=""
+sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max=""; projet="${COCKPIT_PROJET:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --prendre) mode="prendre"; shift ;;
@@ -30,81 +33,98 @@ while [ $# -gt 0 ]; do
     --distante) distante="${2:-}"; shift 2 ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --session) sid="${2:-}"; shift 2 ;;
+    --projet)  projet="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
-branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
+dossier="${CLAUDE_PROJECT_DIR:-$PWD}"
+branche=$(git -C "$dossier" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 un() { "$SQL" "$1" 2>/dev/null | jq -c '.rows[0] // {}'; }
+if [ -z "$projet" ]; then
+  # Le slug du dépôt courant (github.com/<propriétaire>/<dépôt>), lu en base, jamais deviné.
+  depot=$(git -C "$dossier" remote get-url origin 2>/dev/null | sed -E 's#^.*github\.com[:/]##; s#^.*/git/##; s#\.git$##')
+  [ -n "$depot" ] && projet=$(un "select slug from projets where lower(depot) = lower('$(q "$depot")') and actif" | jq -r '.slug // empty')
+fi
+if [ -z "$projet" ]; then
+  [ "$mode" = "passe" ] && { echo "RIEN — projet inconnu (COCKPIT_PROJET). Termine ta réponse en une ligne."; exit 0; }
+  echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2
+fi
+P="'$(q "$projet")'"
 
 case "$mode" in
   prendre)
     [ -n "$sid" ] || { echo "Session inconnue." >&2; exit 2; }
-    r=$(un "select prendre_chef('$(q "$sid")', '$(q "$branche")', '$(q "$distante")') as r" | jq -c '.r')
+    r=$(un "select prendre_chef($P, '$(q "$sid")', '$(q "$branche")', '$(q "$distante")') as r" | jq -c '.r // {}')
     if [ "$(printf '%s' "$r" | jq -r '.change')" = "true" ]; then
       trig=$(printf '%s' "$r" | jq -r '.reveil_trigger // empty')
-      echo "Cette session devient la SESSION CHEF du cockpit (avant : $(printf '%s' "$r" | jq -r '.ancienne // "aucune"'))."
-      echo "Déplace le réveil horaire sur toi : ${trig:+supprime le réveil $trig (delete_trigger), puis }crée-en un (create_trigger, toutes les heures, sur CETTE session, message « Réveil du chef : lance scripts/chef.sh et suis sa consigne »), puis note-le : scripts/chef.sh --reveil <trig_…> --distante <ton id session_…>."
+      echo "Cette session devient la SESSION CHEF du projet $projet, et de lui seul (avant : $(printf '%s' "$r" | jq -r '.ancienne // "aucune"')). Chaque autre projet a son chef dans sa propre session : n'y touche pas d'ici."
+      echo "Déplace le réveil horaire de $projet sur toi : ${trig:+supprime le réveil $trig (delete_trigger), puis }crée-en un (create_trigger, toutes les heures, sur CETTE session, message « Réveil du chef de $projet : lance $CHEF_CMD et suis sa consigne »), puis note-le : $CHEF_CMD --reveil <trig_…> --distante <ton id session_…>."
     fi
     exit 0 ;;
   reveil)
-    "$SQL" "update chef set reveil_trigger = '$(q "$reveil")', session_distante = coalesce(nullif('$(q "$distante")', ''), session_distante) where id = 1" >/dev/null && echo "Réveil noté : $reveil." ; exit 0 ;;
+    "$SQL" "insert into chefs (projet_id, reveil_trigger, session_distante) select id, '$(q "$reveil")', nullif('$(q "$distante")', '') from projets where slug = $P on conflict (projet_id) do update set reveil_trigger = excluded.reveil_trigger, session_distante = coalesce(excluded.session_distante, chefs.session_distante)" >/dev/null \
+      && echo "Réveil de $projet noté : $reveil." ; exit 0 ;;
   max)
     [[ "$max" =~ ^[1-8]$ ]] || { echo "--max : un nombre de 1 à 8." >&2; exit 2; }
-    "$SQL" "update chef set max_agents = $max where id = 1" >/dev/null && echo "Agents en parallèle : $max." ; exit 0 ;;
+    "$SQL" "insert into chefs (projet_id, max_agents) select id, $max from projets where slug = $P on conflict (projet_id) do update set max_agents = excluded.max_agents" >/dev/null \
+      && echo "Agents en parallèle pour $projet : $max." ; exit 0 ;;
 esac
 
-etat=$(un "select c.session_id, c.branche, c.max_agents, c.reveil_trigger, c.actif, to_char(c.depuis at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI') as depuis,
-  (select count(*) from taches t where t.session_id = c.session_id and t.type = 'agent' and t.statut = 'en_cours' and t.vu_at > now() - interval '3 hours')::int as agents
-  from chef c where c.id = 1")
+# Le chef DE CE PROJET ; ses agents = les tâches « agent » de sa session, dans ce projet.
+etat=$(un "select p.id as projet_id, p.slug, p.depot, c.session_id, c.branche, coalesce(c.max_agents, 3) as max_agents, c.reveil_trigger, c.actif,
+  (p.autonome_toujours or coalesce(p.autonome_jusqu_a > now(), false)) as autonome,
+  to_char(c.depuis at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI') as depuis,
+  (select count(*) from taches t where t.session_id = c.session_id and t.projet_id = p.id and t.type = 'agent' and t.statut = 'en_cours' and t.vu_at > now() - interval '3 hours')::int as agents
+  from projets p left join chefs c on c.projet_id = p.id where p.slug = $P")
 if [ "$mode" = "etat" ]; then printf '%s\n' "$etat" | jq .; exit 0; fi
 
-chef=$(printf '%s' "$etat" | jq -r '.session_id // empty')
+pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
+[ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
+chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 if [ -z "$chef" ] || [ "$chef" != "$sid" ]; then
-  echo "RIEN — cette session n'est pas la session chef (chef : ${chef:-aucune}). Termine ta réponse en une ligne, sans rien faire d'autre."; exit 0
+  echo "RIEN — cette session n'est pas la session chef de $projet (chef : ${chef:-aucune}). Termine ta réponse en une ligne, sans rien faire d'autre."; exit 0
 fi
-"$SQL" "update chef set vu_at = now() where id = 1" >/dev/null 2>&1
+"$SQL" "update chefs set vu_at = now() where projet_id = '$pid'" >/dev/null 2>&1
 agents=$(printf '%s' "$etat" | jq -r '.agents // 0'); maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 3')
+depot=$(printf '%s' "$etat" | jq -r '.depot // ""')
 libres=$(( maxa - agents ))
-if [ "$libres" -le 0 ]; then echo "RIEN — $agents agent(s) travaillent déjà (maximum $maxa). Termine ta réponse en une ligne."; exit 0; fi
+if [ "$libres" -le 0 ]; then echo "RIEN — $agents agent(s) travaillent déjà sur $projet (maximum $maxa). Termine ta réponse en une ligne."; exit 0; fi
 
 donnes=()
-# D'abord les RÉPONSES de Raphaël que personne n'a reprises (0017) : une réponse
-# sur un chantier que personne ne tient (à vérifier, bloqué, réservation
-# expirée) ne se perd plus. Tous projets actifs, la plus ancienne d'abord ;
-# le chantier repart « en cours », réservé à la branche de l'agent.
+# D'abord les RÉPONSES de Raphaël que personne n'a reprises (0017), dans CE
+# projet seulement : une réponse sur un chantier que personne ne tient ne se
+# perd plus ; le chantier repart « en cours », réservé à la branche de l'agent.
 while [ ${#donnes[@]} -lt "$libres" ]; do
   br="agent/reponse-$(date +%s%N | tail -c 7)"
-  rp=$(un "select reprendre_reponse('$br') as r" | jq -c '.r // empty')
+  rp=$(un "select reprendre_reponse('$br', '$pid') as r" | jq -c '.r // empty')
   [ -n "$rp" ] && [ "$rp" != "null" ] || break
   donnes+=("$(printf '%s' "$rp" | jq -c --arg br "$br" '. + {branche: $br, reponse_prise: true}')")
 done
-# Un chantier par place libre, tous projets (ceux dont le mode autonome est allumé), le plus ancien d'abord.
-# Jamais un projet de TEST (slug « test-… », créés et supprimés par verifier-base/web) : projet_de_test() (0017).
-for slug in $("$SQL" "select slug from projets where actif and not projet_de_test(slug) and (autonome_toujours or coalesce(autonome_jusqu_a > now(), false)) order by slug" | jq -r '.rows[].slug'); do
+# Un chantier par place libre si le mode autonome du projet est allumé, le plus ancien d'abord.
+if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
   while [ ${#donnes[@]} -lt "$libres" ]; do
     br="agent/$(date +%s%N | tail -c 7)"
-    c=$(un "select prochain_chantier_autonome('$(q "$slug")', null, '$br') as c" | jq -c '.c // empty')
+    c=$(un "select prochain_chantier_autonome($P, null, '$br') as c" | jq -c '.c // empty')
     [ -n "$c" ] && [ "$c" != "null" ] || break
-    depot=$("$SQL" "select depot from projets where slug = '$(q "$slug")'" | jq -r '.rows[0].depot // ""')
-    donnes+=("$(printf '%s' "$c" | jq -c --arg slug "$slug" --arg depot "$depot" --arg br "$br" '. + {slug: $slug, depot: $depot, branche: $br}')")
+    donnes+=("$(printf '%s' "$c" | jq -c --arg slug "$projet" --arg depot "$depot" --arg br "$br" '. + {slug: $slug, depot: $depot, branche: $br}')")
   done
-done
-# « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, tous projets.
+fi
+# « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, dans CE projet.
 while [ ${#donnes[@]} -lt "$libres" ]; do
   v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
     from chantiers c join projets p on p.id = c.projet_id
-    where c.verif_demandee_at is not null and c.archived_at is null and p.actif and not projet_de_test(p.slug)
+    where c.projet_id = '$pid' and c.verif_demandee_at is not null and c.archived_at is null and p.actif
       and (c.pris_par is null or c.pris_jusqu_a < now()) order by c.verif_demandee_at limit 1")
   vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break
   br="agent/verif-$(date +%s%N | tail -c 7)"
   [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
   donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
 done
-if [ ${#donnes[@]} -eq 0 ]; then echo "RIEN — aucun chantier à prendre ($agents agent(s) au travail). Termine ta réponse en une ligne."; exit 0; fi
+if [ ${#donnes[@]} -eq 0 ]; then echo "RIEN — aucun chantier à prendre dans $projet ($agents agent(s) au travail). Termine ta réponse en une ligne."; exit 0; fi
 
-echo "SESSION CHEF : lance ${#donnes[@]} agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\" pour le cockpit ; pour un autre dépôt, l'agent travaille dans son propre clone). Chaque chantier est déjà réservé à sa branche."
-echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance scripts/chef.sh pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
+echo "SESSION CHEF de $projet : lance ${#donnes[@]} agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche."
+echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance $CHEF_CMD pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 echo
 VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
 for c in "${donnes[@]}"; do

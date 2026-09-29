@@ -95,20 +95,36 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
 
-## UNE session chef, des agents (29 sept. 2026, migration 0014)
+## Un chef PAR PROJET, des agents (29 sept. 2026, migrations 0014 puis 0019)
 
-Raphaël : « les sessions se marchent dessus » → une seule session dirige tous
-les projets : celle où il a écrit en dernier (hook UserPromptSubmit →
-`scripts/chef.sh --prendre`). Elle ne code pas elle-même : `scripts/chef.sh`
-lui donne un chantier par place libre (3 agents en parallèle, `--max`), elle
-lance un agent par chantier (isolation worktree, sa branche), et relance
-`chef.sh` à la fin de CHAQUE agent (et le hook Stop le fait aussi) : le travail
-continue sans attendre l'heure. Les autres sessions n'enchaînent plus rien
-(`autonome.sh`, `passe.sh`). Un seul réveil horaire, sur la chef
-(`chef.reveil_trigger`) ; une nouvelle chef le déplace sur elle. Si le
+Raphaël, 29/09 16:00 : « je ne veux pas gérer sur une seule session plein de
+projets en même temps. S'il y a des ajouts qui doivent se faire, ça doit se
+faire dans la session concernant le projet en question, et pas dans une seule
+session, parce que sinon ça mélange tous les contextes. » (Avant, 0014 : une
+seule session dirigeait TOUS les projets.) Ce qu'on garde de 0014 : « les
+sessions se marchent dessus » → dans UN projet, une seule session dirige,
+celle où il a écrit en dernier (hook UserPromptSubmit →
+`scripts/chef.sh --prendre`, qui la rend chef de SON projet, `COCKPIT_PROJET`,
+et de lui seul). Table `cockpit.chefs` (une ligne par projet : session,
+`max_agents`, `reveil_trigger`) ; `prendre_chef(projet, …)`,
+`est_chef(projet, session)`, `chef_existe(projet)` (service seulement).
+La chef ne code pas elle-même : `scripts/chef.sh` lui donne, DANS SON PROJET
+SEULEMENT, un travail par place libre (réponses sans suite, chantiers
+prenables si le mode autonome est allumé, « vérifie pour moi » ; 3 agents en
+parallèle par défaut, `--max` règle le projet courant), elle lance un agent
+par chantier (isolation worktree, sa branche), et relance `chef.sh` à la fin
+de CHAQUE agent (et le hook Stop le fait aussi). Les autres sessions du projet
+n'enchaînent rien (`autonome.sh`, `passe.sh`) ; une session d'un AUTRE projet
+n'est jamais bloquée ni pilotée par elle. Un projet sans chef garde le
+fonctionnement par session (mode autonome, `passe.sh`). Un réveil horaire PAR
+chef de projet (`chefs.reveil_trigger`, `chef.sh --reveil`) ; une nouvelle
+chef du projet le déplace sur elle (la consigne de `--prendre` le dit). Si le
 conteneur de la chef s'arrête, ses agents s'arrêtent : chantiers réservés
 3 h, repris au réveil suivant (abandon détecté). Jamais `git add -A` dans un
 dossier partagé avec un agent (incident du 29 sept., commit 964528e).
+L'ancienne table `chef` (id = 1) et ses fonctions sans projet restent en base,
+plus lues par les scripts à jour (pas de drop sans Raphaël).
+`verifier-base.mjs` §19.
 
 **Une réponse de Raphaël est toujours reprise** (29 sept., migration 0017,
 « je réponds, mais je ne sais pas si c'est pris en compte ») : la passe de
@@ -124,8 +140,9 @@ précision, médias, et les barrières de budget si la réponse engage une
 dépense. L'app la montre dans « Ça avance tout seul » (« Ta réponse est reçue :
 Claude va la reprendre », puis « Claude reprend ta réponse ») :
 `repriseReponse` (`lib/entonnoir.ts`). Les projets de TEST (slug `test-…`) ne
-sont JAMAIS servis par la chef (`projet_de_test`, incident du 29 sept.).
-`verifier-base.mjs` §18.
+sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
+0019 la passe ne sert que son projet ; `projet_de_test` exclut encore les
+tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
