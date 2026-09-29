@@ -169,6 +169,25 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
   session FacePro : elle le deviendra et créera SON réveil (consigne de
   `--prendre`). D'ici là, FacePro garde le fonctionnement par session.
 
+## 2 sexies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
+
+Bouton « Lancer des renforts » (au-dessus de « Prêt à lancer », vue projet et
+« Tout »), réglages (sessions 0-4, agents 1-5), états demande envoyée / en
+route / erreur / terminé. Migration 0021 appliquée (le brouillon 0020 de
+agent/646460 a été repris, renuméroté : 0020 est pris par l'aperçu d'image).
+Voir CLAUDE.md « Renforts ». Vérifié : verifier-base 232/232 (§20),
+verifier-renforts 16/16, verifier-web (section « renforts »).
+**Pas encore observé en vrai** : aucune session renfort n'a été ouverte. La
+première ouverture réelle sera faite par la session chef du cockpit (Raphaël
+clique, la passe de `chef.sh` lui donne les `create_session`). À surveiller :
+que `create_session` accepte `tags`/`source_url` tels qu'écrits, que la
+session renfort charge bien les hooks du dépôt (marque posée par
+`renfort.sh --suivant`), qu'elle ne devienne pas chef (`chef.sh --etat`).
+Limites connues : la chef ne voit une demande qu'à son prochain passage (au
+plus 1 h, ou dès que Raphaël lui écrit) ; un renfort muet 3 h rend sa section
+(« erreur » visible). Les projets déjà branchés reçoivent `renfort.sh` par le
+lanceur ; `cockpit-renfort.sh` arrive au prochain démarrage (brancher.sh --maj).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
@@ -182,7 +201,7 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - À cadrer avec Raphaël (dans le cockpit, `demander.sh`, pas d'artefact) :
-  bouton « session autonome » (D-10), rejeu de scénario (D-05).
+  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 sexies.)
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
 
 ## 4. Pièges déjà payés (ne pas les repayer)

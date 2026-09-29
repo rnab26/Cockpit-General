@@ -978,6 +978,59 @@ try {
   await allerCockpit()
 
   // ===================================================================
+  // 7 ter. Renforts (0021, D-10) : bouton distinct au-dessus de « Prêt à lancer »,
+  // réglages, demande envoyée / en route / erreur / terminé. Aucune vraie session :
+  // le projet de test n'est jamais servi à une chef (renforts_a_ouvrir).
+  console.log('  — renforts')
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const renf = () => page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`)
+  await renf().waitFor({ timeout: 10000 })
+  const yRenf = (await renf().boundingBox())?.y ?? 1e9, yLancer = (await page.getByTestId('a-lancer').boundingBox())?.y ?? -1
+  verifie('renforts : un bloc à part, AU-DESSUS de « Prêt à lancer »', yRenf < yLancer, { yRenf, yLancer })
+  const etatBase = sql(`select etat_renforts('${SLUG}') as e`)[0].e
+  const nAtt = etatBase.attente.reduce((n, a) => n + a.n, 0)
+  const txtAtt = await renf().getByTestId('renforts-attente').textContent()
+  verifie('renforts : « N chantiers attendent sans personne » et les sections = la base (etat_renforts)',
+    nAtt > 0 && txtAtt.startsWith(`${nAtt} chantier`) && etatBase.attente.every((a) => txtAtt.includes(`${a.section} ${a.n}`)), { txtAtt, attente: etatBase.attente })
+  verifie('renforts : bouton « Lancer des renforts » actif, dit combien de sessions et d’agents', await renf().getByTestId('lancer-renforts').isEnabled() && /session.*une par section.*agent/.test(await renf().getByTestId('renforts-aide').textContent()))
+  await renf().getByTestId('renforts-reglages-ouvrir').click()
+  await renf().getByTestId('renforts-sessions').getByRole('radio', { name: '1', exact: true }).click()
+  await renf().getByTestId('renforts-agents').getByRole('radio', { name: '2', exact: true }).click()
+  verifie('réglages : 0 à 4 sessions, 1 à 5 agents (5 au plus)', await renf().getByTestId('renforts-sessions').getByRole('radio').count() === 5 && await renf().getByTestId('renforts-agents').getByRole('radio').count() === 5)
+  await capture(page, 'renforts-reglages')
+  await renf().getByTestId('renforts-enregistrer').click()
+  verifie('réglages enregistrés : toast visible', await toastAuPremierPlan(/Renforts : 1 session au plus, 2 agents chacune/), { auPremierPlan: dernierDessus })
+  const [rg] = sql(`select max_renforts, agents_par_renfort from chefs where projet_id = '${projet.id}'`)
+  verifie('réglages : en base, 1 session, 2 agents', rg?.max_renforts === 1 && rg?.agents_par_renfort === 2, rg)
+  await renf().getByTestId('lancer-renforts').click()
+  verifie('clic : toast « 1 renfort demandé : <section> »', await toastAuPremierPlan(/1 renfort demandé : /), { auPremierPlan: dernierDessus })
+  const rdem = sql(`select r.id, r.statut, r.max_agents, coalesce(s.nom, 'Sans section') as section from renforts r left join sections s on s.id = r.section_id where r.projet_id = '${projet.id}'`)
+  verifie('clic : en base, UNE demande (réglage 1), 2 agents, la section la plus chargée', rdem.length === 1 && rdem[0].statut === 'demande' && rdem[0].max_agents === 2 && rdem[0].section === etatBase.attente[0].section, { rdem, attente: etatBase.attente })
+  await renf().getByTestId('renfort').first().waitFor({ timeout: 10000 })
+  const l0 = renf().getByTestId('renfort').first()
+  verifie('état « Demande envoyée », et sans chef : dit d’écrire dans une session du projet', (await l0.getAttribute('data-code')) === 'demande' && /Demande envoyée/.test(await l0.textContent()) && /aucune session chef/.test(await l0.textContent()), await l0.textContent())
+  verifie('limite atteinte : bouton inactif, « Déjà 1 renfort en route (maximum 1) »', await renf().getByTestId('lancer-renforts').isDisabled() && /Déjà 1 renfort en route \(maximum 1\)/.test(await renf().getByTestId('renforts-aide').textContent()))
+  verifie('projet de test : aucune session à ouvrir pour la chef (renforts_a_ouvrir vide)', sql(`select renforts_a_ouvrir('${SLUG}') as r`)[0].r.ouvrir.length === 0)
+  await capture(page, 'renforts-demande')
+  const relireRenforts = async (code) => { await actualiser(); await page.waitForFunction(({ slug, code }) => document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renfort"]`)?.getAttribute('data-code') === code, { slug: SLUG, code }, { timeout: 10000 }).catch(() => {}) }
+  sql(`select renfort_session('${rdem[0].id}', 'session_test_web')`)
+  await relireRenforts('en_route')
+  verifie('état « En route » (session notée par la chef)', /En route/.test(await renf().getByTestId('renfort').first().textContent()), await renf().getByTestId('renfort').first().textContent())
+  sql(`select renfort_erreur('${rdem[0].id}', 'create_session refusé (test)')`)
+  await relireRenforts('erreur')
+  verifie('état « Erreur », le texte visible', /Erreur/.test(await renf().getByTestId('renfort').first().textContent()) && /create_session refusé \(test\)/.test(await renf().getByTestId('renfort').first().textContent()))
+  verifie('après l’erreur, le bouton se rouvre', await renf().getByTestId('lancer-renforts').isEnabled())
+  sql(`update renforts set statut = 'archive', faits = 2, fini_at = now(), archive_at = now(), erreur = null where id = '${rdem[0].id}'`)
+  await relireRenforts('termine')
+  verifie('état « Terminé » : chantiers pris, session fermée', /Terminé/.test(await renf().getByTestId('renfort').first().textContent()) && /2 chantiers pris · session fermée/.test(await renf().getByTestId('renfort').first().textContent()))
+  verifie('renforts : aucun défilement horizontal', await scrollX() <= 0)
+  await capture(page, 'renforts-termine')
+  await allerTout()
+  await page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`).waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('« Tout » : le bloc renforts du projet, avec son nom', await page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`).count() === 1 && /Test auto/.test(await page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`).textContent()))
+  await allerCockpit()
+
+  // ===================================================================
   // 8. La liste complète en lignes, le menu ⋯, créer / supprimer
   console.log('  — tous les chantiers, menu ⋯')
   await page.evaluate(() => window.scrollTo(0, 0))
