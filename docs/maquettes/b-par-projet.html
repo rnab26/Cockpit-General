@@ -1,0 +1,45 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=390"><link rel="stylesheet" href="commun.css">
+<style>
+.proj{margin-bottom:14px;overflow:hidden}
+.ph{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--b)}
+.ph h2{font-size:17px;font-weight:600;flex:1}
+.compteurs{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--b)}
+.compteurs div{text-align:center;padding:8px 0;border-left:1px solid var(--b)}
+.compteurs div:first-child{border-left:0}
+.compteurs b{display:block;font-size:19px;font-weight:650}
+.compteurs span{font-size:11px;color:var(--t2)}
+.bloc{padding:10px 14px;border-bottom:1px solid var(--b)}
+.bloc:last-child{border-bottom:0}
+.bt{font-size:12.5px;font-weight:600;color:var(--t2);margin-bottom:6px}
+.li{display:flex;align-items:center;gap:8px;padding:5px 0}
+.li .bar{width:60px;flex:none}
+.etat{font-size:12px;color:var(--t2);white-space:nowrap}
+.statut{font-size:12.5px;color:var(--ok)}
+</style></head><body><div class="lab">B · Par projet</div>
+<div class="top"><h1>Mes projets</h1><span class="pill">＋ Demande</span></div>
+<main>
+<div class="carte proj">
+ <div class="ph"><span class="dot cockpit" style="width:12px;height:12px"></span><h2>cockpit</h2><span class="statut">● 1 session au travail</span></div>
+ <div class="compteurs"><div><b style="color:var(--al)">14</b><span>pour toi</span></div><div><b>1</b><span>avance</span></div><div><b>0</b><span>en pause</span></div><div><b style="color:var(--ok)">3</b><span>fini auj.</span></div></div>
+ <div class="bloc"><div class="bt">EN COURS</div>
+  <div class="li"><span class="grow tit">Vue d'ensemble et médias</span><div class="bar"><i style="width:60%"></i></div><span class="etat">60 %</span></div></div>
+ <div class="bloc"><div class="bt">À TOI (14)</div>
+  <div class="li"><span>🧪</span><span class="grow tit">Voir l'état du déploiement du site</span><span class="btn">Tester</span></div>
+  <div class="li"><span>🧪</span><span class="grow tit">Sessions et agents ; doublons</span><span class="btn">Tester</span></div>
+  <div class="li"><span>🗣️</span><span class="grow tit">Rejeu d'un scénario planté</span><span class="btn">Décider</span></div>
+  <div class="li muted" style="justify-content:center">+ 11 autres ›</div></div>
+</div>
+
+<div class="carte proj">
+ <div class="ph"><span class="dot facepro" style="width:12px;height:12px"></span><h2>FacePro</h2><span class="statut">● 2 sessions · 2 agents</span></div>
+ <div class="compteurs"><div><b style="color:var(--al)">14</b><span>pour toi</span></div><div><b>3</b><span>avance</span></div><div><b style="color:var(--att)">1</b><span>en pause</span></div><div><b style="color:var(--ok)">1</b><span>fini auj.</span></div></div>
+ <div class="bloc"><div class="bt">EN COURS</div>
+  <div class="li"><span class="grow tit">Expressions atténuées</span><div class="bar"><i style="width:5%"></i></div><span class="etat">5 %</span></div>
+  <div class="li"><span class="grow tit">Bouche qui suit la source</span><div class="bar"><i style="width:40%"></i></div><span class="etat">40 %</span></div>
+  <div class="li"><span class="grow tit">Tête entière vidéo : plaques</span><span class="etat" style="color:var(--att)">⏸ 2 h sans nouvelles</span></div></div>
+ <div class="bloc"><div class="bt">À TOI (14)</div>
+  <div class="li"><span>❓</span><span class="grow tit">GPU ~1,6 $ pour le job sandwich ?</span><span class="btn p">Répondre</span></div>
+  <div class="li"><span>❓</span><span class="grow tit">Talons : banc + recette (~0,9 $) ?</span><span class="btn p">Répondre</span></div>
+  <div class="li muted" style="justify-content:center">+ 12 autres ›</div></div>
+</div>
+</main></body></html>

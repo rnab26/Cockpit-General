@@ -663,6 +663,8 @@ try {
   verifie('après l’envoi, plus de vignette en attente sous le champ', await ecrire.getByTestId('piece-jointe').count() === 0)
   await carteR1.getByTestId('fil').waitFor({ timeout: 10000 }).catch(() => {})
   verifie('le fil apparaît, son en-tête cite le dernier message', await carteR1.getByTestId('fil').count() === 1 && (await carteR1.getByTestId('fil').textContent()).includes('message à Claude'))
+  verifie('le fil replié annonce ses pièces jointes (📎 1)', /📎 1/.test(await carteR1.getByTestId('fil').textContent()))
+  await carteR1.getByTestId('fil').locator('button').first().click()
   const vignette = carteR1.getByTestId('fil').locator('[data-testid="media"] img').first()
   await vignette.waitFor({ timeout: 15000 }).catch(() => {})
   await page.waitForTimeout(800)

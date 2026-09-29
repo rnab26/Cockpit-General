@@ -1,0 +1,44 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=390"><link rel="stylesheet" href="commun.css">
+<style>
+.conv{display:flex;gap:11px;padding:11px 14px;border-top:1px solid var(--b);align-items:center;background:var(--carte)}
+.av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;flex:none;position:relative}
+.av .vit{position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;border-radius:50%;background:var(--ok);border:2px solid #fff}
+.l1{display:flex;justify-content:space-between;gap:8px}
+.l2{display:flex;justify-content:space-between;gap:8px;margin-top:2px}
+.prev{color:var(--t2);font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{background:var(--al);color:#fff;border-radius:99px;font-size:12px;font-weight:600;padding:1px 7px;flex:none}
+.badge.g{background:var(--c2);color:var(--t2)}
+.heure{font-size:12px;color:var(--t2);flex:none}
+.liste{border-radius:14px;overflow:hidden;border:1px solid var(--b)}
+.liste .conv:first-child{border-top:0}
+.vivant{color:var(--ok)}
+/* fil ouvert */
+.fil{margin-top:18px;border-radius:14px;overflow:hidden;border:1px solid var(--b);background:#eef1f4}
+.fh{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--carte);border-bottom:1px solid var(--b)}
+.bulle{max-width:82%;margin:8px 10px;padding:8px 11px;border-radius:14px;font-size:14px;background:var(--carte);border:1px solid var(--b)}
+.bulle.moi{margin-left:auto;background:#dcf2ee;border-color:#c3e6df}
+.opts{display:grid;gap:6px;margin-top:8px}
+.o{border:1px solid var(--b);border-radius:10px;padding:7px 10px;background:#fff;font-size:13.5px}
+.o.r{border-color:var(--ac)}
+.saisie{display:flex;gap:8px;align-items:center;padding:8px 10px;background:var(--carte);border-top:1px solid var(--b)}
+.champ{flex:1;border:1px solid var(--b);border-radius:99px;padding:8px 12px;color:var(--t2);font-size:14px}
+.img{width:120px;height:80px;border-radius:10px;background:linear-gradient(135deg,#cbd5e1,#94a3b8);margin-top:4px}
+</style></head><body><div class="lab">D · Messagerie</div>
+<div class="top"><h1>Discussions</h1><span class="pill on">Toutes</span><span class="pill">Non lues 28</span></div>
+<main>
+<div class="liste">
+ <div class="conv"><div class="av facepro">FP</div><div class="grow"><div class="l1"><span class="tit">Bouche hybride (objet à la bouche)</span><span class="heure">05:12</span></div><div class="l2"><span class="prev">❓ GPU ~1,6 $ pour corriger le job ? On y va ?</span><span class="badge">1</span></div></div></div>
+ <div class="conv"><div class="av cockpit">CK<span class="vit"></span></div><div class="grow"><div class="l1"><span class="tit">Vue d'ensemble et médias</span><span class="heure vivant">écrit…</span></div><div class="l2"><span class="prev vivant">🤖 60 % · écran refait, tests en cours</span><span class="badge g">45 min</span></div></div></div>
+ <div class="conv"><div class="av facepro">FP</div><div class="grow"><div class="l1"><span class="tit">Tête entière — cheveux sur la poitrine</span><span class="heure">hier</span></div><div class="l2"><span class="prev">🧪 C'est en ligne : dis-moi si ça marche</span><span class="badge">1</span></div></div></div>
+ <div class="conv"><div class="av facepro">FP<span class="vit"></span></div><div class="grow"><div class="l1"><span class="tit">Expressions atténuées</span><span class="heure vivant">écrit…</span></div><div class="l2"><span class="prev vivant">🤖 5 % · fusion main + preuves</span><span class="badge g">56 min</span></div></div></div>
+ <div class="conv"><div class="av cockpit">CK</div><div class="grow"><div class="l1"><span class="tit">Rejeu d'un scénario planté</span><span class="heure">28/09</span></div><div class="l2"><span class="prev">🗣️ J'ai besoin de ta décision avant de coder</span><span class="badge">1</span></div></div></div>
+</div>
+
+<div class="fil">
+ <div class="fh"><div class="av facepro" style="width:34px;height:34px;font-size:12px">FP</div><div class="grow"><div class="tit">Bouche hybride (objet à la bouche)</div><div class="muted">FacePro · personne dessus en ce moment</div></div></div>
+ <div class="bulle">🤖 Diagnostic fait gratuitement : trois défauts de recollage. Pour les corriger il me faut ~1,6 $ de GPU. On y va ?
+  <div class="opts"><div class="o r"><b>Oui, 1,6 $ max</b> ★</div><div class="o">Seulement l'étape 1 (0,30 $)</div><div class="o">Non, pas maintenant</div></div></div>
+ <div class="bulle moi">Oui vas-y, voilà la capture du problème<div class="img"></div></div>
+ <div class="saisie"><span style="font-size:20px">📎</span><span class="champ">Écrire à Claude…</span><span class="btn p">➤</span></div>
+</div>
+</main></body></html>

@@ -1,0 +1,52 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=390"><link rel="stylesheet" href="commun.css">
+<style>
+.tuiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tuile{background:var(--carte);border:1px solid var(--b);border-radius:12px;padding:9px 6px;text-align:center}
+.tuile b{display:block;font-size:24px;font-weight:650;line-height:1.1}
+.tuile span{font-size:11.5px;color:var(--t2)}
+.tuile.al b{color:var(--al)}.tuile.ok b{color:var(--ok)}
+.act{display:flex;align-items:center;gap:10px;padding:11px 12px;border-top:1px solid var(--b)}
+.act:first-child{border-top:0}
+.ico{width:32px;height:32px;border-radius:9px;background:var(--c2);display:flex;align-items:center;justify-content:center;font-size:16px;flex:none}
+.sous{font-size:12.5px;color:var(--t2);margin-top:2px}
+.av{padding:11px 12px;border-top:1px solid var(--b)}.av:first-child{border-top:0}
+.av .l1{display:flex;justify-content:space-between;gap:8px}
+.av .l2{display:flex;align-items:center;gap:8px;margin-top:6px}
+.av .l2 .bar{flex:1}
+</style></head><body><div class="lab">A · Tableau de bord</div>
+<div class="top"><h1>Mes projets</h1><span class="pill on">Tout</span><span class="pill"><span class="dot cockpit"></span> cockpit</span><span class="pill"><span class="dot facepro"></span> FacePro</span></div>
+<main>
+<div class="tuiles">
+ <div class="tuile al"><b>28</b><span>pour toi</span></div>
+ <div class="tuile"><b>4</b><span>ça avance</span></div>
+ <div class="tuile"><b>3</b><span>en pause</span></div>
+ <div class="tuile ok"><b>4</b><span>fini auj.</span></div>
+</div>
+
+<div class="sec"><span>① À toi de jouer</span><span>28</span></div>
+<div class="carte">
+ <div class="act"><div class="ico">❓</div><div class="grow"><div class="tit">GPU ~1,6 $ pour corriger le job sandwich ?</div><div class="sous"><span class="dot facepro"></span> FacePro · Claude te pose une question</div></div><span class="btn p">Répondre</span></div>
+ <div class="act"><div class="ico">🧪</div><div class="grow"><div class="tit">Tête entière — cheveux sur la poitrine</div><div class="sous"><span class="dot facepro"></span> FacePro · en ligne, à tester</div></div><span class="btn">Tester</span></div>
+ <div class="act"><div class="ico">🧪</div><div class="grow"><div class="tit">Voir l'état du déploiement du site</div><div class="sous"><span class="dot cockpit"></span> cockpit · en ligne, à tester</div></div><span class="btn">Tester</span></div>
+ <div class="act"><div class="ico">🗣️</div><div class="grow"><div class="tit">Objets — garde-fou anti-chimère</div><div class="sous"><span class="dot facepro"></span> FacePro · ta décision avant de coder</div></div><span class="btn">Décider</span></div>
+ <div class="act" style="justify-content:center;color:var(--ac);font-weight:500">Voir les 24 autres ›</div>
+</div>
+
+<div class="sec"><span>② Ça avance tout seul</span><span>4</span></div>
+<div class="carte">
+ <div class="av"><div class="l1"><span class="tit">Vue d'ensemble et médias</span><span class="muted">cockpit</span></div>
+  <div class="l2"><div class="bar"><i style="width:60%"></i></div><span class="muted">60 % · reste 45 min</span></div>
+  <div class="sous">🤖 Claude (session autonome) · « écran refait, tests en cours »</div></div>
+ <div class="av"><div class="l1"><span class="tit">Expressions atténuées (lèvres, yeux)</span><span class="muted">FacePro</span></div>
+  <div class="l2"><div class="bar"><i style="width:5%"></i></div><span class="muted">5 % · reste 56 min</span></div>
+  <div class="sous">🤖 1 agent · « fusion main + preuves »</div></div>
+ <div class="av"><div class="l1"><span class="tit">Tête entière vidéo : plaques de peau</span><span class="muted">FacePro</span></div>
+  <div class="l2"><span class="tag" style="color:var(--att)">⏸ sans nouvelles depuis 2 h</span><span class="grow"></span><span class="btn">Relancer</span></div></div>
+</div>
+
+<div class="sec"><span>③ Prêt à lancer</span><span>3</span></div>
+<div class="carte">
+ <div class="row"><div class="grow tit">Rejeu d'un scénario planté</div><span class="btn">Lancer</span></div>
+ <div class="row"><div class="grow tit">Bouton « session autonome »</div><span class="btn">Lancer</span></div>
+</div>
+</main></body></html>

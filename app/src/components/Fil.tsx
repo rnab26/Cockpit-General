@@ -21,10 +21,11 @@ export function Fil({ messages }: { chantierId?: string; messages: Message[] }) 
   const [ouvertId, setOuvertId] = useState<string | null>(null)
   const dernier = messages[messages.length - 1]
   if (!dernier) return null
+  const nMedias = messages.reduce((n, m) => n + mediasDe(m).length, 0)
 
   return (
     <Repliable testId="fil"
-      titre={<span className="min-w-0 truncate text-sm"><span className="font-bold">💬 {messages.length}</span> <span className="font-normal text-texte-2">· {ICONE_AUTEUR[dernier.auteur_type] ?? ''} « {extrait(dernier.corps, 60)} »</span></span>}
+      titre={<span className="min-w-0 truncate text-sm"><span className="font-bold">💬 {messages.length}</span>{nMedias ? <span className="font-normal text-texte-2" data-testid="fil-medias"> · 📎 {nMedias}</span> : null} <span className="font-normal text-texte-2">· {ICONE_AUTEUR[dernier.auteur_type] ?? ''} « {extrait(dernier.corps, 60)} »</span></span>}
       badge={<span className="text-xs">{dateRelative(dernier.created_at, now)}</span>}>
       <ul className="divide-y divide-bord/60">
         {messages.map((m) => {

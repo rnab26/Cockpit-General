@@ -106,8 +106,9 @@ export function ChoisirMedias({ ctrl, testId = 'choisir-medias' }: { ctrl: Media
       <input ref={input} type="file" multiple accept={ACCEPT_MEDIAS} className="hidden" data-testid="entree-medias"
         onChange={(e) => { ctrl.ajouter(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       <button type="button" onClick={() => input.current?.click()} data-testid="ajouter-media"
-        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-bord bg-carte px-2.5 text-sm text-texte-2 hover:bg-carte-2 hover:text-texte">
-        <Paperclip size={16} aria-hidden /> Photo, vidéo ou fichier
+        title="Joindre une photo, une vidéo ou un fichier"
+        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-bord bg-carte px-2.5 text-sm text-texte-2 hover:bg-carte-2 hover:text-texte">
+        <Paperclip size={16} aria-hidden /> Joindre
       </button>
     </div>
   )
