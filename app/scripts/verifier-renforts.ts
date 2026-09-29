@@ -14,7 +14,8 @@ const att = (section: string, n: number) => ({ section_id: section, section, n, 
 
 // Lignes
 verifie('demandé, chef présente : « Demande envoyée », ouvert au prochain passage', (() => { const l = ligneRenfort(r({}), true, now); return l.code === 'demande' && l.etat === 'Demande envoyée' && /prochain passage/.test(l.detail) })())
-verifie('demandé, AUCUNE chef : dit quoi faire (écrire dans une session du projet)', /aucune session chef/.test(ligneRenfort(r({}), false, now).detail))
+verifie('demandé, AUCUNE chef ni relais : « en attente : aucune session FacePro active », ouvrir Claude Code', (() => { const l = ligneRenfort(r({}), false, now, { projet: 'FacePro' }); return l.etat === 'En attente' && l.detail.startsWith('en attente : aucune session FacePro active') && /ouvre Claude Code/.test(l.detail) })())
+verifie('demandé, sans chef mais relais du cockpit : qui l’ouvre et vers quelle heure', (() => { const d = ligneRenfort(r({}), false, now, { projet: 'FacePro', relais: 'cockpit', relais_passage: '2026-09-29T12:08:00Z' }).detail; return d.startsWith('en attente : aucune session FacePro active') && /session chef de cockpit/.test(d) && /vers \d+ h 08/.test(d) })())
 verifie('actif : « En route », agents au travail, chantiers pris, vu il y a', (() => { const l = ligneRenfort(r({ statut: 'actif', en_cours: 2, faits: 3, vu_at: '2026-09-29T11:55:00Z' }), true, now); return l.code === 'en_route' && /2 agents au travail/.test(l.detail) && /3 chantiers pris/.test(l.detail) && /vu/.test(l.detail) })())
 verifie('fini puis archivé : « Terminé », session fermée', (() => { const l = ligneRenfort(r({ statut: 'archive', faits: 1 }), true, now); return l.code === 'termine' && /1 chantier pris/.test(l.detail) && /session fermée/.test(l.detail) })())
 verifie('erreur : le texte de la base est montré', ligneRenfort(r({ statut: 'erreur', erreur: 'create_session refusé' }), true, now).detail === 'create_session refusé')

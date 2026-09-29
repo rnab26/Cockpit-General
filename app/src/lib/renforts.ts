@@ -38,8 +38,12 @@ export interface AttenteSection { section_id: string | null; section: string; n:
 export interface EtatRenforts {
   sessions_max: number
   agents_par_session: number
-  /** Le projet a une session chef (c'est elle qui ouvre les sessions). */
+  /** Le projet a une session chef VIVANTE (0028 : vue depuis moins de 3 h) : c'est elle qui ouvre les sessions. */
   chef: boolean
+  /** 0028 : le nom du projet, et la chef d'un autre projet qui ouvre à sa place quand il n'a pas de chef vivante. */
+  projet?: string
+  relais?: string | null
+  relais_passage?: string | null
   chef_vu_at: string | null
   attente: AttenteSection[]
   renforts: Renfort[]
@@ -55,8 +59,19 @@ export interface ResultatDemande {
 
 export type CodeLigne = 'demande' | 'en_route' | 'termine' | 'erreur'
 
+const heure = (iso: string) => { const d = new Date(iso); return `${d.getHours()} h ${String(d.getMinutes()).padStart(2, '0')}` }
+
+export interface SansChef { projet?: string; relais?: string | null; relais_passage?: string | null }
+
+/** Sans chef vivante (0028) : « en attente : aucune session <projet> active », et qui l'ouvrira. */
+export function attenteSansChef(o: SansChef): string {
+  const debut = `en attente : aucune session ${o.projet ?? 'de ce projet'} active`
+  if (!o.relais) return `${debut} · ouvre Claude Code sur ce projet et écris-lui un message pour qu’il l’ouvre`
+  return `${debut} · la session chef de ${o.relais} l’ouvre à son prochain passage${o.relais_passage ? ` (vers ${heure(o.relais_passage)})` : ''}`
+}
+
 /** Une ligne de renfort, en mots : l'état, et le détail. */
-export function ligneRenfort(r: Renfort, chef: boolean, now: Date): { code: CodeLigne; etat: string; detail: string } {
+export function ligneRenfort(r: Renfort, chef: boolean, now: Date, sansChef: SansChef = {}): { code: CodeLigne; etat: string; detail: string } {
   const pl = (n: number, un: string, plus: string) => `${n} ${n > 1 ? plus : un}`
   if (r.statut === 'erreur' || ((r.statut === 'demande' || r.statut === 'actif') && !r.vivant)) {
     return {
@@ -65,12 +80,9 @@ export function ligneRenfort(r: Renfort, chef: boolean, now: Date): { code: Code
     }
   }
   if (r.statut === 'demande') {
-    return {
-      code: 'demande', etat: 'Demande envoyée',
-      detail: chef
-        ? `la session chef l’ouvre à son prochain passage (au plus 1 h) · ${pl(r.chantiers, 'chantier', 'chantiers')}`
-        : 'aucune session chef pour ce projet : écris un message dans une session du projet pour qu’elle l’ouvre',
-    }
+    return chef
+      ? { code: 'demande', etat: 'Demande envoyée', detail: `la session chef l’ouvre à son prochain passage (au plus 1 h) · ${pl(r.chantiers, 'chantier', 'chantiers')}` }
+      : { code: 'demande', etat: 'En attente', detail: attenteSansChef(sansChef) }
   }
   if (r.statut === 'actif') {
     const morceaux = [r.en_cours ? `${pl(r.en_cours, 'agent', 'agents')} au travail` : 'attend ses agents', `${pl(r.faits, 'chantier pris', 'chantiers pris')}`]

@@ -8,6 +8,7 @@ import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { pastillesProjet } from '../lib/entonnoir.ts'
 import { Layers, Lock } from 'lucide-react'
+import { supabase } from '../lib/supabase.ts'
 import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
@@ -52,6 +53,12 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   // L'horloge de la présence : toutes les 30 s, et à chaque donnée reçue.
   useEffect(() => { const t = window.setInterval(() => setNow(new Date()), TIC_PRESENCE_MS); return () => window.clearInterval(t) }, [])
   useEffect(() => { if (d.derniereMaj) setNow(new Date()) }, [d.derniereMaj])
+  // Un report daté dont la date est passée revient dans « Prêt à lancer » (0028) : à l'ouverture, sans attendre la chef.
+  const charge = d.charge
+  useEffect(() => {
+    if (!admin || !charge) return
+    void supabase.rpc('reveiller_reportes', { p_projet_id: null }).then(({ data }) => { if (typeof data === 'number' && data > 0) void d.recharger(true) })
+  }, [admin, charge]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const silenceMs = silenceMsDe(prefs[CLE_PREF_SILENCE])
   const enAttente = useMemo(() => chantiersEnAttente(d.messages), [d.messages])

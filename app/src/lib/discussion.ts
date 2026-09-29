@@ -18,7 +18,7 @@
 import type { Message } from './types.ts'
 
 type M = Pick<Message, 'id' | 'auteur_type' | 'kind' | 'corps' | 'created_at' | 'answered_at' | 'chantier_id'> &
-  Partial<Pick<Message, 'medias' | 'ou_en_est' | 'recu_at' | 'recu_par'>>
+  Partial<Pick<Message, 'medias' | 'ou_en_est' | 'recu_at' | 'recu_par' | 'via_session'>>
 
 /** Un assistant qui a pris un message et n'a pas répondu en 2 h : on le redonne (même délai qu'en base). */
 export const DELAI_PRISE_MS = 2 * 3600_000
@@ -29,6 +29,8 @@ const estQuestion = (m: Pick<M, 'kind'>) => m.kind === 'question' || m.kind === 
 export function estMessageLibre(m: M, fil: readonly M[]): boolean {
   if (m.auteur_type !== 'proprietaire' && m.auteur_type !== 'utilisateur') return false
   if (m.kind !== 'info' && m.kind !== 'constat' && m.kind !== 'reponse') return false
+  // Écrit dans une session Claude (0027) : la session l'a lu et y a répondu là-bas.
+  if (m.via_session) return false
   // Un constat vient d'un bouton : seul « Ça ne marche pas : … » (Corriger) attend une réponse.
   if (m.kind === 'constat' && !m.corps.startsWith('Ça ne marche pas : ')) return false
   if (m.ou_en_est) return false

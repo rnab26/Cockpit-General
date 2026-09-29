@@ -154,6 +154,8 @@ async function actionEtat(sb: SupabaseClient, projet: Projet) {
     const { data, error } = await sb.from("messages")
       .select(COLONNES_MESSAGE)
       .in("chantier_id", ids)
+      // Ce que Raphaël écrit dans ses sessions Claude (0027) reste interne : jamais montré à un utilisateur final.
+      .eq("via_session", false)
       .order("created_at", { ascending: true })
     if (error) throw erreurDepuis(error)
     messages = data ?? []
