@@ -224,6 +224,10 @@ une question, « Écrire à Claude », certifier/corriger). Stockage PRIVÉ
 pas de fichier : les médias partent dans un message `info` juste après. Une
 session les récupère avec `scripts/media.sh --message|--chantier <id>` (📎 dans
 le hook) et les REGARDE avant de répondre.
+**Crayon** (29 sept.) : sur toute image jointe (import fini), dessiner dessus
+(`Annoter.tsx`, un `<canvas>`) ; avant l'envoi l'annotée remplace la pièce,
+après l'envoi elle part en nouveau message « Image annotée : … » du fil.
+`verifier-annotation.ts`, et les contrôles « crayon » de `verifier-web.mjs`.
 
 ## Sessions, agents, doublons : ce que Claude décide seul (29 sept. 2026)
 

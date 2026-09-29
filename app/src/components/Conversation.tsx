@@ -25,7 +25,7 @@ import { Progression } from './Progression.tsx'
 import { TachesDuChantier } from './QuiTravaille.tsx'
 import { PointTravaille } from './Vivant.tsx'
 import { IconePresence, PointProjet } from './Icones.tsx'
-import { BoutonJoindre, MediasMessage, VignettesPieces, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
+import { BoutonJoindre, MediasMessage, VignettesPieces, deposerMedia, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 
 /**
  * Chaque chantier s'ouvre en CONVERSATION (modèle D, choisi par Raphaël le 29
@@ -169,8 +169,19 @@ const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */
 function BulleMessage({ m }: { m: Message }) {
-  const { admin } = useCockpit()
+  const { admin, par, projet, recharger } = useCockpit()
+  const toast = useToast()
   const medias = mediasDe(m)
+  // Le crayon sur une image que Raphaël a déjà envoyée : l'image annotée part dans le même fil, comme une nouvelle pièce.
+  const annoter = async (f: File) => {
+    const r = await deposerMedia(projet.id, m.chantier_id, crypto.randomUUID(), f)
+    if ('erreur' in r) return r.erreur
+    const err = await ecrireAvecMedias({ projetId: projet.id, chantierId: m.chantier_id, par, admin, corps: `Image annotée : ${f.name}`, medias: [r.media] })
+    if (err) return err
+    toast.succes('Image annotée envoyée : Claude la verra dans le fil.')
+    await recharger()
+    return null
+  }
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : null
   return (
     <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle">
@@ -182,7 +193,7 @@ function BulleMessage({ m }: { m: Message }) {
         </p>
       ) : null}
       {m.kind === 'action' && m.etat && !m.reponse ? <p className="mt-1 text-sm text-texte-2">État : {m.etat === 'pas_encore' ? 'pas encore' : m.etat}</p> : null}
-      {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} /></div> : null}
+      {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} onAnnote={m.auteur_type === 'session' ? undefined : annoter} /></div> : null}
     </Bulle>
   )
 }
