@@ -2,7 +2,7 @@
 // sur deux projets à la fois. Le premier cas rejoue la capture de Raphaël du
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
-import { enCeMoment, aToi, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe } from '../src/lib/entonnoir.ts'
+import { enCeMoment, aToi, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, repriseReponse, caAvanceToutSeul, PREFIXE_REPRISE } from '../src/lib/entonnoir.ts'
 import { MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
 
 const now = new Date('2026-09-29T01:04:00Z')
@@ -145,6 +145,52 @@ console.log('verifier-entonnoir')
   })
   const ordre = trierParPresence(liste).map((x) => (x.c as { id: string }).id)
   verifie('tri : ce qui bouge, puis à vérifier, puis silencieux, puis personne', JSON.stringify(ordre) === JSON.stringify(['fp-vivant', 'fp-verif', 'fp-silence', 'fp-bouche']), ordre)
+}
+
+// 6. Une réponse de Raphaël sur un chantier que personne ne tient (0017) : elle se voit dans « Ça avance »
+{
+  const cs = [
+    C('r-verif', 'ck', 'a_verifier'),
+    C('r-bloque', 'ck', 'bloque'),
+    C('r-libre', 'ck', 'libre'),
+    C('r-reprise', 'ck', 'en_cours', { pris_par: 'agent/reponse-1', pris_jusqu_a: dans(170) }),
+    C('r-expiree', 'ck', 'en_cours', { pris_par: 'agent/reponse-2', pris_jusqu_a: il(5), updated_at: il(200) }),
+    C('r-suivie', 'ck', 'bloque'),
+    C('r-retiree', 'ck', 'bloque'),
+    C('r-vieille', 'ck', 'bloque'),
+    C('r-valide', 'ck', 'valide'),
+  ]
+  const ms = [
+    M('rq1', 'ck', 'r-verif', 'question', 30, { reponse: 'Ce que je devais vérifier', answered_at: il(20) }),
+    M('rq2', 'ck', 'r-bloque', 'question', 60, { reponse: 'Oui, ~0,9 $', answered_at: il(50) }),
+    M('rq3', 'ck', 'r-libre', 'action', 60, { reponse: 'Fait', answered_at: il(40) }),
+    M('rq4', 'ck', 'r-reprise', 'question', 60, { reponse: 'Oui', answered_at: il(30) }),
+    M('ri4', 'ck', 'r-reprise', 'info', 10, { corps: `${PREFIXE_REPRISE} « Oui » : un assistant s’en occupe.` }),
+    M('rq5', 'ck', 'r-expiree', 'question', 300, { reponse: 'Oui', answered_at: il(290) }),
+    M('ri5', 'ck', 'r-expiree', 'info', 200, { corps: `${PREFIXE_REPRISE} « Oui » : un assistant s’en occupe.` }),
+    M('rq6', 'ck', 'r-suivie', 'question', 60, { reponse: 'Oui', answered_at: il(50) }),
+    M('ri6', 'ck', 'r-suivie', 'info', 40, { corps: 'Je m’en occupe.' }),
+    M('rq7', 'ck', 'r-retiree', 'question', 60, { reponse: 'Retirée par Claude (x) : plus utile', answered_at: il(50) }),
+    M('rq8', 'ck', 'r-vieille', 'question', 60 * 24 * 9, { reponse: 'Oui', answered_at: il(60 * 24 * 8) }),
+    M('rq9', 'ck', 'r-valide', 'question', 60, { reponse: 'Oui', answered_at: il(50) }),
+  ]
+  const r = (id: string, acts: never[] = [], ts: never[] = []) => repriseReponse(cs.find((c: { id: string }) => c.id === id)!, ms, acts, ts, now)
+  verifie('réponse sans suite sur un « à vérifier » (le cas du 29/09) → « attend »', r('r-verif') === 'attend')
+  verifie('… sur un bloqué, et une action « Fait » sur un libre → « attend »', r('r-bloque') === 'attend' && r('r-libre') === 'attend')
+  verifie('reprise par la chef (message « Claude reprend ta réponse », réservé) → « reprise »', r('r-reprise') === 'reprise')
+  verifie('reprise mais réservation expirée → plus « reprise » (redevient « sans nouvelles », à relancer)', r('r-expiree') === null)
+  verifie('suivie d’un message de session, retirée par Claude, vieille de 8 jours, ou chantier certifié → rien',
+    r('r-suivie') === null && r('r-retiree') === null && r('r-vieille') === null && r('r-valide') === null)
+  verifie('une étape signalée après la réponse la suit aussi → rien', r('r-verif', [A('ra', 'ck', 'r-verif', 'en_cours', 5)]) === null)
+  const ca = caAvanceToutSeul(cs, [], ms, [], [], now, SILENCE)
+  const parId = new Map(ca.map((l) => [l.c.id, l]))
+  verifie('« Ça avance » montre les réponses en attente et reprises, jamais les autres',
+    ['r-verif', 'r-bloque', 'r-libre', 'r-reprise'].every((id) => parId.get(id)?.reprise) && !parId.has('r-suivie') && !parId.has('r-valide'), [...parId.keys()])
+  verifie('… en mots simples, sans « Relancer » (pas vivant, pas « sans nouvelles »)',
+    parId.get('r-verif')?.pourquoi === 'Ta réponse est reçue : Claude va la reprendre' && parId.get('r-reprise')?.pourquoi === 'Claude reprend ta réponse' && parId.get('r-verif')?.vivant === false)
+  verifie('la réservation expirée reste « sans nouvelles » (à relancer)', parId.get('r-expiree')?.reprise == null && parId.get('r-expiree')?.pourquoi === 'Personne dessus', parId.get('r-expiree'))
+  const lancer = aLancer(cs, [], ms, now, SILENCE, ['ck']).flatMap((g) => g.lignes.map((l) => l.c.id))
+  verifie('un libre dont la réponse attend n’est PAS aussi « à lancer » (pas de doublon)', !lancer.includes('r-libre'), lancer)
 }
 
 bilan('verifier-entonnoir')

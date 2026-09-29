@@ -218,7 +218,8 @@ export function aLancer(
   chantiers: readonly ChantierE[], activites: readonly Activite[], messages: readonly MessageE[],
   now: Date, silenceMs: number, ordreProjets: readonly string[], projetId: string | null = null, taches: readonly Tache[] = [],
 ): { projetId: string; lignes: LigneALancer[] }[] {
-  return sansPersonne(chantiers, activites, messages, now, silenceMs, ordreProjets, projetId, taches, (l) => !estEnCoursSansNouvelles(l.c, l.presence))
+  return sansPersonne(chantiers, activites, messages, now, silenceMs, ordreProjets, projetId, taches,
+    (l) => !estEnCoursSansNouvelles(l.c, l.presence) && !repriseReponse(l.c, messages, activites, taches, now))
 }
 
 /** Les chantiers « en cours, mais plus de nouvelles », groupés par projet (silencieux d'abord). */
@@ -226,7 +227,8 @@ export function enCoursSansNouvelles(
   chantiers: readonly ChantierE[], activites: readonly Activite[], messages: readonly MessageE[],
   now: Date, silenceMs: number, ordreProjets: readonly string[], projetId: string | null = null, taches: readonly Tache[] = [],
 ): { projetId: string; lignes: LigneALancer[] }[] {
-  return sansPersonne(chantiers, activites, messages, now, silenceMs, ordreProjets, projetId, taches, (l) => estEnCoursSansNouvelles(l.c, l.presence))
+  return sansPersonne(chantiers, activites, messages, now, silenceMs, ordreProjets, projetId, taches,
+    (l) => estEnCoursSansNouvelles(l.c, l.presence) && !repriseReponse(l.c, messages, activites, taches, now))
 }
 
 // ---------------------------------------------------------------- onglets
@@ -291,6 +293,55 @@ export interface LigneCaAvance {
   /** Sans nouvelles : pourquoi (« Plus de nouvelles » / « Personne dessus »), et la dernière demande « où ça en est ». */
   pourquoi: string | null
   demandeLe: string | null
+  /** Une réponse de Raphaël attend d'être reprise, ou l'est en ce moment (0017) : pas de « Relancer ». */
+  reprise?: RepriseReponse | null
+}
+
+// ---------------------------------------------------------------- réponse reprise (0017)
+// Raphaël, 29 sept. : « je réponds dans le cockpit, mais je ne sais pas si
+// c'est pris en compte et par quelle session ». Une réponse sur un chantier
+// que personne ne tient est reprise par la session chef (scripts/chef.sh →
+// reprendre_reponse) ; en attendant, et pendant la reprise, elle se VOIT.
+
+/** Le début du message que la base écrit quand la chef reprend une réponse (0017, reprendre_reponse). */
+export const PREFIXE_REPRISE = 'Claude reprend ta réponse'
+/** Même fenêtre que reponses_sans_suite (0017) : une vieille réponse ne ressort jamais. */
+export const JOURS_REPONSE_REPRISE = 7
+
+export type RepriseReponse = 'attend' | 'reprise'
+
+/**
+ * Où en est la dernière réponse de Raphaël sur ce chantier :
+ *  - « attend » : rien ne l'a suivie (aucun message de session, aucune étape,
+ *    aucune étape d'agent) — la chef la reprendra à sa prochaine passe ;
+ *  - « reprise » : la chef l'a reprise (« Claude reprend ta réponse »), le
+ *    chantier est réservé, et l'assistant n'a encore rien signalé ;
+ *  - null : rien à montrer (suivie, retirée, trop vieille, chantier fini).
+ */
+export function repriseReponse(
+  c: Pick<Chantier, 'id' | 'etat' | 'archived_at' | 'pris_jusqu_a'>, messages: readonly MessageE[],
+  activites: readonly Activite[], taches: readonly Tache[], now: Date,
+): RepriseReponse | null {
+  if (c.archived_at || c.etat === 'valide') return null
+  const limite = new Date(now.getTime() - JOURS_REPONSE_REPRISE * 86_400_000).toISOString()
+  let r: MessageE | null = null
+  for (const m of messages) {
+    if (m.chantier_id !== c.id || (m.kind !== 'question' && m.kind !== 'action') || !m.answered_at) continue
+    if (!r || m.answered_at > r.answered_at!) r = m
+  }
+  if (!r || r.answered_at! <= limite || (r.reponse ?? '').startsWith('Retirée par Claude')) return null
+  const t0 = r.answered_at!
+  if (activites.some((a) => a.chantier_id === c.id && a.updated_at > t0)) return null
+  if (taches.some((t) => t.chantier_id === c.id && !!t.progres_at && t.progres_at > t0)) return null
+  const apres = messages.filter((m) => m.chantier_id === c.id && m.id !== r!.id && m.auteur_type === 'session' && m.created_at > t0)
+  if (apres.length === 0) return 'attend'
+  const tenu = !!c.pris_jusqu_a && c.pris_jusqu_a > now.toISOString()
+  return tenu && apres.every((m) => m.kind === 'info' && m.corps.startsWith(PREFIXE_REPRISE)) ? 'reprise' : null
+}
+
+export const LIBELLE_REPRISE: Record<RepriseReponse, string> = {
+  attend: 'Ta réponse est reçue : Claude va la reprendre',
+  reprise: 'Claude reprend ta réponse',
 }
 
 /**
@@ -333,6 +384,11 @@ export function caAvanceToutSeul(
       const agent = agentVivant
       lignes.push({ c, presence, activite: barre, vivant: true, qui: morceaux.join(' · ') || 'Claude',
         etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null })
+    } else if (repriseReponse(c, messages, activites, taches, now)) {
+      // Raphaël a répondu, personne ne l'a encore suivie (ou la chef vient de la
+      // reprendre) : ça avance, ce n'est ni « sans nouvelles » ni à relancer.
+      const reprise = repriseReponse(c, messages, activites, taches, now)!
+      lignes.push({ c, presence, activite: null, vivant: false, qui: '', etape: null, pourquoi: LIBELLE_REPRISE[reprise], demandeLe: null, reprise })
     } else if (estEnCoursSansNouvelles(c, presence)) {
       const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
       lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: presence.code === 'silencieux' ? 'Plus de nouvelles' : 'Personne dessus',

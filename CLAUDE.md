@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias (158 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises (179 contrôles)
 bash -n scripts/*.sh hooks/*.sh
 ```
 
@@ -108,6 +108,22 @@ continue sans attendre l'heure. Les autres sessions n'enchaînent plus rien
 conteneur de la chef s'arrête, ses agents s'arrêtent : chantiers réservés
 3 h, repris au réveil suivant (abandon détecté). Jamais `git add -A` dans un
 dossier partagé avec un agent (incident du 29 sept., commit 964528e).
+
+**Une réponse de Raphaël est toujours reprise** (29 sept., migration 0017,
+« je réponds, mais je ne sais pas si c'est pris en compte ») : la passe de
+`chef.sh` sert D'ABORD `reprendre_reponse` — une question ou action répondue
+(pas retirée, 7 derniers jours) que rien n'a suivie (aucun message de session,
+aucune étape, aucune étape d'agent) sur un chantier que personne ne tient
+(réservation expirée, aucun agent ni session vivante), ou une question SANS
+chantier (un chantier interne est alors ouvert et la question y est
+rattachée). Le chantier repart « en cours », réservé à `agent/reponse-…`, le
+fil dit « Claude reprend ta réponse », et la consigne cite question, réponse,
+précision, médias, et les barrières de budget si la réponse engage une
+dépense. L'app la montre dans « Ça avance tout seul » (« Ta réponse est reçue :
+Claude va la reprendre », puis « Claude reprend ta réponse ») :
+`repriseReponse` (`lib/entonnoir.ts`). Les projets de TEST (slug `test-…`) ne
+sont JAMAIS servis par la chef (`projet_de_test`, incident du 29 sept.).
+`verifier-base.mjs` §18.
 
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 

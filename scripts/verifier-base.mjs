@@ -23,6 +23,8 @@
 //   11. RLS vue par un utilisateur NON membre
 //   12. temps réel (WebSocket Phoenix, postgres_changes sur cockpit.chantiers)
 //   13. exec_sql : le search_path est porté par la fonction (profil cockpit)
+//   …
+//   18. réponses de Raphaël reprises par la chef (0017), projets de test jamais servis
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -34,6 +36,11 @@
 // Le nettoyage tourne dans un `finally`, même si un contrôle plante.
 
 import { randomUUID, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const URL_ = process.env.SUPABASE_URL ?? "https://bexiyvmdbxcwxasgslxp.supabase.co";
 const CLE_PUBLIQUE = "sb_publishable_Ju0xC27cQ1JrN4IpWFfWxQ_Ntrd4P1U";
@@ -762,6 +769,100 @@ async function controle15_limites_autonome() {
   verifie("éteindre = null", (await une(`select autonome_jusqu_a from projets where id = ${q(P1)}`)).autonome_jusqu_a === null);
 }
 
+async function controle18_reponses_prises() {
+  section("18. Une réponse de Raphaël est toujours reprise, même sans session (0017, scripts/chef.sh)");
+  const repondre = (mid, reponse) => sql(`update messages set reponse = ${q(reponse)}, answered_at = now() where id = ${q(mid)}`);
+  const enAttente = async () => (await sql(`select chantier_id from reponses_sans_suite(${q(P1)})`)).map((r) => r.chantier_id);
+  // Le cas signalé : un chantier « à vérifier », personne dessus, Raphaël répond.
+  const c = await creerChantier(P1, { titre: "Test réponse prise (à vérifier)", etat: "a_verifier", demande: "demande de test" });
+  const m = await creerMessage(P1, c, { kind: "question", corps: "Je lance le banc GPU de test ?", options: [{ libelle: "Oui, ~0,9 $" }, { libelle: "Non" }] });
+  verifie("une question pas encore répondue n'est pas « sans suite »", !(await enAttente()).includes(c));
+  await repondre(m, "Oui, ~0,9 $");
+  verifie("répondue, personne dessus → « sans suite »", (await enAttente()).includes(c));
+  // Retirée par Claude : jamais reprise.
+  const cR = await creerChantier(P1, { titre: "Test question retirée", etat: "bloque" });
+  const mR = await creerMessage(P1, cR, { kind: "question", corps: "Question dépassée ?" });
+  await repondre(mR, "Retirée par Claude (test) : plus utile");
+  // Tenu (réservation en cours) : c'est sa session qui la reçoit (hooks/suivi.sh).
+  const cT = await creerChantier(P1, { titre: "Test tenu", etat: "en_cours" });
+  const mT = await creerMessage(P1, cT, { kind: "question", corps: "Tenu ?" });
+  await reserver(cT, "claude/tenu", 60);
+  await repondre(mT, "Oui");
+  // Déjà suivie : une session a écrit après la réponse.
+  const cS = await creerChantier(P1, { titre: "Test déjà suivi", etat: "bloque" });
+  const mS = await creerMessage(P1, cS, { kind: "question", corps: "Suivi ?" });
+  await repondre(mS, "Oui");
+  await attendre(50);
+  await creerMessage(P1, cS, { kind: "info", corps: "Je m'en occupe." });
+  const liste = await enAttente();
+  verifie("une question RETIRÉE par Claude n'est jamais reprise", !liste.includes(cR), liste);
+  verifie("un chantier TENU (réservation en cours) n'est pas repris par la chef", !liste.includes(cT), liste);
+  verifie("une réponse déjà SUIVIE d'un message de session n'est pas reprise", !liste.includes(cS), liste);
+  // Projets de TEST jamais donnés par la chef (incident du 29/09 : deux chantiers
+  // « test-web-… » réservés en plein parcours). On rejoue les VRAIES requêtes de
+  // chef.sh (lecture seule) avec le projet de test en tête de file.
+  const racineChef = dirname(dirname(fileURLToPath(import.meta.url)));
+  const chefSh = (await import("node:fs")).readFileSync(join(racineChef, "scripts/chef.sh"), "utf8");
+  verifie("reponses_sans_suite() tous projets n'inclut JAMAIS un projet de test", !(await sql(`select chantier_id from reponses_sans_suite()`)).some((r) => r.chantier_id === c));
+  const reqProjets = chefSh.match(/"(select slug from projets where [^"]*)"/)?.[1];
+  const reqVerif = chefSh.match(/un "(select c\.id, c\.titre, p\.slug[\s\S]*?limit 1)"/)?.[1];
+  await sql(`update projets set autonome_toujours = true where id = ${q(P1)}`);
+  const cV = await creerChantier(P1, { titre: "Test vérifie pour moi", etat: "a_verifier" });
+  await sql(`update chantiers set verif_demandee_at = now() - interval '10 years' where id = ${q(cV)}`);
+  const projetsChef = reqProjets ? (await sql(reqProjets)).map((r) => r.slug) : null;
+  const verifChef = reqVerif ? await sql(reqVerif) : null;
+  verifie("chef.sh : la liste des projets à servir exclut les projets de test (même en mode autonome)", !!projetsChef && !projetsChef.includes(SLUG_A), { reqProjets, projetsChef });
+  verifie("chef.sh : « vérifie pour moi » d'un projet de test jamais donné", !!verifChef && !verifChef.some((r) => r.id === cV), { trouvee: !!reqVerif, verifChef });
+  await sql(`update projets set autonome_toujours = false where id = ${q(P1)}`);
+  await sql(`update chantiers set verif_demandee_at = null where id = ${q(cV)}`);
+  // Une question SANS chantier (niveau projet), répondue, que personne n'a suivie.
+  const mP = randomUUID();
+  await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at)
+             values (${q(mP)}, ${q(P1)}, null, 'verifier-base', 'session', 'question', 'Installer le module de test ?', 'Seulement pour moi (admin)', now())`);
+  verifie("une question de PROJET (sans chantier) répondue est aussi « sans suite »", (await sql(`select message_id from reponses_sans_suite(${q(P1)})`)).some((r) => r.message_id === mP));
+  const pirate = await rpcUtilisateur("reprendre_reponse", { p_branche: "agent/pirate" }, jwt);
+  const pirate2 = await rpcUtilisateur("reponses_sans_suite", {}, jwt);
+  verifie("un membre ne peut ni reprendre une réponse ni lister celles de tous les projets", pirate.status >= 400 && pirate2.status >= 400, { pirate, pirate2 });
+
+  // scripts/chef.sh de bout en bout, borné au projet de test : un faux sql.sh
+  // répond « tu es la chef, 0 agent, aucun autre chantier » et limite
+  // reprendre_reponse au projet de test ; tout le reste va à la vraie base.
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const vrai = join(racine, "scripts/sql.sh");
+  const dossier = mkdtempSync(join(tmpdir(), "chef-test-"));
+  const faux = join(dossier, "sql.sh");
+  writeFileSync(faux, [
+    "#!/usr/bin/env bash",
+    'if [ $# -gt 0 ]; then r="$1"; else r="$(cat)"; fi',
+    'case "$r" in',
+    `  *"from chef c where c.id = 1"*) echo '{"ok":true,"rows":[{"session_id":"chef-test","max_agents":3,"agents":0}]}' ;;`,
+    `  *"update chef set"*) echo '{"ok":true,"rows":null}' ;;`,
+    `  *"select slug from projets where actif"*|*"verif_demandee_at is not null"*) echo '{"ok":true,"rows":[]}' ;;`,
+    `  *"reprendre_reponse("*) exec "${vrai}" "$(printf '%s' "$r" | sed "s/') as r/', '${P1}') as r/")" ;;`,
+    `  *) exec "${vrai}" "$r" ;;`,
+    "esac", "",
+  ].join("\n"), { mode: 0o755 });
+  const chef = () => execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", env: { ...process.env, COCKPIT_SQL: faux, CLAUDE_CODE_SESSION_ID: "chef-test" } });
+  try {
+    const sortie = chef();
+    const l = await chantier(c);
+    const fil = await sql(`select corps from messages where chantier_id = ${q(c)} and auteur_type = 'session' and kind = 'info'`);
+    verifie("chef.sh donne une consigne d'agent : la question, la réponse, « Fais ce que cette réponse annonce »",
+      sortie.includes("SESSION CHEF : lance 2 agent") && sortie.includes("Je lance le banc GPU de test ?") && sortie.includes("« Oui, ~0,9 $ »")
+        && sortie.includes("Fais ce que cette réponse annonce") && sortie.includes(c), sortie);
+    verifie("une réponse qui engage une dépense rappelle les barrières de budget", /DÉPENSE.*plafond de durée.*annulation automatique.*job par job/s.test(sortie), sortie);
+    verifie("le chantier repart « en cours », réservé à la branche agent/reponse-… citée dans la consigne",
+      l.etat === "en_cours" && /^agent\/reponse-/.test(l.pris_par ?? "") && sortie.includes(l.pris_par), l);
+    verifie("le fil dit « Claude reprend ta réponse » (l'app le montre)", fil.some((f) => f.corps.startsWith("Claude reprend ta réponse « Oui, ~0,9 $ »")), fil);
+    const qP = await une(`select chantier_id from messages where id = ${q(mP)}`);
+    const cP = qP?.chantier_id ? await chantier(qP.chantier_id) : null;
+    verifie("question de projet : un chantier INTERNE est ouvert, en cours, réservé à l'agent, la question y est rattachée, consigne donnée",
+      !!cP && cP.etat === "en_cours" && cP.visible_utilisateurs === false && /^agent\/reponse-/.test(cP.pris_par ?? "") && sortie.includes("Installer le module de test ?")
+        && sortie.includes("question de projet, sans chantier") && sortie.includes(cP.id), { cP, sortie });
+    verifie("reprise UNE seule fois : la passe suivante ne la redonne pas", /^RIEN/.test(chef()));
+  } finally { rmSync(dossier, { recursive: true, force: true }); }
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -780,6 +881,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
+    controle18_reponses_prises,
   ];
   for (const etape of etapes) {
     try { await etape(); }

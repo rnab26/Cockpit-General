@@ -68,9 +68,20 @@ agents=$(printf '%s' "$etat" | jq -r '.agents // 0'); maxa=$(printf '%s' "$etat"
 libres=$(( maxa - agents ))
 if [ "$libres" -le 0 ]; then echo "RIEN — $agents agent(s) travaillent déjà (maximum $maxa). Termine ta réponse en une ligne."; exit 0; fi
 
-# Un chantier par place libre, tous projets (ceux dont le mode autonome est allumé), le plus ancien d'abord.
 donnes=()
-for slug in $("$SQL" "select slug from projets where actif and (autonome_toujours or coalesce(autonome_jusqu_a > now(), false)) order by slug" | jq -r '.rows[].slug'); do
+# D'abord les RÉPONSES de Raphaël que personne n'a reprises (0017) : une réponse
+# sur un chantier que personne ne tient (à vérifier, bloqué, réservation
+# expirée) ne se perd plus. Tous projets actifs, la plus ancienne d'abord ;
+# le chantier repart « en cours », réservé à la branche de l'agent.
+while [ ${#donnes[@]} -lt "$libres" ]; do
+  br="agent/reponse-$(date +%s%N | tail -c 7)"
+  rp=$(un "select reprendre_reponse('$br') as r" | jq -c '.r // empty')
+  [ -n "$rp" ] && [ "$rp" != "null" ] || break
+  donnes+=("$(printf '%s' "$rp" | jq -c --arg br "$br" '. + {branche: $br, reponse_prise: true}')")
+done
+# Un chantier par place libre, tous projets (ceux dont le mode autonome est allumé), le plus ancien d'abord.
+# Jamais un projet de TEST (slug « test-… », créés et supprimés par verifier-base/web) : projet_de_test() (0017).
+for slug in $("$SQL" "select slug from projets where actif and not projet_de_test(slug) and (autonome_toujours or coalesce(autonome_jusqu_a > now(), false)) order by slug" | jq -r '.rows[].slug'); do
   while [ ${#donnes[@]} -lt "$libres" ]; do
     br="agent/$(date +%s%N | tail -c 7)"
     c=$(un "select prochain_chantier_autonome('$(q "$slug")', null, '$br') as c" | jq -c '.c // empty')
@@ -83,7 +94,7 @@ done
 while [ ${#donnes[@]} -lt "$libres" ]; do
   v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
     from chantiers c join projets p on p.id = c.projet_id
-    where c.verif_demandee_at is not null and c.archived_at is null and p.actif
+    where c.verif_demandee_at is not null and c.archived_at is null and p.actif and not projet_de_test(p.slug)
       and (c.pris_par is null or c.pris_jusqu_a < now()) order by c.verif_demandee_at limit 1")
   vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break
   br="agent/verif-$(date +%s%N | tail -c 7)"
@@ -97,6 +108,23 @@ echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce 
 echo
 VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
 for c in "${donnes[@]}"; do
+  if [ "$(printf '%s' "$c" | jq -r '.reponse_prise // false')" = "true" ]; then
+    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
+"━━ Agent « Réponse : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
+Consigne à lui donner, telle quelle :
+---
+Tu es un agent du cockpit. Raphaël a répondu à une question sur le chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot), et personne ne l’a reprise : c’est toi. \(if .etat_avant == "question de projet" then "C’était une question de projet, sans chantier : ce chantier interne vient d’être ouvert pour la suivre, réservé à ta branche." else "Le chantier était « \(.etat_avant) » ; il est remis en cours, réservé à ta branche." end)
+Question posée (\(.question_id)) :
+\(.question)\(if .pourquoi then "\nPourquoi : \(.pourquoi)" else "" end)
+Réponse de Raphaël (\(.repondu_le)) : « \(.reponse // "") »\(if .precision then "\nSa précision : \(.precision)" else "" end)\(if (.medias // 0) > 0 then "\nIl a joint \(.medias) fichier(s) : COCKPIT_PROJET=\(.slug) scripts/media.sh --chantier \(.id), puis REGARDE-les avant d’agir." else "" end)
+Demande du chantier :
+\(.demande)
+
+Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
+Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+---"'
+    echo; continue
+  fi
   if [ "$(printf '%s' "$c" | jq -r '.verif // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg verdict "$VERDICT" '
 "━━ Agent « Vérifier : \(.titre) » (projet \(.slug), dépôt \(.depot), chantier \(.id))

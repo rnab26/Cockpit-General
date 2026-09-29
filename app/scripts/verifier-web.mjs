@@ -395,6 +395,20 @@ try {
   verifie('…en mots simples : « Plus de nouvelles » / « Personne dessus », et le dernier signe',
     /Plus de nouvelles · dernier signe il y a/.test(await snP3.getByTestId('sans-nouvelles').textContent()) && /Personne dessus/.test(await snP2.getByTestId('sans-nouvelles').textContent()), [await snP3.textContent(), await snP2.textContent()])
   verifie('une ligne vivante n’a pas de bouton « Relancer »', await ligneP1.getByTestId('ouvrir-relance').count() === 0)
+  // Raphaël répond sur un chantier « à vérifier » que personne ne tient (0017) : sa réponse se VOIT dans « Ça avance ».
+  const RP1 = creerTest('réponse sans session', { etat: 'a_verifier' })
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at, created_at) values ('${projet.id}', '${RP1.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} On continue ?`)}', 'Oui', now(), now() - interval '5 minutes')`)
+  await actualiser()
+  const lRP1 = await ligneAvance(RP1.id)
+  verifie('réponse sur un chantier sans session : « Ta réponse est reçue : Claude va la reprendre » dans « Ça avance », sans « Relancer »',
+    await lRP1.count() === 1 && (await lRP1.getByTestId('reprise-reponse').getAttribute('data-reprise')) === 'attend'
+      && /Ta réponse est reçue : Claude va la reprendre/.test(await lRP1.textContent()) && await lRP1.getByTestId('ouvrir-relance').count() === 0, await lRP1.textContent().catch(() => null))
+  // La chef la reprend (ce que fait reprendre_reponse) : réservée, « Claude reprend ta réponse ».
+  sql(`update chantiers set etat = 'en_cours', pris_par = 'agent/reponse-test', pris_jusqu_a = now() + interval '1 hour' where id = '${RP1.id}'`)
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${RP1.id}', 'agent/reponse-test', 'session', 'info', 'Claude reprend ta réponse « Oui » : un assistant s''en occupe.')`)
+  await actualiser()
+  verifie('…reprise par la chef : « Claude reprend ta réponse », toujours visible, jamais « sans nouvelles »',
+    (await lRP1.getByTestId('reprise-reponse').getAttribute('data-reprise').catch(() => null)) === 'reprise' && await lRP1.getByTestId('sans-nouvelles').count() === 0, await lRP1.textContent().catch(() => null))
   // Ce qui travaille scintille, rien d'autre.
   verifie('la ligne vivante scintille : point qui pulse + reflet sur la barre',
     await ligneP1.locator('.point-vivant').count() === 1 && await ligneP1.locator('.barre-vive').count() === 1)

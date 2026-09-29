@@ -363,6 +363,12 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
               <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-ok align-middle" aria-hidden data-testid="point-travaille" />
               <span className="line-clamp-2 inline">{l.qui}{l.etape ? ` · « ${l.etape} »` : ''}</span>
             </span>
+          ) : l.reprise ? (
+            <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
+              <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-ok/60 align-middle" aria-hidden />
+              <span data-testid="reprise-reponse" data-reprise={l.reprise}>{l.pourquoi}</span>
+            </span>
           ) : (
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
@@ -370,7 +376,7 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
             </span>
           )}
         </button>
-        {!l.vivant ? (
+        {!l.vivant && !l.reprise ? (
           <Button taille="sm" onClick={() => setRelance(!relance)} aria-expanded={relance} data-testid="ouvrir-relance" className="shrink-0">Relancer</Button>
         ) : null}
       </div>

@@ -18,6 +18,11 @@ demandes des utilisateurs, progression des autres sessions.
   donne la preuve. S'il touche « Je ne sais pas : vérifie pour moi », c'est à
   toi de juger ce qu'il a collé : `scripts/cockpit-verdict.sh --chantier <id>
   --bon "…"` ou `--pas-bon "…"` (la session chef lance un agent pour ça).
+- **UNE RÉPONSE DE RAPHAËL N'EST JAMAIS PERDUE** (29 sept. : « je réponds, mais
+  je ne sais pas si c'est pris en compte »). Sur un chantier que tu tiens, elle
+  t'arrive en direct : suis-la tout de suite (un message ou une étape). Sur un
+  chantier que personne ne tient, la session chef la confie à un agent
+  (« Claude reprend ta réponse » dans le fil) : ne la reprends pas en doublon.
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh
