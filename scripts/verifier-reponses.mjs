@@ -16,6 +16,8 @@
 //   7-8. « Où ça en est ? » (0023) : remise une fois, marquée reçue, --point ; sans personne, la chef la sert
 //   9-11. message LIBRE (0025) : remis et « reçu », réponse --point dans le fil ; sans personne, la chef le confie ; fil du projet
 //   12. ses messages tapés dans la session arrivent dans le fil du chantier qu'elle tient (0027), sans lui être renvoyés
+//   13. un sujet = un fil (0028) : l'arrêt refusé une fois tant qu'un chantier du tour n'a pas sa réponse (--point) dans son fil
+//   14. un message multi-sujets écrit dans le cockpit : la chef le confie avec « un chantier par sujet, une réponse par fil »
 // Le cas « personne ne tient le chantier » relève de scripts/chef.sh (autre chantier).
 
 import { spawnSync } from "node:child_process";
@@ -251,6 +253,50 @@ try {
   verifie("il n'est pas renvoyé à la session comme « il t'écrit » (elle l'a déjà)", !/filtre par date/.test(o12.additionalContext ?? ""), o12);
   const sr12 = sql(`select * from messages_sans_reponse(${q(P)}, 'claude/test-rep')`);
   verifie("il n'attend pas de réponse dans le fil (la session a répondu dans la session)", !sr12.some((r) => r.chantier_id === C1), sr12);
+  // 0028 : UN SUJET = UN FIL. La session répond normalement ET écrit la réponse de chaque sujet dans son fil.
+  console.log("\n13. un sujet = un fil : l'arrêt est refusé une fois tant qu'un chantier ouvert pendant le tour n'a pas sa réponse dans son fil");
+  const SID13 = `test-rep13-${rand}`;
+  const stop = (sid) => {
+    const r = spawnSync("bash", [join(RACINE, "hooks/autonome.sh")], { input: JSON.stringify({ session_id: sid, hook_event_name: "Stop" }), encoding: "utf8", env: env(), timeout: 60000 });
+    try { return JSON.parse((r.stdout || "").trim() || "{}"); } catch { return { brut: r.stdout }; }
+  };
+  const ouvrir = (titre, demande, extra = []) => spawnSync("bash", [join(RACINE, "scripts/chantier.sh"), "--ouvrir", titre, "--demande", demande, "--section", "Tests", ...extra], { encoding: "utf8", env: env(), cwd: PROJET_DIR, timeout: 60000 });
+  let o13 = hook("prompt-rappel.sh", { session_id: SID13, hook_event_name: "UserPromptSubmit", prompt: "Deux choses : le filtre des dates, et le bouton rouge" });
+  verifie("au message de Raphaël, le rappel dit « un sujet = un fil » (répondre ici ET dans chaque fil)", /UN SUJET = UN FIL/.test(o13.additionalContext ?? "") && /--point/.test(o13.additionalContext ?? ""), o13);
+  const ou1 = ouvrir("Filtre des dates (test 13)", "le filtre des dates", ["--nouveau"]);
+  const ou2 = ouvrir("Bouton rouge (test 13)", "le bouton rouge", ["--nouveau"]);
+  verifie("chantier.sh --ouvrir rappelle de répondre dans le fil du chantier", /DANS SON FIL/.test(ou1.stdout) && /--point/.test(ou1.stdout), ou1.stdout || ou1.stderr);
+  const ids13 = Object.fromEntries(sql(`select titre, id from chantiers where projet_id = ${q(P)} and titre like '% (test 13)'`).map((r) => [r.titre, r.id]));
+  const F = ids13["Filtre des dates (test 13)"], B = ids13["Bouton rouge (test 13)"];
+  let s13 = stop(SID13);
+  verifie("arrêt sans réponse dans les fils : refusé, avec les DEUX chantiers et la commande --point",
+    s13.decision === "block" && /UN SUJET = UN FIL/.test(s13.reason ?? "") && (s13.reason ?? "").includes(`--chantier ${F} --point`) && (s13.reason ?? "").includes(`--chantier ${B} --point`), s13);
+  s13 = stop(SID13);
+  verifie("une seule relance : le deuxième arrêt n'est plus bloqué pour ça (jamais de boucle)", !/UN SUJET = UN FIL/.test(s13.reason ?? ""), s13);
+  // Nouveau tour : un seul sujet, repris, puis sa réponse dans le fil → l'arrêt passe.
+  hook("prompt-rappel.sh", { session_id: SID13, hook_event_name: "UserPromptSubmit", prompt: "Et pour le filtre, ajoute la semaine" });
+  ouvrir("Filtre des dates (test 13)", "ajoute la semaine", ["--id", F]);
+  s13 = stop(SID13);
+  verifie("la ligne « Chantier repris… » posée par --ouvrir ne compte pas comme réponse", s13.decision === "block" && (s13.reason ?? "").includes(F) && !(s13.reason ?? "").includes(B), s13);
+  hook("prompt-rappel.sh", { session_id: SID13, hook_event_name: "UserPromptSubmit", prompt: "Et la semaine aussi, stp" });
+  ouvrir("Filtre des dates (test 13)", "la semaine aussi", ["--id", F]);
+  const pt = prog(["--chantier", F, "--point", "Ajouté : filtre par semaine, en plus du jour."]);
+  s13 = stop(SID13);
+  verifie("sa réponse écrite dans le fil (--point) : l'arrêt passe", pt.status === 0 && !/UN SUJET = UN FIL/.test(s13.reason ?? ""), { pt: pt.stderr, s13 });
+  const autreSession = stop(`autre-${rand}`);
+  verifie("le tour d'une session ne bloque jamais une AUTRE session", !/UN SUJET = UN FIL/.test(autreSession.reason ?? ""), autreSession);
+  const notif = hook("prompt-rappel.sh", { session_id: SID13, hook_event_name: "UserPromptSubmit", prompt: "<task-notification>agent fini</task-notification>" });
+  verifie("une notification n'ouvre pas de tour (pas un message de Raphaël)", !/UN SUJET = UN FIL/.test(notif.additionalContext ?? ""), notif);
+
+  console.log("\n14. message multi-sujets écrit dans le cockpit (fil du projet) → la chef le répartit, une réponse par fil");
+  sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps) values (${q(P)}, 'Raphaël', 'proprietaire', 'info', 'Trois sujets : le logo, la page contact, et les factures en retard')`);
+  sql(`insert into chefs (projet_id, session_id, actif, max_agents) values (${q(P)}, ${q(`test-chef14-${rand}`)}, true, 5) on conflict (projet_id) do update set session_id = excluded.session_id, actif = true, max_agents = 5`);
+  const passe14 = spawnSync("bash", [join(RACINE, "scripts/chef.sh"), "--projet", SLUG, "--session", `test-chef14-${rand}`], { encoding: "utf8", env: env(), timeout: 60000 });
+  const s14 = passe14.stdout ?? "";
+  const bloc14 = s14.split("━━").find((b) => /Trois sujets/.test(b)) ?? "";
+  verifie("la chef confie le message à un agent « Répondre : Fil du projet »", /Agent « Répondre : Fil du projet »/.test(s14) && !!bloc14, s14.slice(0, 1200) || passe14.stderr);
+  verifie("sa consigne : un chantier par sujet (--ouvrir), une réponse dans CHAQUE fil (--point), et où chaque sujet est parti",
+    /PLUSIEURS SUJETS/.test(bloc14) && /chantier\.sh --ouvrir/.test(bloc14) && /--chantier <id> --point/.test(bloc14) && /où chaque sujet est parti/.test(bloc14), bloc14.slice(0, 1500));
 } catch (e) {
   verifie("le banc s'est déroulé sans planter", false, e.message);
 } finally {
