@@ -111,3 +111,11 @@
   },
   "autoContinueAtUsageLimit": true
 }
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/sql.sh:*)",
+      "Write(supabase/migrations/**)"
+    ]
+  }
+}
