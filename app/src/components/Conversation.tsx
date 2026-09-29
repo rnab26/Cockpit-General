@@ -6,6 +6,7 @@ import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
 import { Button } from '../ui/Button.tsx'
+import { TexteLong } from '../ui/TexteLong.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
 import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
@@ -127,8 +128,8 @@ function BulleMessage({ m }: { m: Message }) {
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : null
   return (
     <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle">
-      {m.corps ? <p className="whitespace-pre-wrap text-[15px] leading-snug">{m.corps}</p> : null}
-      {m.pourquoi ? <p className="mt-0.5 whitespace-pre-wrap text-sm text-texte-2">{m.pourquoi}</p> : null}
+      {m.corps ? <TexteLong texte={m.corps} /> : null}
+      {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {m.reponse ? (
         <p className="mt-1 border-t border-bord pt-1 text-sm" data-testid="reponse-donnee">
           <span className="text-texte-2">{m.kind === 'fusion' ? 'Tranché : ' : 'Réponse : '}</span>{m.reponse}{m.precision ? ` — ${m.precision}` : ''}
@@ -143,12 +144,16 @@ function BulleMessage({ m }: { m: Message }) {
 /** Le fil, puis la barre du bas ; à l'ouverture, positionné sur la première chose à faire (sinon en bas). */
 function Corps({ children, chantierId, placeholder }: { children: ReactNode; chantierId: string | null; placeholder: string }) {
   const corps = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const el = corps.current
-    if (!el) return
-    const cible = el.querySelector<HTMLElement>('[data-a-faire="oui"]')
-    if (cible) el.scrollTop = Math.max(0, cible.offsetTop - el.offsetTop - 8)
-    else el.scrollTop = el.scrollHeight
+  useEffect(() => {
+    // Après l'ouverture de la feuille (showModal passe après ce rendu) : une image plus tard.
+    const r = requestAnimationFrame(() => {
+      const el = corps.current
+      if (!el) return
+      const cible = el.querySelector<HTMLElement>('[data-a-faire="oui"]')
+      if (cible) el.scrollTop += cible.getBoundingClientRect().top - el.getBoundingClientRect().top - 8
+      else el.scrollTop = el.scrollHeight
+    })
+    return () => cancelAnimationFrame(r)
   }, [])
   return (
     <>
@@ -300,7 +305,7 @@ function FilChantier({ chantierId, onFermer }: { chantierId: string; onFermer: (
       <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'}>
         {/* 1. La demande, en premier. */}
         <Bulle cote={c.origine === 'session' ? 'gauche' : 'droite'} auteur={c.origine === 'session' ? 'Claude · la demande' : c.origine === 'utilisateur' ? 'Demande d’un utilisateur' : 'La demande'} quand={c.created_at} testId="bulle-demande">
-          {c.demande ? <p className="whitespace-pre-wrap text-[15px] leading-snug">{c.demande}</p> : <p className="text-sm text-texte-2">Pas de description : le titre dit tout.</p>}
+          {c.demande ? <TexteLong texte={c.demande} /> : <p className="text-sm text-texte-2">Pas de description : le titre dit tout.</p>}
           {c.resume_simple ? <p className="mt-1 text-sm text-texte-2">En clair : {c.resume_simple}</p> : null}
         </Bulle>
 

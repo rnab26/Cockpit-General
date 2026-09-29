@@ -5,27 +5,27 @@
 //   source <fichier des identifiants de test>   # COCKPIT_TEST_EMAIL / COCKPIT_TEST_PASSWORD
 //   node scripts/verifier-web.mjs
 //
-// Il sert dist/ avec `vite preview`, se connecte, et vérifie :
-//  - l'ACCUEIL = l'onglet « Tout » : « Où j'en suis » (vue d'ensemble), « En ce moment » et le début de « À toi »
-//    dans le premier écran, « Personne ne travaille » quand aucune session n'a
-//    donné signe de vie (29 sept. 2026 : barres orange à 85 % sans personne) ;
-//  - la PRÉSENCE : une activité de test mise à jour maintenant apparaît dans
-//    « En ce moment » avec une barre vive ; une vieille de 2 h n'y est pas, et
-//    sa carte dit « Personne dessus » / « Pris, mais silencieux » ;
-//  - « Qui travaille » : une session factice et ses deux tâches (un agent qui
-//    a signalé son avancement → barre ; une commande muette → « avancement non
-//    signalé », pas de barre), un agent lié à un chantier → « Un agent y travaille » ;
-//  - « À toi » : une question se répond sans rien déplier ; une fusion
-//    proposée par Claude disparaît sur « Garder séparés » ; un chantier à
-//    vérifier montre ses étapes, sa frise de mise en ligne et la phrase « C'est
-//    en ligne » / « Pas encore en ligne », et se certifie de là ;
-//  - « À lancer » : « Copier la consigne » met le bon texte dans le
-//    presse-papiers, « Demander où ça en est » écrit le message en base ;
-//  - une carte reportée : « Écrire à Claude » visible, l'envoi crée le
-//    message, « Relancer maintenant » la rend libre ;
-//  - et tout ce qui existait : création/suppression avec confirmation,
-//    réglages (dont le délai de silence), Doublons, sélection groupée avec
-//    « Annuler », historique, « Comment vérifier ».
+// Il sert dist/ avec `vite preview`, se connecte, et vérifie l'écran A + D
+// (29 sept. 2026, « vas-y fais A + D ») :
+//  - l'ACCUEIL = l'onglet « Tout », modèle A : quatre tuiles (pour toi · ça
+//    avance · en pause · fini) = les longueurs des trois listes, le détail par
+//    projet/section replié qui compte les mêmes chantiers ; « À toi de jouer »
+//    (une ligne, le sujet, ce qu'on attend en mots simples, UN verbe) ;
+//  - la PRÉSENCE honnête dans « Ça avance tout seul » (une ligne par CHANTIER) :
+//    barre vive seulement avec une preuve de vie, « Plus de nouvelles » /
+//    « Personne dessus » + Relancer sinon ; le travail hors chantier en une
+//    ligne ; le détail des sessions et agents replié ;
+//  - chaque chantier s'ouvre en CONVERSATION (modèle D), positionnée sur ce
+//    qu'il faut faire : répondre à une question (option + précision + photo),
+//    trancher une fusion, tester (frise, comment vérifier, Ça marche / Corriger
+//    avec photo), décider (à cadrer), débloquer, relancer un reporté, écrire à
+//    Claude avec une photo, menu ⋯ (modifier, historique, doublon, archiver,
+//    supprimer confirmé), « retour » du téléphone qui la ferme ;
+//  - « Prêt à lancer » : « Lancer » copie la consigne du bon chantier ;
+//  - et tout ce qui existait : réglages du projet (mise en ligne GitHub
+//    simulée, mode autonome), création, réglages (délai de silence), Doublons,
+//    sélection groupée avec « Annuler », historique et restauration, toasts
+//    visibles au premier plan, aucun défilement horizontal, grand écran.
 // Données de test : TOUTES dans un PROJET DE TEST dédié (« test-web-<aléatoire> »),
 // créé au début par service_role et supprimé EN ENTIER dans le finally, même en
 // échec — jamais dans « cockpit » ni « facepro » (29 sept. 2026 : Raphaël a vu
@@ -146,7 +146,7 @@ const activiteTest = (chantierId, session, pct, ilYaMin) =>
   sql(`insert into activite (projet_id, chantier_id, session, etape, pourcentage, statut, updated_at) values ('${projet.id}', '${chantierId}', '${SESSION_TEST}${session}', '${esc(`${MARQUE2} étape ${session}`)}', ${pct}, 'en_cours', now() - interval '${ilYaMin} minutes')`)
 const creerProjetTest = () => {
   const id = randomUUID()
-  sql(`insert into projets (id, slug, nom, couleur, actif, description, depot) values ('${id}', '${SLUG}', '🧪 Test auto (s’efface seul)', '#64748B', true, 'Projet créé et supprimé par app/scripts/verifier-web.mjs', '${DEPOT_TEST}')`)
+  sql(`insert into projets (id, slug, nom, couleur, actif, description, depot) values ('${id}', '${SLUG}', 'Test auto (s’efface seul)', '#64748B', true, 'Projet créé et supprimé par app/scripts/verifier-web.mjs', '${DEPOT_TEST}')`)
   projet = { id }
   // Trois sections et de quoi remplir la liste (≥ 10 cartes, « Ça existe déjà »).
   const sections = ['Base', 'Écran', 'Module'].map((nom, i) => { const sid = randomUUID(); sql(`insert into sections (id, projet_id, nom, position) values ('${sid}', '${id}', '${nom}', ${i})`); return sid })
@@ -221,26 +221,41 @@ const deplierTout = async () => {
   const b = page.getByTestId('tout-deplier')
   if (await b.count() && (await b.textContent()).includes('Tout déplier')) { await b.click(); await page.waitForTimeout(150) }
 }
-const carteDe = (titre) => page.locator('[data-testid="tous-les-chantiers"] [data-testid="carte"]', { hasText: titre })
-const carteId = (id) => page.locator(`[data-testid="tous-les-chantiers"] [data-chantier="${id}"]`)
+const ligneId = (id) => page.locator(`[data-testid="tous-les-chantiers"] [data-testid="ligne-chantier"][data-chantier="${id}"]`)
+const ligneDe = (titre) => page.locator('[data-testid="tous-les-chantiers"] [data-testid="ligne-chantier"]', { hasText: titre })
 const actualiser = async () => { await page.getByTestId('actualiser').click(); await page.waitForTimeout(700) }
-// Un élément « À toi » d'un chantier, en dépliant « Voir les N autres » de son groupe s'il le faut.
+// La conversation ouverte (modèle D) et sa fermeture.
+const conv = () => page.getByTestId('conversation')
+const attendreConv = async (titre) => {
+  await conv().waitFor({ timeout: 10000 })
+  if (titre) await conv().getByTestId('titre-conversation').filter({ hasText: titre }).waitFor({ timeout: 10000 })
+  await page.waitForTimeout(250)
+  return conv()
+}
+const fermerConv = async () => { await conv().getByTestId('fermer-conversation').click(); await conv().waitFor({ state: 'detached', timeout: 10000 }) }
+// Une ligne « À toi de jouer » d'un chantier, en dépliant « Voir les N autres » s'il le faut.
 const elementAToi = async (chantierId, type) => {
   const el = page.locator(`[data-testid="element-a-toi"][data-type="${type}"][data-element-chantier="${chantierId}"]`)
-  if (!(await el.count())) {
-    const plus = page.getByTestId(`groupe-a-toi-${type}`).getByRole('button', { name: /Voir les \d+ autres/ })
-    if (await plus.count()) await plus.click()
-  }
+  if (!(await el.count())) { const plus = page.getByTestId('voir-a-toi'); if (await plus.count()) await plus.click() }
   await el.waitFor({ timeout: 10000 })
   return el
 }
+const ligneAvance = async (chantierId) => {
+  const l = page.locator(`[data-testid="en-ce-moment"] [data-testid="ligne-en-ce-moment"][data-chantier-ligne="${chantierId}"]`)
+  if (!(await l.count())) { const plus = page.getByTestId('voir-ca-avance'); if (await plus.count()) await plus.click() }
+  await l.waitFor({ timeout: 15000 }).catch(() => {})
+  return l
+}
 const ligneALancer = async (chantierId) => {
   const l = page.locator(`[data-testid="ligne-a-lancer"][data-ligne-chantier="${chantierId}"]`)
-  if (!(await l.count())) {
-    for (const b of await page.getByTestId('groupe-a-lancer').getByRole('button', { name: /Voir les \d+ autres/ }).all()) await b.click()
-  }
+  if (!(await l.count())) { const plus = page.getByTestId('voir-a-lancer'); if (await plus.count()) await plus.click() }
   await l.waitFor({ timeout: 10000 })
   return l
+}
+// Un bloc visible dans la zone qui défile de la conversation (on y arrive « positionné sur ce qu'il faut faire »).
+const dansLaVue = async (loc) => {
+  const [b, z] = [await loc.boundingBox(), await conv().getByTestId('fil-conversation').boundingBox()]
+  return !!b && !!z && b.y >= z.y - 2 && b.y < z.y + z.height
 }
 
 try {
@@ -274,55 +289,80 @@ try {
   await page.waitForTimeout(800)
 
   // ===================================================================
-  // 1. L'accueil : l'onglet « Tout », premier écran
-  console.log('  — accueil « Tout »')
+  // 1. L'accueil : l'onglet « Tout », modèle A (tuiles puis trois listes)
+  console.log('  — accueil « Tout » (tableau de bord)')
   verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('onglet-tout').getAttribute('aria-selected')) === 'true')
-  const bEnsemble = await page.getByTestId('ou-jen-suis').boundingBox()
-  const bMoment = await page.getByTestId('en-ce-moment').boundingBox()
-  verifie('« Où j’en suis » (vue d’ensemble) est le premier bloc, en haut de l’écran', bEnsemble && bEnsemble.y < 200, bEnsemble)
-  verifie('« En ce moment » vient juste après', bMoment && bEnsemble && bMoment.y > bEnsemble.y && bMoment.y < bEnsemble.y + bEnsemble.height + 40, { bEnsemble, bMoment })
+  const bTuiles = await page.getByTestId('tuiles').boundingBox()
+  verifie('les quatre tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 4, bTuiles)
+  const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
+  verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
+  verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
+  verifie('tuile « en pause » = le nombre de « Prêt à lancer »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()))
+  await page.getByTestId('detail-ou-jen-suis').click()
   const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
   const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)
-  verifie('« Où j’en suis » dans « Tout » : une ligne par projet actif, plus le total', lignesEnsemble === nProjetsActifs + (nProjetsActifs > 1 ? 1 : 0), { lignesEnsemble, nProjetsActifs })
-  const totalPourToi = await page.getByTestId('ou-jen-suis').locator('[data-testid="ligne-ou-jen-suis"]').last().locator('[data-colonne="pourToi"]').textContent().catch(() => '0')
-  verifie('« pour toi » (total) = le nombre de « À toi » : une seule règle', Number(totalPourToi) === Number(await page.getByTestId('a-toi-total').textContent()), { tableau: totalPourToi, aToi: await page.getByTestId('a-toi-total').textContent() })
+  verifie('« Détail par projet » (replié sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
+  const sommeColonne = async (col) => (await page.locator(`[data-testid="ligne-ou-jen-suis"] [data-colonne="${col}"]`).allTextContents()).reduce((n, t) => n + Number(t), 0)
+  verifie('le détail compte les mêmes chantiers que les tuiles (pour toi, ça avance, en pause)',
+    await sommeColonne('pourToi') === await nTuile('pourToi') && await sommeColonne('bouge') === await nTuile('caAvance') && await sommeColonne('dort') === await nTuile('enPause'),
+    { pourToi: [await sommeColonne('pourToi'), await nTuile('pourToi')], bouge: [await sommeColonne('bouge'), await nTuile('caAvance')], dort: [await sommeColonne('dort'), await nTuile('enPause')] })
   await capture(page, 'ou-jen-suis')
-  if (bMoment && bMoment.height <= 400) verifie('« En ce moment » entièrement dans le premier écran (844 px)', bMoment.y + bMoment.height <= 844, bMoment)
+  await page.getByTestId('detail-ou-jen-suis').click()
+  // Toucher une tuile ouvre sa liste ; une ligne de la liste ouvre la conversation.
+  if (await nTuile('pourToi')) {
+    await page.getByTestId('tuile-pourToi').click()
+    const dlgT = page.getByRole('dialog').filter({ hasText: 'Pour toi' })
+    await dlgT.waitFor({ timeout: 5000 })
+    verifie('tuile « pour toi » → la liste de ses chantiers', await dlgT.getByTestId('ligne-liste-ou-jen-suis').count() >= 1)
+    await page.keyboard.press('Escape')
+    await dlgT.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
   const bToi = await page.getByTestId('a-toi').boundingBox()
-  // « Au mieux » : quand beaucoup de choses tournent VRAIMENT (plusieurs sessions et agents, données
-  // réelles), « En ce moment » peut dépasser l'écran à lui seul ; l'onglet « Tout » annonce alors le
-  // nombre de choses qui t'attendent (🔴 n), déjà visible. Sinon, « À toi » doit commencer à l'écran.
-  if (bMoment && bMoment.height > 400) {
-    console.log(`    (« En ce moment » fait ${Math.round(bMoment.height)} px avec l’activité réelle de l’instant : on vérifie que l’onglet annonce « À toi »)`)
-    verifie('beaucoup d’activité réelle : « À toi » annoncé dans le premier écran (nombre sur l’onglet « Tout » et colonne « pour toi »)', (await page.getByTestId('onglet-tout').getByTestId('pastille-a-toi').count()) === 1 || (await page.getByTestId('a-toi-total').textContent()) === '0')
-  } else verifie('le début de « À toi » est dans le premier écran', bToi && bToi.y + 40 <= 844, bToi)
+  verifie('« À toi de jouer » commence dans le premier écran (844 px)', bToi && bToi.y + 60 <= 844, bToi)
+  const bOrdre = [await page.getByTestId('a-toi').boundingBox(), await page.getByTestId('en-ce-moment').boundingBox(), await page.getByTestId('a-lancer').boundingBox()]
+  verifie('ordre : À toi de jouer, puis Ça avance tout seul, puis Prêt à lancer', bOrdre.every(Boolean) && bOrdre[0].y < bOrdre[1].y && bOrdre[1].y < bOrdre[2].y)
+  verifie('« À toi de jouer » : 4 lignes au plus avant « Voir les N autres »', await page.getByTestId('element-a-toi').count() <= 4)
+  const ligne1 = page.getByTestId('element-a-toi').first()
+  if (await ligne1.count()) {
+    verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
+      (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
+      && ['Répondre', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
+  }
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
   const vivants = compterVivants()
   if (vivants.barres + vivants.sessions === 0) {
-    verifie('aucune preuve de vie → « 😴 Personne ne travaille en ce moment » + comment relancer',
-      await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille/.test(await page.getByTestId('personne-ne-travaille').textContent()) && /copie la consigne/.test(await page.getByTestId('personne-ne-travaille').textContent()))
+    verifie('aucune preuve de vie → « Personne ne travaille en ce moment » + comment lancer',
+      await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille/.test(await page.getByTestId('personne-ne-travaille').textContent()) && /Lancer/.test(await page.getByTestId('personne-ne-travaille').textContent()))
   } else {
-    console.log(`    (${vivants.sessions} session(s) suivie(s) et ${vivants.barres} barre(s) vivante(s) en base à l’instant : « Personne ne travaille » vérifié plus bas, sur les données de test)`)
-    verifie('« En ce moment » : autant de sessions actives qu’en base', await page.getByTestId('session-active').count() === vivants.sessions, { ecran: await page.getByTestId('session-active').count(), base: vivants.sessions })
-    verifie('« En ce moment » : autant de barres de chantier vivantes qu’en base', await page.getByTestId('ligne-en-ce-moment').count() === vivants.barres, { ecran: await page.getByTestId('ligne-en-ce-moment').count(), base: vivants.barres })
+    console.log(`    (${vivants.sessions} session(s) suivie(s) et ${vivants.barres} barre(s) vivante(s) en base à l’instant)`)
+    await page.getByTestId('detail-sessions').click()
+    verifie('détail « Qui travaille » : autant de conversations actives qu’en base', await page.getByTestId('session-active').count() === vivants.sessions, { ecran: await page.getByTestId('session-active').count(), base: vivants.sessions })
+    await page.getByTestId('detail-sessions').click()
   }
-  verifie('« Tout » : aucune barre VIVE hors de « En ce moment »', await page.locator('[data-testid="vue-tout"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vive="oui"]').count())
+  verifie('« Tout » : aucune barre VIVE hors de « Ça avance tout seul »', await page.locator('[data-testid="vue-tout"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vive="oui"]').count())
+  verifie('aucune ligne vivante sans preuve : chaque barre vive est sur une ligne « vivant »', await page.locator('[data-testid="ligne-en-ce-moment"][data-vivant="non"] [data-vive="oui"]').count() === 0)
   verifie('aucun défilement horizontal après connexion', (await scrollX()) <= 0, await scrollX())
+  // Des icônes, pas d'emoji : dans ce que l'ÉCRAN écrit (titres de blocs, tuiles, boutons) — pas dans les textes des sessions.
+  const emojisEcran = await page.evaluate(() => [...document.querySelectorAll('[data-testid="vue-tout"] h2, [data-testid="tuiles"], [data-testid="verbe-a-toi"], [data-testid="ouvrir-relance"], [data-testid="lancer"], [data-testid="detail-sessions"], [data-testid="reglages-projets"] > button, header [role="tab"]')]
+    .map((e) => e.textContent).join(' ').match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) ?? [])
+  verifie('des icônes, pas d’emoji : aucun dans les titres de blocs, tuiles, boutons et onglets', emojisEcran.length === 0, emojisEcran)
   await captureUx(page, 'ux-tout')
   await capture(page, 'accueil')
 
-  // Vue projet FacePro : le même entonnoir, premier écran.
+  // Vue projet FacePro : le même tableau de bord, premier écran.
   await page.getByTestId('onglet-facepro').click()
   await page.getByTestId('vue-projet').waitFor({ timeout: 10000 })
   await page.waitForTimeout(500)
-  verifie('FacePro : « En ce moment », « À toi » et « À lancer » en tête de la vue projet',
-    await page.getByTestId('en-ce-moment').count() === 1 && await page.getByTestId('a-toi').count() === 1 && await page.getByTestId('a-lancer').count() === 1)
+  verifie('FacePro : tuiles, « À toi de jouer », « Ça avance tout seul » et « Prêt à lancer » en tête de la vue projet',
+    await page.getByTestId('tuiles').count() === 1 && await page.getByTestId('en-ce-moment').count() === 1 && await page.getByTestId('a-toi').count() === 1 && await page.getByTestId('a-lancer').count() === 1)
   verifie('FacePro : aucune barre colorée sans preuve de vie (la capture du 29/09)',
-    await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vive="oui"], [data-presence="travaille"] [data-vive="oui"]').count())
+    await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vivant="oui"] [data-vive="oui"]').count())
+  verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
+  verifie('FacePro : « Réglages du projet » replié en bas', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
   const vivantsFp = compterVivants('facepro')
   if (vivantsFp.barres + vivantsFp.sessions === 0)
-    verifie('FacePro sans session → « 😴 Personne ne travaille sur ce projet en ce moment »', /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()))
+    verifie('FacePro sans session → « Personne ne travaille sur ce projet en ce moment »', /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()))
   verifie('FacePro : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await captureUx(page, 'ux-projet')
 
@@ -345,92 +385,91 @@ try {
   activiteTest(P3.id, 'silencieux', 30, 120)
   await allerTout()
   await actualiser()
-  const ligneP1 = page.locator(`[data-testid="ligne-en-ce-moment"][data-chantier-ligne="${P1.id}"]`)
-  await ligneP1.waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('une activité mise à jour à l’instant apparaît dans « En ce moment »', await ligneP1.count() === 1)
-  verifie('…avec une barre VIVE', await ligneP1.locator('[data-vive="oui"]').count() === 1)
-  verifie('une activité en_cours vieille de 2 h n’est PAS une ligne vivante',
-    await page.locator(`[data-testid="ligne-en-ce-moment"][data-chantier-ligne="${P2.id}"], [data-testid="ligne-en-ce-moment"][data-chantier-ligne="${P3.id}"]`).count() === 0)
-  // Retour de Raphaël, 29 sept. : « je veux voir tout ce qui progresse, ensemble ».
-  const snP2 = page.locator(`[data-testid="en-ce-moment"] [data-testid="ligne-sans-nouvelles"][data-ligne-chantier="${P2.id}"]`)
-  const snP3 = page.locator(`[data-testid="en-ce-moment"] [data-testid="ligne-sans-nouvelles"][data-ligne-chantier="${P3.id}"]`)
-  verifie('« En ce moment » montre AUSSI les en cours sans nouvelles, au même endroit (barre figée, pris mais silencieux)',
-    await snP2.count() === 1 && await snP3.count() === 1 && (await snP3.textContent()).includes('Pris, mais silencieux'))
-  verifie('…avec le titre du chantier en titre', (await snP2.textContent()).includes(P2.titre) && (await ligneP1.textContent()).includes(P1.titre))
-  // B : ce qui travaille scintille, rien d'autre.
-  verifie('la ligne vivante scintille : « ● travaille » qui pulse + reflet sur la barre',
-    await ligneP1.getByTestId('point-travaille').count() === 1 && await ligneP1.locator('.point-vivant').count() === 1 && await ligneP1.locator('.barre-vive').count() === 1)
-  verifie('la ligne silencieuse, elle, n’anime rien (ni pastille, ni reflet)',
-    await snP3.locator('.point-vivant, .barre-vive, [data-testid="point-travaille"]').count() === 0 && await snP2.locator('.point-vivant, .barre-vive').count() === 0)
+  const ligneP1 = await ligneAvance(P1.id)
+  verifie('une activité mise à jour à l’instant : une ligne PAR CHANTIER dans « Ça avance tout seul »', await ligneP1.count() === 1 && (await ligneP1.getAttribute('data-vivant')) === 'oui')
+  verifie('…avec une barre VIVE et le pourcentage', await ligneP1.locator('[data-vive="oui"]').count() === 1 && (await ligneP1.textContent()).includes('45 %'))
+  verifie('…le titre du CHANTIER en titre, puis « Claude (conversation …) · étape » en petit', (await ligneP1.textContent()).includes(P1.titre) && /Claude \(conversation « .+ »\) · « \[TEST web\] étape vivant »/.test(await ligneP1.textContent()), await ligneP1.textContent())
+  const snP2 = await ligneAvance(P2.id), snP3 = await ligneAvance(P3.id)
+  verifie('« Ça avance » montre AUSSI les en cours sans nouvelles, au même endroit, avec « Relancer »',
+    (await snP2.getAttribute('data-vivant')) === 'non' && (await snP3.getAttribute('data-vivant')) === 'non' && await snP2.getByTestId('ouvrir-relance').count() === 1)
+  verifie('…en mots simples : « Plus de nouvelles » / « Personne dessus », et le dernier signe',
+    /Plus de nouvelles · dernier signe il y a/.test(await snP3.getByTestId('sans-nouvelles').textContent()) && /Personne dessus/.test(await snP2.getByTestId('sans-nouvelles').textContent()), [await snP3.textContent(), await snP2.textContent()])
+  verifie('une ligne vivante n’a pas de bouton « Relancer »', await ligneP1.getByTestId('ouvrir-relance').count() === 0)
+  // Ce qui travaille scintille, rien d'autre.
+  verifie('la ligne vivante scintille : point qui pulse + reflet sur la barre',
+    await ligneP1.locator('.point-vivant').count() === 1 && await ligneP1.locator('.barre-vive').count() === 1)
+  verifie('les lignes sans nouvelles, elles, n’animent rien (ni point, ni reflet), barre grise',
+    await snP3.locator('.point-vivant, .barre-vive').count() === 0 && await snP2.locator('.point-vivant, .barre-vive').count() === 0 && await snP2.locator('[data-vive="non"]').count() === 1)
   const anim = await ligneP1.locator('.barre-vive').evaluate((e) => getComputedStyle(e).animationName)
   verifie('le reflet est réellement animé (animation CSS en cours)', anim && anim !== 'none', anim)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const animReduite = await ligneP1.locator('.point-vivant').evaluate((e) => ({ nom: getComputedStyle(e).animationName, visible: e.getBoundingClientRect().width > 0 }))
-  verifie('« réduire les animations » : la pastille reste, fixe (aucune animation)', animReduite.nom === 'none' && animReduite.visible, animReduite)
+  verifie('« réduire les animations » : le point reste, fixe (aucune animation)', animReduite.nom === 'none' && animReduite.visible, animReduite)
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   // Une nouvelle étape arrive : la ligne clignote une fois.
-  sql(`update activite set etape = '${esc(`${MARQUE2} nouvelle étape`)}', pourcentage = 60, updated_at = now() where chantier_id = '${P1.id}'`)
+  sql(`update activite set etape = '${esc(`${MARQUE2} nouvelle étape`)}', pourcentage = 60, eta_secondes = 1500, updated_at = now() where chantier_id = '${P1.id}'`)
   await page.getByTestId('actualiser').click()
   const flashVu = await page.waitForSelector(`[data-testid="ligne-en-ce-moment"][data-chantier-ligne="${P1.id}"][data-flash="oui"]`, { timeout: 8000 }).then(() => true, () => false)
   verifie('nouvelle étape : bref flash de la ligne vivante', flashVu)
-  verifie('…la barre suit (60 %)', (await ligneP1.textContent()).includes('60 %'))
+  verifie('…la barre suit (60 %), et « reste ~X » seulement quand il est signalé', /60 % · reste ~2\d min/.test(await ligneP1.textContent()) && !/reste/.test(await snP2.textContent()), await ligneP1.textContent())
   await page.getByTestId('en-ce-moment').evaluate((e) => e.scrollIntoView({ block: 'start' }))
   await page.evaluate(() => window.scrollBy(0, -64))
   await captureUx(page, 'ux-en-ce-moment')
   verifie('l’onglet du projet porte la pastille verte (quelqu’un y travaille)', (await ongletTest().getByTestId('pastille-travaillent').count()) === 1, await ongletTest().textContent())
-  // Tap sur la ligne : on arrive sur le chantier, ouvert, dans son projet.
-  await ligneP1.click()
-  await page.getByTestId('vue-projet').waitFor({ timeout: 10000 })
-  const carteP1 = carteId(P1.id)
-  await carteP1.getByTestId('carte-detail').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('tap sur « En ce moment » → la carte du chantier, ouverte, dans son projet', (await ongletTest().getAttribute('aria-selected')) === 'true' && await carteP1.getByTestId('carte-detail').count() === 1)
-  verifie('la carte d’une session vivante dit « 🟢 Claude y travaille », avec la pastille qui pulse', (await carteP1.getByTestId('badge-presence').textContent()).includes('Claude y travaille') && await carteP1.getByTestId('point-travaille').count() === 1)
-  const lien = page.getByTestId('voir-en-ce-moment')
-  verifie('« Tous les chantiers » renvoie vers « En ce moment » (pas de seconde liste de ce qui bouge)', await lien.count() === 1 && /En ce moment/.test(await lien.textContent()))
-  await lien.click()
-  await page.waitForTimeout(700)
-  const bEcm = await page.getByTestId('en-ce-moment').boundingBox()
-  verifie('…et le toucher remonte à « En ce moment »', bEcm && bEcm.y >= 0 && bEcm.y < 400, bEcm)
-  await deplierTout()
-  const carteP2 = carteId(P2.id), carteP3 = carteId(P3.id)
-  verifie('vieille de 2 h, sans réservation → « ⏸️ Personne dessus », barre grise', (await carteP2.getByTestId('badge-presence').textContent()).includes('Personne dessus') && await carteP2.locator('[data-vive="non"]').count() === 1)
-  verifie('…et le détail dit le dernier avancement connu (70 %)', /dernier avancement connu : 70 %/.test(await carteP2.getByTestId('detail-presence').textContent()), await carteP2.getByTestId('detail-presence').textContent())
-  verifie('réservée mais muette depuis 2 h → « 🟡 Pris, mais silencieux »', (await carteP3.getByTestId('badge-presence').textContent()).includes('Pris, mais silencieux'))
-  await carteP2.getByTestId('carte-titre').click()
-  await carteP2.getByTestId('ton-action').waitFor({ timeout: 5000 })
-  verifie('carte dépliée : « Ce qu’on attend de toi » en tête, avec Copier la consigne / Demander où ça en est',
-    /Ce qu’on attend de toi/.test(await carteP2.getByTestId('ton-action').textContent()) && await carteP2.getByTestId('copier-consigne').count() === 1 && await carteP2.getByTestId('demander-ou-ca-en-est').count() === 1)
-  verifie('carte dépliée : l’état technique reste lisible', /État : 🔧 En cours/.test(await carteP2.getByTestId('etat-technique').textContent()))
-  await carteP2.getByTestId('carte-titre').click()
+  // Toucher la ligne : la CONVERSATION du chantier s'ouvre par-dessus, sans changer d'onglet.
+  await ligneP1.locator('button').first().click()
+  await attendreConv(P1.titre)
+  verifie('toucher une ligne → la conversation du chantier, par-dessus « Tout » (onglet inchangé)', (await page.getByTestId('onglet-tout').getAttribute('aria-selected')) === 'true')
+  verifie('en-tête de conversation : « Claude y travaille — 60 % », avec le point qui pulse',
+    /Claude y travaille — 60 %/.test(await conv().getByTestId('presence-conversation').textContent()) && await conv().getByTestId('presence-conversation').locator('.point-vivant').count() === 1)
+  verifie('…et une bulle « En ce moment » avec la barre vive', await conv().getByTestId('bulle-travail').locator('[data-vive="oui"]').count() === 1)
+  verifie('la demande est la première bulle', (await conv().locator('[data-testid="fil-conversation"] > *').first().getAttribute('data-testid')) === 'bulle-demande')
+  verifie('conversation : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await captureUx(page, 'ux-conversation-vivante')
+  // Le geste « retour » du téléphone ferme la conversation (et ne quitte pas le cockpit).
+  await page.goBack()
+  await conv().waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  verifie('« retour » du téléphone : la conversation se ferme, on reste sur l’accueil', await conv().count() === 0 && await page.getByTestId('vue-tout').count() === 1)
+  await (await ligneAvance(P2.id)).locator('button').first().click()
+  await attendreConv(P2.titre)
+  verifie('vieille de 2 h, sans réservation → « personne dessus » en tête', /personne dessus/.test(await conv().getByTestId('presence-conversation').textContent()))
+  const relP2 = conv().getByTestId('bulle-relance')
+  verifie('…et la bulle à faire : le dernier avancement connu (70 %), barre grise, Copier la consigne / Demander où ça en est',
+    /dernier avancement connu : 70 %/.test(await relP2.getByTestId('detail-presence').textContent()) && await relP2.locator('[data-vive="non"]').count() === 1
+    && await relP2.getByTestId('copier-consigne').count() === 1 && await relP2.getByTestId('demander-ou-ca-en-est').count() === 1)
+  verifie('…positionnée sur ce qu’il faut faire', await dansLaVue(relP2))
+  verifie('l’état technique reste lisible, en petit', /État : En cours/.test(await conv().getByTestId('etat-technique').textContent()))
+  await fermerConv()
+  await (await ligneAvance(P3.id)).locator('button').first().click()
+  await attendreConv(P3.titre)
+  verifie('réservée mais muette depuis 2 h → « pris, silencieux »', /pris, silencieux/.test(await conv().getByTestId('presence-conversation').textContent()))
+  await fermerConv()
 
   // ===================================================================
-  // 3. « À lancer » : copier la consigne, demander où ça en est
-  console.log('  — à lancer')
+  // 3. « Prêt à lancer » : Lancer = copier la consigne ; relancer un « sans nouvelles »
+  console.log('  — prêt à lancer')
   const P5 = creerTest('pres libre', { etat: 'libre', priorite: 'haute' })
   activiteTest(P5.id, 'ancien', 20, 300)
-  await allerTout()
   await actualiser()
   const lP5 = await ligneALancer(P5.id)
-  verifie('« À lancer » : ce qui n’a pas commencé, avec son dernier avancement en GRIS', (await lP5.textContent()).includes('Personne dessus') && await lP5.locator('[data-vive="non"]').count() === 1 && await lP5.locator('[data-vive="oui"]').count() === 0)
-  verifie('« À lancer » ne répète ni le vivant ni les en cours sans nouvelles (déjà dans « En ce moment »)',
+  verifie('« Prêt à lancer » : ce qui n’a pas commencé, avec son dernier avancement en GRIS', /arrêté à 20 %/.test(await lP5.textContent()) && await lP5.locator('[data-vive="non"]').count() === 1 && await lP5.locator('[data-vive="oui"]').count() === 0)
+  verifie('« Prêt à lancer » ne répète ni le vivant ni les en cours sans nouvelles (déjà dans « Ça avance »)',
     await page.locator(`[data-testid="ligne-a-lancer"][data-ligne-chantier="${P1.id}"], [data-testid="ligne-a-lancer"][data-ligne-chantier="${P2.id}"], [data-testid="ligne-a-lancer"][data-ligne-chantier="${P3.id}"]`).count() === 0)
-  const lP2 = page.locator(`[data-testid="en-ce-moment"] [data-testid="ligne-sans-nouvelles"][data-ligne-chantier="${P2.id}"]`)
-  verifie('un en cours sans nouvelles dit son dernier avancement (70 %), sans barre vive', (await lP2.textContent()).includes('70 %') && await lP2.locator('[data-vive="oui"], .barre-vive').count() === 0)
+  await lP5.getByTestId('lancer').click()
+  verifie('« Lancer » : les deux gestes (Copier la consigne, Demander où ça en est) et comment faire', await lP5.getByTestId('copier-consigne').count() === 1 && /colle-la dans Claude Code/.test(await lP5.textContent()))
   await page.evaluate(() => navigator.clipboard.writeText('vide'))
-  verifie('ligne sans nouvelles : compacte, les gestes de relance à un toucher', await lP2.getByTestId('copier-consigne').count() === 0 && await lP2.getByTestId('ouvrir-relance').count() === 1)
-  await lP2.getByTestId('ouvrir-relance').click()
-  await lP2.getByTestId('copier-consigne').click()
-  const toastCopie = await toastAuPremierPlan(/Consigne copiée/)
-  verifie('« Copier la consigne » : toast visible', toastCopie, { auPremierPlan: dernierDessus })
-  const pressePapiers = await page.evaluate(() => navigator.clipboard.readText())
+  await lP5.getByTestId('copier-consigne').click()
+  verifie('« Copier la consigne » (Lancer) : toast visible', await toastAuPremierPlan(/Consigne copiée/), { auPremierPlan: dernierDessus })
+  const ppP5 = await page.evaluate(() => navigator.clipboard.readText())
   verifie('« Copier la consigne » : le presse-papiers contient la consigne du BON chantier',
-    pressePapiers.includes(`« ${P2.titre} »`) && pressePapiers.includes(`id ${P2.id}`) && pressePapiers.includes(`projet ${SLUG}`) && pressePapiers.includes('progression'), pressePapiers)
+    ppP5.includes(`« ${P5.titre} »`) && ppP5.includes(`id ${P5.id}`) && ppP5.includes(`projet ${SLUG}`) && ppP5.includes('progression'), ppP5)
   await lP5.evaluate((e) => e.scrollIntoView({ block: 'center' }))
   await page.waitForTimeout(200)
   await captureUx(page, 'ux-a-lancer')
+  const lP2 = await ligneAvance(P2.id)
+  await lP2.getByTestId('ouvrir-relance').click()
   await lP2.getByTestId('demander-ou-ca-en-est').click()
-  const toastOu = await toastAuPremierPlan(/Question posée dans le fil/)
-  verifie('« Demander où ça en est » : toast visible', toastOu, { auPremierPlan: dernierDessus })
+  verifie('« Relancer » → « Demander où ça en est » : toast visible', await toastAuPremierPlan(/Question posée dans le fil/), { auPremierPlan: dernierDessus })
   const demandesOu = sql(`select kind, auteur_type, corps from messages where chantier_id = '${P2.id}'`)
   verifie('« Demander où ça en est » : le message est en base (info, propriétaire, texte convenu)',
     demandesOu.length === 1 && demandesOu[0].kind === 'info' && demandesOu[0].auteur_type === 'proprietaire' && demandesOu[0].corps === MESSAGE_OU_CA_EN_EST, demandesOu)
@@ -446,90 +485,113 @@ try {
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, chantier_id, etape, pourcentage, eta_secondes, progres_at, demarre_at, vu_at) values ('${SID}', '${projet.id}', 'agent-1', 'agent', '${esc(`${MARQUE2} agent qui parle`)}', 'en_cours', '${P4.id}', 'Étape de test', 40, 600, now(), now() - interval '12 minutes', now())`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, demarre_at, vu_at) values ('${SID}', '${projet.id}', 'cmd-1', 'commande', '${esc(`${MARQUE2} commande muette`)}', 'en_cours', now() - interval '3 minutes', now())`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, demarre_at, vu_at, fini_at) values ('${SID}', '${projet.id}', 'fini-1', 'agent', '${esc(`${MARQUE2} agent fini`)}', 'termine', now() - interval '20 minutes', now(), now() - interval '2 minutes')`)
+  // Une conversation qui répond sans chantier : une ligne discrète « hors chantier ».
+  const SIDH = `${SESSION_TEST}hors-${randomUUID().slice(0, 8)}`
+  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at) values ('${SIDH}', '${projet.id}', '${esc(`${MARQUE2} ranger la doc`)}', true, now())`)
   await actualiser()
+  const lP4 = await ligneAvance(P4.id)
+  verifie('un agent qui a signalé : la ligne du CHANTIER dit « 1 assistant de Claude · « Étape de test » »', (await lP4.getAttribute('data-vivant')) === 'oui' && /1 assistant de Claude · « Étape de test »/.test(await lP4.textContent()), await lP4.textContent())
+  verifie('…sa barre vive, 40 %, et le temps restant signalé', await lP4.locator('[data-vive="oui"]').count() === 1 && /40 % · reste ~\d+ min/.test(await lP4.textContent()), await lP4.textContent())
+  const hors = page.getByTestId('hors-chantier').filter({ hasText: 'ranger la doc' })
+  verifie('le travail hors chantier : une ligne discrète « Claude travaille sur autre chose (« … ») »', await hors.count() === 1 && /Claude travaille sur autre chose \(« \[TEST web\] ranger la doc »\)/.test(await hors.textContent()), await hors.textContent().catch(() => null))
+  verifie('résumé en mots simples (conversations · assistants · commandes), replié', /Qui travaille : \d+ conversations? · \d+ assistants? · \d+ commandes?/.test(await page.getByTestId('resume-travail').textContent()) && (await page.getByTestId('detail-sessions').getAttribute('aria-expanded')) === 'false', await page.getByTestId('resume-travail').textContent())
+  await page.getByTestId('detail-sessions').click()
   const blocSession = page.locator(`[data-testid="session-active"][data-session="${SID}"]`)
   await blocSession.waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('la session factice apparaît dans « En ce moment », avec son sujet', await blocSession.count() === 1 && (await blocSession.textContent()).includes('💬 Session [TEST web] session factice'))
+  verifie('le détail montre la session factice, avec son sujet', await blocSession.count() === 1 && (await blocSession.textContent()).includes('Session [TEST web] session factice'))
   verifie('…et son état : « répond en ce moment »', (await blocSession.getByTestId('etat-session').textContent()).includes('répond en ce moment'))
   const tAgent = blocSession.locator('[data-testid="tache"]', { hasText: 'agent qui parle' })
   const tCmd = blocSession.locator('[data-testid="tache"]', { hasText: 'commande muette' })
-  verifie('agent qui a signalé : « 🤖 Agent : … », barre vive, temps restant', (await tAgent.textContent()).includes('🤖 Agent :') && await tAgent.locator('[data-vive="oui"]').count() === 1 && /reste ~\d+ min/.test(await tAgent.textContent()), await tAgent.textContent())
-  verifie('commande muette : « ⚙️ Commande : … », « avancement non signalé », AUCUNE barre', (await tCmd.textContent()).includes('⚙️ Commande :') && await tCmd.getByTestId('non-signale').count() === 1 && await tCmd.getByRole('progressbar').count() === 0)
+  verifie('agent qui a signalé : « Agent : … », barre vive, temps restant', (await tAgent.textContent()).includes('Agent :') && await tAgent.locator('[data-vive="oui"]').count() === 1 && /reste ~\d+ min/.test(await tAgent.textContent()), await tAgent.textContent())
+  verifie('commande muette : « Commande : … », « avancement non signalé », AUCUNE barre', (await tCmd.textContent()).includes('Commande :') && await tCmd.getByTestId('non-signale').count() === 1 && await tCmd.getByRole('progressbar').count() === 0)
   verifie('chaque tâche dit depuis quand elle tourne', /depuis 12 min/.test(await tAgent.textContent()) && /depuis 3 min/.test(await tCmd.textContent()))
   verifie('la tâche liée à un chantier le nomme', (await tAgent.textContent()).includes(P4.titre))
   verifie('les tâches finies depuis peu sont repliées sous la session', (await blocSession.getByTestId('taches-finies').textContent()).includes('1 fini'))
-  verifie('résumé chiffré en tête (sessions · agents · commande)', /\d+ sessions? · \d+ agents? · \d+ commandes?/.test(await page.getByTestId('resume-travail').textContent()), await page.getByTestId('resume-travail').textContent())
-  verifie('l’aide « session ou agent ? » est là, repliée, et s’ouvre', await page.getByTestId('vocabulaire').count() === 1 && (await page.getByTestId('vocabulaire').getAttribute('aria-expanded')) === 'false')
+  verifie('l’aide « c’est quoi ? » est là, repliée, et s’ouvre', await page.getByTestId('vocabulaire').count() === 1 && (await page.getByTestId('vocabulaire').getAttribute('aria-expanded')) === 'false')
   await page.getByTestId('vocabulaire').click()
-  verifie('…elle dit « Une session = une conversation Claude Code… Un agent = un assistant… »', /Une session = une conversation Claude Code[\s\S]*Un agent = un assistant/.test(await page.getByTestId('vocabulaire-texte').textContent()))
+  verifie('…elle explique en mots simples « conversation (ou session) » et « assistant (ou agent) »', /Une conversation \(ou session\)[\s\S]*Un assistant \(ou agent\)/.test(await page.getByTestId('vocabulaire-texte').textContent()))
   await page.getByTestId('vocabulaire').click()
   await blocSession.evaluate((e) => e.scrollIntoView({ block: 'center' }))
   await capture(page, 'sessions-agents')
   await tAgent.getByRole('button', { name: new RegExp(P4.titre.replace(/[[\]]/g, '\\$&')) }).click()
-  const carteP4 = carteId(P4.id)
-  await carteP4.getByTestId('carte-detail').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('un agent vivant lié au chantier → sa carte dit « 🟢 Un agent y travaille »', (await carteP4.getByTestId('badge-presence').textContent()).includes('Un agent y travaille'))
-  verifie('…et la carte dépliée montre l’agent qui y travaille', await carteP4.getByTestId('taches-du-chantier').count() === 1)
-  await allerTout()
+  await attendreConv(P4.titre)
+  verifie('un agent vivant lié au chantier → sa conversation dit « Un agent y travaille — 40 % »', /Un agent y travaille — 40 %/.test(await conv().getByTestId('presence-conversation').textContent()), await conv().getByTestId('presence-conversation').textContent())
+  verifie('…et montre l’agent qui y travaille', await conv().getByTestId('taches-du-chantier').count() === 1)
+  await fermerConv()
 
-  // Une session arrêtée sur une limite (0010) : « ⏸️ En pause », rien ne s'anime.
+  // Une session arrêtée sur une limite (0010) : « En pause », rien ne s'anime.
   const SIDP = `${SESSION_TEST}pause-${randomUUID().slice(0, 8)}`
   sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at, pause_raison, pause_at, pause_detail) values ('${SIDP}', '${projet.id}', '${esc(`${MARQUE2} session en pause`)}', false, now() - interval '90 minutes', 'rate_limit', now() - interval '80 minutes', 'Limite atteinte, reprise à 4 h')`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, etape, pourcentage, progres_at, vu_at) values ('${SIDP}', '${projet.id}', 'agent-p', 'agent', '${esc(`${MARQUE2} agent arrêté`)}', 'en_cours', 'Étape', 30, now(), now())`)
   await actualiser()
+  const horsPause = page.getByTestId('hors-chantier').filter({ hasText: 'session en pause' })
+  await horsPause.waitFor({ timeout: 15000 }).catch(() => {})
+  verifie('session en pause : une ligne « … en pause — limite d’usage atteinte (reprend toute seule quand la limite se lève) »',
+    await horsPause.count() === 1 && (await horsPause.textContent()).includes('en pause — limite d’usage atteinte (reprend toute seule quand la limite se lève)'), await horsPause.textContent().catch(() => null))
+  verifie('…et rien ne s’anime sur cette ligne', await horsPause.locator('.point-vivant, .barre-vive').count() === 0)
+  if ((await page.getByTestId('detail-sessions').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('detail-sessions').click()
   const blocPause = page.locator(`[data-testid="session-active"][data-session="${SIDP}"]`)
-  await blocPause.waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('session en pause : « ⏸️ En pause — limite d’usage atteinte (reprend toute seule quand la limite se lève) »',
-    await blocPause.getByTestId('session-en-pause').count() === 1 && (await blocPause.textContent()).includes('En pause — limite d’usage atteinte (reprend toute seule quand la limite se lève)'))
-  verifie('…avec le détail en petit', (await blocPause.textContent()).includes('reprise à 4 h'))
-  verifie('…et rien ne s’anime sous une session en pause', await blocPause.locator('.point-vivant, .barre-vive, [data-testid="point-travaille"]').count() === 0)
-  await blocPause.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await blocPause.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('dans le détail : « En pause — … » avec le détail en petit, rien d’animé', await blocPause.getByTestId('session-en-pause').count() === 1 && (await blocPause.textContent()).includes('reprise à 4 h') && await blocPause.locator('.point-vivant, .barre-vive, [data-testid="point-travaille"]').count() === 0)
+  await horsPause.evaluate((e) => e.scrollIntoView({ block: 'center' }))
   await capture(page, 'session-pause')
+  await page.getByTestId('detail-sessions').click()
 
-  // Une fusion proposée par Claude : « Garder séparés » la fait disparaître.
+  // Une fusion proposée par Claude : « Trancher » ouvre la conversation ; « Garder séparés » la fait disparaître.
   console.log('  — fusion proposée')
   const F1 = creerTest('fusion source', { etat: 'libre' })
   const F2 = creerTest('fusion cible', { etat: 'libre' })
   const optionsF = JSON.stringify([{ libelle: 'Fusionner', recommande: true, source: F1.id, cible: F2.id, aide: 'Tout passe dans la cible.' }, { libelle: 'Garder séparés' }]).replace(/'/g, "''")
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('${projet.id}', '${F2.id}', 'verifier-web', 'session', 'fusion', '${esc(`${MARQUE2} Ces deux chantiers semblent le même sujet. Les fusionner ?`)}', 'Même demande, mots différents.', '${optionsF}'::jsonb)`)
   await actualiser()
-  const elF = page.locator('[data-testid="element-a-toi"][data-type="fusion"]', { hasText: 'semblent le même sujet' })
-  await elF.waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('« À toi » : « 🔀 Claude propose de fusionner », avec le pourquoi et deux boutons',
-    await elF.count() === 1 && (await elF.textContent()).includes('Claude propose de fusionner') && (await elF.textContent()).includes('Même demande') && await elF.getByTestId('fusionner').count() === 1 && await elF.getByTestId('garder-separes').count() === 1)
-  await elF.scrollIntoViewIfNeeded()
+  const elF = await elementAToi(F2.id, 'fusion')
+  verifie('« À toi de jouer » : la fusion, « Claude propose de fusionner deux chantiers », bouton « Trancher »',
+    /Claude propose de fusionner deux chantiers/.test(await elF.getByTestId('attente-a-toi').textContent()) && (await elF.getByTestId('verbe-a-toi').textContent()).trim() === 'Trancher')
+  await elF.getByTestId('verbe-a-toi').click()
+  await attendreConv(F2.titre)
+  const blocF = conv().getByTestId('bloc-fusion')
+  verifie('conversation : la bulle de fusion, avec le pourquoi et deux réponses toutes prêtes',
+    await blocF.count() === 1 && (await blocF.textContent()).includes('Même demande') && await blocF.getByTestId('fusionner').count() === 1 && await blocF.getByTestId('garder-separes').count() === 1)
+  verifie('…positionnée dessus à l’ouverture', await dansLaVue(blocF))
   await capture(page, 'fusion')
-  await elF.getByTestId('garder-separes').click()
-  const toastF = await toastAuPremierPlan(/Gardés séparés/)
-  verifie('« Garder séparés » : toast visible', toastF, { auPremierPlan: dernierDessus })
-  await elF.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
-  verifie('« Garder séparés » : la suggestion disparaît de « À toi »', await elF.count() === 0)
+  await blocF.getByTestId('garder-separes').click()
+  verifie('« Garder séparés » : toast visible (au-dessus de la conversation)', await toastAuPremierPlan(/Gardés séparés/), { auPremierPlan: dernierDessus })
+  await blocF.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  verifie('« Garder séparés » : la bulle devient « Tranché : Garder séparés »', await blocF.count() === 0 && /Tranché : Garder séparés/.test(await conv().textContent()))
   const fBase = sql(`select reponse, answered_at from messages where chantier_id = '${F2.id}' and kind = 'fusion'`)[0]
   const f1Base = sql(`select archived_at from chantiers where id = '${F1.id}'`)[0]
   verifie('« Garder séparés » : en base, tranchée sans fusionner', fBase?.reponse === 'Garder séparés' && !!fBase.answered_at && !f1Base?.archived_at, { fBase, f1Base })
+  await fermerConv()
+  verifie('…et la fusion quitte « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-type="fusion"][data-element-chantier="${F2.id}"]`).count() === 0)
 
   // ===================================================================
-  // 4. « À toi » : une question se répond sans rien déplier
+  // 4. « À toi de jouer » : une question → « Répondre » → la conversation, positionnée sur la question
   console.log('  — à toi : question')
   const Q1 = creerTest('question', { etat: 'libre' })
   await allerCockpit()
   await actualiser()
   const options = JSON.stringify([{ libelle: 'Option A', aide: 'la première', recommande: true }, { libelle: 'Option B' }]).replace(/'/g, "''")
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('${projet.id}', '${Q1.id}', 'verifier-web', 'session', 'question', '${MARQUE} Quelle option ?', 'Pour vérifier l''écran.', '${options}'::jsonb)`)
-  const elQ = page.locator('[data-testid="element-a-toi"][data-type="question"]', { hasText: `${MARQUE} Quelle option` })
+  const elQsel = `[data-testid="element-a-toi"][data-type="question"][data-element-chantier="${Q1.id}"]`
   let directVu = true
-  try { await elQ.waitFor({ timeout: 12000 }) } catch { directVu = false; await actualiser(); await elQ.waitFor({ timeout: 15000 }) }
+  try { await page.locator(elQsel).waitFor({ timeout: 12000 }) } catch { directVu = false; await actualiser() }
   // D-09 : « actualisation en live hyper précise ». Le direct doit la montrer SANS « Actualiser ».
   if (wsPossible) verifie('la question apparaît EN DIRECT, sans « Actualiser »', directVu)
   else verifie('sans direct (conteneur), la question apparaît après « Actualiser », et l’écran le dit', await page.getByTestId('direct-coupe').count() === 1)
-  const nQ = await page.getByTestId('groupe-a-toi-question').getByTestId('compte-groupe').textContent()
-  verifie('« À toi » compte la bonne quantité de questions du projet', Number(nQ) === nAttenteAvant + 1, { affiche: nQ, attendu: nAttenteAvant + 1 })
-  verifie('la question porte le titre de son chantier', (await elQ.textContent()).includes(Q1.titre))
-  const blocQ = elQ.getByTestId('bloc-question')
-  verifie('options visibles SANS rien déplier, la recommandée marquée ★', await blocQ.isVisible() && (await blocQ.textContent()).includes('★ recommandé'))
+  const elQ = await elementAToi(Q1.id, 'question')
+  verifie('« À toi de jouer » compte la question du projet (tuile « pour toi » comprise)', await page.locator('[data-testid="element-a-toi"][data-type="question"]').count() >= nAttenteAvant + 1 && Number(await page.getByTestId('tuile-pourToi').getByTestId('nombre-tuile').textContent()) === Number(await page.getByTestId('a-toi-total').textContent()))
+  verifie('la ligne : le titre du chantier d’abord, « Claude te pose une question », bouton « Répondre »',
+    (await elQ.getByTestId('titre-a-toi').textContent()).includes(Q1.titre) && /Claude te pose une question/.test(await elQ.getByTestId('attente-a-toi').textContent()) && (await elQ.getByTestId('verbe-a-toi').textContent()).trim() === 'Répondre')
   await deplierTout()
-  verifie('la carte du chantier dit « 🔴 Attend ta réponse »', (await carteId(Q1.id).getByTestId('badge-presence').textContent()).includes('Attend ta réponse'))
-  await elQ.scrollIntoViewIfNeeded()
+  verifie('dans « Tous les chantiers », sa ligne dit « Attend ta réponse »', (await ligneId(Q1.id).getByTestId('badge-presence').textContent()).includes('Attend ta réponse'))
+  await elQ.getByTestId('verbe-a-toi').click()
+  await attendreConv(Q1.titre)
+  const blocQ = conv().getByTestId('bloc-question')
+  verifie('« Répondre » → la conversation, positionnée sur la question', await blocQ.count() === 1 && await dansLaVue(blocQ))
+  const taillesQ = await blocQ.evaluate((b) => [...b.querySelectorAll('p')].map((p) => ({ t: p.textContent, px: parseFloat(getComputedStyle(p).fontSize) })))
+  const pxQ = taillesQ.find((x) => x.t.includes('Quelle option'))?.px ?? 0, pxP = taillesQ.find((x) => x.t.includes('Pour vérifier'))?.px ?? 99
+  verifie('la question en gros, le pourquoi en petit dessous, les réponses toutes prêtes, la recommandée marquée',
+    pxQ > pxP && (await blocQ.textContent()).includes('recommandé') && await blocQ.getByRole('radio').count() === 2, { pxQ, pxP })
   await capture(page, 'question')
   await blocQ.getByRole('radio', { name: /Option A/ }).click()
   await blocQ.getByPlaceholder(/précision/i).fill('précision de test')
@@ -539,19 +601,24 @@ try {
   verifie('réponse : la photo jointe s’affiche en vignette, envoyée', await blocQ.locator('[data-testid="piece-jointe"][data-etat="ok"] img').count() === 1)
   await capture(page, 'question-avec-photo')
   await blocQ.getByTestId('valider-reponse').click()
-  const toastRep = await toastAuPremierPlan(/Réponse enregistrée/)
-  verifie('réponse depuis « À toi » : toast visible', toastRep, { auPremierPlan: dernierDessus })
-  await elQ.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
-  verifie('la question répondue quitte « À toi »', await elQ.count() === 0)
+  verifie('réponse : toast visible (au-dessus de la conversation)', await toastAuPremierPlan(/Réponse enregistrée/), { auPremierPlan: dernierDessus })
+  await blocQ.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  verifie('la question répondue devient une bulle « Réponse : Option A — précision de test »', await blocQ.count() === 0 && /Réponse : Option A — précision de test/.test(await conv().textContent()))
   const rep = sql(`select reponse, precision, answered_at from messages where corps like '${MARQUE}%'`)[0]
   verifie('la réponse est en base (option + précision + answered_at)', rep && rep.reponse === 'Option A' && rep.precision === 'précision de test' && !!rep.answered_at, rep)
   const pjQ = sql(`select corps, medias from messages where chantier_id = '${Q1.id}' and kind = 'info' and jsonb_array_length(medias) > 0`)
   verifie('la photo de la réponse est dans le fil du chantier (message info + medias)', pjQ.length === 1 && pjQ[0].medias[0].type === 'image/png' && pjQ[0].medias[0].chemin.startsWith(`${projet.id}/${Q1.id}/`) && /Option A/.test(pjQ[0].corps), pjQ)
   const objQ = sql(`select count(*) as n from storage.objects where bucket_id = 'cockpit-medias' and name = '${esc(pjQ[0]?.medias?.[0]?.chemin ?? '')}'`)[0]
   verifie('le fichier est bien dans le stockage privé', Number(objQ.n) === 1, objQ)
+  const vignetteQ = conv().locator('[data-testid="bulle"] [data-testid="media"] img').first()
+  await vignetteQ.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  verifie('la photo s’affiche dans une bulle de la conversation (lien signé, image chargée)', await vignetteQ.count() === 1 && await vignetteQ.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
+  await fermerConv()
+  verifie('la question répondue quitte « À toi de jouer »', await page.locator(elQsel).count() === 0)
 
   // ===================================================================
-  // 5. « À toi » : vérifier et certifier, avec la frise de mise en ligne
+  // 5. À vérifier : « Tester » → la conversation (frise, comment vérifier, Ça marche / Corriger)
   console.log('  — à toi : à vérifier, mise en ligne')
   const CV = '1. Ouvre la page https://rnab26.github.io/Cockpit-General/ sur ton téléphone. 2. Touche la carte « Réglages ». 3. Tu dois voir ton e-mail en haut.'
   const iso = (min) => new Date(Date.now() - min * 60_000).toISOString()
@@ -562,8 +629,15 @@ try {
   await allerTout()
   await actualiser()
   const elV1 = await elementAToi(v1.id, 'a_verifier')
-  const encadre = elV1.getByTestId('comment-verifier')
-  verifie('à vérifier : « 👉 Comment vérifier » visible directement dans « À toi » (rien à déplier)', await encadre.count() === 1 && await encadre.isVisible())
+  verifie('à vérifier en ligne : « en ligne, à tester », bouton « Tester »', /en ligne, à tester/.test(await elV1.getByTestId('attente-a-toi').textContent()) && (await elV1.getByTestId('verbe-a-toi').textContent()).trim() === 'Tester')
+  const elV3 = await elementAToi(v3.id, 'a_verifier')
+  verifie('à vérifier pas encore en ligne : « livré, pas encore en ligne »', /livré, pas encore en ligne/.test(await elV3.getByTestId('attente-a-toi').textContent()))
+  await (await elementAToi(v1.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+  await attendreConv(v1.titre)
+  const blocV1 = conv().getByTestId('bloc-validation')
+  verifie('« Tester » → la conversation, positionnée sur la vérification', await blocV1.count() === 1 && await dansLaVue(blocV1))
+  const encadre = blocV1.getByTestId('comment-verifier')
+  verifie('à vérifier : « Comment vérifier » visible directement', await encadre.count() === 1 && await encadre.isVisible())
   const etapesV = encadre.getByTestId('etape-verifier')
   const nEtapes = await etapesV.count()
   const ys = []
@@ -574,125 +648,165 @@ try {
   const lienCv = encadre.getByRole('link')
   verifie('le lien du texte est cliquable, nouvel onglet, rel noopener',
     await lienCv.count() === 1 && await lienCv.getAttribute('href') === 'https://rnab26.github.io/Cockpit-General/' && await lienCv.getAttribute('target') === '_blank' && /noopener/.test(await lienCv.getAttribute('rel') ?? ''))
-  const [bEnc, bCert] = [await encadre.boundingBox(), await elV1.getByTestId('btn-certifier').boundingBox()]
-  verifie('l’encadré est AVANT les boutons « certifier / corriger »', bEnc && bCert && bEnc.y + bEnc.height <= bCert.y, { bEnc, bCert })
-  const friseV1 = elV1.getByTestId('frise-en-ligne')
+  const [bEnc, bCert] = [await encadre.boundingBox(), await blocV1.getByTestId('btn-certifier').boundingBox()]
+  verifie('l’encadré est AVANT les boutons « Ça marche / Corriger »', bEnc && bCert && bEnc.y + bEnc.height <= bCert.y, { bEnc, bCert })
+  const friseV1 = blocV1.getByTestId('frise-en-ligne')
   const etatsFrise = await friseV1.getByTestId('etape-en-ligne').evaluateAll((l) => l.map((e) => e.getAttribute('data-etat')))
   verifie('frise complète : 4 étapes cochées (Codé, Envoyé, Vérifié par les robots, En ligne)', etatsFrise.join(',') === 'fait,fait,fait,fait' && /Codé[\s\S]*Envoyé[\s\S]*robots[\s\S]*En ligne/.test(await friseV1.textContent()), etatsFrise)
   verifie('frise : l’adresse en ligne est un lien', await friseV1.getByRole('link').getAttribute('href') === 'https://rnab26.github.io/Cockpit-General/')
-  const phraseV1 = elV1.getByTestId('phrase-en-ligne')
+  const phraseV1 = blocV1.getByTestId('phrase-en-ligne')
   verifie('phrase : « C’est en ligne depuis … : tu peux vérifier maintenant »', /C’est en ligne depuis \d+ h \d{2}( du matin)? : tu peux vérifier maintenant/.test(await phraseV1.textContent()), await phraseV1.textContent())
-  const [bPhrase, bCert2] = [await phraseV1.boundingBox(), await elV1.getByTestId('btn-certifier').boundingBox()]
-  verifie('la phrase est juste au-dessus de « Ça fonctionne »', bPhrase && bCert2 && bPhrase.y + bPhrase.height <= bCert2.y && bCert2.y - (bPhrase.y + bPhrase.height) < 40, { bPhrase, bCert2 })
-  const elV3 = await elementAToi(v3.id, 'a_verifier')
-  const etatsV3 = await elV3.getByTestId('etape-en-ligne').evaluateAll((l) => l.map((e) => e.getAttribute('data-etat')))
-  verifie('seulement « envoyé » : « ⏳ Pas encore en ligne : attends avant de vérifier »', /Pas encore en ligne/.test(await elV3.getByTestId('phrase-en-ligne').textContent()))
-  verifie('…et les étapes suivantes sont grises', etatsV3.join(',') === 'fait,fait,attente,attente', etatsV3)
+  const [bPhrase, bCert2] = [await phraseV1.boundingBox(), await blocV1.getByTestId('btn-certifier').boundingBox()]
+  verifie('la phrase est juste au-dessus de « Ça marche »', bPhrase && bCert2 && bPhrase.y + bPhrase.height <= bCert2.y && bCert2.y - (bPhrase.y + bPhrase.height) < 40, { bPhrase, bCert2 })
   verifie('à vérifier : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
-  await elV1.evaluate((e) => e.scrollIntoView({ block: 'start' }))
-  await page.evaluate(() => window.scrollBy(0, -64))
-  await page.waitForTimeout(200)
-  await captureUx(page, 'ux-tout-a-toi')
-
+  await captureUx(page, 'ux-conversation-a-verifier')
+  // Certifier v1.
+  await blocV1.getByTestId('btn-certifier').click()
+  await blocV1.getByRole('button', { name: /Je certifie/ }).click()
+  verifie('« Ça marche » → « Je certifie » : toast visible', await toastAuPremierPlan(/certifié/), { auPremierPlan: dernierDessus })
+  await blocV1.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  await conv().getByTestId('bulle-certifie').waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('certifié : la conversation le dit (« Certifié par … »)', await conv().getByTestId('bulle-certifie').count() === 1)
+  verifie('en base : certifié (valide)', sql(`select etat from chantiers where id = '${v1.id}'`)[0]?.etat === 'valide')
+  const replie = conv().getByTestId('comment-verifier-replie')
+  verifie('certifié : « Comment vérifier » présent, replié', await replie.count() === 1 && await replie.getByTestId('etape-verifier').count() === 0)
+  await replie.locator('> button').click()
+  verifie('certifié : déplié, les trois étapes reviennent', await replie.getByTestId('etape-verifier').count() === 3)
+  verifie('certifié : la frise de mise en ligne reste dans la conversation', await conv().getByTestId('frise-en-ligne').count() === 1)
+  verifie('« lancé par Claude » sur un chantier d’origine session', await conv().getByTestId('origine-session').count() === 1)
+  await capture(page, 'a-toi-certifie')
+  await fermerConv()
+  verifie('le chantier certifié quitte « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v1.id}"]`).count() === 0)
   // Sans étapes : la phrase et le bouton qui écrit la demande dans le fil.
-  const elV2 = await elementAToi(v2.id, 'a_verifier')
-  const videV2 = elV2.getByTestId('comment-verifier-vide')
+  await (await elementAToi(v2.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+  await attendreConv(v2.titre)
+  const videV2 = conv().getByTestId('comment-verifier-vide')
   verifie('sans étapes : « La session n’a pas dit comment vérifier. Demande-lui avant de certifier : »', (await videV2.textContent()).includes('La session n’a pas dit comment vérifier. Demande-lui avant de certifier'))
   await videV2.getByTestId('btn-demander-verifier').click()
-  const toastDemande = await toastAuPremierPlan(/Demande envoyée/)
-  verifie('« Demander comment vérifier » : toast de succès visible', toastDemande, { auPremierPlan: dernierDessus })
+  verifie('« Demander comment vérifier » : toast de succès visible', await toastAuPremierPlan(/Demande envoyée/), { auPremierPlan: dernierDessus })
   const demandes = sql(`select kind, auteur_type, corps, answered_at from messages where chantier_id = '${v2.id}'`)
   verifie('la demande est en base : kind info, auteur propriétaire, texte convenu',
     demandes.length === 1 && demandes[0].kind === 'info' && demandes[0].auteur_type === 'proprietaire' && demandes[0].corps === 'Raphaël demande : comment vérifier ce chantier ? (étapes, où aller, ce que je dois voir)', demandes)
   await videV2.getByTestId('deja-demande').waitFor({ timeout: 10000 }).catch(() => {})
   verifie('l’écran dit ensuite « Déjà demandé » (pas de doublon en aveugle)', await videV2.getByTestId('deja-demande').count() === 1 && (await videV2.getByTestId('btn-demander-verifier').textContent()).includes('Redemander'))
+  verifie('…et la demande apparaît comme une bulle à droite (toi)', await conv().locator('[data-testid="bulle"][data-cote="droite"]', { hasText: 'comment vérifier ce chantier' }).count() === 1)
   await capture(page, 'comment-verifier-vide')
-
-  // Certifier v1 depuis « À toi ».
-  await elV1.getByTestId('btn-certifier').click()
-  await elV1.getByRole('button', { name: /Je certifie/ }).click()
-  const toastCert = await toastAuPremierPlan(/certifié/)
-  verifie('certifier depuis « À toi » : toast visible', toastCert, { auPremierPlan: dernierDessus })
-  await elV1.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
-  verifie('le chantier certifié quitte « À toi »', await elV1.count() === 0)
-  verifie('en base : certifié (valide)', sql(`select etat from chantiers where id = '${v1.id}'`)[0]?.etat === 'valide')
-  await capture(page, 'a-toi-certifie')
-  // Certifié : les étapes restent disponibles, repliées ; l'origine « session » se lit.
-  await allerCockpit()
-  const bacActif = page.getByTestId('bac-actif')
-  await bacActif.waitFor({ timeout: 10000 })
-  if ((await bacActif.locator('> button').getAttribute('aria-expanded')) !== 'true') await bacActif.locator('> button').click()
-  const carteV1b = bacActif.locator('[data-testid="carte"]', { hasText: v1.titre })
-  await carteV1b.waitFor({ timeout: 15000 })
-  verifie('« 💬 lancé depuis une session Claude » sur un chantier d’origine session', await carteV1b.getByTestId('origine-session').count() === 1)
-  if (await carteV1b.getByTestId('carte-detail').count() === 0) await carteV1b.getByTestId('carte-titre').click()
-  const replie = carteV1b.getByTestId('comment-verifier-replie')
-  await replie.waitFor({ timeout: 5000 }).catch(() => {})
-  verifie('certifié : « Comment vérifier » présent, replié', await replie.count() === 1 && await replie.getByTestId('etape-verifier').count() === 0)
-  await replie.locator('> button').click()
-  verifie('certifié : déplié, les trois étapes reviennent', await replie.getByTestId('etape-verifier').count() === 3)
-  verifie('certifié : la frise de mise en ligne reste sur la carte', await carteV1b.getByTestId('frise-en-ligne').count() === 1)
-  await carteV1b.getByTestId('carte-titre').click()
+  await fermerConv()
+  // Corriger v3, avec une photo de ce qui ne marche pas.
+  await (await elementAToi(v3.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+  await attendreConv(v3.titre)
+  const blocV3 = conv().getByTestId('bloc-validation')
+  const etatsV3 = await blocV3.getByTestId('etape-en-ligne').evaluateAll((l) => l.map((e) => e.getAttribute('data-etat')))
+  verifie('seulement « envoyé » : « Pas encore en ligne : attends avant de vérifier »', /Pas encore en ligne/.test(await blocV3.getByTestId('phrase-en-ligne').textContent()))
+  verifie('…et les étapes suivantes sont grises', etatsV3.join(',') === 'fait,fait,attente,attente', etatsV3)
+  await blocV3.getByTestId('btn-corriger').click()
+  await blocV3.getByRole('button', { name: /Envoyer la correction/ }).click()
+  verifie('« Corriger » sans mots : refusé en clair (c’est ce que Claude lira)', await toastAuPremierPlan(/Dis ce qui ne marche pas/))
+  await blocV3.locator('textarea').fill(`${MARQUE2} le bouton ne répond pas`)
+  await blocV3.getByTestId('entree-medias').setInputFiles({ name: 'bug.png', mimeType: 'image/png', buffer: PNG_TEST })
+  await blocV3.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
+  await blocV3.getByRole('button', { name: /Envoyer la correction/ }).click()
+  verifie('« Corriger » : toast visible', await toastAuPremierPlan(/Correction envoyée/), { auPremierPlan: dernierDessus })
+  const v3Base = sql(`select etat from chantiers where id = '${v3.id}'`)[0]
+  const v3Msgs = sql(`select corps, medias from messages where chantier_id = '${v3.id}' order by created_at`)
+  verifie('« Corriger » : en base, le chantier revient à Claude (libre), ses mots et la photo dans le fil',
+    v3Base?.etat === 'libre' && v3Msgs.some((m) => m.corps.includes('le bouton ne répond pas')) && v3Msgs.some((m) => (m.medias ?? []).length === 1), { v3Base, v3Msgs })
+  await fermerConv()
 
   // ===================================================================
-  // 6. Une carte reportée : « Écrire à Claude », « Relancer maintenant »
-  console.log('  — carte reportée')
+  // 6. À cadrer et bloqué : « Décider » / « Débloquer », la barre d'écriture, « prêt à lancer »
+  console.log('  — à cadrer, bloqué')
+  const K1 = creerTest('a cadrer', { etat: 'a_cadrer', demande: 'Faut-il un mode sombre ?' })
+  const B1 = creerTest('bloque', { etat: 'bloque' })
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${B1.id}', 'verifier-web', 'session', 'blocage', '${esc(`${MARQUE2} Il manque la clé de test dans l’environnement`)}')`)
+  await actualiser()
+  const elK = await elementAToi(K1.id, 'a_cadrer')
+  verifie('à cadrer : « ta décision avant de coder », bouton « Décider »', /ta décision avant de coder/.test(await elK.getByTestId('attente-a-toi').textContent()) && (await elK.getByTestId('verbe-a-toi').textContent()).trim() === 'Décider')
+  const elB = await elementAToi(B1.id, 'bloque')
+  verifie('bloqué : « bloqué : <ce qui bloque> », bouton « Débloquer »', /bloqué : \[TEST web\] Il manque la clé/.test(await elB.getByTestId('attente-a-toi').textContent()) && (await elB.getByTestId('verbe-a-toi').textContent()).trim() === 'Débloquer')
+  await elK.getByTestId('verbe-a-toi').click()
+  await attendreConv(K1.titre)
+  verifie('« Décider » → la conversation : la demande, puis la bulle « Ta décision avant de coder »', /Faut-il un mode sombre/.test(await conv().getByTestId('bulle-demande').textContent()) && await dansLaVue(conv().getByTestId('bloc-cadrer')))
+  const barreK = conv().getByTestId('ecrire-a-claude')
+  verifie('la barre du bas invite à écrire la décision', /Ta décision/.test(await barreK.locator('textarea').getAttribute('placeholder')))
+  await barreK.locator('textarea').fill(`${MARQUE2} oui, suivre le téléphone`)
+  await barreK.getByTestId('envoyer-message').click()
+  verifie('décision envoyée : toast visible', await toastAuPremierPlan(/Message envoyé/), { auPremierPlan: dernierDessus })
+  await conv().locator('[data-testid="bulle"][data-cote="droite"]', { hasText: 'oui, suivre le téléphone' }).waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('…elle apparaît en bulle à droite', await conv().locator('[data-testid="bulle"][data-cote="droite"]', { hasText: 'oui, suivre le téléphone' }).count() === 1)
+  await conv().getByTestId('pret-a-lancer').click()
+  verifie('« C’est décidé : prêt à lancer » : toast visible', await toastAuPremierPlan(/est prêt/))
+  verifie('…en base : libre', sql(`select etat from chantiers where id = '${K1.id}'`)[0]?.etat === 'libre')
+  await fermerConv()
+  await (await elementAToi(B1.id, 'bloque')).getByTestId('verbe-a-toi').click()
+  await attendreConv(B1.titre)
+  const blocB = conv().getByTestId('bloc-bloque')
+  verifie('« Débloquer » → la bulle « Claude est bloqué » avec ce qui bloque', /Il manque la clé de test/.test(await blocB.textContent()) && await dansLaVue(blocB))
+  await capture(page, 'bloque')
+  await blocB.getByTestId('pret-a-lancer').click()
+  verifie('« Débloqué : prêt à lancer » : toast visible, en base libre', await toastAuPremierPlan(/est prêt/) && sql(`select etat from chantiers where id = '${B1.id}'`)[0]?.etat === 'libre')
+  await fermerConv()
+
+  // ===================================================================
+  // 7. Un chantier reporté : « Écrire à Claude » avec une photo, « Relancer maintenant »
+  console.log('  — reporté, écrire à Claude')
   const R1 = creerTest('reporte', { etat: 'reporte', demande: 'Mis de côté pour la v2.' })
+  await allerCockpit()
   await actualiser()
   await deplierTout()
-  const carteR1 = carteId(R1.id)
-  await carteR1.waitFor({ timeout: 15000 })
-  await carteR1.getByTestId('carte-titre').click()
-  await carteR1.getByTestId('carte-detail').waitFor({ timeout: 5000 })
-  verifie('reporté : « Rien à faire de ta part, sauf si tu veux le relancer »', /Rien à faire de ta part/.test(await carteR1.getByTestId('ton-action').textContent()))
-  const ecrire = carteR1.getByTestId('ecrire-a-claude')
-  verifie('« ✍️ Écrire à Claude » visible sans rien déplier d’autre que la carte', await ecrire.isVisible() && /Écrire à Claude/.test(await ecrire.textContent()) && /prochaine session/.test(await ecrire.textContent()))
-  verifie('fil vide : aucun « 0 message » replié', await carteR1.getByTestId('fil').count() === 0)
-  const [bEcrire, bActions] = [await ecrire.boundingBox(), await carteR1.getByTestId('actions-admin').boundingBox()]
-  verifie('la réponse passe avant les actions (Modifier, Archiver…)', bEcrire && bActions && bEcrire.y < bActions.y)
+  await ligneId(R1.id).waitFor({ timeout: 15000 })
+  await ligneId(R1.id).getByTestId('ouvrir-chantier').click()
+  await attendreConv(R1.titre)
+  verifie('reporté : « Rien à faire de ta part, sauf si tu veux le relancer »', /Rien à faire de ta part/.test(await conv().getByTestId('bulle-reporte').textContent()))
+  const ecrire = conv().getByTestId('ecrire-a-claude')
+  verifie('« Écrire à Claude… » toujours visible en bas de la conversation', await ecrire.isVisible() && /Écrire à Claude/.test(await ecrire.locator('textarea').getAttribute('placeholder')))
+  verifie('fil vide : seulement la demande, aucune bulle vide', await conv().getByTestId('bulle').count() === 0 && await conv().getByTestId('bulle-demande').count() === 1)
+  const bEcr = await ecrire.boundingBox()
+  verifie('la barre d’écriture est collée en bas de l’écran du téléphone', bEcr && Math.abs(bEcr.y + bEcr.height - 844) < 4, bEcr)
+  verifie('« Envoyer » est inactif tant que rien n’est écrit', await ecrire.getByTestId('envoyer-message').isDisabled())
   await ecrire.locator('textarea').fill(`${MARQUE2} message à Claude`)
   await ecrire.getByTestId('entree-medias').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: PNG_TEST })
   await ecrire.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
+  await capture(page, 'ecrire-avec-photo')
   await ecrire.getByTestId('envoyer-message').click()
-  const toastEcrit = await toastAuPremierPlan(/Message envoyé/)
-  verifie('« Envoyer » : toast visible', toastEcrit, { auPremierPlan: dernierDessus })
+  verifie('« Envoyer » : toast visible', await toastAuPremierPlan(/Message envoyé/), { auPremierPlan: dernierDessus })
   const ecrits = sql(`select kind, auteur_type, corps from messages where chantier_id = '${R1.id}'`)
   verifie('le message est en base (info, propriétaire)', ecrits.length === 1 && ecrits[0].kind === 'info' && ecrits[0].auteur_type === 'proprietaire' && ecrits[0].corps === `${MARQUE2} message à Claude`, ecrits)
   const mR1 = sql(`select medias from messages where chantier_id = '${R1.id}'`)[0]?.medias ?? []
   verifie('« Écrire à Claude » : la photo part avec le message', mR1.length === 1 && mR1[0].nom === 'photo.png', mR1)
-  verifie('après l’envoi, plus de vignette en attente sous le champ', await ecrire.getByTestId('piece-jointe').count() === 0)
-  await carteR1.getByTestId('fil').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('le fil apparaît, son en-tête cite le dernier message', await carteR1.getByTestId('fil').count() === 1 && (await carteR1.getByTestId('fil').textContent()).includes('message à Claude'))
-  verifie('le fil replié annonce ses pièces jointes (📎 1)', /📎 1/.test(await carteR1.getByTestId('fil').textContent()))
-  await carteR1.getByTestId('fil').locator('button').first().click()
-  const vignette = carteR1.getByTestId('fil').locator('[data-testid="media"] img').first()
+  verifie('après l’envoi, plus de vignette en attente dans la barre', await ecrire.getByTestId('piece-jointe').count() === 0 && (await ecrire.locator('textarea').inputValue()) === '')
+  const bulleR1 = conv().locator('[data-testid="bulle"][data-cote="droite"]', { hasText: 'message à Claude' })
+  await bulleR1.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('le message apparaît en bulle à droite (toi)', await bulleR1.count() === 1)
+  const vignette = bulleR1.locator('[data-testid="media"] img').first()
   await vignette.waitFor({ timeout: 15000 }).catch(() => {})
   await page.waitForTimeout(800)
-  verifie('la photo s’affiche dans le fil (lien signé, image réellement chargée)', await vignette.count() === 1 && await vignette.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
+  verifie('la photo s’affiche dans la bulle (lien signé, image réellement chargée)', await vignette.count() === 1 && await vignette.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   if (await vignette.count()) {
     await vignette.click()
-    const grande = page.locator('dialog[open] img')
+    const grande = page.locator('dialog[open] img[alt="photo.png"]').last()
     await grande.waitFor({ timeout: 8000 }).catch(() => {})
-    verifie('un toucher sur la vignette l’ouvre en grand', await grande.count() === 1)
+    verifie('un toucher sur la vignette l’ouvre en grand', await grande.count() >= 1)
     await capture(page, 'photo-en-grand')
     await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
   }
-  await carteR1.evaluate((e) => e.scrollIntoView({ block: 'start' }))
-  await page.evaluate(() => window.scrollBy(0, -64))
-  await capture(page, 'carte-reportee')
-  await carteR1.getByTestId('relancer-maintenant').click()
-  const toastRel = await toastAuPremierPlan(/relancé/)
-  verifie('« ▶️ Relancer maintenant » : toast visible', toastRel, { auPremierPlan: dernierDessus })
+  verifie('Échap ferme la photo, pas la conversation', await conv().count() === 1)
+  await capture(page, 'conversation-reportee')
+  await conv().getByTestId('relancer-maintenant').click()
+  verifie('« Relancer maintenant » : toast visible', await toastAuPremierPlan(/relancé/), { auPremierPlan: dernierDessus })
   verifie('« Relancer maintenant » : en base, le chantier passe à libre', sql(`select etat from chantiers where id = '${R1.id}'`)[0]?.etat === 'libre')
+  await fermerConv()
 
   // ===================================================================
-  // 6 bis. Mise en ligne (GitHub simulé) et mode autonome, en tête de la vue projet
+  // 7 bis. Mise en ligne (GitHub simulé) et mode autonome, dans « Réglages du projet » (replié)
   console.log('  — mise en ligne et mode autonome')
-  await page.evaluate(() => window.scrollTo(0, 0))
-  const dep = page.getByTestId('barre-projet').getByTestId('deploiement')
+  const reglagesP = page.getByTestId('reglages-projet')
+  await reglagesP.locator('> button').click()
+  const dep = reglagesP.getByTestId('barre-projet').getByTestId('deploiement')
   await dep.waitFor({ timeout: 10000 })
   await page.waitForFunction(() => document.querySelector('[data-testid="barre-projet"] [data-testid="deploiement"]')?.getAttribute('data-etat') !== 'chargement', null, { timeout: 10000 }).catch(() => {})
-  verifie('mise en ligne : « 🚀 Mise en ligne en cours », en tête de la vue projet, animée', (await dep.getAttribute('data-etat')) === 'en_cours' && /Mise en ligne en cours/.test(await dep.textContent()) && await dep.locator('.point-vivant').count() === 1, await dep.textContent())
+  verifie('mise en ligne : « Mise en ligne en cours », animée', (await dep.getAttribute('data-etat')) === 'en_cours' && /Mise en ligne en cours/.test(await dep.textContent()) && await dep.locator('.point-vivant').count() === 1, await dep.textContent())
   await dep.getByTestId('deploiement-titre').click()
   verifie('mise en ligne : une ligne par workflow, avec le lien GitHub', await dep.getByTestId('deploiement-lignes').locator('a').count() === 2 && /github\.com/.test(await dep.getByTestId('deploiement-lignes').locator('a').first().getAttribute('href')))
   githubMode = 'limite'
@@ -702,8 +816,8 @@ try {
   githubMode = 'ok'
   await dep.getByTestId('deploiement-relire').click()
   await capture(page, 'deploiement')
-  // Mode autonome : allumer depuis l'écran → en base → bandeau → arrêter.
-  const auto = page.getByTestId('barre-projet').getByTestId('mode-autonome')
+  const barreP = () => page.getByTestId('barre-projet')
+  const auto = barreP().getByTestId('mode-autonome')
   await auto.getByTestId('autonome-ouvrir').click()
   verifie('mode autonome : le formulaire dit ce que fait la session (libres seulement, sans dépense…)', /chantiers LIBRES, pas encore triés ou abandonnés \(jamais « à cadrer »\), sans dépense, suppression ni envoi en ton nom/.test(await auto.textContent()))
   const defauts = { heure: await auto.getByTestId('autonome-heure').inputValue(), max: await auto.getByTestId('autonome-max').inputValue() }
@@ -715,64 +829,80 @@ try {
   await auto.getByTestId('autonome-max').fill('5')
   await capture(page, 'autonome-formulaire')
   await auto.getByTestId('autonome-allumer').click()
-  const toastAuto = await toastAuPremierPlan(/Autonome jusqu’à 09:00/)
-  verifie('mode autonome allumé : toast visible', toastAuto, { auPremierPlan: dernierDessus })
+  verifie('mode autonome allumé : toast visible', await toastAuPremierPlan(/Autonome jusqu’à 09:00/), { auPremierPlan: dernierDessus })
   const [pa] = sql(`select autonome_jusqu_a, autonome_max from projets where id = '${projet.id}'`)
   verifie('mode autonome : en base, une heure de fin future (≤ 24 h) et le plafond 5', !!pa?.autonome_jusqu_a && Date.parse(pa.autonome_jusqu_a) > Date.now() && Date.parse(pa.autonome_jusqu_a) - Date.now() <= 24 * 3600_000 && pa.autonome_max === 5, pa)
-  const bandeau = page.getByTestId('barre-projet').getByTestId('autonome-bandeau')
+  const bandeau = barreP().getByTestId('autonome-bandeau')
   await bandeau.waitFor({ timeout: 10000 }).catch(() => {})
-  // N = ce que la base donnerait vraiment à une session (cockpit.chantiers_prenables, 0011).
   const nLibres = Number(sql(`select count(*) as n from chantiers_prenables('${projet.id}', null)`)[0].n)
-  verifie('bandeau « 🌙 Autonome jusqu’à 09:00 — N chantiers prêts » (N = chantiers_prenables en base)', /Autonome jusqu’à 09:00/.test(await bandeau.textContent()) && (await bandeau.textContent()).includes(`${nLibres} chantier`), { texte: await bandeau.textContent(), nLibres })
+  verifie('bandeau « Autonome jusqu’à 09:00 — N chantiers prêts » (N = chantiers_prenables en base)', /Autonome jusqu’à 09:00/.test(await bandeau.textContent()) && (await bandeau.textContent()).includes(`${nLibres} chantier`), { texte: await bandeau.textContent(), nLibres })
+  verifie('« Réglages du projet » replié annonce « autonome »', /autonome/.test(await reglagesP.locator('> button').textContent()))
   await capture(page, 'autonome-allume')
-  await page.getByTestId('barre-projet').getByTestId('autonome-arreter').click()
+  await barreP().getByTestId('autonome-arreter').click()
   verifie('« Arrêter maintenant » : toast visible', await toastAuPremierPlan(/Mode autonome arrêté/))
   verifie('« Arrêter maintenant » : en base, éteint (null)', sql(`select autonome_jusqu_a from projets where id = '${projet.id}'`)[0].autonome_jusqu_a === null)
-  // « Tout le temps » (0011) : allumer, vérifier en base, éteindre.
-  await page.getByTestId('barre-projet').getByTestId('autonome-ouvrir').click()
-  await page.getByTestId('barre-projet').getByTestId('autonome-toujours').check()
-  await page.getByTestId('barre-projet').getByTestId('autonome-allumer').click()
+  await barreP().getByTestId('autonome-ouvrir').click()
+  await barreP().getByTestId('autonome-toujours').check()
+  await barreP().getByTestId('autonome-allumer').click()
   verifie('« tout le temps » : toast visible', await toastAuPremierPlan(/Autonome tout le temps/))
   const [pt] = sql(`select autonome_toujours, autonome_jusqu_a from projets where id = '${projet.id}'`)
   verifie('« tout le temps » : en base, autonome_toujours sans heure de fin', pt?.autonome_toujours === true && pt.autonome_jusqu_a === null, pt)
-  await page.getByTestId('barre-projet').getByTestId('autonome-bandeau').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('« tout le temps » : le bandeau le dit', /Autonome tout le temps/.test(await page.getByTestId('barre-projet').getByTestId('autonome-bandeau').textContent()))
-  // « Changer… » : de « tout le temps » à « jusqu'à 09:00 », sans passer par « éteint ».
-  await page.getByTestId('barre-projet').getByTestId('autonome-changer').click()
-  verifie('« Changer… » rouvre le choix, « tout le temps » coché', await page.getByTestId('barre-projet').getByTestId('autonome-toujours').isChecked())
-  await page.getByTestId('barre-projet').getByTestId('autonome-jusqua').check()
-  await page.getByTestId('barre-projet').getByTestId('autonome-allumer').click()
+  await barreP().getByTestId('autonome-bandeau').waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('« tout le temps » : le bandeau le dit', /Autonome tout le temps/.test(await barreP().getByTestId('autonome-bandeau').textContent()))
+  await barreP().getByTestId('autonome-changer').click()
+  verifie('« Changer… » rouvre le choix, « tout le temps » coché', await barreP().getByTestId('autonome-toujours').isChecked())
+  await barreP().getByTestId('autonome-jusqua').check()
+  await barreP().getByTestId('autonome-allumer').click()
   await toastAuPremierPlan(/Autonome jusqu’à 09:00/)
   const [pc] = sql(`select autonome_toujours, autonome_jusqu_a from projets where id = '${projet.id}'`)
   verifie('« Changer… » → jusqu’à 09:00 : en base, plus « tout le temps », une heure de fin', pc?.autonome_toujours === false && !!pc.autonome_jusqu_a, pc)
-  await page.getByTestId('barre-projet').getByTestId('autonome-arreter').click()
+  await barreP().getByTestId('autonome-arreter').click()
   await toastAuPremierPlan(/Mode autonome arrêté/)
   verifie('« tout le temps » arrêté : en base, éteint', (([r]) => r.autonome_toujours === false && r.autonome_jusqu_a === null)(sql(`select autonome_toujours, autonome_jusqu_a from projets where id = '${projet.id}'`)))
   await allerTout()
+  await page.getByTestId('reglages-projets').locator('> button').click()
   const resumeProjet = page.locator(`[data-testid="projet-resume"][data-projet="${SLUG}"]`)
-  verifie('« Tout » : un résumé par projet (mise en ligne + mode autonome)', await resumeProjet.getByTestId('deploiement').count() === 1 && await resumeProjet.getByTestId('mode-autonome').count() === 1)
+  verifie('« Tout » : « Réglages des projets » (replié), un bloc par projet (mise en ligne + mode autonome)', await resumeProjet.getByTestId('deploiement').count() === 1 && await resumeProjet.getByTestId('mode-autonome').count() === 1)
   await allerCockpit()
 
   // ===================================================================
-  // 7. La liste complète, une carte qui se déplie, créer / supprimer
-  console.log('  — tous les chantiers')
+  // 8. La liste complète en lignes, le menu ⋯, créer / supprimer
+  console.log('  — tous les chantiers, menu ⋯')
   await page.evaluate(() => window.scrollTo(0, 0))
   await deplierTout()
-  const nbCartes = await page.locator('[data-testid="tous-les-chantiers"] [data-testid="carte"]').count()
-  verifie('les chantiers du projet s’affichent, sections dépliées (≥ 10 cartes)', nbCartes >= 10, nbCartes)
+  const nbLignes = await page.locator('[data-testid="tous-les-chantiers"] [data-testid="groupe-section"] [data-testid="ligne-chantier"]').count()
+  verifie('les chantiers du projet s’affichent en lignes compactes, sections dépliées (≥ 10)', nbLignes >= 10, nbLignes)
   const nbGroupes = await page.getByTestId('groupe-section').count()
   verifie('groupés par section (≥ 3 groupes)', nbGroupes >= 3, nbGroupes)
-  verifie('chaque en-tête de section porte ses compteurs de présence', await page.getByTestId('compteurs-section').count() === nbGroupes)
-  const premiere = page.locator('[data-testid="tous-les-chantiers"] [data-testid="carte"]').first()
-  await premiere.getByTestId('carte-titre').click()
-  await premiere.getByTestId('carte-detail').waitFor({ timeout: 5000 })
-  verifie('une carte se déplie (demande + « Écrire à Claude » visibles)', await premiere.getByTestId('ecrire-a-claude').count() === 1)
-  verifie('les actions admin sont là sur la carte dépliée', await premiere.getByTestId('actions-admin').count() === 1)
-  verifie('toujours pas de défilement horizontal, carte dépliée', (await scrollX()) <= 0, await scrollX())
-  await capture(page, 'carte')
-  await premiere.getByTestId('carte-titre').click()
+  verifie('chaque en-tête de section porte ses compteurs (icônes, pas d’emoji)', await page.getByTestId('compteurs-section').count() === nbGroupes && await page.getByTestId('compteurs-section').first().locator('svg').count() >= 1)
+  const hLigne = (await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').first().boundingBox())?.height ?? 999
+  verifie('une ligne est compacte (≤ 64 px)', hLigne <= 64, hLigne)
+  const premiere = page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').first()
+  const titrePremiere = (await premiere.locator('.truncate').first().textContent()).trim()
+  await premiere.getByTestId('ouvrir-chantier').click()
+  await attendreConv(titrePremiere)
+  verifie('une ligne s’ouvre en conversation, « Écrire à Claude… » en bas', await conv().getByTestId('ecrire-a-claude').count() === 1)
+  await conv().getByTestId('menu-chantier').click()
+  const itemsMenu = await Promise.all(['modifier', 'ouvrir-historique', 'doublon-de', 'archiver', 'supprimer'].map((t) => conv().getByTestId(t).count()))
+  verifie('menu ⋯ : Modifier, Historique, C’est un doublon de…, Archiver, Supprimer', itemsMenu.every((n) => n === 1), itemsMenu)
+  await conv().getByTestId('modifier').click()
+  const dlgM = page.getByRole('dialog').filter({ hasText: 'Modifier le chantier' })
+  await dlgM.waitFor({ timeout: 5000 })
+  verifie('« Modifier » s’ouvre par-dessus la conversation', await dlgM.isVisible())
+  await page.keyboard.press('Escape')
+  await dlgM.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  verifie('Échap ferme « Modifier », la conversation reste', await conv().count() === 1)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('doublon-de').click()
+  const dlgDd = page.getByRole('dialog').filter({ hasText: 'Chantier à garder' })
+  await dlgDd.waitFor({ timeout: 5000 })
+  verifie('« C’est un doublon de… » s’ouvre par-dessus la conversation', await dlgDd.isVisible())
+  await dlgDd.getByRole('button', { name: 'Annuler' }).click()
+  verifie('toujours pas de défilement horizontal, conversation ouverte', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'conversation')
+  await fermerConv()
   await page.getByTestId('tout-deplier').click()
-  verifie('« Tout replier » replie les sections', await page.locator('[data-testid="groupe-section"] [data-testid="carte"]').count() === 0)
+  verifie('« Tout replier » replie les sections', await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
 
   await page.getByTestId('nouveau-chantier').click()
   await page.getByTestId('titre').fill('Hook de démarrage paramétré par projet')
@@ -783,33 +913,44 @@ try {
   await page.getByTestId('creer-chantier').click()
   await page.getByText(/créé\.$/).first().waitFor({ timeout: 10000 })
   await deplierTout()
-  const carteTest = carteDe(titreTest)
-  await carteTest.waitFor({ timeout: 15000 })
-  verifie('le chantier créé apparaît dans la liste', await carteTest.count() === 1)
-  await carteTest.getByTestId('carte-titre').click()
-  await carteTest.getByTestId('supprimer').click()
+  const ligneTest = ligneDe(titreTest)
+  await ligneTest.waitFor({ timeout: 15000 })
+  verifie('le chantier créé apparaît dans la liste', await ligneTest.count() === 1)
+  await ligneTest.getByTestId('ouvrir-chantier').click()
+  await attendreConv(titreTest)
+  // Archiver puis désarchiver : réversible, le toast le dit.
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('archiver').click()
+  verifie('« Archiver » : toast visible, en base archivé', await toastAuPremierPlan(/Chantier archivé/) && !!sql(`select archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]?.archived_at)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('archiver').click()
+  verifie('« Désarchiver » : toast visible, en base de nouveau ouvert', await toastAuPremierPlan(/désarchivé/) && !sql(`select archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]?.archived_at)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('supprimer').click()
   const dialogue = page.getByRole('dialog').filter({ hasText: 'Supprimer ce chantier' })
   await dialogue.waitFor({ timeout: 5000 })
   verifie('la confirmation nomme le chantier', (await dialogue.textContent()).includes(titreTest))
   await capture(page, 'confirmation')
   await dialogue.getByRole('button', { name: 'Annuler' }).click()
-  verifie('« Annuler » ne supprime pas', await carteTest.count() === 1 && sql(`select count(*) as n from chantiers where titre = '${titreTest.replace(/'/g, "''")}'`)[0].n === 1)
-  await carteTest.getByTestId('supprimer').click()
+  verifie('« Annuler » ne supprime pas', await conv().count() === 1 && sql(`select count(*) as n from chantiers where titre = '${esc(titreTest)}'`)[0].n === 1)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('supprimer').click()
   await dialogue.waitFor({ timeout: 5000 })
   await dialogue.getByRole('button', { name: 'Supprimer' }).click()
   await page.getByText(/supprimé\.$/).first().waitFor({ timeout: 10000 })
-  await carteTest.waitFor({ state: 'detached', timeout: 10000 })
-  verifie('le chantier supprimé disparaît de l’écran et de la base', sql(`select count(*) as n from chantiers where titre like '${MARQUE}%'`)[0].n === 0)
+  await conv().waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  verifie('supprimé : la conversation se ferme', await conv().count() === 0)
+  await ligneTest.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  verifie('le chantier supprimé disparaît de l’écran et de la base', await ligneTest.count() === 0 && sql(`select count(*) as n from chantiers where titre like '${MARQUE}%'`)[0].n === 0)
   verifie('la suppression a laissé sa trace dans « supprimes »', sql(`select count(*) as n from supprimes where ligne->>'titre' like '${MARQUE}%'`)[0].n >= 1)
 
-  // --- menu et réglages (délai de silence, fenêtre « certifiés récemment »)
+  // --- menu et réglages (délai de silence, fenêtre « fini »)
   await page.getByTestId('menu').click()
   await page.getByRole('menuitem', { name: /Réglages/ }).click()
   await page.getByTestId('fenetre-livre').waitFor({ timeout: 5000 })
   const autreSilence = silenceMin === 30 ? 60 : 30
   await page.getByTestId('silence-minutes').getByRole('button', { name: `${autreSilence} min`, exact: true }).click()
-  const toastSil = await toastAuPremierPlan(/Pris, mais silencieux/)
-  verifie('réglage « délai de silence » : toast visible', toastSil, { auPremierPlan: dernierDessus })
+  verifie('réglage « délai de silence » : toast visible', await toastAuPremierPlan(/Pris, mais silencieux/), { auPremierPlan: dernierDessus })
   const prefSil = sql(`select valeur from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)[0]
   verifie('réglage « délai de silence » : enregistré dans preferences (silence_minutes)', Number(prefSil?.valeur) === autreSilence, prefSil)
   verifie('le bouton choisi est marqué', (await page.getByTestId('silence-minutes').getByRole('button', { name: `${autreSilence} min`, exact: true }).getAttribute('aria-pressed')) === 'true')
@@ -818,7 +959,7 @@ try {
   await page.keyboard.press('Escape')
 
   // ===================================================================
-  // 8. Doublons, sélection groupée, historique
+  // 9. Doublons, sélection groupée, historique
   const toastAuPremierPlanLocal = toastAuPremierPlan
   const ANCIEN = 'Ancien texte de la demande, à retrouver par l’historique.'
   const d1a = creerTest('zorglub quintessence harmonique alpha', { demande: 'Premier de la paire ignorée.' })
@@ -829,9 +970,8 @@ try {
   sql(`update chantiers set demande = 'Nouveau texte qui a écrasé l''ancien.' where id = '${h1.id}'`)
   await actualiser()
   await deplierTout()
-  await carteDe(h1.titre).waitFor({ timeout: 15000 })
+  await ligneDe(h1.titre).waitFor({ timeout: 15000 })
 
-  // --- 1. Doublons
   console.log('  — doublons')
   const ouvrirDoublons = async () => {
     await page.getByTestId('menu').click()
@@ -851,8 +991,7 @@ try {
   await paire1.scrollIntoViewIfNeeded()
   await capture(page, 'doublons')
   await paire1.getByRole('button', { name: 'Pas un doublon' }).click()
-  const toastIgnore = await toastAuPremierPlanLocal(/ne sera plus proposée/)
-  verifie('« Pas un doublon » : le toast de confirmation est visible au premier plan', toastIgnore, { auPremierPlan: dernierDessus })
+  verifie('« Pas un doublon » : le toast de confirmation est visible au premier plan', await toastAuPremierPlanLocal(/ne sera plus proposée/), { auPremierPlan: dernierDessus })
   await paire1.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
   verifie('« Pas un doublon » : la paire disparaît', await paire1.count() === 0)
   const prefD = sql(`select valeur from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`)[0]
@@ -860,12 +999,11 @@ try {
   await page.keyboard.press('Escape')
   await dlgD.waitFor({ state: 'hidden', timeout: 5000 })
 
-  // Une seconde paire, cette fois fusionnée : on garde « sud » (pas le choix par défaut forcément).
   const d2a = creerTest('pamplemousse gyroscope lunaire nord', { demande: 'Demande de la source.' })
   const d2b = creerTest('pamplemousse gyroscope lunaire sud', { demande: 'Demande de la cible.' })
   await actualiser()
   await deplierTout()
-  await carteDe(d2b.titre).waitFor({ timeout: 15000 })
+  await ligneDe(d2b.titre).waitFor({ timeout: 15000 })
   dlgD = await ouvrirDoublons()
   const paire2 = dlgD.getByTestId('paire-doublon').filter({ hasText: d2a.titre }).filter({ hasText: d2b.titre })
   await paire2.waitFor({ timeout: 5000 })
@@ -875,8 +1013,7 @@ try {
   const NOTE = 'note de fusion [TEST web]'
   await paire2.getByPlaceholder(/Note sur la fusion/).fill(NOTE)
   await paire2.getByRole('button', { name: 'Fusionner' }).click()
-  const toastFusion = await toastAuPremierPlanLocal(/fusionné dans/)
-  verifie('Fusion : le toast de succès est visible au premier plan', toastFusion, { auPremierPlan: dernierDessus })
+  verifie('Fusion : le toast de succès est visible au premier plan', await toastAuPremierPlanLocal(/fusionné dans/), { auPremierPlan: dernierDessus })
   await paire2.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
   verifie('Fusion : la paire disparaît de l’écran', await paire2.count() === 0)
   await capture(page, 'doublons-fusion')
@@ -888,7 +1025,6 @@ try {
   await page.keyboard.press('Escape')
   await dlgD.waitFor({ state: 'hidden', timeout: 5000 })
 
-  // --- 2. Sélection groupée
   console.log('  — sélection groupée')
   await page.getByTestId('menu').click()
   await page.getByRole('menuitem', { name: /Choisir/ }).click()
@@ -897,19 +1033,17 @@ try {
   await page.getByRole('checkbox', { name: `Choisir ${s1.titre}` }).check()
   await page.getByRole('checkbox', { name: `Choisir ${s2.titre}` }).check()
   verifie('sélection : toutes les sections s’ouvrent (on ne coche pas ce qu’on ne voit pas)', await page.locator('[data-testid="groupe-section"] > button[aria-expanded="false"]').count() === 0)
+  verifie('sélection : cocher ne rouvre pas de conversation', await conv().count() === 0)
   verifie('sélection : la barre compte « 2 choisis »', (await barre.textContent()).includes('2 choisis'), await barre.textContent())
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
   await page.waitForTimeout(300)
   const bBarre = await barre.boundingBox()
-  const bDerniereCarte = await page.getByTestId('carte').last().boundingBox()
-  const bFinListe = await page.locator('[data-testid="tous-les-chantiers"] > :last-child').boundingBox()
-  verifie('sélection : la barre ne masque pas la dernière carte (défilement en bas)', bBarre && bDerniereCarte && bDerniereCarte.y + bDerniereCarte.height <= bBarre.y + 0.5, { barre: bBarre, carte: bDerniereCarte })
-  verifie('sélection : ni le dernier bloc de la liste', bBarre && bFinListe && bFinListe.y + bFinListe.height <= bBarre.y + 0.5, { barre: bBarre, dernier: bFinListe })
+  const bDerniere = await page.locator('[data-testid="vue-projet"] > :last-child').boundingBox()
+  verifie('sélection : la barre ne masque pas le bas de la page (défilement en bas)', bBarre && bDerniere && bDerniere.y + bDerniere.height <= bBarre.y + 0.5, { barre: bBarre, dernier: bDerniere })
   verifie('sélection : pas de défilement horizontal avec la barre', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'selection')
   await barre.getByLabel('Priorité').selectOption('normale')
-  const toastSel = await toastAuPremierPlanLocal(/2 chantiers modifiés/)
-  verifie('sélection : toast « 2 chantiers modifiés » visible, au-dessus de la barre', toastSel, { auPremierPlan: dernierDessus })
+  verifie('sélection : toast « 2 chantiers modifiés » visible, au-dessus de la barre', await toastAuPremierPlanLocal(/2 chantiers modifiés/), { auPremierPlan: dernierDessus })
   const prios = () => Object.fromEntries(sql(`select id, priorite from chantiers where id in ('${s1.id}', '${s2.id}')`).map((r) => [r.id, r.priorite]))
   const apres = prios()
   verifie('sélection : en base, les deux passent à « normale »', apres[s1.id] === 'normale' && apres[s2.id] === 'normale', apres)
@@ -922,19 +1056,17 @@ try {
   await barre.waitFor({ state: 'detached', timeout: 5000 })
   verifie('sélection : « Terminer » retire la barre et les cases', await page.getByRole('checkbox', { name: /^Choisir / }).count() === 0)
 
-  // --- 3. Historique et restauration
   console.log('  — historique')
   await deplierTout()
-  const carteH = carteDe(h1.titre)
-  await carteH.scrollIntoViewIfNeeded()
-  await carteH.getByTestId('carte-titre').click()
-  const hist = carteH.getByTestId('historique')
-  await hist.waitFor({ timeout: 5000 })
-  await hist.locator('> button').click()
+  await ligneDe(h1.titre).scrollIntoViewIfNeeded()
+  await ligneDe(h1.titre).getByTestId('ouvrir-chantier').click()
+  await attendreConv(h1.titre)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('ouvrir-historique').click()
+  const hist = conv().getByTestId('historique')
   const ligneH = hist.locator('li', { hasText: ANCIEN.slice(0, 40) })
   await ligneH.waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('historique : la ligne « demande » montre l’ancien texte', await ligneH.count() === 1 && (await ligneH.textContent()).toLowerCase().includes('demande'))
-  await ligneH.scrollIntoViewIfNeeded()
+  verifie('menu ⋯ → Historique : ouvert, la ligne « demande » montre l’ancien texte', await ligneH.count() === 1 && (await ligneH.textContent()).toLowerCase().includes('demande'))
   verifie('historique : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'historique')
   await ligneH.getByRole('button', { name: /Revenir à ce texte/ }).click()
@@ -943,8 +1075,7 @@ try {
   verifie('restauration : la confirmation montre le texte qui reviendra', (await dlgR.textContent()).includes(ANCIEN))
   await capture(page, 'historique-confirmation')
   await dlgR.getByRole('button', { name: 'Revenir à ce texte' }).click()
-  const toastRest = await toastAuPremierPlanLocal(/Texte restauré/)
-  verifie('restauration : toast « Texte restauré » visible', toastRest, { auPremierPlan: dernierDessus })
+  verifie('restauration : toast « Texte restauré » visible', await toastAuPremierPlanLocal(/Texte restauré/), { auPremierPlan: dernierDessus })
   const [hApres] = sql(`select demande from chantiers where id = '${h1.id}'`)
   verifie('restauration : en base, la demande est revenue à l’ancien texte', hApres?.demande === ANCIEN, hApres)
   const traces = sql(`select champ, nouvelle, par from historique where chantier_id = '${h1.id}' order by id`)
@@ -952,12 +1083,16 @@ try {
   verifie('restauration : une nouvelle ligne d’historique trace la restauration', traces.length === 2 && derniere.champ === 'demande' && derniere.nouvelle === ANCIEN && /restauration/.test(derniere.par ?? ''), traces)
   await hist.locator('li', { hasText: 'Nouveau texte' }).first().waitFor({ timeout: 10000 }).catch(() => {})
   verifie('restauration : l’écran recharge l’historique (2 changements)', (await hist.textContent()).includes('2 changements'), await hist.textContent())
-  await carteH.getByTestId('carte-titre').click()
+  verifie('restauration : la demande de la conversation suit', (await conv().getByTestId('bulle-demande').textContent()).includes(ANCIEN.slice(0, 30)))
 
-  // --- grand écran
+  // --- grand écran : la conversation devient un grand dialogue centré
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.waitForTimeout(500)
+  const bConvD = await conv().boundingBox()
+  verifie('desktop : la conversation est un dialogue centré (pas plein écran)', bConvD && bConvD.width <= 680 && bConvD.x > 200, bConvD)
   verifie('desktop : pas de défilement horizontal non plus', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'desktop-conversation')
+  await fermerConv()
   await capture(page, 'desktop')
 
   // Le 403 de GitHub est provoqué exprès (simulation de la limite) : c'est son effet voulu.

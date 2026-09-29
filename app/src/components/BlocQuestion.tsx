@@ -6,6 +6,7 @@ import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
+import { TexteLong } from '../ui/TexteLong.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { extrait } from '../lib/texte.ts'
 import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
@@ -59,7 +60,7 @@ export function BlocQuestion({ message }: { message: Message }) {
         <span>{dateRelative(message.created_at, now)}</span>
       </div>
       <p className="mt-1 whitespace-pre-wrap text-base font-medium leading-snug">{message.corps}</p>
-      {message.pourquoi ? <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-texte-2">{message.pourquoi}</p> : null}
+      {message.pourquoi ? <TexteLong texte={message.pourquoi} petit /> : null}
 
       {estAction ? (
         <div className="mt-3 grid grid-cols-3 gap-2">

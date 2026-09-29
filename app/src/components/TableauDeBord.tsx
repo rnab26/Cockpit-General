@@ -226,7 +226,7 @@ function Projet({ projetId }: { projetId: string }) {
   const g = useGlobal()
   const p = g.projets.find((x) => x.id === projetId)
   if (!p) return null
-  return <span className="inline-flex max-w-[45%] shrink-0 items-center gap-1" data-testid="pastille-projet"><PointProjet couleur={p.couleur} /><span className="truncate">{p.nom}</span></span>
+  return <span className="inline-flex items-center gap-1 whitespace-nowrap align-middle" data-testid="pastille-projet"><PointProjet couleur={p.couleur} />{p.nom}</span>
 }
 
 // ---------------------------------------------------------------- 1. À toi de jouer
@@ -260,10 +260,10 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
         <button type="button" onClick={ouvrir} className="flex min-w-0 flex-1 items-center gap-3 text-left">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-bord"><IconeAToi type={e.type} /></span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[15px] font-medium leading-snug" data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
-            <span className="flex min-w-0 items-center gap-1.5 text-xs text-texte-2">
-              {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden>·</span></> : null}
-              <span className="truncate" data-testid="attente-a-toi">{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
+            <span className="line-clamp-2 text-[15px] font-medium leading-snug" data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
+            <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
+              <span data-testid="attente-a-toi">{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
             </span>
           </span>
         </button>
@@ -310,12 +310,12 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
         <div className="mt-1.5 px-1">
           <div className="flex items-center justify-between gap-2 text-xs text-texte-2">
             <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-sessions" className="inline-flex min-w-0 items-center gap-0.5 underline-offset-2 hover:underline">
-              <span className="truncate" data-testid="resume-travail">{t.resume.texte}</span><ChevronDown size={14} className={`shrink-0 transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
+              <span data-testid="resume-travail">{resumeSimple(t.resume)}</span><ChevronDown size={14} className={`shrink-0 transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
             </button>
             <button type="button" data-testid="vocabulaire" aria-expanded={aide} onClick={() => setAide(!aide)} className="shrink-0 underline-offset-2 hover:underline">c’est quoi ?</button>
           </div>
           {aide ? (
-            <p className="mt-1 rounded-lg border border-bord bg-carte px-2 py-1.5 text-xs leading-snug text-texte-2" data-testid="vocabulaire-texte">Une <b>session</b> = une conversation Claude Code que tu as ouverte. Un <b>agent</b> = un assistant qu’une session lance pour l’aider, en parallèle. Une <b>commande</b> = un long calcul qu’elle fait tourner (tests, construction…).</p>
+            <p className="mt-1 rounded-lg border border-bord bg-carte px-2 py-1.5 text-xs leading-snug text-texte-2" data-testid="vocabulaire-texte">Une <b>conversation</b> (ou session) = une fenêtre Claude Code que tu as ouverte. Un <b>assistant</b> (ou agent) = une aide que Claude lance en parallèle. Une <b>commande</b> = un long calcul qu’il fait tourner (tests, construction…).</p>
           ) : null}
           {detail ? (
             <div className="mt-1.5 space-y-1.5" data-testid="liste-sessions">
@@ -350,10 +350,7 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
     <li data-testid="ligne-en-ce-moment" data-chantier-ligne={l.c.id} data-vivant={l.vivant ? 'oui' : 'non'} data-flash={flash ? 'oui' : 'non'} className={flash ? 'flash-etape' : ''}>
       <div className="flex items-start gap-2 px-3 py-2.5">
         <button type="button" onClick={ouvrir} className="min-w-0 flex-1 text-left">
-          <span className="flex items-baseline justify-between gap-2">
-            <span className="min-w-0 truncate text-[15px] font-medium leading-snug">{l.c.titre}</span>
-            {avecProjet ? <span className="text-xs text-texte-2"><Projet projetId={l.c.projet_id} /></span> : null}
-          </span>
+          <span className="line-clamp-2 text-[15px] font-medium leading-snug">{l.c.titre}</span>
           {a ? (
             <span className="mt-1 flex items-center gap-2">
               <Barre pct={a.pourcentage} vive={l.vivant} />
@@ -361,13 +358,15 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
             </span>
           ) : null}
           {l.vivant ? (
-            <span className="mt-0.5 flex items-center gap-1.5 text-xs text-texte-2">
-              <span className="point-vivant inline-block h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden data-testid="point-travaille" />
-              <span className="truncate">{l.qui}{l.etape ? ` · « ${l.etape} »` : ''}</span>
+            <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
+              <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-ok align-middle" aria-hidden data-testid="point-travaille" />
+              <span className="line-clamp-2 inline">{l.qui}{l.etape ? ` · « ${l.etape} »` : ''}</span>
             </span>
           ) : (
-            <span className="mt-0.5 block truncate text-xs text-attention" data-testid="sans-nouvelles">
-              {l.pourquoi}{a ? ` · dernier signe ${dateRelative(a.updated_at, g.now)}` : ''}
+            <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
+              <span className="text-attention" data-testid="sans-nouvelles">{l.pourquoi}{a ? ` · dernier signe ${dateRelative(a.updated_at, g.now)}` : ''}</span>
             </span>
           )}
         </button>
@@ -378,6 +377,15 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
       {relance ? <div className="px-3 pb-2.5"><AvecProjet projetId={l.c.projet_id}><BoutonsRelance chantier={l.c} /></AvecProjet></div> : null}
     </li>
   )
+}
+
+/** « Qui travaille : 4 conversations · 1 assistant · 2 commandes » — les mots du vocabulaire, pas « session » / « agent ». */
+function resumeSimple(r: Tableau['resume']): string {
+  const pl = (n: number, un: string, plus: string) => `${n} ${n > 1 ? plus : un}`
+  const m = [pl(r.sessions + r.enPause, 'conversation', 'conversations')]
+  if (r.agents) m.push(pl(r.agents, 'assistant', 'assistants'))
+  if (r.commandes) m.push(pl(r.commandes, 'commande', 'commandes'))
+  return `Qui travaille : ${m.join(' · ')}${r.enPause ? ` (${r.enPause} en pause)` : ''}`
 }
 
 // ---------------------------------------------------------------- 3. Prêt à lancer
@@ -415,12 +423,12 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
     <li data-testid="ligne-a-lancer" data-ligne-chantier={l.c.id}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button type="button" onClick={() => g.ouvrirChantier(l.c.projet_id, l.c.id)} className="min-w-0 flex-1 text-left">
-          <span className="block truncate text-[15px] font-medium leading-snug">{l.c.titre}</span>
+          <span className="line-clamp-2 text-[15px] font-medium leading-snug">{l.c.titre}</span>
           {avecProjet || details ? (
-            <span className="flex min-w-0 items-center gap-1.5 text-xs text-texte-2">
+            <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <Projet projetId={l.c.projet_id} /> : null}
-              {avecProjet && details ? <span aria-hidden>·</span> : null}
-              {details ? <span className={`truncate ${l.c.priorite === 'haute' ? 'text-texte' : ''}`}>{details}</span> : null}
+              {avecProjet && details ? ' · ' : null}
+              {details}
             </span>
           ) : null}
           {a ? <span className="mt-1 flex"><Barre pct={a.pourcentage} vive={false} /></span> : null}
