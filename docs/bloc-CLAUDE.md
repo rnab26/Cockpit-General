@@ -11,6 +11,11 @@ demandes des utilisateurs, progression des autres sessions.
   veux des réponses simples, courtes, nettes et précises ; pas de pavé »).
   Quelques lignes : la réponse d'abord, puis ce qu'il doit faire s'il y a
   quelque chose. Pas de détail technique sauf s'il le demande.
+- **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
+  des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
+  un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh
+  --confirmer <id>` si elle compte encore, `--retirer <id> "pourquoi"` sinon.
+  Le hook te le rappelle ; l'app marque « Claude a avancé depuis ».
 - **RÈGLE DE CLARTÉ — tout ce que Raphaël lit dans le cockpit** (questions,
   constats à faire, « comment vérifier », titres, messages du fil) : le plus
   simple possible, pour quelqu'un qui ne code pas. On doit comprendre **le

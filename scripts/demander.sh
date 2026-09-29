@@ -20,6 +20,9 @@
 # chaque session suivante. Avant de poser une question : relis le fil du
 # chantier, une question déjà répondue qu'on repose est ce qui l'épuise.
 
+#   scripts/demander.sh --confirmer <id>             la question reste utile (après avoir avancé)
+#   scripts/demander.sh --retirer <id> "pourquoi"    elle ne l'est plus : elle quitte « À toi »
+#
 # RÈGLE DE CLARTÉ (Raphaël, 29 sept. 2026) : « toutes les questions, les
 # constats, tout ce qui demande une interaction et de la lecture de ma part,
 # donc tout le cockpit, synthétisé le plus simple possible : qu'on comprenne le
@@ -35,7 +38,7 @@ set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
-projet="${COCKPIT_PROJET:-}"; question=""; pourquoi=""; chantier=""; kind="question"; options=()
+projet="${COCKPIT_PROJET:-}"; question=""; pourquoi=""; chantier=""; kind="question"; options=(); mode="poser"; cible=""; raison=
 auteur="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
@@ -47,11 +50,35 @@ while [ $# -gt 0 ]; do
     --auteur)    auteur="${2:-}"; shift 2 ;;
     --option)    options+=("${2:-}"); shift 2 ;;
     --action)    kind="action"; shift ;;
+    --retirer)   mode="retirer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
+    --confirmer) mode="confirmer"; cible="${2:-}"; shift 2 ;;
     -h|--help)   sed -n '2,22p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$projet" ]   || { echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2; }
+# Une question déjà posée se tient À JOUR (0015, Raphaël : « je ne veux pas
+# répondre à des choses déjà faites ») : après avoir avancé, la session la
+# confirme (--confirmer <id>) ou la retire (--retirer <id> "pourquoi").
+if [ "$mode" != "poser" ]; then
+  [[ "$cible" =~ ^[0-9a-f-]{36}$ ]] || { echo "Donne l'identifiant de la question après --$mode." >&2; exit 2; }
+  qc=$(printf '%s' "$cible" | sed "s/'/''/g")
+  if [ "$mode" = "retirer" ]; then
+    [ -n "${raison// /}" ] || { echo "--retirer <id> \"pourquoi\" : dis en une phrase pourquoi elle n'est plus utile." >&2; exit 2; }
+    ok=$("$SQL" "select count(*) as n from messages where id = '$qc' and answered_at is null and kind in ('question','action')" | jq -r '.rows[0].n // 0')
+    [ "$ok" = "1" ] || { echo "Rien retiré : question introuvable ou déjà répondue." >&2; exit 1; }
+    "$SQL" "update messages set answered_at = now(), reponse = 'Retirée par Claude ($(printf '%s' "$auteur" | sed "s/'/''/g")) : $(printf '%s' "$raison" | sed "s/'/''/g")' where id = '$qc' and answered_at is null" >/dev/null || { echo "La base a refusé le retrait." >&2; exit 1; }
+    n=1
+    [ "$n" = "1" ] && echo "Question retirée : elle quitte « À toi »." || { echo "Rien retiré : question introuvable ou déjà répondue." >&2; exit 1; }
+  else
+    ok=$("$SQL" "select count(*) as n from messages where id = '$qc' and answered_at is null" | jq -r '.rows[0].n // 0')
+    [ "$ok" = "1" ] || { echo "Rien confirmé : question introuvable ou déjà répondue." >&2; exit 1; }
+    "$SQL" "update messages set confirmee_at = now() where id = '$qc'" >/dev/null || { echo "La base a refusé la confirmation." >&2; exit 1; }
+    n=1
+    [ "$n" = "1" ] && echo "Question confirmée : toujours d'actualité." || { echo "Rien confirmé : question introuvable ou déjà répondue." >&2; exit 1; }
+  fi
+  exit 0
+fi
 [ -n "$question" ] || { echo "--question manque." >&2; exit 2; }
 [ -n "$pourquoi" ] || { echo "--pourquoi manque, et il est obligatoire : dis ce qui dépend de la réponse." >&2; exit 2; }
 

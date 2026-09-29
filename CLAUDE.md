@@ -109,6 +109,15 @@ conteneur de la chef s'arrête, ses agents s'arrêtent : chantiers réservés
 3 h, repris au réveil suivant (abandon détecté). Jamais `git add -A` dans un
 dossier partagé avec un agent (incident du 29 sept., commit 964528e).
 
+## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
+
+« Ce sont des correctifs généraux, peu importe le repo ou le projet que je
+brancherai ; le modèle de cockpit doit être réutilisable et branchable sans
+correctif par projet. » Tout se corrige ICI (app, base, scripts, hooks,
+modèles), jamais dans un projet branché ; un projet ne reçoit que ce que
+propagent le lanceur et `brancher.sh`. Et toute session qui travaille ici se
+voit dans le cockpit (chantier + `progression.sh` à chaque étape).
+
 ## Réponses courtes (Raphaël, 29 sept. 2026)
 
 « Je veux des réponses simples, courtes, nettes et précises. » Dans la
@@ -122,6 +131,14 @@ tient (réservé à sa branche, ou suivi par un de ses agents), `hooks/suivi.sh`
 (PostToolUse, toutes les 20 s au plus, 3 s max) le met sous les yeux de la
 session avant son prochain pas. Une session à l'arrêt ne le voit qu'à son
 prochain réveil (la chef : au plus une heure) ou quand il lui écrit.
+
+## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
+
+Une question ouverte que du travail a suivie s'affiche « Claude a avancé
+depuis : peut-être plus utile » ; la session la confirme (`demander.sh
+--confirmer`) ou la retire (`--retirer <id> "pourquoi"`), rappel du hook
+toutes les 15 min. Un assistant listé en cours reste « en cours » tant que sa
+session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`).
 
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 

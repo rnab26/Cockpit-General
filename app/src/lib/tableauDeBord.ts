@@ -36,7 +36,7 @@ export interface TableauDeBord {
 export function tableauDeBord(
   d: Donnees, now: Date, silenceMs: number, fenetre: Fenetre, ordreProjets: readonly string[], projetId: string | null = null,
 ): TableauDeBord {
-  const elements = aToi(d.chantiers, d.messages, projetId)
+  const elements = aToi(d.chantiers, d.messages, projetId, d.activites, d.taches)
   const caAvance = caAvanceToutSeul(d.chantiers, d.activites, d.messages, d.sessions, d.taches, now, silenceMs, projetId)
   const travail = quiTravaille(d.sessions, d.taches, d.activites, d.chantiers, now, silenceMs, ordreProjets, projetId)
   const pretALancer = aLancer(d.chantiers, d.activites, d.messages, now, silenceMs, ordreProjets, projetId, d.taches).flatMap((g) => g.lignes)

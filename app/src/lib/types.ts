@@ -101,6 +101,8 @@ export interface Message {
   created_at: string
   /** Pièces jointes (0013) : fichiers du stockage privé `cockpit-medias`. */
   medias?: Media[] | null
+  /** 0015 : la session a confirmé la question « toujours d'actualité » après avoir avancé. */
+  confirmee_at?: string | null
 }
 
 export interface Media {
