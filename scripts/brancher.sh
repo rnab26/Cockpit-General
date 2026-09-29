@@ -71,7 +71,7 @@ poser() { # modèle, destination
   else echo "   EXISTE, n'est pas au cockpit, conservé (relance avec --forcer pour remplacer) : ${2#$dossier/}"; fi
 }
 mkdir -p "$dossier/scripts" "$dossier/.claude/hooks"
-for n in lanceur sql demander progression chantier passe; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
+for n in lanceur sql demander progression chantier passe media; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
 # Ancienne aide de l'installation par copie : plus utilisée.
 if [ -f "$dossier/scripts/cockpit-progression_tableau.py" ]; then rm -f "$dossier/scripts/cockpit-progression_tableau.py"; echo "   retiré (ancienne copie) : scripts/cockpit-progression_tableau.py"; fi
 # Ancien mode : un projet SANS sql.sh recevait notre sql.sh sous son nom. Il est à nous : on le laisse

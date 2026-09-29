@@ -1,0 +1,39 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=390"><link rel="stylesheet" href="commun.css">
+<style>
+.seg{display:grid;grid-template-columns:repeat(4,1fr);background:var(--c2);border-radius:12px;padding:3px;margin-bottom:12px}
+.seg div{text-align:center;padding:7px 2px;border-radius:9px;font-size:12.5px;color:var(--t2)}
+.seg div b{display:block;font-size:17px;color:var(--t);font-weight:650}
+.seg .on{background:var(--carte);box-shadow:0 1px 2px rgba(0,0,0,.08);color:var(--t);font-weight:600}
+.seg .on b{color:var(--al)}
+.filtre{display:flex;gap:6px;margin-bottom:10px;overflow:hidden}
+.item{padding:12px 14px;border-top:1px solid var(--b)}
+.item:first-child{border-top:0}
+.h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.q{margin-top:8px;display:grid;gap:6px}
+.opt{border:1px solid var(--b);border-radius:10px;padding:8px 10px;font-size:14px}
+.opt.on{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac) inset}
+.pj{display:flex;gap:8px;margin-top:8px;align-items:center}
+.gp{font-size:12px;color:var(--t2);margin:14px 4px 6px;text-transform:uppercase;letter-spacing:.04em}
+</style></head><body><div class="lab">C · Onglets</div>
+<div class="top"><h1>Cockpit</h1><span class="pill on">Tous les projets ▾</span></div>
+<main>
+<div class="seg">
+ <div class="on"><b>28</b>À toi</div><div><b>4</b>Ça avance</div><div><b>3</b>À lancer</div><div><b>4</b>Fini</div>
+</div>
+<div class="filtre"><span class="pill on">Tout</span><span class="pill">❓ Questions 4</span><span class="pill">🧪 À tester 18</span><span class="pill">🗣️ À décider 3</span></div>
+
+<div class="gp">❓ Claude te demande (4)</div>
+<div class="carte">
+ <div class="item"><div class="h"><span class="tit">GPU ~1,6 $ pour corriger le job sandwich ?</span></div>
+  <div class="muted"><span class="dot facepro"></span> FacePro · Tête entière — bouche hybride · il y a 5 h</div>
+  <div class="q"><div class="opt on"><b>Oui, 1,6 $ max</b> <span class="muted">★ recommandé</span></div><div class="opt">Seulement l'étape 1 (0,30 $)</div><div class="opt">Non, pas maintenant</div></div>
+  <div class="pj"><span class="btn">📎 Joindre</span><span class="grow"></span><span class="btn p">Envoyer</span></div></div>
+ <div class="item"><div class="h"><span class="tit">Expressions atténuées : tester (~1,5 $) ?</span><span class="muted">›</span></div><div class="muted"><span class="dot facepro"></span> FacePro · 2 choix</div></div>
+</div>
+
+<div class="gp">🧪 C'est en ligne, dis si ça marche (18)</div>
+<div class="carte">
+ <div class="item"><div class="h"><span class="tit">Tête entière — cheveux sur la poitrine</span><span class="muted">›</span></div><div class="muted"><span class="dot facepro"></span> FacePro · en ligne depuis 3 h</div></div>
+ <div class="item"><div class="h"><span class="tit">Voir l'état du déploiement du site</span><span class="muted">›</span></div><div class="muted"><span class="dot cockpit"></span> cockpit · en ligne depuis 6 h</div></div>
+</div>
+</main></body></html>

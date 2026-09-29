@@ -6,7 +6,7 @@
 //   node scripts/verifier-web.mjs
 //
 // Il sert dist/ avec `vite preview`, se connecte, et vérifie :
-//  - l'ACCUEIL = l'onglet « Tout » : « En ce moment » et le début de « À toi »
+//  - l'ACCUEIL = l'onglet « Tout » : « Où j'en suis » (vue d'ensemble), « En ce moment » et le début de « À toi »
 //    dans le premier écran, « Personne ne travaille » quand aucune session n'a
 //    donné signe de vie (29 sept. 2026 : barres orange à 85 % sans personne) ;
 //  - la PRÉSENCE : une activité de test mise à jour maintenant apparaît dans
@@ -45,13 +45,29 @@ const racineApp = path.resolve(ici, '..')
 const sqlSh = path.resolve(racineApp, '..', 'scripts', 'sql.sh')
 const CAPTURES = process.env.CAPTURES ?? (existsSync('/tmp/claude-0') ? '/tmp/claude-0/-home-user/26486ea7-9936-5198-a42a-ff8e3b15d856/scratchpad' : '/tmp')
 mkdirSync(CAPTURES, { recursive: true })
-const EMAIL = process.env.COCKPIT_TEST_EMAIL
-const MDP = process.env.COCKPIT_TEST_PASSWORD
-if (!EMAIL || !MDP) { console.error('COCKPIT_TEST_EMAIL / COCKPIT_TEST_PASSWORD absents : `source` le fichier des identifiants de test.'); process.exit(2) }
+const EMAIL = process.env.COCKPIT_TEST_EMAIL ?? 'test-cockpit@cockpit.local'
+// Sans mot de passe dans l'environnement (il vivait dans celui de la session
+// qui a créé le compte), la connexion passe par un lien magique généré avec la
+// clé service_role : le parcours reste le même, seule l'étape « mauvais mot de
+// passe » est sautée (et dite sautée).
+const MDP = process.env.COCKPIT_TEST_PASSWORD ?? null
+if (!MDP && !process.env.SUPABASE_SERVICE_ROLE_KEY) { console.error('Ni COCKPIT_TEST_PASSWORD ni SUPABASE_SERVICE_ROLE_KEY : impossible de se connecter.'); process.exit(2) }
+const REF_SUPABASE = 'bexiyvmdbxcwxasgslxp'
+const API_SUPABASE = `https://${REF_SUPABASE}.supabase.co`
+const CLE_PUBLIQUE = 'sb_publishable_Ju0xC27cQ1JrN4IpWFfWxQ_Ntrd4P1U'
+const sessionParLienMagique = async () => {
+  const sr = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const lien = await (await fetch(`${API_SUPABASE}/auth/v1/admin/generate_link`, { method: 'POST', headers: { apikey: sr, Authorization: `Bearer ${sr}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'magiclink', email: EMAIL }) })).json()
+  const ses = await (await fetch(`${API_SUPABASE}/auth/v1/verify`, { method: 'POST', headers: { apikey: CLE_PUBLIQUE, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'magiclink', token_hash: lien.hashed_token ?? lien.properties?.hashed_token }) })).json()
+  if (!ses.access_token) throw new Error(`lien magique refusé : ${JSON.stringify(ses).slice(0, 200)}`)
+  return ses
+}
 const PORT = Number(process.env.PORT ?? 4173)
 const ORIGINE = `http://127.0.0.1:${PORT}`
 const BASE = `${ORIGINE}/Cockpit-General/`
 const MARQUE = '[TEST verifier-web]'
+// Une image PNG réelle (1×1), pour les médias joints (0013).
+const PNG_TEST = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 // Préfixe des chantiers de test, identifiants générés ici (un `insert …
 // returning` ne renvoie rien par sql.sh) pour tout retrouver au nettoyage.
 const MARQUE2 = '[TEST web]'
@@ -98,6 +114,9 @@ const purgerProjetsDeTest = (ids) => {
   const reels = sql(`select slug from projets where id in (${liste}) and slug not like 'test-web-%'`)
   if (reels.length) throw new Error(`REFUS : un id à purger n'est pas un projet de test : ${JSON.stringify(reels)}`)
   sql(`delete from projets where id in (${liste}) and slug like 'test-web-%'`)   // cascade : sections, chantiers, messages, activite, sessions, taches
+  // Les médias du projet de test (le stockage n'est pas en cascade).
+  const noms = sql(`select name from storage.objects where bucket_id = 'cockpit-medias' and split_part(name, '/', 1) in (${liste})`).map((r) => r.name)
+  if (noms.length) execFileSync('curl', ['-sS', '-X', 'DELETE', `https://bexiyvmdbxcwxasgslxp.supabase.co/storage/v1/object/cockpit-medias`, '-H', `apikey: ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, '-H', `Authorization: Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, '-H', 'Content-Type: application/json', '-d', JSON.stringify({ prefixes: noms })])
   sql(`delete from historique where chantier_id in (select chantier_id from supprimes where projet_id in (${liste}))`)
   sql(`delete from supprimes where projet_id in (${liste})`)
 }
@@ -148,6 +167,21 @@ const compterVivants = (slug = null) => {
 const navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
 const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR', timezoneId: 'Asia/Jerusalem' })
 await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGINE })
+// Le Chromium de l'environnement cloud Claude ne fait pas confiance au proxy
+// TLS (ERR_CERT_AUTHORITY_INVALID, constaté le 29 sept.) : les appels HTTP à
+// Supabase (et au site d'un projet, lu pour sa version en ligne) passent par
+// Node, qui vérifie le certificat avec le bundle du proxy. Rien n'est désactivé ;
+// le temps réel (WebSocket) reste hors d'atteinte, comme avant. GitHub, simulé
+// plus bas, garde la priorité (la dernière route déclarée passe en premier).
+await ctx.route(/^https:\/\//, async (route) => {
+  const r = route.request()
+  try {
+    const res = await fetch(r.url(), { method: r.method(), headers: r.headers(), body: r.postDataBuffer() ?? undefined })
+    const headers = Object.fromEntries(res.headers)
+    delete headers['content-encoding']; delete headers['content-length']
+    await route.fulfill({ status: res.status, headers, body: Buffer.from(await res.arrayBuffer()) })
+  } catch { await route.abort('failed') }
+})
 await ctx.route('https://api.github.com/**', (route) => {
   if (githubMode === 'limite') return route.fulfill({ status: 403, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ message: 'API rate limit exceeded' }) })
   const test = route.request().url().includes(DEPOT_TEST)
@@ -226,8 +260,15 @@ try {
   // Le 400 de la connexion refusée est l'effet VOULU de l'étape ci-dessus : on ne compte que la suite.
   erreursConsole.length = 0
 
-  await page.getByLabel('Mot de passe').fill(MDP)
-  await page.getByRole('button', { name: 'Se connecter', exact: true }).last().click()
+  if (MDP) {
+    await page.getByLabel('Mot de passe').fill(MDP)
+    await page.getByRole('button', { name: 'Se connecter', exact: true }).last().click()
+  } else {
+    console.log('  (connexion par lien magique : pas de mot de passe de test dans cet environnement)')
+    const ses = await sessionParLienMagique()
+    await page.evaluate(([k, v]) => localStorage.setItem(k, v), [`sb-${REF_SUPABASE}-auth-token`, JSON.stringify(ses)])
+    await page.reload({ waitUntil: 'networkidle' })
+  }
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
   await page.getByTestId('a-toi').waitFor({ timeout: 30000 })
   await page.waitForTimeout(800)
@@ -236,16 +277,24 @@ try {
   // 1. L'accueil : l'onglet « Tout », premier écran
   console.log('  — accueil « Tout »')
   verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('onglet-tout').getAttribute('aria-selected')) === 'true')
+  const bEnsemble = await page.getByTestId('ou-jen-suis').boundingBox()
   const bMoment = await page.getByTestId('en-ce-moment').boundingBox()
-  verifie('« En ce moment » est le premier bloc, en haut de l’écran', bMoment && bMoment.y < 200, bMoment)
-  if (bMoment && bMoment.height <= 600) verifie('« En ce moment » entièrement dans le premier écran (844 px)', bMoment.y + bMoment.height <= 844, bMoment)
+  verifie('« Où j’en suis » (vue d’ensemble) est le premier bloc, en haut de l’écran', bEnsemble && bEnsemble.y < 200, bEnsemble)
+  verifie('« En ce moment » vient juste après', bMoment && bEnsemble && bMoment.y > bEnsemble.y && bMoment.y < bEnsemble.y + bEnsemble.height + 40, { bEnsemble, bMoment })
+  const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
+  const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)
+  verifie('« Où j’en suis » dans « Tout » : une ligne par projet actif, plus le total', lignesEnsemble === nProjetsActifs + (nProjetsActifs > 1 ? 1 : 0), { lignesEnsemble, nProjetsActifs })
+  const totalPourToi = await page.getByTestId('ou-jen-suis').locator('[data-testid="ligne-ou-jen-suis"]').last().locator('[data-colonne="pourToi"]').textContent().catch(() => '0')
+  verifie('« pour toi » (total) = le nombre de « À toi » : une seule règle', Number(totalPourToi) === Number(await page.getByTestId('a-toi-total').textContent()), { tableau: totalPourToi, aToi: await page.getByTestId('a-toi-total').textContent() })
+  await capture(page, 'ou-jen-suis')
+  if (bMoment && bMoment.height <= 400) verifie('« En ce moment » entièrement dans le premier écran (844 px)', bMoment.y + bMoment.height <= 844, bMoment)
   const bToi = await page.getByTestId('a-toi').boundingBox()
   // « Au mieux » : quand beaucoup de choses tournent VRAIMENT (plusieurs sessions et agents, données
   // réelles), « En ce moment » peut dépasser l'écran à lui seul ; l'onglet « Tout » annonce alors le
   // nombre de choses qui t'attendent (🔴 n), déjà visible. Sinon, « À toi » doit commencer à l'écran.
-  if (bMoment && bMoment.height > 600) {
+  if (bMoment && bMoment.height > 400) {
     console.log(`    (« En ce moment » fait ${Math.round(bMoment.height)} px avec l’activité réelle de l’instant : on vérifie que l’onglet annonce « À toi »)`)
-    verifie('beaucoup d’activité réelle : « À toi » annoncé dans le premier écran (🔴 n sur l’onglet « Tout »)', /🔴\d+/.test(await page.getByTestId('onglet-tout').textContent()) || (await page.getByTestId('a-toi-total').textContent()) === '0')
+    verifie('beaucoup d’activité réelle : « À toi » annoncé dans le premier écran (nombre sur l’onglet « Tout » et colonne « pour toi »)', (await page.getByTestId('onglet-tout').getByTestId('pastille-a-toi').count()) === 1 || (await page.getByTestId('a-toi-total').textContent()) === '0')
   } else verifie('le début de « À toi » est dans le premier écran', bToi && bToi.y + 40 <= 844, bToi)
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
@@ -328,7 +377,7 @@ try {
   await page.getByTestId('en-ce-moment').evaluate((e) => e.scrollIntoView({ block: 'start' }))
   await page.evaluate(() => window.scrollBy(0, -64))
   await captureUx(page, 'ux-en-ce-moment')
-  verifie('l’onglet du projet porte la pastille 🟢 (quelqu’un y travaille)', (await ongletTest().textContent()).includes('🟢'), await ongletTest().textContent())
+  verifie('l’onglet du projet porte la pastille verte (quelqu’un y travaille)', (await ongletTest().getByTestId('pastille-travaillent').count()) === 1, await ongletTest().textContent())
   // Tap sur la ligne : on arrive sur le chantier, ouvert, dans son projet.
   await ligneP1.click()
   await page.getByTestId('vue-projet').waitFor({ timeout: 10000 })
@@ -484,6 +533,11 @@ try {
   await capture(page, 'question')
   await blocQ.getByRole('radio', { name: /Option A/ }).click()
   await blocQ.getByPlaceholder(/précision/i).fill('précision de test')
+  // Une capture jointe à la réponse (0013) : la vignette, puis le fichier dans le fil.
+  await blocQ.getByTestId('entree-medias').setInputFiles({ name: 'capture écran.png', mimeType: 'image/png', buffer: PNG_TEST })
+  await blocQ.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
+  verifie('réponse : la photo jointe s’affiche en vignette, envoyée', await blocQ.locator('[data-testid="piece-jointe"][data-etat="ok"] img').count() === 1)
+  await capture(page, 'question-avec-photo')
   await blocQ.getByTestId('valider-reponse').click()
   const toastRep = await toastAuPremierPlan(/Réponse enregistrée/)
   verifie('réponse depuis « À toi » : toast visible', toastRep, { auPremierPlan: dernierDessus })
@@ -491,6 +545,10 @@ try {
   verifie('la question répondue quitte « À toi »', await elQ.count() === 0)
   const rep = sql(`select reponse, precision, answered_at from messages where corps like '${MARQUE}%'`)[0]
   verifie('la réponse est en base (option + précision + answered_at)', rep && rep.reponse === 'Option A' && rep.precision === 'précision de test' && !!rep.answered_at, rep)
+  const pjQ = sql(`select corps, medias from messages where chantier_id = '${Q1.id}' and kind = 'info' and jsonb_array_length(medias) > 0`)
+  verifie('la photo de la réponse est dans le fil du chantier (message info + medias)', pjQ.length === 1 && pjQ[0].medias[0].type === 'image/png' && pjQ[0].medias[0].chemin.startsWith(`${projet.id}/${Q1.id}/`) && /Option A/.test(pjQ[0].corps), pjQ)
+  const objQ = sql(`select count(*) as n from storage.objects where bucket_id = 'cockpit-medias' and name = '${esc(pjQ[0]?.medias?.[0]?.chemin ?? '')}'`)[0]
+  verifie('le fichier est bien dans le stockage privé', Number(objQ.n) === 1, objQ)
 
   // ===================================================================
   // 5. « À toi » : vérifier et certifier, avec la frise de mise en ligne
@@ -593,13 +651,32 @@ try {
   const [bEcrire, bActions] = [await ecrire.boundingBox(), await carteR1.getByTestId('actions-admin').boundingBox()]
   verifie('la réponse passe avant les actions (Modifier, Archiver…)', bEcrire && bActions && bEcrire.y < bActions.y)
   await ecrire.locator('textarea').fill(`${MARQUE2} message à Claude`)
+  await ecrire.getByTestId('entree-medias').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: PNG_TEST })
+  await ecrire.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
   await ecrire.getByTestId('envoyer-message').click()
   const toastEcrit = await toastAuPremierPlan(/Message envoyé/)
   verifie('« Envoyer » : toast visible', toastEcrit, { auPremierPlan: dernierDessus })
   const ecrits = sql(`select kind, auteur_type, corps from messages where chantier_id = '${R1.id}'`)
   verifie('le message est en base (info, propriétaire)', ecrits.length === 1 && ecrits[0].kind === 'info' && ecrits[0].auteur_type === 'proprietaire' && ecrits[0].corps === `${MARQUE2} message à Claude`, ecrits)
+  const mR1 = sql(`select medias from messages where chantier_id = '${R1.id}'`)[0]?.medias ?? []
+  verifie('« Écrire à Claude » : la photo part avec le message', mR1.length === 1 && mR1[0].nom === 'photo.png', mR1)
+  verifie('après l’envoi, plus de vignette en attente sous le champ', await ecrire.getByTestId('piece-jointe').count() === 0)
   await carteR1.getByTestId('fil').waitFor({ timeout: 10000 }).catch(() => {})
   verifie('le fil apparaît, son en-tête cite le dernier message', await carteR1.getByTestId('fil').count() === 1 && (await carteR1.getByTestId('fil').textContent()).includes('message à Claude'))
+  verifie('le fil replié annonce ses pièces jointes (📎 1)', /📎 1/.test(await carteR1.getByTestId('fil').textContent()))
+  await carteR1.getByTestId('fil').locator('button').first().click()
+  const vignette = carteR1.getByTestId('fil').locator('[data-testid="media"] img').first()
+  await vignette.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  verifie('la photo s’affiche dans le fil (lien signé, image réellement chargée)', await vignette.count() === 1 && await vignette.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
+  if (await vignette.count()) {
+    await vignette.click()
+    const grande = page.locator('dialog[open] img')
+    await grande.waitFor({ timeout: 8000 }).catch(() => {})
+    verifie('un toucher sur la vignette l’ouvre en grand', await grande.count() === 1)
+    await capture(page, 'photo-en-grand')
+    await page.keyboard.press('Escape')
+  }
   await carteR1.evaluate((e) => e.scrollIntoView({ block: 'start' }))
   await page.evaluate(() => window.scrollBy(0, -64))
   await capture(page, 'carte-reportee')

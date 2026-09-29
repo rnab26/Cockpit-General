@@ -42,7 +42,7 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
       <div className="space-y-3">
         <Champ label="Titre"><Input autoFocus value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="En une phrase : ce qu’il faut faire" data-testid="titre" /></Champ>
         {proches.length ? (
-          <div className="rounded-xl border border-attention/50 bg-attention/8 px-3 py-2 text-sm" data-testid="ca-existe-deja">
+          <div className="rounded-xl border border-l-4 border-bord border-l-attention bg-carte px-3 py-2 text-sm" data-testid="ca-existe-deja">
             <p className="font-semibold text-attention">⚠️ Ça existe déjà, peut-être :</p>
             <ul className="mt-1 space-y-0.5">
               {proches.map((p) => <li key={p.id}>• {p.titre} <span className="text-texte-2">({infoEtat(p.etat).libelle}{p.archived_at ? ', archivé' : ''})</span></li>)}

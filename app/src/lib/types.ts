@@ -99,6 +99,15 @@ export interface Message {
   answered_at: string | null
   answered_by: string | null
   created_at: string
+  /** Pièces jointes (0013) : fichiers du stockage privé `cockpit-medias`. */
+  medias?: Media[] | null
+}
+
+export interface Media {
+  chemin: string   // <projet_id>/<chantier_id | projet>/<uuid>-<nom>
+  nom: string
+  type: string     // type MIME
+  taille: number   // octets
 }
 
 export interface Activite {

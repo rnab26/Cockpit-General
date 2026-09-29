@@ -16,7 +16,7 @@ RACINE="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROJET="${COCKPIT_PROJET:-}"
 # Noms des scripts tels qu'installés dans le projet (brancher.sh les réécrit).
-SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"; CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"
+SQL_CMD="${COCKPIT_SQL_CMD:-scripts/sql.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM_CMD="${COCKPIT_DEM_CMD:-scripts/demander.sh}"; CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"; MEDIA_CMD="${COCKPIT_MEDIA_CMD:-scripts/media.sh}"
 
 emettre() { jq -n --arg c "$1" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'; }
 
@@ -70,7 +70,7 @@ constats=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(m.cre
 # qu'aucune session n'a suivi depuis : son « Demander où ça en est », une
 # précision, une remarque. Sans ce bloc, son message reste dans l'app et
 # personne ne le lit (constaté le 29 sept. 2026).
-sans_suite=$(un "select coalesce(string_agg(format('- [%s] %s | %s : %s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre, 'général'), m.auteur, left(replace(m.corps, chr(10), ' '), 240)), chr(10) order by m.created_at), '(rien)') from messages m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P and m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and m.created_at > now() - interval '30 days' and not exists (select 1 from messages s where s.chantier_id is not distinct from m.chantier_id and s.projet_id = m.projet_id and s.auteur_type = 'session' and s.created_at > m.created_at)")
+sans_suite=$(un "select coalesce(string_agg(format('- [%s] %s | %s : %s%s', to_char(m.created_at, 'DD/MM HH24:MI'), coalesce(c.titre, 'général'), m.auteur, left(replace(m.corps, chr(10), ' '), 240), case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) jointe(s) — REGARDE-LES : $MEDIA_CMD --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by m.created_at), '(rien)') from messages m join projets p on p.id = m.projet_id left join chantiers c on c.id = m.chantier_id where p.slug = $P and m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and m.created_at > now() - interval '30 days' and not exists (select 1 from messages s where s.chantier_id is not distinct from m.chantier_id and s.projet_id = m.projet_id and s.auteur_type = 'session' and s.created_at > m.created_at)")
 
 utilisateurs=$(un "select coalesce(string_agg(format('- %s | %s | %s%s', c.id, c.titre, c.etat, case when coalesce(c.demande,'') <> '' then chr(10) || '    ' || left(replace(c.demande, chr(10), ' '), 240) else '' end), chr(10) order by c.created_at), '(aucune)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.origine = 'utilisateur' and c.archived_at is null and c.etat in ('a_trier','a_cadrer','libre')")
 

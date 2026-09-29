@@ -65,7 +65,7 @@ export function TousLesChantiers({ ouverts, basculer, sectionOuverte, basculerSe
         ) : null}
       </h2>
       {nEnCours ? (
-        <button type="button" data-testid="voir-en-ce-moment" className="w-full rounded-xl bg-ok/8 px-3 py-2 text-left text-sm font-semibold text-ok"
+        <button type="button" data-testid="voir-en-ce-moment" className="w-full rounded-xl border border-bord bg-carte px-3 py-2 text-left text-sm font-medium text-ok"
           onClick={() => document.querySelector('[data-testid="en-ce-moment"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
           ⬆ {nEnCours} en cours : tout est regroupé dans « En ce moment », en haut
         </button>

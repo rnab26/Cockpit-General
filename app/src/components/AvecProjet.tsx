@@ -14,12 +14,15 @@ export function AvecProjet({ projetId, children }: { projetId: string; children:
   return <CockpitCtx.Provider value={ctx}>{children}</CockpitCtx.Provider>
 }
 
-/** La pastille d'un projet : sa couleur et son nom, pour savoir d'un coup d'œil de quel projet on parle. */
+/**
+ * La pastille d'un projet : un point de sa couleur et son nom (29 sept. :
+ * plus de fond plein, « très coloré, ça fait mal aux yeux »).
+ */
 export function PastilleProjet({ projet, className = '' }: { projet: Pick<Projet, 'nom' | 'couleur'> | null | undefined; className?: string }) {
   if (!projet) return null
   return (
-    <span className={`inline-flex max-w-[45%] shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[11px] font-bold leading-4 text-white ${className}`}
-      style={{ background: projet.couleur ?? 'var(--accent)' }} data-testid="pastille-projet">
+    <span className={`inline-flex max-w-[45%] shrink-0 items-center gap-1 text-[11px] font-medium leading-4 text-texte-2 ${className}`} data-testid="pastille-projet">
+      <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: projet.couleur ?? 'var(--accent)' }} />
       <span className="truncate">{projet.nom}</span>
     </span>
   )

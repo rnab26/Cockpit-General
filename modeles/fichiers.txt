@@ -4,6 +4,7 @@ scripts/progression.sh
 scripts/progression_tableau.py
 scripts/chantier.sh
 scripts/passe.sh
+scripts/media.sh
 scripts/brancher.sh
 hooks/session-start.sh
 hooks/prompt-rappel.sh
@@ -16,6 +17,7 @@ modeles/cockpit-demander.sh
 modeles/cockpit-progression.sh
 modeles/cockpit-chantier.sh
 modeles/cockpit-passe.sh
+modeles/cockpit-media.sh
 modeles/cockpit-session-start.sh
 modeles/cockpit-prompt-rappel.sh
 modeles/cockpit-suivi.sh

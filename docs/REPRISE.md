@@ -103,6 +103,21 @@ la nouvelle version, et passer le chantier « à vérifier » avec `--verifier`
 et `--en-ligne`. Chantier concerné : `3f94d1e2-5847-411e-ba61-9e60def0005b`
 (+ la refonte elle-même, chantier « Écran en entonnoir… » dans Application).
 
+## 2 bis. 29 sept. matin : retour de Raphaël sur la refonte (chantier `9c417e60`)
+
+« Où est passée la vue d'ensemble (nombre de chantiers, ce qui bouge, ce qui
+ne bouge pas) ? Vue très grossière, très colorée, ça fait mal aux yeux,
+régressif. Je ne peux plus répondre avec des cartes et ajouter des médias. »
+Cause : la refonte `8e82a78` avait SUPPRIMÉ « Où j'en suis » (OuJenSuis.tsx) et
+peint chaque bloc (cadres épais, fonds teintés, boutons pleins, emoji ronds).
+Les médias n'avaient jamais existé dans l'app (hier = la fiche Claude).
+Livré : « Où j'en suis » revenu en tête (Tout : une ligne par projet ; projet :
+une ligne par section ; un nombre ouvre la liste de ses chantiers) — « pour
+toi » = exactement la liste « À toi » (une seule règle, testée) ; écran calme
+(cartes neutres + liseré, boutons en contour, pastilles sans pavé) ; médias
+(0013, `Medias.tsx`, `scripts/media.sh`). Vérifié : 13 séries pures,
+verifier-base 158/158, verifier-web (voir le commit).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
@@ -129,6 +144,11 @@ et `--en-ligne`. Chantier concerné : `3f94d1e2-5847-411e-ba61-9e60def0005b`
   colonne aliasée `t`.
 - Le Chromium du conteneur n'ouvre aucune WebSocket : le temps réel se
   prouve depuis Node (`verifier-base` §12), pas dans le navigateur de test.
+  Et il ne fait pas confiance au proxy TLS : les scripts passent les requêtes
+  https par Node (voir CLAUDE.md), jamais `ignoreHTTPSErrors`.
+- Une refonte d'écran ne SUPPRIME pas un bloc que Raphaël utilise sans le lui
+  dire (29 sept. : « Où j'en suis » disparu, vécu comme une régression). Et
+  pas de pavés colorés : couleur = liseré, point ou texte.
 - `pgrep`/`pkill` : motifs ancrés, sinon la commande se tue elle-même.
 - Les hooks déclarés dans `.claude/settings.json` d'un projet ne se
   propagent pas seuls : un nouvel événement = relancer `brancher.sh` sur

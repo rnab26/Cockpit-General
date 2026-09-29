@@ -55,7 +55,7 @@ export function ModeAutonome({ projet }: { projet: Projet }) {
 
   if (actif && !ouvert) {
     return (
-      <div data-testid="mode-autonome" data-actif="oui" className="flex items-center gap-2 rounded-xl border border-info/40 bg-info/8 px-2.5 py-1.5 text-sm">
+      <div data-testid="mode-autonome" data-actif="oui" className="flex items-center gap-2 rounded-xl border border-bord bg-carte-2/60 px-2.5 py-1.5 text-sm">
         <p className="min-w-0 flex-1 leading-snug" data-testid="autonome-bandeau">
           <span className="font-semibold text-info">🌙 Autonome {projet.autonome_toujours ? 'tout le temps' : `jusqu’à ${heureIsrael(projet.autonome_jusqu_a!)}`}</span>
           <span className="text-texte-2"> — {libellePrets} · au plus {projet.autonome_max} par session</span>
@@ -74,7 +74,7 @@ export function ModeAutonome({ projet }: { projet: Projet }) {
           🌙 Travailler en autonomie…
         </button>
       ) : (
-        <div className="space-y-2 rounded-xl border border-info/40 bg-info/5 p-2.5" data-testid="autonome-formulaire">
+        <div className="space-y-2 rounded-xl border border-bord bg-carte-2/60 p-2.5" data-testid="autonome-formulaire">
           <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Jusqu’à quand">
             <label className="flex items-center gap-2">
               <input type="radio" name={`autonome-${projet.id}`} checked={!toujours} onChange={() => setToujours(false)} className="accent-accent" data-testid="autonome-jusqua" />

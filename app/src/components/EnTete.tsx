@@ -9,14 +9,17 @@ export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'cho
 
 export interface Pastilles { travaillent: number; aToi: number }
 
-/** Les petites pastilles d'un onglet : 🟢 n sessions au travail, 🔴 n choses qui t'attendent. Rien quand c'est zéro. */
-function PastillesOnglet({ p, actif }: { p: Pastilles | undefined; actif: boolean }) {
+/**
+ * Les petites pastilles d'un onglet : n sessions au travail (point vert), n
+ * choses qui t'attendent (nombre rouge). Rien quand c'est zéro. Sans pavé ni
+ * emoji (29 sept. : « très coloré, ça fait mal aux yeux »).
+ */
+function PastillesOnglet({ p }: { p: Pastilles | undefined; actif?: boolean }) {
   if (!p || (!p.travaillent && !p.aToi)) return null
-  const fond = actif ? 'bg-white/90' : 'bg-carte-2'
   return (
-    <span className="flex items-center gap-1" data-testid="pastilles-onglet">
-      {p.travaillent ? <span className={`rounded-full px-1.5 text-[11px] font-bold leading-5 text-ok ${fond}`} title={`${p.travaillent} session(s) au travail`}>🟢{p.travaillent}</span> : null}
-      {p.aToi ? <span className={`rounded-full px-1.5 text-[11px] font-bold leading-5 text-alerte ${fond}`} title={`${p.aToi} chose(s) t’attendent`}>🔴{p.aToi}</span> : null}
+    <span className="flex items-center gap-1.5 text-[11px] font-semibold tabular-nums leading-5" data-testid="pastilles-onglet">
+      {p.travaillent ? <span className="flex items-center gap-0.5 text-ok" data-testid="pastille-travaillent" title={`${p.travaillent} session(s) au travail`}><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" />{p.travaillent}</span> : null}
+      {p.aToi ? <span className="text-alerte" data-testid="pastille-a-toi" title={`${p.aToi} chose(s) t’attendent`}>{p.aToi}</span> : null}
     </span>
   )
 }
@@ -47,7 +50,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
         <div ref={onglets} className="sans-barre flex min-w-0 flex-1 gap-1.5 overflow-x-auto py-1" role="tablist" aria-label="Projets">
           {projets.length ? (
             <button type="button" role="tab" aria-selected={vueTout} onClick={() => choisirVue(VUE_TOUT)} data-testid="onglet-tout"
-              className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-semibold transition ${vueTout ? 'border-transparent bg-texte text-fond' : 'border-bord bg-carte text-texte-2'}`}>
+              className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-semibold transition ${vueTout ? 'border-texte/70 bg-carte text-texte' : 'border-bord bg-carte text-texte-2'}`}>
               <span>Tout</span>
               <PastillesOnglet p={pastilles.get(VUE_TOUT)} actif={vueTout} />
             </button>
@@ -56,9 +59,8 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
             const actif = !vueTout && p.id === projet?.id
             return (
               <button key={p.id} type="button" role="tab" aria-selected={actif} onClick={() => choisirVue(p.id)} data-testid={`onglet-${p.slug}`}
-                className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-semibold transition ${actif ? 'border-transparent text-white' : 'border-bord bg-carte text-texte-2'} ${!p.actif ? 'opacity-60' : ''}`}
-                style={actif ? { background: p.couleur ?? 'var(--accent)' } : undefined}>
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: actif ? 'rgba(255,255,255,.85)' : (p.couleur ?? '#888') }} />
+                className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-semibold transition ${actif ? 'border-texte/70 bg-carte text-texte' : 'border-bord bg-carte text-texte-2'} ${!p.actif ? 'opacity-60' : ''}`}>
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.couleur ?? '#888' }} />
                 <span>{p.nom}</span>
                 <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
               </button>
@@ -83,7 +85,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
         </div>
       </div>
       {direct === 'coupe' ? (
-        <div className="bg-attention/15 px-3 py-1 text-center text-xs text-attention" data-testid="direct-coupe">
+        <div className="border-t border-bord px-3 py-1 text-center text-xs text-texte-2" data-testid="direct-coupe">
           Direct coupé — rafraîchissement toutes les 30 s{derniereMaj ? ` · à jour ${dateRelative(derniereMaj.toISOString())}` : ''}
         </div>
       ) : null}

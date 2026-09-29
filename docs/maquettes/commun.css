@@ -1,0 +1,22 @@
+:root{--fond:#f4f5f7;--carte:#fff;--c2:#f0f2f5;--t:#0f172a;--t2:#5b6473;--b:#e3e6eb;--ok:#16a34a;--att:#d97706;--al:#dc2626;--ac:#0f766e;--info:#2563eb}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--fond);color:var(--t);font-size:15px;line-height:1.35;width:390px}
+.top{position:sticky;top:0;background:rgba(244,245,247,.96);border-bottom:1px solid var(--b);padding:10px 14px;display:flex;align-items:center;gap:8px;z-index:2}
+.top h1{font-size:17px;font-weight:600;flex:1}
+.pill{border:1px solid var(--b);background:var(--carte);border-radius:999px;padding:5px 11px;font-size:13px;color:var(--t2);white-space:nowrap}
+.pill.on{border-color:#334155;color:var(--t);font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}
+.cockpit{background:#0f766e}.facepro{background:#7c3aed}
+main{padding:12px 12px 30px}
+.carte{background:var(--carte);border:1px solid var(--b);border-radius:14px}
+.sec{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--t2);margin:18px 4px 8px;display:flex;justify-content:space-between}
+.muted{color:var(--t2);font-size:13px}
+.bar{height:6px;background:var(--c2);border-radius:99px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--ok);border-radius:99px}
+.btn{display:inline-block;border:1px solid var(--b);border-radius:10px;padding:7px 12px;font-size:14px;font-weight:500;background:var(--carte);color:var(--t)}
+.btn.p{background:var(--ac);border-color:var(--ac);color:#fff}
+.row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-top:1px solid var(--b)}
+.row:first-child{border-top:0}
+.tit{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow{flex:1;min-width:0}
+.tag{font-size:12px;border-radius:6px;padding:2px 7px;background:var(--c2);color:var(--t2);white-space:nowrap}
+.lab{background:#111827;color:#fff;font-weight:700;padding:7px 14px;font-size:15px}

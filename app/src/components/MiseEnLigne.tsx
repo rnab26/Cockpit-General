@@ -30,12 +30,13 @@ export function FriseMiseEnLigne({ chantier }: { chantier: Chantier }) {
   )
 }
 
-const TEINTE = { ok: 'border-ok/50 bg-ok/10 text-ok', attention: 'border-attention/50 bg-attention/10 text-attention', alerte: 'border-alerte/50 bg-alerte/10 text-alerte', info: 'border-info/50 bg-info/10 text-info' }
+// Texte coloré sur fond neutre, liseré à gauche (29 sept. : fini les pavés teintés).
+const TEINTE = { ok: 'border-l-ok text-ok', attention: 'border-l-attention text-attention', alerte: 'border-l-alerte text-alerte', info: 'border-l-info text-info' }
 
 /** La phrase au-dessus de « Ça fonctionne » : peut-il vérifier maintenant ? */
 export function PhraseMiseEnLigne({ chantier }: { chantier: Chantier }) {
   const { now } = useCockpit()
   const s = useMemo(() => syntheseMiseEnLigne(chantier.jalons, now), [chantier.jalons, now])
   if (!s) return null
-  return <p data-testid="phrase-en-ligne" data-code={s.code} className={`rounded-lg border px-3 py-2 text-[15px] font-semibold leading-snug ${TEINTE[s.teinte]}`}>{s.texte}</p>
+  return <p data-testid="phrase-en-ligne" data-code={s.code} className={`rounded-lg border border-l-4 border-bord bg-carte px-3 py-2 text-[15px] font-medium leading-snug ${TEINTE[s.teinte]}`}>{s.texte}</p>
 }
