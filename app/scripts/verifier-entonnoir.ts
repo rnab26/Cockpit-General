@@ -160,20 +160,22 @@ console.log('verifier-entonnoir')
     C('r-retiree', 'ck', 'bloque'),
     C('r-vieille', 'ck', 'bloque'),
     C('r-valide', 'ck', 'valide'),
+    C('r-notee', 'ck', 'bloque'),
   ]
   const ms = [
-    M('rq1', 'ck', 'r-verif', 'question', 30, { reponse: 'Ce que je devais vérifier', answered_at: il(20) }),
-    M('rq2', 'ck', 'r-bloque', 'question', 60, { reponse: 'Oui, ~0,9 $', answered_at: il(50) }),
-    M('rq3', 'ck', 'r-libre', 'action', 60, { reponse: 'Fait', answered_at: il(40) }),
-    M('rq4', 'ck', 'r-reprise', 'question', 60, { reponse: 'Oui', answered_at: il(30) }),
+    M('rq1', 'ck', 'r-verif', 'question', 30, { reponse: 'Ce que je devais vérifier', answered_by: 'u', answered_at: il(20) }),
+    M('rq2', 'ck', 'r-bloque', 'question', 60, { reponse: 'Oui, ~0,9 $', answered_by: 'u', answered_at: il(50) }),
+    M('rq3', 'ck', 'r-libre', 'action', 60, { reponse: 'Fait', answered_by: 'u', answered_at: il(40) }),
+    M('rq4', 'ck', 'r-reprise', 'question', 60, { reponse: 'Oui', answered_by: 'u', answered_at: il(30) }),
     M('ri4', 'ck', 'r-reprise', 'info', 10, { corps: `${PREFIXE_REPRISE} « Oui » : un assistant s’en occupe.` }),
-    M('rq5', 'ck', 'r-expiree', 'question', 300, { reponse: 'Oui', answered_at: il(290) }),
+    M('rq5', 'ck', 'r-expiree', 'question', 300, { reponse: 'Oui', answered_by: 'u', answered_at: il(290) }),
     M('ri5', 'ck', 'r-expiree', 'info', 200, { corps: `${PREFIXE_REPRISE} « Oui » : un assistant s’en occupe.` }),
-    M('rq6', 'ck', 'r-suivie', 'question', 60, { reponse: 'Oui', answered_at: il(50) }),
+    M('rq6', 'ck', 'r-suivie', 'question', 60, { reponse: 'Oui', answered_by: 'u', answered_at: il(50) }),
     M('ri6', 'ck', 'r-suivie', 'info', 40, { corps: 'Je m’en occupe.' }),
-    M('rq7', 'ck', 'r-retiree', 'question', 60, { reponse: 'Retirée par Claude (x) : plus utile', answered_at: il(50) }),
-    M('rq8', 'ck', 'r-vieille', 'question', 60 * 24 * 9, { reponse: 'Oui', answered_at: il(60 * 24 * 8) }),
-    M('rq9', 'ck', 'r-valide', 'question', 60, { reponse: 'Oui', answered_at: il(50) }),
+    M('rq7', 'ck', 'r-retiree', 'question', 60, { reponse: 'Retirée par Claude (x) : plus utile', answered_by: 'u', answered_at: il(50) }),
+    M('rq8', 'ck', 'r-vieille', 'question', 60 * 24 * 9, { reponse: 'Oui', answered_by: 'u', answered_at: il(60 * 24 * 8) }),
+    M('rq9', 'ck', 'r-valide', 'question', 60, { reponse: 'Oui', answered_by: 'u', answered_at: il(50) }),
+    M('rq10', 'ck', 'r-notee', 'question', 60, { reponse: 'Dit dans la conversation', answered_at: il(50) }),
   ]
   const r = (id: string, acts: never[] = [], ts: never[] = []) => repriseReponse(cs.find((c: { id: string }) => c.id === id)!, ms, acts, ts, now)
   verifie('réponse sans suite sur un « à vérifier » (le cas du 29/09) → « attend »', r('r-verif') === 'attend')
@@ -182,6 +184,7 @@ console.log('verifier-entonnoir')
   verifie('reprise mais réservation expirée → plus « reprise » (redevient « sans nouvelles », à relancer)', r('r-expiree') === null)
   verifie('suivie d’un message de session, retirée par Claude, vieille de 8 jours, ou chantier certifié → rien',
     r('r-suivie') === null && r('r-retiree') === null && r('r-vieille') === null && r('r-valide') === null)
+  verifie('une réponse notée par une session (answered_by vide, dite dans sa conversation) → rien (0018)', r('r-notee') === null)
   verifie('une étape signalée après la réponse la suit aussi → rien', r('r-verif', [A('ra', 'ck', 'r-verif', 'en_cours', 5)]) === null)
   const ca = caAvanceToutSeul(cs, [], ms, [], [], now, SILENCE)
   const parId = new Map(ca.map((l) => [l.c.id, l]))
