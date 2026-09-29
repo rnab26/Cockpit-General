@@ -72,8 +72,10 @@ reponses_fraiches() {
   brut=$(timeout 3 "$SQL" "with mes as ($mes)
     select now() as maintenant, string_agg(format('- « %s » : %s%s', c.titre,
         case when m.kind in ('question','action') then format('il a répondu à « %s » → %s%s', left(m.corps, 90), m.reponse, coalesce(' — ' || m.precision, ''))
+             when cockpit.est_message_libre(m) then format('il t''écrit : « %s » → RÉPONDS-LUI dans ce fil, court, avant de continuer : %s --chantier %s \"…\"', left(m.corps, 400), '${COCKPIT_REPONDRE_CMD:-scripts/repondre.sh}', c.id)
              else left(m.corps, 400) end,
-        case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) : media.sh --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by coalesce(m.answered_at, m.created_at)) as nouvelles
+        case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) : media.sh --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by coalesce(m.answered_at, m.created_at)) as nouvelles,
+      string_agg(m.id::text, ',') filter (where m.recu_at is null and cockpit.est_message_libre(m)) as libres
     from messages m join chantiers c on c.id = m.chantier_id
     where m.chantier_id in (select id from mes)
       and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat'))
@@ -82,6 +84,12 @@ reponses_fraiches() {
   local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
   [ -n "$maintenant" ] && printf '%s\n' "$maintenant" > "$cur" 2>/dev/null   # seulement si la base a répondu
   texte=$(printf '%s' "$brut" | jq -r '.rows[0].nouvelles // empty' 2>/dev/null)
+  # Ses messages libres remis à une session VIVANTE sont « reçus » (0024) : l'app
+  # passe de « en attente d'une session » à « la session l'a reçu ». En arrière-plan.
+  local libres; libres=$(printf '%s' "$brut" | jq -r '.rows[0].libres // empty' 2>/dev/null)
+  if [[ "$libres" =~ ^[0-9a-f,-]+$ ]]; then
+    ( setsid "$SQL" "select marquer_messages_recus('{$libres}'::uuid[], '$(printf '%s' "${branche_rep:-$sid}" | sed "s/'/''/g")')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+  fi
   [ -n "$texte" ] && sortie="RÉPONSE DE RAPHAËL dans le cockpit, à l'instant — prends-la en compte MAINTENANT, avant ton prochain pas (et adapte ce que tu fais) :
 $texte"
   # Tes questions encore ouvertes sur ces chantiers, alors que tu as avancé depuis

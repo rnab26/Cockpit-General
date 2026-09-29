@@ -13,7 +13,8 @@
 #                                   (appelée au réveil, et à la fin de CHAQUE agent)
 #   scripts/chef.sh --prendre       cette session devient chef de SON projet (hook, message de Raphaël)
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
-#   scripts/chef.sh --reveil <trig_…> [--distante <session_…>]   note le réveil horaire du projet
+#   scripts/chef.sh --reveil <trig_…> [--distante <session_…>] [--minute <0-59>]   note le réveil horaire
+#                                   du projet (--minute : minute de son cron → « prochain passage vers … » dans l'app)
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #
 # Projet : $COCKPIT_PROJET (posé par brancher.sh), --projet <slug>, sinon le
@@ -24,13 +25,14 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
 CHEF_CMD="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
-sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max=""; projet="${COCKPIT_PROJET:-}"
+sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max=""; minute=""; projet="${COCKPIT_PROJET:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --prendre) mode="prendre"; shift ;;
     --etat)    mode="etat"; shift ;;
     --reveil)  mode="reveil"; reveil="${2:-}"; shift 2 ;;
     --distante) distante="${2:-}"; shift 2 ;;
+    --minute)  minute="${2:-}"; shift 2 ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --session) sid="${2:-}"; shift 2 ;;
     --projet)  projet="${2:-}"; shift 2 ;;
@@ -59,11 +61,12 @@ case "$mode" in
     if [ "$(printf '%s' "$r" | jq -r '.change')" = "true" ]; then
       trig=$(printf '%s' "$r" | jq -r '.reveil_trigger // empty')
       echo "Cette session devient la SESSION CHEF du projet $projet, et de lui seul (avant : $(printf '%s' "$r" | jq -r '.ancienne // "aucune"')). Chaque autre projet a son chef dans sa propre session : n'y touche pas d'ici."
-      echo "Déplace le réveil horaire de $projet sur toi : ${trig:+supprime le réveil $trig (delete_trigger), puis }crée-en un (create_trigger, toutes les heures, sur CETTE session, message « Réveil du chef de $projet : lance $CHEF_CMD et suis sa consigne »), puis note-le : $CHEF_CMD --reveil <trig_…> --distante <ton id session_…>."
+      echo "Déplace le réveil horaire de $projet sur toi : ${trig:+supprime le réveil $trig (delete_trigger), puis }crée-en un (create_trigger, toutes les heures, sur CETTE session, message « Réveil du chef de $projet : lance $CHEF_CMD et suis sa consigne »), puis note-le : $CHEF_CMD --reveil <trig_…> --distante <ton id session_…> --minute <minute de son cron>."
     fi
     exit 0 ;;
   reveil)
-    "$SQL" "insert into chefs (projet_id, reveil_trigger, session_distante) select id, '$(q "$reveil")', nullif('$(q "$distante")', '') from projets where slug = $P on conflict (projet_id) do update set reveil_trigger = excluded.reveil_trigger, session_distante = coalesce(excluded.session_distante, chefs.session_distante)" >/dev/null \
+    [ -z "$minute" ] || [[ "$minute" =~ ^([0-9]|[1-5][0-9])$ ]] || { echo "--minute : la minute du cron du réveil (0 à 59)." >&2; exit 2; }
+    "$SQL" "insert into chefs (projet_id, reveil_trigger, session_distante, reveil_minute) select id, '$(q "$reveil")', nullif('$(q "$distante")', ''), ${minute:-null} from projets where slug = $P on conflict (projet_id) do update set reveil_trigger = excluded.reveil_trigger, session_distante = coalesce(excluded.session_distante, chefs.session_distante), reveil_minute = coalesce(excluded.reveil_minute, chefs.reveil_minute)" >/dev/null \
       && echo "Réveil de $projet noté : $reveil." ; exit 0 ;;
   max)
     [[ "$max" =~ ^[1-8]$ ]] || { echo "--max : un nombre de 1 à 8." >&2; exit 2; }
@@ -101,6 +104,15 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   [ -n "$rp" ] && [ "$rp" != "null" ] || break
   donnes+=("$(printf '%s' "$rp" | jq -c --arg br "$br" '. + {branche: $br, reponse_prise: true}')")
 done
+# Puis ses MESSAGES LIBRES restés sans réponse écrite (0024 : « je n'ai pas compris
+# ta demande », une précision, un « Corriger ») sur un fil que personne ne tient :
+# un agent lui RÉPOND dans le fil (repondre.sh), même s'il n'y a rien à coder.
+while [ ${#donnes[@]} -lt "$libres" ]; do
+  br="agent/message-$(date +%s%N | tail -c 7)"
+  rm_=$(un "select reprendre_message('$br', '$pid') as r" | jq -c '.r // empty')
+  [ -n "$rm_" ] && [ "$rm_" != "null" ] || break
+  donnes+=("$(printf '%s' "$rm_" | jq -c --arg br "$br" '. + {branche: $br, message_pris: true}')")
+done
 # Un chantier par place libre si le mode autonome du projet est allumé, le plus ancien d'abord.
 if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
   while [ ${#donnes[@]} -lt "$libres" ]; do
@@ -134,7 +146,7 @@ if [ "$nb" -eq 0 ]; then echo "RIEN — aucun chantier à prendre dans $projet (
 echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche."
 echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance $CHEF_CMD pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 echo
-VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
+VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"; REP="${COCKPIT_REPONDRE_CMD:-scripts/repondre.sh}"
 for c in "${donnes[@]}"; do
   if [ "$(printf '%s' "$c" | jq -r '.reponse_prise // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
@@ -150,6 +162,27 @@ Demande du chantier :
 
 Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
 Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+---"'
+    echo; continue
+  fi
+  if [ "$(printf '%s' "$c" | jq -r '.message_pris // false')" = "true" ]; then
+    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg rep "$REP" '
+(if .id then "--chantier \(.id)" else "--projet" end) as $ou |
+"━━ Agent « Répondre : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche)\(if .id then ", chantier \(.id)" else ", fil du projet" end))
+Consigne à lui donner, telle quelle :
+---
+Tu es un agent du cockpit. Raphaël a écrit dans le fil « \(.titre) » (projet \(.slug), dépôt \(.depot)) et personne ne lui a répondu : c’est toi. Il attend une RÉPONSE ÉCRITE dans ce fil, comme dans une discussion.
+Ce qu’il a écrit :
+\(.messages | map("- [\(.quand)] \(.texte)\(if .medias > 0 then " [\(.medias) pièce(s) jointe(s)]" else "" end)") | join("\n"))
+Juste avant, dans le fil :
+\(if (.contexte | length) > 0 then (.contexte | map("- [\(.quand)] \(.qui) : \(.texte)") | join("\n")) else "(rien)" end)
+\(if .id then "État du chantier : \(.etat). Demande :\n\(.demande)" else "C’est le fil du projet (hors chantier)." end)\(if (.medias // 0) > 0 then "\nPièces jointes : COCKPIT_PROJET=\(.slug) scripts/media.sh \(if .id then "--chantier \(.id)" else "--message <id>" end), puis REGARDE-les." else "" end)
+
+1. Comprends ce qu’il demande (lis le fil, le code, la base : vérifie avant d’affirmer).
+2. RÉPONDS-LUI d’abord, court, en mots simples (600 caractères au plus), la réponse en premier : COCKPIT_PROJET=\(.slug) \($rep) \($ou) \"…\". Une capture aide ? --image capture.png (chantier seulement).
+3. S’il demande un travail : dis-le dans ta réponse, puis fais-le si c’est court et sans risque (branche \(.branche), jamais main directement ; tests ; progression : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Répondre : \(.titre)\"\(if .id then " --chantier \(.id)" else "" end) --etape \"…\" --pct N --eta M). Sinon ouvre ou complète un chantier (scripts/chantier.sh --ouvrir) et dis-le-lui.
+4. Une décision de Raphaël nécessaire → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté), puis rends la main.
+Aucune dépense, suppression ni envoi en son nom. Ne change pas l’état du chantier pour rien (il est seulement réservé à ta branche 60 min). Rends un rapport de 3 lignes : ce que tu as répondu, ce que tu as fait, ce qui reste.
 ---"'
     echo; continue
   fi
