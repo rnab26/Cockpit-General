@@ -191,7 +191,7 @@ function BulleMessage({ m }: { m: Message }) {
     await recharger()
     return null
   }
-  const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : null
+  const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
     <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle">
       {m.corps ? <TexteLong texte={m.corps} /> : null}
@@ -338,7 +338,7 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   const [reporter, setReporter] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
-  // Mettre de côté / reporter / abandonner (0027) : une fonction de la base, une ligne dans le fil.
+  // Mettre de côté / reporter / abandonner (0028) : une fonction de la base, une ligne dans le fil.
   const deCote = async (jusqua: Date | null) => {
     const { error } = await supabase.rpc('mettre_de_cote', { p_id: chantier.id, p_jusqu_a: jusqua ? jusqua.toISOString() : null, p_raison: null })
     if (error) { toast.erreur(messageErreur(error)); return false }

@@ -38,9 +38,9 @@ export interface AttenteSection { section_id: string | null; section: string; n:
 export interface EtatRenforts {
   sessions_max: number
   agents_par_session: number
-  /** Le projet a une session chef VIVANTE (0027 : vue depuis moins de 3 h) : c'est elle qui ouvre les sessions. */
+  /** Le projet a une session chef VIVANTE (0028 : vue depuis moins de 3 h) : c'est elle qui ouvre les sessions. */
   chef: boolean
-  /** 0027 : le nom du projet, et la chef d'un autre projet qui ouvre à sa place quand il n'a pas de chef vivante. */
+  /** 0028 : le nom du projet, et la chef d'un autre projet qui ouvre à sa place quand il n'a pas de chef vivante. */
   projet?: string
   relais?: string | null
   relais_passage?: string | null
@@ -63,7 +63,7 @@ const heure = (iso: string) => { const d = new Date(iso); return `${d.getHours()
 
 export interface SansChef { projet?: string; relais?: string | null; relais_passage?: string | null }
 
-/** Sans chef vivante (0027) : « en attente : aucune session <projet> active », et qui l'ouvrira. */
+/** Sans chef vivante (0028) : « en attente : aucune session <projet> active », et qui l'ouvrira. */
 export function attenteSansChef(o: SansChef): string {
   const debut = `en attente : aucune session ${o.projet ?? 'de ce projet'} active`
   if (!o.relais) return `${debut} · ouvre Claude Code sur ce projet et écris-lui un message pour qu’il l’ouvre`

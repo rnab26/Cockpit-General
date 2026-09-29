@@ -34,7 +34,7 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty'); [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
-# UN SUJET = UN FIL (0027) : chaque chantier ouvert ou repris pendant ce tour
+# UN SUJET = UN FIL (0028) : chaque chantier ouvert ou repris pendant ce tour
 # (message de Raphaël → chantier.sh --ouvrir) doit avoir reçu une réponse
 # ÉCRITE de session dans son fil depuis son message (progression.sh --point ;
 # la ligne « Chantier ouvert/repris… » posée par --ouvrir ne compte pas). Sinon

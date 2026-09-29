@@ -1,5 +1,5 @@
 // Mettre de côté, reporter, abandonner un chantier depuis son fil (29 sept.
-// 2026, migration 0027). Raphaël : « un chat par requête pour le finir jusqu'au
+// 2026, migration 0028). Raphaël : « un chat par requête pour le finir jusqu'au
 // bout et le classer le plus efficacement possible, ou le mettre de côté,
 // l'abandonner ou le reporter ».
 //   - Mettre de côté : état « reporte », sans date (« Relancer maintenant » le rouvre).

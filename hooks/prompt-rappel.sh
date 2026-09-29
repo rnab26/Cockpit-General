@@ -24,7 +24,7 @@ invite=$(printf '%s' "$entree" | jq -r '.prompt // ""' 2>/dev/null)
 # Une session de RENFORT (0024) ne dirige jamais : sa consigne commence par
 # « [cockpit-renfort] », puis renfort.sh pose sa marque dans le .git de sa copie.
 renfort_marque=$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort
-# Une session de RELAIS (0027 : ouverte par la chef d'un autre projet pour répondre
+# Une session de RELAIS (0028 : ouverte par la chef d'un autre projet pour répondre
 # à ses messages, « [cockpit-relais] ») ne devient pas chef non plus.
 PAS_LUI='^[[:space:]]*(<(task-notification|system-reminder|wake)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
 if [ -n "$sid" ] && [ -x "$SQL" ] && [ ! -s "$renfort_marque" ] && ! printf '%s' "$invite" | grep -qE "$PAS_LUI"; then
@@ -32,7 +32,7 @@ if [ -n "$sid" ] && [ -x "$SQL" ] && [ ! -s "$renfort_marque" ] && ! printf '%s'
   chef_txt=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
 fi
 branche=$(git -C "$RACINE" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
-# UN SUJET = UN FIL (29 sept. 2026, 0027). Raphaël : « on discute de plusieurs
+# UN SUJET = UN FIL (29 sept. 2026, 0028). Raphaël : « on discute de plusieurs
 # points/chantiers et tu y réponds en essayant de tout condenser dans un
 # message […] je zappe certaines choses […] on peut utiliser peu importe soit le
 # cockpit soit la session Claude ». Un VRAI message de lui ouvre un « tour » :
@@ -41,7 +41,11 @@ branche=$(git -C "$RACINE" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 # Rien en base : un fichier dans le .git de CETTE copie (un agent dans son
 # worktree a le sien, sans tour). COCKPIT_TOUR : autre fichier (tests).
 tour_txt=""
-if [ -n "$sid" ] && [ ! -s "$renfort_marque" ] && ! printf '%s' "$invite" | grep -qE "$PAS_LUI"; then
+# Même filtre que hooks/suivi.sh (consigner_message, 0027) : ce qu'il y recopie
+# dans le fil est exactement ce qui ouvre un tour ici.
+PAS_UN_MESSAGE='^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
+if [ -n "$sid" ] && [ ! -s "$renfort_marque" ] && [ -n "${invite//[[:space:]]/}" ] && ! printf '%s' "$invite" | grep -qE "$PAS_UN_MESSAGE" \
+   && ! printf '%s' "$invite" | grep -qxE '[[:space:]]*/[A-Za-z0-9:_-]+[[:space:]]*'; then
   tour="${COCKPIT_TOUR:-$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"
   if [ -d "$(dirname "$tour")" ] && printf 'session %s\ndebut %s\n' "$sid" "$(date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tour" 2>/dev/null; then
     tour_txt=" UN SUJET = UN FIL : si ce message aborde plusieurs sujets, rattache CHACUN à son chantier ($CHANTIER_CMD --ouvrir : il reprend, regroupe ou crée), réponds normalement ici ET écris la réponse de chaque sujet dans son fil : $PROG_CMD --chantier <id> --point \"<ta réponse sur ce sujet>\". Raphaël lit aussi bien ici que dans le cockpit ; l'arrêt est refusé une fois si un chantier ouvert ou repris pendant ce tour n'a pas sa réponse dans son fil."

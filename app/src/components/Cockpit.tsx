@@ -53,7 +53,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   // L'horloge de la présence : toutes les 30 s, et à chaque donnée reçue.
   useEffect(() => { const t = window.setInterval(() => setNow(new Date()), TIC_PRESENCE_MS); return () => window.clearInterval(t) }, [])
   useEffect(() => { if (d.derniereMaj) setNow(new Date()) }, [d.derniereMaj])
-  // Un report daté dont la date est passée revient dans « Prêt à lancer » (0027) : à l'ouverture, sans attendre la chef.
+  // Un report daté dont la date est passée revient dans « Prêt à lancer » (0028) : à l'ouverture, sans attendre la chef.
   const charge = d.charge
   useEffect(() => {
     if (!admin || !charge) return

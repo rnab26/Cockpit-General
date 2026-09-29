@@ -59,7 +59,7 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
 // ---------------------------------------------------------------- écrire au projet
 
 /**
- * « Écrire à Claude » au niveau du PROJET (0027, Raphaël : « créer des chantiers
+ * « Écrire à Claude » au niveau du PROJET (0028, Raphaël : « créer des chantiers
  * et une ligne avec un chat sur chaque sujet évoqué ») : un message libre, même
  * sur plusieurs sujets ; Claude en fait un chantier par sujet et répond dans
  * chaque fil. Ouvre la discussion du projet (fil sans chantier).

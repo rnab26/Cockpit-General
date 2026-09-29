@@ -20,7 +20,7 @@
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
 #   (renforts : Raphaël les demande d'un bouton de l'app ; voir scripts/renfort.sh)
 #   scripts/chef.sh --ouverture <slug> <session_…>        la chef RELAIS note la session ouverte pour
-#   scripts/chef.sh --ouverture <slug> --erreur "<raison>"   un projet sans chef (0027), ou l'échec
+#   scripts/chef.sh --ouverture <slug> --erreur "<raison>"   un projet sans chef (0028), ou l'échec
 #
 # Projet : $COCKPIT_PROJET (posé par brancher.sh), --projet <slug>, sinon le
 # dépôt courant (projets.depot). Session : $CLAUDE_CODE_SESSION_ID (ou --session <id>).
@@ -50,7 +50,7 @@ while [ $# -gt 0 ]; do
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
-# La consigne du RELAIS (0027), à partir de relais_a_servir : une seule source (passe et tests).
+# La consigne du RELAIS (0028), à partir de relais_a_servir : une seule source (passe et tests).
 RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
 relais_texte() { jq -r --arg r "$RENF" --arg chef "$CHEF_CMD" --arg moi "$projet" '
   map(. as $p |
@@ -137,7 +137,7 @@ renf_txt=$(printf '%s' "$renforts" | jq -r --arg r "$RENF" '
 [ -n "$renf_txt" ] && renf_txt="RENFORTS de $projet, demandés par Raphaël dans le cockpit (sessions à part, chacune sa machine ; ne fais pas leur travail) :
 $renf_txt
 "
-# RELAIS (0027) : si cette chef est LA chef relais (celle du cockpit si elle vit),
+# RELAIS (0028) : si cette chef est LA chef relais (celle du cockpit si elle vit),
 # elle ouvre aussi pour les projets SANS chef vivante : leurs renforts, et UNE
 # session du projet quand Raphaël y a écrit sans réponse et qu'aucune session
 # ne vit. Seulement ouvrir / noter / archiver : jamais leur travail, jamais leur
@@ -147,7 +147,7 @@ relais_txt=$(printf '%s' "$relais" | relais_texte)
 [ -n "$relais_txt" ] && renf_txt="${renf_txt}RELAIS pour les projets SANS chef vivante (tu es la chef relais : ouvre seulement, ne fais ni leur travail ni leurs réponses) :
 $relais_txt
 "
-# Un report daté dont la date est passée revient dans « Prêt à lancer » (0027).
+# Un report daté dont la date est passée revient dans « Prêt à lancer » (0028).
 "$SQL" "select reveiller_reportes('$pid') as n" >/dev/null 2>&1
 # Rien à lancer soi-même : les gestes de renfort s'il y en a, sinon RIEN.
 rien() {
@@ -194,7 +194,7 @@ if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
 fi
 # « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, dans CE projet.
 while [ ${#donnes[@]} -lt "$libres" ]; do
-  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
+  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and not m.via_session and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
     from verifs_prenables('$pid', null) c join projets p on p.id = c.projet_id
     where c.verif_demandee_at is not null and p.actif order by c.verif_demandee_at limit 1")
   vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break

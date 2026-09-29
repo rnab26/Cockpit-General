@@ -11,7 +11,7 @@
 #   (un correctif visuel / mise en page / ergonomie est rangé TOUT SEUL dans
 #    « Correctifs » à la création, migration 0021 ; --ranger corrige un faux tri)
 #   scripts/chantier.sh --suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi "…"
-#   scripts/chantier.sh --de-cote <id> [--jusqu-au 2026-10-15] [--pourquoi "…"]   mettre de côté / reporter (0027)
+#   scripts/chantier.sh --de-cote <id> [--jusqu-au 2026-10-15] [--pourquoi "…"]   mettre de côté / reporter (0028)
 #   scripts/chantier.sh --abandonner <id> [--pourquoi "…"]                          abandonner (archivé, Désarchiver le rend)
 #   (quand Raphaël le demande dans la session : mêmes gestes que les boutons du fil)
 #
@@ -132,7 +132,7 @@ case "$(printf '%s' "$r" | jq -r .action)" in
   *)       echo "Réponse inattendue : $r" >&2; exit 1 ;;
 esac
 cid=$(jq -r .id <<<"$r")
-# UN SUJET = UN FIL (0027) : noté dans le tour en cours (ouvert par le hook au
+# UN SUJET = UN FIL (0028) : noté dans le tour en cours (ouvert par le hook au
 # message de Raphaël) ; le hook Stop vérifie que ce fil a reçu ta réponse.
 tour="${COCKPIT_TOUR:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"
 [ -f "$tour" ] && printf 'chantier %s %s\n' "$cid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$tour" 2>/dev/null

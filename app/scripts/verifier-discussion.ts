@@ -33,6 +33,8 @@ verifie('« Ça fonctionne, je certifie » non (bouton, servi ailleurs)', !estMe
 verifie('« vérifie pour moi » non (un agent rend un verdict)', !estMessageLibre(moi(0, 'Je ne sais pas dire si c’est bon : vérifie pour moi.', { kind: 'constat' }), []))
 verifie('« Où ça en est ? » non (sa propre voie)', !estMessageLibre(moi(0, 'Où ça en est', { ou_en_est: true }), []))
 verifie('fusion de doublon non', !estMessageLibre(moi(0, 'Doublon fusionné : « X »'), []))
+verifie('écrit dans une session Claude (0027) : non, la session y a déjà répondu', !estMessageLibre(moi(0, 'Ajoute un filtre', { via_session: true }), []))
+verifie('… et il ne déclenche pas « réponse en attente »', attenteReponse([claude(0), moi(1, 'Ajoute un filtre', { via_session: true })], { maintenant: T0 + 5 * 60_000, sessionTient: true, prochainPassage: null }) === null)
 const qr = msg({ auteur_type: 'session', kind: 'question', created_at: t(0), answered_at: t(10) })
 const media = { chemin: 'a', nom: 'a.png', type: 'image/png', taille: 1 }
 verifie('les photos jointes à une réponse de question : servies avec la réponse', !estMessageLibre(moi(10.5, '1 photo', { medias: [media] }), [qr]))

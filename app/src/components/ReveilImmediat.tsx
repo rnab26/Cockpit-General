@@ -19,7 +19,7 @@ interface EtatReveil {
 }
 
 /**
- * RÉVEIL IMMÉDIAT (0027) : quand tu écris dans le cockpit, Claude est réveillé
+ * RÉVEIL IMMÉDIAT (0028) : quand tu écris dans le cockpit, Claude est réveillé
  * tout de suite au lieu d'attendre son passage horaire. La base appelle le
  * déclencheur API de la routine de réveil (au plus une fois toutes les 5 min) ;
  * le jeton se crée sur claude.ai et se colle ici : il part dans le coffre de la

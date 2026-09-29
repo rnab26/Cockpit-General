@@ -1,4 +1,4 @@
-// Mettre de côté / reporter / abandonner (src/lib/reporter.ts, 0027).
+// Mettre de côté / reporter / abandonner (src/lib/reporter.ts, 0028).
 import { verifie, bilan } from './_assert.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../src/lib/reporter.ts'
 
