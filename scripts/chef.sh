@@ -101,7 +101,7 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   [ -n "$rp" ] && [ "$rp" != "null" ] || break
   donnes+=("$(printf '%s' "$rp" | jq -c --arg br "$br" '. + {branche: $br, reponse_prise: true}')")
 done
-# Puis les « OÙ ÇA EN EST ? » (0022) que personne ne recevra (aucune session ni
+# Puis les « OÙ ÇA EN EST ? » (0023) que personne ne recevra (aucune session ni
 # agent vivant sur le chantier) : un assistant regarde et répond dans le fil.
 while [ ${#donnes[@]} -lt "$libres" ]; do
   br="agent/point-$(date +%s%N | tail -c 7)"
@@ -129,9 +129,17 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
   donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
 done
-if [ ${#donnes[@]} -eq 0 ]; then echo "RIEN — aucun chantier à prendre dans $projet ($agents agent(s) au travail). Termine ta réponse en une ligne."; exit 0; fi
+# « À toi » à jour (0022) : une place libre de plus → un agent revoit ce qui attend Raphaël depuis trop
+# longtemps ou que du travail a suivi (retirer, confirmer, proposer une fusion). Au plus une revue par heure.
+revue=""
+if [ ${#donnes[@]} -lt "$libres" ]; then
+  revue=$(COCKPIT_PROJET="$projet" COCKPIT_SQL="$SQL" bash "$(dirname "${BASH_SOURCE[0]}")/revue-a-toi.sh" 2>/dev/null)
+  case "$revue" in RIEN*|"") revue="" ;; esac
+fi
+nb=$(( ${#donnes[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
+if [ "$nb" -eq 0 ]; then echo "RIEN — aucun chantier à prendre dans $projet ($agents agent(s) au travail). Termine ta réponse en une ligne."; exit 0; fi
 
-echo "SESSION CHEF de $projet : lance ${#donnes[@]} agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche."
+echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche."
 echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance $CHEF_CMD pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 echo
 VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
@@ -198,3 +206,10 @@ Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche 
 ---"'
   echo
 done
+if [ -n "$revue" ]; then
+  echo "━━ Agent « Revoir À toi de jouer » (projet $projet, dépôt $depot, aucune branche : il ne code pas)"
+  echo "Consigne à lui donner, telle quelle :"
+  echo "---"
+  printf '%s\n' "$revue"
+  echo "---"
+fi

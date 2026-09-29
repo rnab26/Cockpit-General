@@ -1,4 +1,4 @@
-// « Où ça en est ? » qui se suit (src/lib/ouEnEst.ts, migration 0022) : les
+// « Où ça en est ? » qui se suit (src/lib/ouEnEst.ts, migration 0023) : les
 // états d'une demande, la file d'attente, pas de doublon, et sa place dans
 // l'entonnoir (« Ça avance tout seul », plus dans « Prêt à lancer »).
 // Rejoue la demande de Raphaël du 29 sept. 2026 : « on ne voit pas de
@@ -47,11 +47,11 @@ e = etatOuEnEst(ch, [S('avant', 'c1', 40), M('d', 'c1', 30)], false, now)!
 verifie('un message de session AVANT la demande ne répond pas', e.code === 'file', e)
 e = etatOuEnEst(ch, [M('d', 'c1', DELAI_OU_EN_EST_MS / 60_000 + 1)], false, now)!
 verifie('sans réponse après 2 h : périmée, on peut redemander', e.code === 'sans_reponse' && !e.enAttente && /redemander/.test(e.libelle), e)
-verifie('délai = 2 h (même valeur que cockpit.delai_ou_en_est, 0022)', DELAI_OU_EN_EST_MS === 2 * 3600_000)
+verifie('délai = 2 h (même valeur que cockpit.delai_ou_en_est, 0023)', DELAI_OU_EN_EST_MS === 2 * 3600_000)
 e = etatOuEnEst(ch, [M('vieille', 'c1', 200), S('r', 'c1', 190), M('d', 'c1', 1)], false, now)!
 verifie('une nouvelle demande après une réponse : c’est elle qu’on suit', e.code === 'file' && e.demande.id === 'd', e)
 e = etatOuEnEst(ch, [M('d', 'c1', 1, { ou_en_est: undefined, auteur_type: 'proprietaire' })], false, now)!
-verifie('demande d’avant 0022 (reconnue à son texte) suivie aussi', e?.code === 'file')
+verifie('demande d’avant 0023 (reconnue à son texte) suivie aussi', e?.code === 'file')
 verifie('le texte seul écrit par une SESSION n’est pas une demande', etatOuEnEst(ch, [M('d', 'c1', 1, { ou_en_est: false, auteur_type: 'session' })], false, now) === null)
 verifie('derniereDemandeOuCaEnEst suit la même règle', derniereDemandeOuCaEnEst([M('d1', 'c1', 9), M('d2', 'c1', 3)] as never[])?.id === 'd2' as never)
 

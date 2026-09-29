@@ -2,7 +2,7 @@
 // sur deux projets à la fois. Le premier cas rejoue la capture de Raphaël du
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
-import { enCeMoment, aToi, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE } from '../src/lib/entonnoir.ts'
+import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
 
@@ -56,7 +56,7 @@ const messages = [
   M('q-archive', 'fp', 'fp-archive', 'question', 3),          // chantier archivé : hors jeu
   M('b-vieux', 'ck', 'ck-bloque', 'blocage', 90),
   M('b-recent', 'ck', 'ck-bloque', 'blocage', 20),
-  M('d-ou', 'fp', 'fp-objets', 'info', 130, { corps: MESSAGE_OU_CA_EN_EST, auteur_type: 'proprietaire' }), // périmée (> 2 h, 0022) : il reste « à lancer »
+  M('d-ou', 'fp', 'fp-objets', 'info', 130, { corps: MESSAGE_OU_CA_EN_EST, auteur_type: 'proprietaire' }), // périmée (> 2 h, 0023) : il reste « à lancer »
 ]
 
 console.log('verifier-entonnoir')
@@ -79,14 +79,22 @@ console.log('verifier-entonnoir')
 {
   const t = aToi(chantiers, messages)
   const types = t.map((e) => e.type)
-  verifie('à toi : ordre questions → à vérifier → à cadrer → bloqués',
-    JSON.stringify([...new Set(types)]) === JSON.stringify(['question', 'a_verifier', 'a_cadrer', 'bloque']), types)
-  verifie('à toi : les questions, la plus ancienne d’abord (elle attend depuis le plus longtemps)', t[0].message?.id === 'q-ancienne' && t[1].message?.id === 'q-recente')
+  // 0022 (Raphaël : « je ne sais pas quelles sont les plus récentes et les plus vieilles ») : un seul tri, le plus récent en haut.
+  const dates = t.map((e) => e.depuis)
+  verifie('à toi : le plus récent en haut, tous types confondus', dates.every((d, i) => i === 0 || dates[i - 1] >= d), t.map((e) => `${e.cle} ${e.depuis}`))
+  verifie('à toi : chaque élément dit depuis quand il attend', t.every((e) => !!e.depuis && !Number.isNaN(new Date(e.depuis).getTime())))
+  verifie('à toi : tous les types y sont', ['question', 'a_verifier', 'a_cadrer', 'bloque'].every((x) => types.includes(x as never)), types)
+  verifie('à toi : la question récente (5 min) avant l’ancienne (50 min)', t.findIndex((e) => e.message?.id === 'q-recente') < t.findIndex((e) => e.message?.id === 'q-ancienne'))
+  const anciens = aToi(chantiers, messages, null, [], [], 'anciens')
+  verifie('à toi : tri « plus anciens d’abord » : le plus vieux en haut', anciens.length === t.length && anciens.every((e, i) => i === 0 || anciens[i - 1].depuis <= e.depuis) && anciens[0].depuis < t[0].depuis, anciens.map((e) => e.cle))
+  verifie('à toi : trierAToi garde tous les éléments', trierAToi(t, 'anciens').length === t.length)
   verifie('à toi : une question répondue n’y est pas', !t.some((e) => e.message?.id === 'q-repondue'))
   verifie('à toi : la question d’un chantier archivé n’y est pas', !t.some((e) => e.message?.id === 'q-archive'))
   verifie('à toi : la question de projet (sans chantier) y est, chantier null', t.some((e) => e.message?.id === 'q-ancienne' && e.chantier === null))
   const verifs = t.filter((e) => e.type === 'a_verifier').map((e) => e.chantier?.id)
-  verifie('à toi : à vérifier, priorité haute d’abord puis le plus récent', JSON.stringify(verifs) === JSON.stringify(['ck-verif-haute', 'ck-verif', 'fp-verif']), verifs)
+  verifie('à toi : à vérifier, le plus récent d’abord (priorité n’écrase plus l’âge)', JSON.stringify(verifs) === JSON.stringify(['ck-verif', 'fp-verif', 'ck-verif-haute']), verifs)
+  const b0 = t.find((e) => e.type === 'bloque')
+  verifie('à toi : un bloqué attend depuis son dernier blocage', b0?.depuis === il(20), b0?.depuis)
   const b = t.find((e) => e.type === 'bloque')
   verifie('à toi : un bloqué porte son DERNIER message de blocage', b?.message?.id === 'b-recent')
   verifie('à toi : un certifié n’y est pas', !t.some((e) => e.chantier?.id === 'ck-certifie'))
@@ -97,7 +105,8 @@ console.log('verifier-entonnoir')
   // Suggestion de fusion (0008) : après les questions, avant « à vérifier » ; une fois tranchée, elle disparaît.
   const avecFusion = aToi(chantiers, [...messages, M('fu', 'ck', 'ck-libre', 'fusion', 30), M('fu-ok', 'ck', 'ck-libre', 'fusion', 40, { answered_at: il(35) })])
   const ordreF = [...new Set(avecFusion.map((e) => e.type))]
-  verifie('à toi : la fusion proposée se place après les questions, avant « à vérifier »', ordreF.indexOf('fusion') === ordreF.indexOf('question') + 1 && ordreF.indexOf('fusion') < ordreF.indexOf('a_verifier'), ordreF)
+  const fu = avecFusion.find((e) => e.type === 'fusion')
+  verifie('à toi : la fusion proposée se range à son âge (30 min), comme le reste', fu?.depuis === il(30) && avecFusion.indexOf(fu!) > avecFusion.findIndex((e) => e.message?.id === 'q-recente'), ordreF)
   verifie('à toi : une fusion déjà tranchée n’y est plus', avecFusion.filter((e) => e.type === 'fusion').length === 1)
 }
 
@@ -224,6 +233,39 @@ console.log('verifier-entonnoir')
   verifie('verdict rendu : de retour dans « À toi », hors de « Ça avance »', t.some((e) => e.chantier?.id === 'v-verdict') && !l.some((x) => x.c.id === 'v-verdict'))
   const ordre = trierParPresence([{ c: cv[1], presence: presenceDe(cv[1], [], new Set(), now, SILENCE).presence }, { c: cv[0], presence: p }]).map((x) => (x.c as { id: string }).id)
   verifie('tri : « Claude vérifie » avant « à vérifier »', ordre[0] === 'v-demande', ordre)
+}
+
+// 0022. « À toi » à jour (Raphaël, 29 sept. : « des requêtes d'il y a 12 h déjà réglées dans la session ») :
+// tout élément sur lequel Claude a travaillé depuis est marqué et passe en bas ; reconfirmé, il redevient normal.
+{
+  const cs = [
+    C('z-bloque', 'ck', 'bloque'),
+    C('z-verif', 'ck', 'a_verifier', { livre_at: il(600) }),
+    C('z-verif-grace', 'ck', 'a_verifier', { livre_at: il(300) }),
+    C('z-cadrer-revu', 'ck', 'a_cadrer', { updated_at: il(900), a_toi_revu_at: il(10) }),
+    C('z-question', 'ck', 'libre'),
+  ]
+  const ms = [
+    M('zb', 'ck', 'z-bloque', 'blocage', 780),                // bloqué il y a 13 h…
+    M('zb-apres', 'ck', 'z-bloque', 'info', 200),              // …et une session a travaillé dessus depuis
+    M('zv-fin', 'ck', 'z-verif-grace', 'info', 299),           // le message de livraison lui-même (1 min après) : pas « avancé »
+    M('zq', 'ck', 'z-question', 'question', 720),
+    M('zq-conf', 'ck', 'z-question', 'question', 30),          // une autre question, récente
+  ]
+  const act = [A('za', 'ck', 'z-verif', 'en_cours', 100, 'claude/w')]
+  const t = aToi(cs, ms, null, act)
+  const el = (cle: string) => t.find((e) => e.cle === cle)!
+  verifie('à jour : un bloqué suivi de travail → « avancé depuis »', el('bloque-z-bloque').avanceDepuis === il(200) && /avancé depuis .* peut-être plus à jour/.test(attenteAToi(el('bloque-z-bloque'), now)))
+  verifie('à jour : un « à vérifier » retravaillé après la livraison → « avancé depuis »', el('a_verifier-z-verif').avanceDepuis === il(100))
+  verifie(`à jour : le message de livraison (moins de ${GRACE_AVANCE_MS / 60_000} min après) ne compte pas`, !el('a_verifier-z-verif-grace').avanceDepuis)
+  verifie('à jour : revu par une session (a_toi_revu_at) → son âge repart de là', el('a_cadrer-z-cadrer-revu').depuis === il(10) && !el('a_cadrer-z-cadrer-revu').avanceDepuis)
+  const dep = t.map((e) => !!e.avanceDepuis)
+  verifie('à jour : les « peut-être plus à jour » en bas de la liste', dep.indexOf(true) > dep.lastIndexOf(false), t.map((e) => e.cle))
+  verifie('à jour : en bas aussi en tri « anciens »', (() => { const d = aToi(cs, ms, null, act, [], 'anciens').map((e) => !!e.avanceDepuis); return d.indexOf(true) > d.lastIndexOf(false) })())
+  const conf = aToi(cs, ms.map((m) => (m as { id: string }).id === 'zb' ? { ...(m as object), created_at: il(150) } as never : m), null, act)
+  verifie('à jour : un nouveau blocage après le travail → plus marqué', !conf.find((e) => e.cle === 'bloque-z-bloque')?.avanceDepuis)
+  const q = t.find((e) => e.message?.id === 'zq')!
+  verifie('à jour : une question confirmée (confirmee_at) a l’âge de sa confirmation', aToi(cs, ms.map((m) => (m as { id: string }).id === 'zq' ? { ...(m as object), confirmee_at: il(5) } as never : m)).find((e) => e.message?.id === 'zq')?.depuis === il(5) && q.depuis === il(720))
 }
 
 bilan('verifier-entonnoir')

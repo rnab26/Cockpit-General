@@ -13,7 +13,7 @@
 //   4. un agent reçoit la réponse de SON chantier, pas celle d'un autre agent
 //   5. base injoignable un instant → rien n'est perdu (le curseur n'avance pas)
 //   6. une question générale (sans chantier) répondue → visible au démarrage
-//   7-8. « Où ça en est ? » (0022) : remise une fois, marquée reçue, --point ; sans personne, la chef la sert
+//   7-8. « Où ça en est ? » (0023) : remise une fois, marquée reçue, --point ; sans personne, la chef la sert
 // Le cas « personne ne tient le chantier » relève de scripts/chef.sh (autre chantier).
 
 import { spawnSync } from "node:child_process";
@@ -149,7 +149,7 @@ try {
   verifie("une réponse notée par une session (dite dans sa conversation) n'y est pas", !/Notée par une session/.test(bloc4), bloc4);
 
   // Raphaël, 29 sept. : « qu'on ne pollue pas les sessions en cliquant 10 fois
-  // sur "où ça en est", et que ça ne reste pas statique » (0022).
+  // sur "où ça en est", et que ça ne reste pas statique » (0023).
   console.log("\n7. « Où ça en est ? » : remise une fois, marquée reçue, réponse dans le fil");
   const dem = sql(`select demander_ou_en_est(${q(C1)}, 'Raphaël') as r`)[0].r;
   const dem2 = sql(`select demander_ou_en_est(${q(C1)}, 'Raphaël') as r`)[0].r;

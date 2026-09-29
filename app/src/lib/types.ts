@@ -61,6 +61,8 @@ export interface Chantier {
   verdict_ok?: boolean | null
   verdict_texte?: string | null
   verdict_at?: string | null
+  /** 0022 : une session a revu cet élément de « À toi » et l'a confirmé toujours utile (demander.sh --confirmer). */
+  a_toi_revu_at?: string | null
   /** Étapes de mise en ligne (0007) : code, pousse, ci_ok|ci_ko, en_ligne|pas_en_ligne → {at, detail}. Lire avec lib/jalons.ts. */
   jalons: unknown
   etat: Etat
@@ -110,7 +112,7 @@ export interface Message {
   medias?: Media[] | null
   /** 0015 : la session a confirmé la question « toujours d'actualité » après avoir avancé. */
   confirmee_at?: string | null
-  /** 0022 : une demande « Où ça en est ? » (demander_ou_en_est), et quand/par qui elle a été reçue. */
+  /** 0023 : une demande « Où ça en est ? » (demander_ou_en_est), et quand/par qui elle a été reçue. */
   ou_en_est?: boolean | null
   recu_at?: string | null
   recu_par?: string | null

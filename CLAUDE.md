@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « où ça en est » (233 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est » (249 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
@@ -123,7 +123,7 @@ et de lui seul). Table `cockpit.chefs` (une ligne par projet : session,
 `est_chef(projet, session)`, `chef_existe(projet)` (service seulement).
 La chef ne code pas elle-même : `scripts/chef.sh` lui donne, DANS SON PROJET
 SEULEMENT, un travail par place libre (réponses sans suite, « où ça en est ? »
-que personne ne recevra (0022), chantiers
+que personne ne recevra (0023), chantiers
 prenables si le mode autonome est allumé, « vérifie pour moi » ; 3 agents en
 parallèle par défaut, `--max` règle le projet courant), elle lance un agent
 par chantier (isolation worktree, sa branche), et relance `chef.sh` à la fin
@@ -208,7 +208,7 @@ Bilan du 29 sept. et preuve : `node scripts/verifier-reponses.mjs` (16
 contrôles, vrais hooks, vraie base, projet jetable). Le cas « personne ne
 tient le chantier » relève de `scripts/chef.sh` (chantier 6c8c6084).
 
-## « Où ça en est ? » se suit, jamais empilé (29 sept. 2026, migration 0022)
+## « Où ça en est ? » se suit, jamais empilé (29 sept. 2026, migration 0023)
 
 Raphaël : « on ne voit pas de différence en cliquant […] qu'on ne pollue pas
 les sessions en cliquant 10 fois, et que ça ne reste pas statique ». L'app
@@ -216,7 +216,7 @@ passe par `demander_ou_en_est` : UNE demande en attente par chantier
 (`messages.ou_en_est`), un deuxième toucher rend la même (verrou, 10 touchers
 = 1 ligne). Répondue = un message de session après elle ; périmée après
 `delai_ou_en_est()` (2 h, = `DELAI_OU_EN_EST_MS` de `lib/ouEnEst.ts`,
-comparés par verifier-base §23). Suivi : envoyée → reçue (`recu_at`, posé par
+comparés par verifier-base §24). Suivi : envoyée → reçue (`recu_at`, posé par
 `hooks/suivi.sh` en la remettant à la session qui tient le chantier) ou en
 file (position) → un assistant regarde (la chef : `prendre_ou_en_est`, branche
 `agent/point-…`, sans réserver le chantier) → réponse (`progression.sh
@@ -231,6 +231,22 @@ depuis : peut-être plus utile » ; la session la confirme (`demander.sh
 --confirmer`) ou la retire (`--retirer <id> "pourquoi"`), rappel du hook
 toutes les 15 min. Un assistant listé en cours reste « en cours » tant que sa
 session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`).
+
+**« À toi de jouer » à jour** (29 sept. 2026, migration 0022, Raphaël : « des
+requêtes d'il y a 12 h déjà répondues dans la session ; je ne sais pas
+lesquelles sont récentes ou vieilles »). Chaque ligne dit son âge (« il y a
+12 h », `ElementAToi.depuis`), le plus récent en haut (réglable, préférence
+`tri_a_toi`) ; « Claude a avancé depuis : peut-être plus à jour » vaut pour
+TOUS les types et passe en bas (`aToi`, `lib/entonnoir.ts`). En base : un
+chantier certifié ou archivé ferme seul ses questions et les fusions qui le
+citent (trigger `retirer_sans_objet`) ; `a_toi_a_revoir(projet, heures)` (même
+règle que l'app ; plus de 12 h, ou du travail depuis ; jamais un chantier
+qu'une session tient ; « proche » = doublon probable) ; `scripts/revue-a-toi.sh`
+en fait la consigne d'un agent, lancée par `chef.sh` sur une place libre ou
+par `passe.sh` quand il n'y a rien à coder, au plus une fois par heure et par
+projet (`projets.revue_a_toi_at`). Gestes : `demander.sh --retirer`,
+`--confirmer <question|chantier>` (`chantiers.a_toi_revu_at`), `--debloquer`,
+`chantier.sh --suggerer-fusion`. `verifier-base.mjs` §23.
 
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 

@@ -1,4 +1,4 @@
-// « Où ça en est ? » : une demande qui se SUIT (29 sept. 2026, migration 0022).
+// « Où ça en est ? » : une demande qui se SUIT (29 sept. 2026, migration 0023).
 //
 // Raphaël : « en cliquant on ne voit pas vraiment de différence […] fais en
 // sorte que ça reparte dans les trucs à traiter, que ça s'actualise, qu'on ne
@@ -20,7 +20,7 @@ import { preuveDeVie, estDemandeOuEnEst } from './presence.ts'
 import { agentVivantDuChantier } from './sessions.ts'
 import { dateRelative } from './dates.ts'
 
-/** Au-delà, une demande sans réponse est périmée : on peut redemander. Même délai que cockpit.delai_ou_en_est() (0022). */
+/** Au-delà, une demande sans réponse est périmée : on peut redemander. Même délai que cockpit.delai_ou_en_est() (0023). */
 export const DELAI_OU_EN_EST_MS = 2 * 3600_000
 /** La branche des assistants que la chef lance pour répondre (scripts/chef.sh, prendre_ou_en_est). */
 export const PREFIXE_ASSISTANT_POINT = 'agent/point-'

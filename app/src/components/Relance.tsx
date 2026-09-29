@@ -35,7 +35,7 @@ export function BoutonsRelance({ chantier }: { chantier: Chantier }) {
   const toast = useToast()
   const [enCours, setEnCours] = useState(false)
   const [repli, setRepli] = useState<string | null>(null)
-  // Où en est sa dernière demande, recalculé à chaque message qui arrive en direct (0022).
+  // Où en est sa dernière demande, recalculé à chaque message qui arrive en direct (0023).
   const etat = useMemo(() => {
     const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
     return etatOuEnEst(chantier, messages, tenus(chantier.id), now, tenus)
@@ -47,7 +47,7 @@ export function BoutonsRelance({ chantier }: { chantier: Chantier }) {
     else { setRepli(texte); toast.info('Copie automatique impossible ici : sélectionne le texte affiché et copie-le.') }
   }
   const demander = async () => {
-    // Une demande déjà en attente : rien ne repart (la base le refuse aussi, 0022).
+    // Une demande déjà en attente : rien ne repart (la base le refuse aussi, 0023).
     if (enCours || etat?.enAttente) return
     setEnCours(true)
     const { data, error } = await supabase.rpc('demander_ou_en_est', { p_chantier: chantier.id, p_par: par })

@@ -84,7 +84,7 @@ reponses_fraiches() {
   local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
   [ -n "$maintenant" ] && printf '%s\n' "$maintenant" > "$cur" 2>/dev/null   # seulement si la base a répondu
   texte=$(printf '%s' "$brut" | jq -r '.rows[0].nouvelles // empty' 2>/dev/null)
-  # « Où ça en est ? » (0022) : remise à la session = REÇUE. L'app passe de
+  # « Où ça en est ? » (0023) : remise à la session = REÇUE. L'app passe de
   # « envoyée » à « reçue par Claude » ; en arrière-plan, sans attendre.
   local ou; ou=$(printf '%s' "$brut" | jq -r '.rows[0].ou_en_est // empty' 2>/dev/null)
   if [[ "$ou" =~ ^[0-9a-f,-]+$ ]]; then

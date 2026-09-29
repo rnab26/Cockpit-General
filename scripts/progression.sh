@@ -53,7 +53,7 @@
 # La tâche elle-même (qu'elle existe, depuis quand elle tourne) est déjà suivie
 # toute seule par le hook de suivi ; ceci n'ajoute que ce qui ne se devine pas.
 #
-# « OÙ ÇA EN EST ? » (0022) : Raphaël l'a demandé d'un bouton ; le hook te le
+# « OÙ ÇA EN EST ? » (0023) : Raphaël l'a demandé d'un bouton ; le hook te le
 # met sous les yeux, ou la chef lance un assistant. Réponds dans le fil, en 3
 # lignes au plus (fait / reste / ce qui bloque), 400 caractères au plus :
 #   scripts/progression.sh --chantier <id> --point "Fait : … Reste : … Bloque : rien."
