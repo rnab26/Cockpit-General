@@ -235,20 +235,28 @@ try {
   sr = sql(`select * from messages_sans_reponse(${q(P)}, null)`);
   verifie("progression.sh --point (sans chantier) y répond, et il sort de la liste", repP.status === 0 && !sr.some((r) => r.message_id === MP), repP.stderr || sr);
 
-  console.log("\n12. ses messages dans la SESSION arrivent dans le fil du chantier qu'elle tient (0027)");
+  console.log("\n12. ses messages dans la SESSION arrivent dans le fil du chantier CONCERNÉ, et seulement lui (0027, 0029)");
   const SID12 = `test-rep12-${rand}`;
   const deposes = (motif) => sql(`select corps, via_session from messages where chantier_id = ${q(C1)} and via_session and corps like ${q(motif)}`);
   hook("session-start.sh", { session_id: SID12, hook_event_name: "SessionStart", source: "startup" });
+  hook("prompt-rappel.sh", { session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "Ajoute un filtre par date sur la liste, stp" });
   suivi({ session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "Ajoute un filtre par date sur la liste, stp" });
   suivi({ session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "<task-notification>agent terminé</task-notification>" });
+  suivi({ session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "<agent-message from=\"a1\">\n[Subagent hand-back] rapport interne d'agent</agent-message>" });
   suivi({ session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "/clear" });
   suivi({ session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "[cockpit-renfort] consigne d'un renfort" });
-  let d12 = [];
-  for (let i = 0; i < 20 && !d12.length; i++) { await attendre(500); d12 = deposes("%filtre par date%"); }
-  verifie("son message tapé dans la session est dans le fil du chantier que la session tient", d12.length === 1 && d12[0].via_session === true, d12);
+  let enAttente = [];
+  for (let i = 0; i < 20 && !enAttente.length; i++) { await attendre(500); enAttente = sql(`select id from messages_session_attente where session_id = ${q(SID12)} and texte like '%filtre par date%'`); }
+  verifie("son message est gardé en attente, et PAS déposé dans le chantier que la session tient sans rapport (0029)",
+    enAttente.length === 1 && deposes("%filtre par date%").length === 0, { enAttente, d: deposes("%filtre par date%") });
+  const rep12 = prog(["--chantier", C1, "--point", "Filtre par date ajouté en haut de la liste."]);
+  const d12 = deposes("%filtre par date%");
+  verifie("la session répond dans le fil de CE chantier (--point) : son message y arrive, avant la réponse",
+    rep12.status === 0 && d12.length === 1 && d12[0].via_session === true, rep12.stderr || d12);
   await attendre(1500);
-  verifie("jamais une notification, une commande seule ni une consigne de renfort",
-    deposes("%agent terminé%").length === 0 && deposes("/clear").length === 0 && deposes("%consigne d'un renfort%").length === 0);
+  verifie("jamais une notification, un rapport d'agent, une commande seule ni une consigne de renfort",
+    sql(`select id from messages_session_attente where session_id = ${q(SID12)} and (texte like '%agent terminé%' or texte like '%rapport interne%' or texte = '/clear' or texte like '%consigne d''un renfort%')`).length === 0
+    && deposes("%agent terminé%").length === 0 && deposes("%rapport interne%").length === 0 && deposes("/clear").length === 0 && deposes("%consigne d'un renfort%").length === 0);
   const o12 = suivi({ session_id: SID12, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
   verifie("il n'est pas renvoyé à la session comme « il t'écrit » (elle l'a déjà)", !/filtre par date/.test(o12.additionalContext ?? ""), o12);
   const sr12 = sql(`select * from messages_sans_reponse(${q(P)}, 'claude/test-rep')`);
