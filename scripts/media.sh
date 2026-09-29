@@ -10,7 +10,7 @@
 # Les fichiers arrivent dans ${COCKPIT_MEDIAS_DIR:-/tmp/cockpit-medias}/ ; le
 # script affiche leur chemin local. Prérequis : SUPABASE_SERVICE_ROLE_KEY.
 #
-# SENS INVERSE (0019, Raphaël : « montre-moi des images pour que je comprenne
+# SENS INVERSE (0020, Raphaël : « montre-moi des images pour que je comprenne
 # mieux, ou ce que je suis censé voir ») : une session MONTRE une image dans
 # le fil d'un chantier (capture : node app/scripts/capture-ecran.mjs <url> <dossier>).
 #   scripts/media.sh --envoyer --chantier <id|titre> --texte "Voici l'écran actuel" \

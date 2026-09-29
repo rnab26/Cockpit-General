@@ -344,6 +344,12 @@ async function verifierNavigateur(cle) {
     verifie(style.hoteCouleur === 'rgb(255, 0, 0)', 'la page hôte est bien rouge (le test a un sens)', style.hoteCouleur)
     verifie(style.couleur !== 'rgb(255, 0, 0)' && style.transform === 'none' && style.espacement === 'normal' && style.taille !== '22px', 'le style hôte ne traverse pas (couleur, capitales, espacement, taille)', JSON.stringify(style))
     verifie(/Georgia|serif/i.test(style.police), 'la police, elle, est héritée', style.police)
+    const bouton = await page.evaluate(() => {
+      const b = [...document.querySelector('.cockpit-embed').shadowRoot.querySelectorAll('.btn:not(.sec)')].find((x) => /Nouvelle demande/.test(x.textContent))
+      const cs = b && getComputedStyle(b)
+      return cs ? { couleur: cs.color, fond: cs.backgroundColor, taille: cs.fontSize } : null
+    })
+    verifie(bouton && bouton.couleur === 'rgb(255, 255, 255)' && bouton.taille === '13px', 'le bouton « Nouvelle demande » est lisible (texte blanc sur vert)', JSON.stringify(bouton))
 
     await page.screenshot({ path: path.join(SCRATCH, 'embed-1-liste.png'), fullPage: true })
 

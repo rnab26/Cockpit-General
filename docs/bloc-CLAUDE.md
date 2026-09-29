@@ -17,11 +17,11 @@ demandes des utilisateurs, progression des autres sessions.
   jamais « compte / compare ». Ce qui demande de juger, vérifie-le toi-même et
   donne la preuve. S'il touche « Je ne sais pas : vérifie pour moi », c'est à
   toi de juger ce qu'il a collé : `scripts/cockpit-verdict.sh --chantier <id>
-  --bon "…"` ou `--pas-bon "…"` (la session chef lance un agent pour ça).
+  --bon "…"` ou `--pas-bon "…"` (la session chef du projet lance un agent pour ça).
 - **UNE RÉPONSE DE RAPHAËL N'EST JAMAIS PERDUE** (29 sept. : « je réponds, mais
   je ne sais pas si c'est pris en compte »). Sur un chantier que tu tiens, elle
   t'arrive en direct : suis-la tout de suite (un message ou une étape). Sur un
-  chantier que personne ne tient, la session chef la confie à un agent
+  chantier que personne ne tient, la session chef du projet la confie à un agent
   (« Claude reprend ta réponse » dans le fil) : ne la reprends pas en doublon.
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
@@ -58,6 +58,16 @@ demandes des utilisateurs, progression des autres sessions.
   as donnée>" --chantier <id> --etape "…" --pct N --eta 10m` à chaque étape,
   et `--agent "…" --termine "…"` à la fin. Donne des descriptions d'agents
   lisibles par Raphaël (le sujet, pas la technique).
+- **UN CHEF PAR PROJET** (29 sept. : « je ne veux pas gérer sur une seule
+  session plein de projets en même temps […] ça doit se faire dans la session
+  concernant le projet en question, sinon ça mélange tous les contextes »).
+  La session où Raphaël écrit devient chef de CE projet (`{{SLUG}}`), et de lui
+  seul : `scripts/cockpit-chef.sh` lui donne les chantiers, réponses et
+  vérifications de ce projet, qu'elle confie à des agents ; les autres projets
+  ont leur chef dans leur propre session, n'y touche jamais d'ici. Quand elle
+  le devient, la consigne dit de créer (ou déplacer) SON réveil horaire, puis
+  de le noter : `scripts/cockpit-chef.sh --reveil <trig_…> --distante <session_…>`.
+  `--etat` : qui dirige ; `--max <n>` : agents en parallèle pour ce projet.
 - **Limite d'usage et mode autonome** : la reprise de la tâche en cours quand
   une limite se lève est native (`autoContinueAtUsageLimit`, posé par
   brancher.sh). Si le projet est en « mode autonome » (allumé par Raphaël

@@ -36,7 +36,7 @@
 # écran), quoi faire (le geste exact), ce qu'il doit voir si ça marche. Il
 # s'affiche en tête de la carte orange « à vérifier », dans l'app et le module.
 # Quelque chose de VISIBLE à vérifier (un écran, un rendu) ? Joins « voici ce
-# que tu dois voir » : --image capture.png (répétable, 4 au plus ; 0019),
+# que tu dois voir » : --image capture.png (répétable, 4 au plus ; 0020),
 # affichée en miniature sous « Comment vérifier ». Capture d'un écran web :
 # node app/scripts/capture-ecran.mjs <url> <dossier>.
 #

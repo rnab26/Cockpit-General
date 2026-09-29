@@ -51,7 +51,7 @@ export function mediasDe(m: { medias?: Media[] | null }): Media[] {
   return Array.isArray(m.medias) ? m.medias : []
 }
 
-/** Les images de « Comment vérifier » (0019), toujours un tableau. */
+/** Les images de « Comment vérifier » (0020), toujours un tableau. */
 export function mediasVerifier(c: { verifier_medias?: Media[] | null }): Media[] {
   return Array.isArray(c.verifier_medias) ? c.verifier_medias : []
 }

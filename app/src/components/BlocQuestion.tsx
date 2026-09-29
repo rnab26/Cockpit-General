@@ -62,7 +62,7 @@ export function BlocQuestion({ message }: { message: Message }) {
       </div>
       <p className="mt-1 whitespace-pre-wrap text-base font-medium leading-snug">{message.corps}</p>
       {message.pourquoi ? <TexteLong texte={message.pourquoi} petit /> : null}
-      {/* 0019 : l'image que Claude montre pour que la question se comprenne d'un coup d'œil. */}
+      {/* 0020 : l'image que Claude montre pour que la question se comprenne d'un coup d'œil. */}
       {mediasDe(message).length ? <div className="mt-2"><MediasMessage medias={mediasDe(message)} apercu testId="images-question" /></div> : null}
 
       {estAction ? (

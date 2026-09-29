@@ -54,7 +54,7 @@ export interface Chantier {
   resume_simple: string | null
   /** Étapes écrites par la session qui livre, pour la personne qui certifie (0005). */
   comment_verifier: string | null
-  /** 0019 : « voici ce que tu dois voir » — images jointes par la session à « Comment vérifier ». */
+  /** 0020 : « voici ce que tu dois voir » — images jointes par la session à « Comment vérifier ». */
   verifier_medias?: Media[] | null
   /** 0016 : Raphaël a demandé « vérifie pour moi » (Claude juge) ; puis le verdict de Claude. */
   verif_demandee_at?: string | null

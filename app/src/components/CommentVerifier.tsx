@@ -11,7 +11,7 @@ import { dateRelative } from '../lib/dates.ts'
 import { mediasVerifier } from '../lib/medias.ts'
 import { MediasMessage } from './Medias.tsx'
 
-/** 0019 : « voici ce que tu dois voir » — les images jointes par la session. */
+/** 0020 : « voici ce que tu dois voir » — les images jointes par la session. */
 function CeQueTuDoisVoir({ chantier }: { chantier: Chantier }) {
   const medias = mediasVerifier(chantier)
   if (!medias.length) return null

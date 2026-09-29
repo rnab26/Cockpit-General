@@ -34,7 +34,7 @@
 #   --option   : 2 à 4 pour une question ; libellé 45 max ; une aide OBLIGATOIRE
 #                (140 max) qui dit ce qui se passe si on choisit ça.
 #
-# IMAGES (0019, Raphaël : « montre-moi des images pour que je comprenne mieux
+# IMAGES (0020, Raphaël : « montre-moi des images pour que je comprenne mieux
 # de quoi il s'agit ») : une question qui porte sur quelque chose de VISIBLE
 # (un écran, un rendu, un avant/après) joint sa capture :
 #   --image capture.png   (répétable, 4 au plus ; png, jpg, webp, gif, mp4, webm ; 10 Mo)
