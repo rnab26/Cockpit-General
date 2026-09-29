@@ -117,3 +117,32 @@ export function etatDuProjet(runs: readonly ExecutionGitHub[], brancheProd = 'ma
   }
   return { titre, etat, enCours, lignes }
 }
+
+// ---------------------------------------------------------------------------
+// Version EN LIGNE lue sur le site lui-même (29 sept. 2026).
+//
+// Un site hébergé hors GitHub (FacePro sur Render) ou dont le dépôt est privé
+// reste invisible pour l'API GitHub anonyme. Le site peut en revanche dire
+// quel commit il sert : `GET <url_site>/health` -> { status, commit } (route
+// publique de FacePro, commit RENDER_GIT_COMMIT, CORS ouvert sur cette route
+// seulement). Ce qu'on en tire : « la version X est en ligne », jamais
+// « un déploiement est en cours » (Render ne le dit pas sans clé).
+
+export interface LectureSite {
+  /** Commit servi, tel que le site le renvoie (« dev » = pas un vrai déploiement). */
+  commit: string | null
+  /** Horodatage (ms) de la lecture réussie. */
+  lu: number | null
+  erreur: string | null
+}
+
+/** Une phrase simple pour la ligne « site » ; null s'il n'y a rien à dire. */
+export function phraseSite(l: LectureSite, now: Date = new Date()): string | null {
+  if (l.commit && l.lu !== null) {
+    const quand = now.getTime() - l.lu < 60_000 ? 'à l’instant' : `il y a ${duree(now.getTime() - l.lu)}`
+    const version = /^[0-9a-f]{7,40}$/i.test(l.commit) ? `version ${l.commit.slice(0, 7)}` : `version « ${l.commit.slice(0, 20)} »`
+    return `🌐 Site en ligne — ${version} (lu sur le site ${quand})`
+  }
+  if (l.erreur) return `⚠️ ${l.erreur}`
+  return null
+}

@@ -1,7 +1,7 @@
 // L'état des déploiements d'un projet (src/lib/deploiement.ts), sur des
 // exécutions au format réel de l'API GitHub (relevé le 29 sept. 2026).
 import { verifie, bilan } from './_assert.ts'
-import { etatDuProjet, etatExecution, estUnDeploiement, type ExecutionGitHub } from '../src/lib/deploiement.ts'
+import { etatDuProjet, etatExecution, estUnDeploiement, phraseSite, type ExecutionGitHub } from '../src/lib/deploiement.ts'
 
 const now = new Date('2026-09-29T01:00:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
@@ -46,5 +46,14 @@ verifie('« Vérifications » n’en est pas un', !estUnDeploiement('Vérificati
 {
   const e = etatDuProjet([run('Vérifications', 'completed', 'success', 1), run('Deploy to GitHub Pages', 'completed', 'success', 10)], 'main', now)
   verifie('le déploiement passe en tête de liste, avant les simples vérifications', e.lignes[0].nom === 'Deploy to GitHub Pages', e.lignes.map((l) => l.nom))
+}
+{
+  const p = phraseSite({ commit: '80d6782b401a8cc422ed375a884cf1765e6f88cf', lu: now.getTime() - 10_000, erreur: null }, now)
+  verifie('site lu : version courte (7 caractères) et « à l’instant »', p === '🌐 Site en ligne — version 80d6782 (lu sur le site à l’instant)', p)
+  const q = phraseSite({ commit: 'abcdef1', lu: now.getTime() - 5 * 60_000, erreur: null }, now)
+  verifie('site lu il y a 5 min → le dit', /il y a 5 min/.test(q ?? ''), q)
+  verifie('« dev » (pas un vrai déploiement) est cité tel quel', /version « dev »/.test(phraseSite({ commit: 'dev', lu: now.getTime(), erreur: null }, now) ?? ''))
+  verifie('site injoignable → l’erreur est dite, pas tue', phraseSite({ commit: null, lu: null, erreur: 'Site injoignable' }, now) === '⚠️ Site injoignable')
+  verifie('rien lu, pas d’erreur → rien à dire', phraseSite({ commit: null, lu: null, erreur: null }, now) === null)
 }
 bilan('verifier-deploiement')
