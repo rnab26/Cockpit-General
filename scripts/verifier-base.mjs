@@ -1000,6 +1000,95 @@ async function controle19_chef_par_projet() {
 // verifier-embed …] tri des clients » dans le cockpit de Raphaël, qui ne savait
 // pas s'il devait y répondre). Les bancs travaillent dans des projets `test-…`
 // (scripts/bancs.mjs) ; ce contrôle rougit si une ligne « [TEST… » vit ailleurs.
+// 23. « À toi » toujours à jour (0022, Raphaël : « des requêtes d'il y a 12 h déjà
+// répondues dans la session ; ça se marche dessus »). Projet NEUF (E) : rien des autres sections.
+const P5 = randomUUID(), SLUG_E = `test-verif-${rand}-e`;
+async function controle23_a_toi_a_jour() {
+  section("23. « À toi » à jour (0022) : sans objet retiré seul, revue des vieux et des dépassés, vrais scripts");
+  await sql(`insert into projets (id, slug, nom) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E')`);
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_E, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (script, args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts", script), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const ilYa = (h) => `now() - interval '${h} hours'`;
+  const message = (id) => une(`select answered_at, reponse, confirmee_at from messages where id = ${q(id)}`);
+  const revoir = async () => (await une(`select a_toi_a_revoir(${q(P5)}) as l`)).l ?? [];
+
+  // 1. Sans objet : certifié ou archivé → ses questions ouvertes et les fusions qui le citent se ferment seules.
+  const cc = await creerChantier(P5, { titre: "Certifié bientôt", etat: "a_verifier" });
+  const cAutre = await creerChantier(P5, { titre: "Autre sujet", etat: "libre" });
+  const qc = await creerMessage(P5, cc, { kind: "question", corps: "On garde le bleu ?" });
+  const fu = await une(`select suggerer_fusion(${q(cAutre)}, ${q(cc)}, 'test', 'verifier-base') as id`);
+  await sql(`select certifier_chantier(${q(cc)}, 'raphael')`);
+  const mq = await message(qc), mf = await message(fu.id);
+  verifie("certifié → sa question ouverte est retirée seule, la réponse dit pourquoi",
+    !!mq.answered_at && /^Retirée automatiquement : chantier certifié/.test(mq.reponse ?? ""), mq);
+  verifie("certifié → la fusion proposée qui le cite est « sans objet »", !!mf.answered_at && /^Sans objet/.test(mf.reponse ?? ""), mf);
+  const ca = await creerChantier(P5, { titre: "Archivé bientôt", etat: "bloque" });
+  const qa = await creerMessage(P5, ca, { kind: "action", corps: "Colle la clé" });
+  const qRep = await creerMessage(P5, ca, { kind: "question", corps: "Déjà répondue" });
+  await sql(`update messages set answered_at = now() - interval '1 hour', reponse = 'Oui' where id = ${q(qRep)}`);
+  await sql(`update chantiers set archived_at = now() where id = ${q(ca)}`);
+  const ma = await message(qa), mr = await message(qRep);
+  verifie("archivé → son action ouverte est retirée ; une réponse déjà donnée n'est pas touchée",
+    /^Retirée automatiquement : chantier archivé/.test(ma.reponse ?? "") && mr.reponse === "Oui", { ma, mr });
+
+  // 2. a_toi_a_revoir : la même règle que l'app (lib/entonnoir.ts).
+  const cQ = await creerChantier(P5, { titre: "Couleur du bouton d'accueil", etat: "libre" });
+  const qVieille = await creerMessage(P5, cQ, { kind: "question", corps: "Bleu ou vert ?" });
+  await sql(`update messages set created_at = ${ilYa(13)} where id = ${q(qVieille)}`);
+  const qNeuve = await creerMessage(P5, cQ, { kind: "question", corps: "Et la taille ?" });
+  const cB = await creerChantier(P5, { titre: "Envoi des factures clients", etat: "bloque" });
+  const b = await creerMessage(P5, cB, { kind: "blocage", corps: "Il manque la clé" });
+  await sql(`update messages set created_at = ${ilYa(1)} where id = ${q(b)}`);
+  await creerMessage(P5, cB, { kind: "info", corps: "Clé trouvée dans l'autre session" });
+  const cV = await creerChantier(P5, { titre: "Page de connexion", etat: "a_verifier" });
+  await sql(`update chantiers set livre_at = ${ilYa(1)} where id = ${q(cV)}`);
+  const fin = await creerMessage(P5, cV, { kind: "info", corps: "Livré" });
+  await sql(`update messages set created_at = ${ilYa(1)} + interval '1 minute' where id = ${q(fin)}`);
+  const cTenu = await creerChantier(P5, { titre: "Tenu par une session", etat: "bloque" });
+  await sql(`update chantiers set pris_par = 'claude/x', pris_jusqu_a = now() + interval '1 hour' where id = ${q(cTenu)}`);
+  const bT = await creerMessage(P5, cTenu, { kind: "blocage", corps: "Attend une clé" });
+  await sql(`update messages set created_at = ${ilYa(20)} where id = ${q(bT)}`);
+  // Un UPDATE remet updated_at à maintenant (trigger tracer_chantier) : le vieux « à cadrer » naît vieux.
+  const cD1 = randomUUID();
+  await sql(`insert into chantiers (id, projet_id, titre, etat, created_at, updated_at) values (${q(cD1)}, ${q(P5)}, 'Export des factures en PDF', 'a_cadrer', ${ilYa(30)}, ${ilYa(30)})`);
+  const cD2 = await creerChantier(P5, { titre: "Export PDF des factures", etat: "a_verifier" });
+  let l = await revoir();
+  const par = (id) => l.find((e) => e.id === id);
+  verifie("revue : une question de plus de 12 h y est, la question récente non", !!par(qVieille) && par(qVieille).heures >= 12 && !par(qNeuve), l.map((e) => e.id));
+  verifie("revue : un bloqué suivi de travail y est, avec « avancé depuis »", !!par(cB)?.avance_depuis, par(cB));
+  verifie("revue : le message de livraison (1 min après) ne compte pas comme « avancé »", !par(cV));
+  verifie("revue : un chantier qu'une session tient encore n'y est pas (c'est à elle)", !par(cTenu) && (await sql(`select 1 from chantiers where id = ${q(cTenu)} and pris_jusqu_a > now()`)).length === 1);
+  verifie("revue : un vieux « à cadrer » y est (30 h)", par(cD1)?.heures >= 29, par(cD1));
+  verifie("revue : le doublon probable est signalé (« proche »)", par(cD1)?.proche?.id === cD2, par(cD1)?.proche);
+  const refus = await rpcUtilisateur("a_toi_a_revoir", { p_projet: P5 }, jwt);
+  verifie("a_toi_a_revoir : refusée à un utilisateur connecté (service seulement)", refus.status >= 400, refus.status);
+
+  // 3. Les gestes de la revue, par les vrais scripts.
+  const rC = lancer("demander.sh", ["--confirmer", cD1]);
+  const vu = await chantier(cD1);
+  l = await revoir();
+  verifie("demander.sh --confirmer <chantier> : a_toi_revu_at posé, il quitte la revue", rC.code === 0 && !!vu.a_toi_revu_at && !par(cD1), { rC, a: vu.a_toi_revu_at });
+  const rD = lancer("demander.sh", ["--debloquer", cB, "Clé trouvée"]);
+  const db = await chantier(cB);
+  const dm = await une(`select corps from messages where chantier_id = ${q(cB)} order by created_at desc limit 1`);
+  verifie("demander.sh --debloquer : « libre », message dans le fil", rD.code === 0 && db.etat === "libre" && dm.corps === "Plus bloqué : Clé trouvée", { rD, etat: db.etat, dm });
+  const rD2 = lancer("demander.sh", ["--debloquer", cQ, "x"]);
+  verifie("demander.sh --debloquer refuse un chantier qui n'est pas bloqué", rD2.code === 1, rD2);
+  const rR = lancer("demander.sh", ["--retirer", qVieille, "Déjà répondu dans la session"]);
+  verifie("demander.sh --retirer : la vieille question quitte la revue", rR.code === 0 && !(await revoir()).some((e) => e.id === qVieille), rR);
+  await sql(`update messages set created_at = ${ilYa(14)} where id = ${q(qNeuve)}`);
+  const ap = lancer("revue-a-toi.sh", ["--apercu"]);
+  verifie("revue-a-toi.sh --apercu : la consigne cite l'élément et les gestes, sans rien marquer",
+    ap.code === 0 && ap.sortie.includes(qNeuve) && ap.sortie.includes("--retirer") && ap.sortie.includes("--suggerer-fusion")
+      && (await une(`select revue_a_toi_at from projets where id = ${q(P5)}`)).revue_a_toi_at === null, ap.sortie.slice(0, 300));
+  const r1 = lancer("revue-a-toi.sh", []), r2 = lancer("revue-a-toi.sh", []);
+  verifie("revue-a-toi.sh : une revue, puis « déjà revu » pendant une heure", r1.code === 0 && !r1.sortie.startsWith("RIEN") && r2.sortie.startsWith("RIEN") && /moins d'une heure/.test(r2.sortie), { r1: r1.sortie.slice(0, 120), r2: r2.sortie });
+}
+
 async function controle21_aucun_reste_de_test() {
   section("21. aucun reste de test dans un projet réel");
   const r = await restesDansLesVraisProjets(sql);
@@ -1066,7 +1155,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle21_aucun_reste_de_test, controle22_correctifs,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle21_aucun_reste_de_test, controle22_correctifs,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -1077,7 +1166,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -1085,8 +1174,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

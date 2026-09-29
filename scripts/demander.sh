@@ -22,6 +22,8 @@
 
 #   scripts/demander.sh --confirmer <id>             la question reste utile (après avoir avancé)
 #   scripts/demander.sh --retirer <id> "pourquoi"    elle ne l'est plus : elle quitte « À toi »
+#   scripts/demander.sh --confirmer <id du chantier> un « à vérifier / à cadrer / bloqué » reste à lui (0022)
+#   scripts/demander.sh --debloquer <id du chantier> "pourquoi"   il n'est plus bloqué : repasse « libre »
 #
 # RÈGLE DE CLARTÉ (Raphaël, 29 sept. 2026) : « toutes les questions, les
 # constats, tout ce qui demande une interaction et de la lecture de ma part,
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
     --action)    kind="action"; shift ;;
     --retirer)   mode="retirer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     --confirmer) mode="confirmer"; cible="${2:-}"; shift 2 ;;
+    --debloquer) mode="debloquer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     -h|--help)   sed -n '2,42p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
@@ -69,8 +72,23 @@ done
 # répondre à des choses déjà faites ») : après avoir avancé, la session la
 # confirme (--confirmer <id>) ou la retire (--retirer <id> "pourquoi").
 if [ "$mode" != "poser" ]; then
-  [[ "$cible" =~ ^[0-9a-f-]{36}$ ]] || { echo "Donne l'identifiant de la question après --$mode." >&2; exit 2; }
+  [[ "$cible" =~ ^[0-9a-f-]{36}$ ]] || { echo "Donne l'identifiant de la question (ou du chantier) après --$mode." >&2; exit 2; }
   qc=$(printf '%s' "$cible" | sed "s/'/''/g")
+  # 0022 : un élément de « À toi » qui est un CHANTIER (à vérifier, à cadrer, bloqué) se tient à jour aussi.
+  est_chantier=$("$SQL" "select count(*) as n from chantiers where id = '$qc' and archived_at is null" | jq -r '.rows[0].n // 0')
+  if [ "$mode" = "debloquer" ]; then
+    [ "$est_chantier" = "1" ] || { echo "--debloquer attend l'identifiant d'un chantier." >&2; exit 2; }
+    [ -n "${raison// /}" ] || { echo "--debloquer <id> \"pourquoi\" : dis en une phrase ce qui a levé le blocage." >&2; exit 2; }
+    etat=$("$SQL" "select etat from chantiers where id = '$qc'" | jq -r '.rows[0].etat // ""')
+    [ "$etat" = "bloque" ] || { echo "Rien fait : ce chantier n'est pas « bloqué » (il est « $etat »)." >&2; exit 1; }
+    "$SQL" "update chantiers set etat = 'libre', a_toi_revu_at = now() where id = '$qc' and etat = 'bloque'" >/dev/null || { echo "La base a refusé." >&2; exit 1; }
+    "$SQL" "insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) select projet_id, id, '$(printf '%s' "$auteur" | sed "s/'/''/g")', 'session', 'info', 'Plus bloqué : $(printf '%s' "$raison" | sed "s/'/''/g")' from chantiers where id = '$qc'" >/dev/null
+    echo "Chantier débloqué : il repasse « libre » et quitte « À toi »."; exit 0
+  fi
+  if [ "$mode" = "confirmer" ] && [ "$est_chantier" = "1" ]; then
+    "$SQL" "update chantiers set a_toi_revu_at = now() where id = '$qc'" >/dev/null || { echo "La base a refusé la confirmation." >&2; exit 1; }
+    echo "Chantier confirmé : toujours à Raphaël, son âge repart de maintenant."; exit 0
+  fi
   if [ "$mode" = "retirer" ]; then
     [ -n "${raison// /}" ] || { echo "--retirer <id> \"pourquoi\" : dis en une phrase pourquoi elle n'est plus utile." >&2; exit 2; }
     ok=$("$SQL" "select count(*) as n from messages where id = '$qc' and answered_at is null and kind in ('question','action')" | jq -r '.rows[0].n // 0')

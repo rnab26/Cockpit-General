@@ -686,6 +686,39 @@ try {
   verifie('« À toi de jouer » compte la question du projet (tuile « pour toi » comprise)', await page.locator('[data-testid="element-a-toi"][data-type="question"]').count() >= nAttenteAvant + 1 && Number(await page.getByTestId('tuile-pourToi').getByTestId('nombre-tuile').textContent()) === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('la ligne : le titre du chantier d’abord, « Claude te pose une question », bouton « Répondre »',
     (await elQ.getByTestId('titre-a-toi').textContent()).includes(Q1.titre) && /Claude te pose une question/.test(await elQ.getByTestId('attente-a-toi').textContent()) && (await elQ.getByTestId('verbe-a-toi').textContent()).trim() === 'Répondre')
+  // 0022 (Raphaël : « je ne sais pas quelles sont les plus récentes et les plus vieilles ») : âge visible, le plus récent en haut, tri réglable.
+  {
+    const premier = page.getByTestId('element-a-toi').first()
+    verifie('« À toi » : la question qui vient d’arriver est EN HAUT, avec son âge (« à l’instant »)',
+      (await premier.getAttribute('data-element-chantier')) === Q1.id && /à l’instant|il y a 1 min/.test(await premier.getByTestId('age-a-toi').textContent()),
+      [await premier.getAttribute('data-element-chantier'), await premier.getByTestId('age-a-toi').textContent()])
+    const ages = await page.getByTestId('age-a-toi').allTextContents()
+    verifie('« À toi » : chaque ligne dit depuis quand elle attend', ages.length > 0 && ages.every((a) => a.trim().length > 0), ages)
+    const depuis = await page.locator('[data-testid="element-a-toi"]:not([data-depasse="1"])').evaluateAll((els) => els.map((e) => e.getAttribute('data-depuis')))
+    verifie('« À toi » : du plus récent au plus ancien', depuis.every((d, i) => i === 0 || depuis[i - 1] >= d), depuis)
+    const tri = page.getByTestId('tri-a-toi')
+    if (await tri.count()) {
+      await tri.click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="tri-a-toi"]')?.getAttribute('data-tri') === 'anciens', null, { timeout: 5000 }).catch(() => {})
+      const d2 = await page.locator('[data-testid="element-a-toi"]:not([data-depasse="1"])').evaluateAll((els) => els.map((e) => e.getAttribute('data-depuis')))
+      verifie('tri « Plus anciens d’abord » : le plus vieux en haut, la question neuve n’y est plus',
+        (await tri.getAttribute('data-tri')) === 'anciens' && /anciens/.test(await tri.textContent()) && d2.every((d, i) => i === 0 || d2[i - 1] <= d)
+          && (await page.getByTestId('element-a-toi').first().getAttribute('data-element-chantier')) !== Q1.id, d2)
+      await tri.click()
+      await page.waitForFunction(() => document.querySelector('[data-testid="tri-a-toi"]')?.getAttribute('data-tri') === 'recents', null, { timeout: 5000 }).catch(() => {})
+      verifie('tri remis sur « Plus récents d’abord »', (await tri.getAttribute('data-tri')) === 'recents')
+    }
+    // Un bloqué que Claude a fait avancer depuis : marqué, en bas.
+    const BD = creerTest('bloqué dépassé', { etat: 'bloque' })
+    sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values ('${projet.id}', '${BD.id}', 'verifier-web', 'session', 'blocage', '${MARQUE2} Il manque la clé', now() - interval '40 minutes'), ('${projet.id}', '${BD.id}', 'verifier-web', 'session', 'info', '${MARQUE2} Clé trouvée ailleurs', now() - interval '10 minutes')`)
+    await actualiser()
+    const elBD = await elementAToi(BD.id, 'bloque')
+    const lignes = await page.locator('[data-testid="element-a-toi"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-depasse') === '1'))
+    verifie('un bloqué que Claude a fait avancer depuis : « peut-être plus à jour », en bas de la liste',
+      (await elBD.getAttribute('data-depasse')) === '1' && /Claude a avancé depuis .* peut-être plus à jour/.test(await elBD.getByTestId('attente-a-toi').textContent())
+        && lignes.indexOf(true) > lignes.lastIndexOf(false) && /peut-être plus à jour/.test(await page.getByTestId('a-toi-depasses').textContent()), lignes)
+    await capture(page, 'a-toi-age-tri')
+  }
   await deplierTout()
   verifie('dans « Tous les chantiers », sa ligne dit « Attend ta réponse »', (await ligneId(Q1.id).getByTestId('badge-presence').textContent()).includes('Attend ta réponse'))
   await elQ.getByTestId('verbe-a-toi').click()
