@@ -1,5 +1,5 @@
 // Médias (0013) : chemin, contrôle des fichiers, libellés. node --experimental-strip-types app/scripts/verifier-medias.ts
-import { cheminMedia, genreMedia, nomSur, refusMedias, resumeMedias, tailleLisible, mediasDe, MEDIAS_MAX_PAR_MESSAGE, TAILLE_MAX_MEDIA } from '../src/lib/medias.ts'
+import { cheminMedia, genreMedia, nomSur, refusMedias, resumeMedias, tailleLisible, mediasDe, mediasVerifier, MEDIAS_MAX_PAR_MESSAGE, TAILLE_MAX_MEDIA } from '../src/lib/medias.ts'
 let ok = 0, ko = 0
 const verifie = (nom: string, cond: boolean, detail?: unknown) => { if (cond) ok++; else { ko++; console.log('✗', nom, detail ?? '') } }
 
@@ -21,6 +21,8 @@ verifie('accepté', refusMedias([{ name: 'a.jpg', size: 1000 }], 2) === null)
 verifie('médias absents → []', mediasDe({}).length === 0 && mediasDe({ medias: null }).length === 0)
 const m = (type: string) => ({ chemin: 'x', nom: 'x', type, taille: 1 })
 verifie('résumé', resumeMedias([m('image/jpeg'), m('image/png'), m('video/mp4')]) === '2 photos, 1 vidéo', resumeMedias([m('image/jpeg'), m('image/png'), m('video/mp4')]))
+verifie('images de Comment vérifier absentes → []', mediasVerifier({}).length === 0 && mediasVerifier({ verifier_medias: null }).length === 0)
+verifie('images de Comment vérifier lues', mediasVerifier({ verifier_medias: [m('image/png')] }).length === 1)
 verifie('résumé vide', resumeMedias([]) === '')
 
 console.log(`verifier-medias : ${ok}/${ok + ko}`)

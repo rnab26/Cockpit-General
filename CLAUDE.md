@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, renforts (232 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, renforts (244 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -71,6 +71,18 @@ capture l'écran réel sur un téléphone (clair, ou `SCHEMA=dark`).
 au proxy (`ERR_CERT_AUTHORITY_INVALID`, y compris sur le site en ligne). Les
 deux scripts font passer les requêtes https par Node (`ctx.route` + `fetch`),
 qui vérifie le certificat : ne jamais « corriger » avec `ignoreHTTPSErrors`.
+
+**Un banc de test n'écrit JAMAIS dans un vrai projet (29 sept. 2026).**
+Raphaël voyait « [TEST verifier-embed …] tri des clients » dans son cockpit
+(passe interrompue avant son nettoyage). Règles, dans `scripts/bancs.mjs` :
+chaque banc travaille dans un projet jetable `test-<banc>-<aléatoire>` (sa
+propre `cle_embed` pour verifier-embed), le supprime à la fin, et purge au
+démarrage les restes de SES passes interrompues — seulement ceux de plus de
+30 min, pour ne jamais casser la passe d'un autre agent. L'app ne montre
+jamais un projet `test-…` (ni onglet, ni « Tout », ni ses lignes arrivées en
+direct) sauf à un compte `test-…@cockpit.local` (`lib/projetsDeTest.ts`,
+filtré dans `useDonnees`). `verifier-base` §21 rougit s'il reste une ligne
+« [TEST… » dans un projet réel. Nouveau banc : mêmes règles.
 
 **Deux pièges payés le 28 sept. 2026.**
 - Une fonction `security definer` contourne la RLS : elle doit vérifier
@@ -249,6 +261,21 @@ le hook) et les REGARDE avant de répondre.
 (`Annoter.tsx`, un `<canvas>`) ; avant l'envoi l'annotée remplace la pièce,
 après l'envoi elle part en nouveau message « Image annotée : … » du fil.
 `verifier-annotation.ts`, et les contrôles « crayon » de `verifier-web.mjs`.
+
+**Et dans l'autre sens : montre, ne décris pas** (29 sept. 2026, migration
+0020, Raphaël : « montre-moi des images pour que je comprenne mieux, ou ce
+que je suis censé voir »). Une question ou une vérification qui porte sur
+quelque chose de visible → joins une capture : `demander.sh --image f.png`
+(dans `messages.medias`, miniature sous la question), `progression.sh
+--termine … --verifier … --image f.png` (`chantiers.verifier_medias`, « Ce que
+tu dois voir » sous les étapes ; un `--termine` sans image efface les
+anciennes), `media.sh --envoyer --chantier <id> --texte "…" --image f.png`
+(message du fil). Contrôle AVANT toute écriture (`media.sh
+--verifier-images` : png/jpg/webp/gif/mp4/webm, 4 au plus, 10 Mo) ; dépôt
+service_role dans `cockpit-medias` au chemin du chantier (les droits de
+lecture suivent donc ceux du chantier). Écran du cockpit : `node
+app/scripts/capture-ecran.mjs <url> <dossier>`. Pas encore affiché par le
+module embarqué (`embed/`) : seulement l'app.
 
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 

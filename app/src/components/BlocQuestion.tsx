@@ -9,7 +9,8 @@ import { Textarea } from '../ui/Champs.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { extrait } from '../lib/texte.ts'
-import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
+import { ChoisirMedias, MediasMessage, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
+import { mediasDe } from '../lib/medias.ts'
 
 /**
  * Une question (options cliquables + précision) ou une action (Fait / Pas
@@ -61,6 +62,8 @@ export function BlocQuestion({ message }: { message: Message }) {
       </div>
       <p className="mt-1 whitespace-pre-wrap text-base font-medium leading-snug">{message.corps}</p>
       {message.pourquoi ? <TexteLong texte={message.pourquoi} petit /> : null}
+      {/* 0020 : l'image que Claude montre pour que la question se comprenne d'un coup d'œil. */}
+      {mediasDe(message).length ? <div className="mt-2"><MediasMessage medias={mediasDe(message)} apercu testId="images-question" /></div> : null}
 
       {estAction ? (
         <div className="mt-3 grid grid-cols-3 gap-2">

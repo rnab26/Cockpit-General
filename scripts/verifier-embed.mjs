@@ -36,24 +36,32 @@
  *     son « en cours » sans nouvelle donnée (horloge avancée de 16 min, zéro
  *     appel serveur) ; captures dans SCRATCH (embed-presence.png).
  *
- * Tout ce qu'il crée est supprimé à la fin (chantier de test, sa trace dans
- * `supprimes`, ses lignes `historique` / `ce_qui_marche`), même en cas
- * d'échec. Il n'écrit que dans le schéma cockpit, via scripts/sql.sh.
+ * Il ne touche JAMAIS un vrai projet (29 sept. 2026 : une passe interrompue
+ * avait laissé « [TEST verifier-embed …] tri des clients » dans le cockpit de
+ * Raphaël). Tout vit dans un projet jetable `test-embed-<aléatoire>`, avec sa
+ * propre cle_embed, créé au début et supprimé à la fin (même en cas d'échec) ;
+ * la page de démo est servie avec CETTE clé. Au démarrage, les restes d'une
+ * passe précédente interrompue sont purgés (scripts/bancs.mjs). Il n'écrit
+ * que dans le schéma cockpit, via scripts/sql.sh.
  *
  * À RELANCER après toute modification de supabase/functions/cockpit-embed/,
  * embed/cockpit-embed.js, ou des RPC certifier/corriger/repondre.
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { purgerMarquesDansLesVraisProjets, purgerPassesPrecedentes, purgerProjetsDeTest } from './bancs.mjs'
 
 const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FONCTION = process.env.COCKPIT_FONCTION || 'https://bexiyvmdbxcwxasgslxp.supabase.co/functions/v1/cockpit-embed'
 const SCRATCH = process.env.SCRATCH || '/tmp/claude-0/-home-user/26486ea7-9936-5198-a42a-ff8e3b15d856/scratchpad'
 const MARQUE = '[TEST verifier-embed ' + new Date().toISOString().slice(0, 19) + ']'
+const PREFIXE = 'test-embed-'
+const SLUG = PREFIXE + randomUUID().slice(0, 8)
 const CHAMPS_INTERDITS = ['notes', 'pris_par', 'pris_jusqu_a', 'reproduction', 'cle_embed', 'created_by', 'answered_by']
 
 let reussis = 0, rates = 0
@@ -265,7 +273,7 @@ function nettoyer(id) {
 const CV_NAV = "1. Ouvre la liste des clients https://exemple.fr/clients. 2. Touche l'en-tête « Date ». 3. Le client contacté le plus récemment est en haut."
 function creerJeuNavigateur() {
   const idQ = randomUUID(), idV = randomUUID(), idV2 = randomUUID(), qid = randomUUID(), idP = randomUUID()
-  const pj = "(select id from projets where slug = 'cockpit')"
+  const pj = "(select id from projets where slug = '" + SLUG + "')"
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idQ + "', " + pj + ", '" + lit(MARQUE) + " export PDF', 'Quand je clique sur Exporter, rien ne se passe.', 'en_cours', 'utilisateur')")
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine, resume_simple) values ('" + idV + "', " + pj + ", '" + lit(MARQUE) + " tri des clients', 'Trier les clients par date.', 'a_verifier', 'utilisateur', 'La liste se trie par date de dernier contact.')")
   sql("update chantiers set comment_verifier = '" + lit(CV_NAV) + "' where id = '" + idV + "'")
@@ -274,8 +282,8 @@ function creerJeuNavigateur() {
   // La carte « présence », sans question : signalée AVANT celle de idQ pour
   // que le bandeau « Là, maintenant » reste sur idQ (la plus récente).
   sql("insert into chantiers (id, projet_id, titre, demande, etat, origine) values ('" + idP + "', " + pj + ", '" + lit(MARQUE) + " présence', 'Trier par date.', 'en_cours', 'utilisateur')")
-  sql("select signaler_activite('cockpit', '" + idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
-  sql("select signaler_activite('cockpit', '" + idQ + "'::uuid, 'session-test', 'Test du correctif sur 30 factures', 62, 540, 'en_cours', 'lot 3/5')")
+  sql("select signaler_activite('" + SLUG + "', '" + idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
+  sql("select signaler_activite('" + SLUG + "', '" + idQ + "'::uuid, 'session-test', 'Test du correctif sur 30 factures', 62, 540, 'en_cours', 'lot 3/5')")
   return { idQ, idV, idV2, qid, idP }
 }
 
@@ -291,7 +299,14 @@ async function verifierNavigateur(cle) {
     pw = await import(pathToFileURL(global).href)
   }
   const port = await portLibre()
-  const serveur = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: path.join(RACINE, 'embed'), stdio: 'ignore' })
+  // La page de démo, servie avec la clé du PROJET DE TEST (jamais celle d'un vrai projet).
+  const site = mkdtempSync(path.join(tmpdir(), 'embed-demo-'))
+  copyFileSync(path.join(RACINE, 'embed/cockpit-embed.js'), path.join(site, 'cockpit-embed.js'))
+  const demo = readFileSync(path.join(RACINE, 'embed/demo.html'), 'utf8')
+  const demoTest = demo.replace(/data-cle="[^"]*"/, 'data-cle="' + cle + '"')
+  verifie(demoTest !== demo && demoTest.includes('data-cle="' + cle + '"'), 'la page de démo parle au projet de test ' + SLUG + ', pas à un vrai projet')
+  writeFileSync(path.join(site, 'demo.html'), demoTest)
+  const serveur = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: site, stdio: 'ignore' })
   await new Promise((r) => setTimeout(r, 700))
   mkdirSync(SCRATCH, { recursive: true })
   let navigateur, chantierCree = null
@@ -504,7 +519,7 @@ async function verifierNavigateur(cle) {
     // Plus AUCUNE activité fraîche du jeu : sans autre session vivante sur le
     // projet, aucun bandeau du tout.
     sql("update activite set updated_at = now() - interval '2 hours' where chantier_id = '" + jeu.idQ + "'")
-    const autresVivantes = sql("select count(*)::int as n from activite a join projets p on p.id = a.projet_id where p.slug = 'cockpit' and a.statut = 'en_cours' and a.updated_at > now() - interval '15 minutes'")[0].n
+    const autresVivantes = sql("select count(*)::int as n from activite a join projets p on p.id = a.projet_id where p.slug = '" + SLUG + "' and a.statut = 'en_cours' and a.updated_at > now() - interval '15 minutes'")[0].n
     await page.goto('http://127.0.0.1:' + port + '/demo.html')
     await page.waitForFunction((id) => { const r = document.querySelector('.cockpit-embed').shadowRoot; return r && r.querySelector('[data-chantier="' + id + '"]') }, jeu.idP, { timeout: 20000 })
     const p3 = await lirePresence(jeu.idQ)
@@ -514,7 +529,7 @@ async function verifierNavigateur(cle) {
     // Une session qui se tait perd son « en cours » SANS nouvelle donnée : on
     // coupe le rechargement (data-intervalle=3600) et on avance l'horloge de
     // la page de 16 min ; seul le recalcul des 30 s peut changer l'écran.
-    sql("select signaler_activite('cockpit', '" + jeu.idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
+    sql("select signaler_activite('" + SLUG + "', '" + jeu.idP + "'::uuid, 'session-test', 'Test présence : tri par date', 40, 600, 'en_cours', null)")
     const horloge = await nouvellePage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
     await horloge.route('**/demo.html', async (route) => {
       const rep = await route.fetch()
@@ -545,6 +560,7 @@ async function verifierNavigateur(cle) {
   } finally {
     if (navigateur) await navigateur.close()
     serveur.kill()
+    rmSync(site, { recursive: true, force: true })
     if (chantierCree) nettoyer(chantierCree)
     nettoyer(jeu.idQ)
     nettoyer(jeu.idV)
@@ -554,15 +570,37 @@ async function verifierNavigateur(cle) {
 }
 
 // ----------------------------------------------------------------- main
-const cle = sql("select cle_embed from projets where slug = 'cockpit'")[0]?.cle_embed
-if (!cle) { console.error('Projet pilote « cockpit » introuvable.'); process.exit(2) }
+// Le projet de test : sa clé, un chantier visible et un chantier INTERNE
+// (visible_utilisateurs = false, avec des notes) pour que « etat » ait de quoi
+// montrer ET de quoi cacher.
+function creerProjetTest() {
+  const id = randomUUID()
+  const cle = (randomUUID() + randomUUID()).replace(/-/g, '')
+  sql("insert into projets (id, slug, nom, couleur, actif, description, cle_embed) values ('" + id + "', '" + SLUG + "', 'Test module (s’efface seul)', '#64748B', true, 'Projet créé et supprimé par scripts/verifier-embed.mjs', '" + cle + "')")
+  sql("insert into chantiers (projet_id, titre, demande, etat, origine) values ('" + id + "', '" + lit(MARQUE) + " visible', 'Un chantier que l’utilisateur voit.', 'libre', 'utilisateur')")
+  sql("insert into chantiers (projet_id, titre, demande, etat, origine, visible_utilisateurs, notes) values ('" + id + "', '" + lit(MARQUE) + " interne', 'Travail interne.', 'libre', 'session', false, 'note interne')")
+  return { id, cle }
+}
+
 console.log('Fonction : ' + FONCTION)
+console.log('Projet de test : ' + SLUG)
+let projetTest = null
 try {
+  await purgerPassesPrecedentes(sql, PREFIXE)
+  await purgerMarquesDansLesVraisProjets(sql, '[TEST verifier-embed')
+  projetTest = creerProjetTest()
   await verifierPresenceParite()
-  await verifierApi(cle)
-  if (!process.env.SANS_NAVIGATEUR) await verifierNavigateur(cle)
+  await verifierApi(projetTest.cle)
+  if (!process.env.SANS_NAVIGATEUR) await verifierNavigateur(projetTest.cle)
 } catch (e) {
   ko('exception', e.stack || String(e))
+} finally {
+  try {
+    if (projetTest) await purgerProjetsDeTest(sql, [projetTest.id], PREFIXE)
+    const idP = projetTest ? projetTest.id : '00000000-0000-0000-0000-000000000000'
+    const reste = sql("select (select count(*) from projets where slug = '" + SLUG + "')::int + (select count(*) from supprimes where projet_id = '" + idP + "')::int + (select count(*) from chantiers c join projets p on p.id = c.projet_id where c.titre like '" + lit(MARQUE) + "%' and p.slug not like 'test-%')::int as n")[0].n
+    verifie(reste === 0, 'nettoyage : projet de test supprimé avec ses traces, rien dans un vrai projet', String(reste))
+  } catch (e) { ko('nettoyage', e.message) }
 }
 console.log('\n' + reussis + ' réussi(s), ' + rates + ' raté(s).')
 process.exit(rates ? 1 : 0)

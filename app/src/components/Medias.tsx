@@ -202,8 +202,11 @@ async function liensSignes(chemins: string[]): Promise<Map<string, string>> {
 /**
  * Les médias d'un message : vignettes ; un toucher ouvre l'image ou la vidéo en grand, un PDF ou un fichier dans un onglet.
  * `onAnnote` (images jointes par Raphaël) : un crayon sur chaque image ; l'image annotée part comme une NOUVELLE pièce.
+ * `apercu` (0020) : les images que CLAUDE montre (question, « Comment vérifier ») — plus grandes, avec « touche pour agrandir ».
  */
-export function MediasMessage({ medias, petit = false, onAnnote }: { medias: Media[]; petit?: boolean; onAnnote?: (fichier: File) => Promise<string | null> }) {
+export function MediasMessage({ medias, petit = false, onAnnote, apercu = false, testId = 'medias-message' }: {
+  medias: Media[]; petit?: boolean; onAnnote?: (fichier: File) => Promise<string | null>; apercu?: boolean; testId?: string
+}) {
   const [annotee, setAnnotee] = useState<Media | null>(null)
   const [urls, setUrls] = useState<Map<string, string>>(new Map())
   const [erreur, setErreur] = useState(false)
@@ -216,10 +219,10 @@ export function MediasMessage({ medias, petit = false, onAnnote }: { medias: Med
     return () => { vivant = false }
   }, [cle]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!medias.length) return null
-  const taille = petit ? 'h-12 w-12' : 'h-20 w-20'
+  const taille = petit ? 'h-12 w-12' : apercu ? 'h-32 w-44' : 'h-20 w-20'
   return (
     <>
-      <ul className="flex flex-wrap gap-2" data-testid="medias-message">
+      <ul className="flex flex-wrap gap-2" data-testid={testId}>
         {medias.map((m) => {
           const url = urls.get(m.chemin)
           const genre = genreMedia(m.type, m.nom)
@@ -228,7 +231,7 @@ export function MediasMessage({ medias, petit = false, onAnnote }: { medias: Med
             <li key={m.chemin} className="relative">
               <button type="button" onClick={ouvrir} data-testid="media" data-genre={genre} title={`${m.nom} · ${tailleLisible(m.taille)}`}
                 className={`flex ${taille} items-center justify-center overflow-hidden rounded-lg border border-bord bg-carte-2`}>
-                {url && genre === 'image' ? <img src={url} alt={m.nom} loading="lazy" className="h-full w-full object-cover" />
+                {url && genre === 'image' ? <img src={url} alt={m.nom} loading="lazy" className={`h-full w-full object-cover ${apercu ? 'object-top' : ''}`} />
                   : url && genre === 'video' ? <video src={`${url}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
                   : <span className="px-1 text-center text-[10px] leading-tight text-texte-2"><IconeMedia genre={genre} />{m.nom.slice(0, 14)}</span>}
               </button>
@@ -237,6 +240,7 @@ export function MediasMessage({ medias, petit = false, onAnnote }: { medias: Med
           )
         })}
       </ul>
+      {apercu && !erreur ? <p className="mt-1 text-xs text-texte-2">Touche l’image pour l’agrandir.</p> : null}
       {annotee && onAnnote ? (
         <Annoter nom={annotee.nom} type={annotee.type} onFermer={() => setAnnotee(null)}
           charger={async () => {

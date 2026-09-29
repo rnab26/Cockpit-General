@@ -97,6 +97,17 @@ demandes des utilisateurs, progression des autres sessions.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.
+- **Montre, ne décris pas** (Raphaël, 29 sept. 2026 : « montre-moi des images
+  pour que je comprenne mieux, ou ce que je suis censé voir ») : une question
+  ou une vérification qui porte sur quelque chose de VISIBLE (un écran, un
+  rendu, un avant/après) → joins une capture. `--image capture.png` sur
+  `scripts/cockpit-demander.sh` (sous la question) et sur
+  `scripts/cockpit-progression.sh --termine … --verifier …` (« Ce que tu dois
+  voir », sous les étapes) ; dans le fil :
+  `scripts/cockpit-media.sh --envoyer --chantier <id> --texte "…" --image capture.png`.
+  png, jpg, webp, gif, mp4, webm ; 4 au plus, 10 Mo chacune ; capture faite
+  avec l'outil du projet (Playwright sur le site, capture de l'app…), et
+  REGARDE-la avant de l'envoyer (Read sur l'image).
 - **Photos, vidéos, fichiers de Raphaël** (joints à ses réponses dans l'app, 📎 dans le hook) : `scripts/cockpit-media.sh --message <id>` ou `--chantier <id>` les télécharge ; REGARDE-les (Read sur l'image) avant de répondre.
 - **Le cycle** est une colonne `etat` : à trier → à cadrer → libre → en cours →
   à vérifier → validé (+ bloqué, reporté). **Seul un humain pose « validé »**

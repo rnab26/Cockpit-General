@@ -35,6 +35,10 @@
 # Écris-le pour lui, sans jargon, en étapes numérotées : où aller (lien ou
 # écran), quoi faire (le geste exact), ce qu'il doit voir si ça marche. Il
 # s'affiche en tête de la carte orange « à vérifier », dans l'app et le module.
+# Quelque chose de VISIBLE à vérifier (un écran, un rendu) ? Joins « voici ce
+# que tu dois voir » : --image capture.png (répétable, 4 au plus ; 0020),
+# affichée en miniature sous « Comment vérifier ». Capture d'un écran web :
+# node app/scripts/capture-ecran.mjs <url> <dossier>.
 #
 # --eta : durée restante estimée (« 25m », « 1h30 », « 90s »), seulement si tu
 # la connais vraiment ; sinon omets-la, l'app affiche « durée inconnue ».
@@ -59,7 +63,7 @@ RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
 projet="${COCKPIT_PROJET:-}"
-chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""
+chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""; images=()
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
@@ -77,6 +81,7 @@ while [ $# -gt 0 ]; do
     --eta)      eta="${2:-}"; shift 2 ;;
     --detail)   detail="${2:-}"; shift 2 ;;
     --verifier) verifier="${2:-}"; shift 2 ;;
+    --image)    images+=("${2:-}"); shift 2 ;;
     --jalon)    jalon="${2:-}"; shift 2 ;;
     --en-ligne) en_ligne="${2:-}"; shift 2 ;;
     --pas-en-ligne) pas_en_ligne="${2:-}"; shift 2 ;;
@@ -85,7 +90,7 @@ while [ $# -gt 0 ]; do
     --attente)  statut="attente"; etape="${2:-$etape}"; shift 2 ;;
     --termine)  statut="termine"; etape="${2:-Terminé}"; pct=100; shift 2 ;;
     --echec)    statut="echec"; etape="${2:-Échec}"; shift 2 ;;
-    -h|--help)  sed -n '2,32p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help)  sed -n '2,43p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
@@ -106,6 +111,14 @@ fi
 if [ "$statut" = "termine" ] && [ -z "$agent" ]; then
   nt=$(printf '%s' "$etape" | python3 -c 'import sys; print(len(sys.stdin.read()))')
   [ "$nt" -le 120 ] || { echo "Refusé (règle de clarté) : le résumé de --termine fait $nt caractères, 120 au plus : ce qui est livré, en une phrase simple." >&2; exit 2; }
+fi
+
+# Les images (« voici ce que tu dois voir ») accompagnent --verifier, sur un chantier.
+if [ ${#images[@]} -gt 0 ]; then
+  if [ "$statut" != "termine" ] || [ -z "$chantier" ] || [ -n "$agent" ]; then
+    echo "--image accompagne --termine … --verifier sur un chantier (voici ce que tu dois voir). Pour montrer une image ailleurs : media.sh --envoyer, ou demander.sh --image." >&2; exit 2
+  fi
+  "$RACINE/scripts/media.sh" --verifier-images "${images[@]}"
 fi
 
 if [ -z "$projet" ]; then
@@ -182,7 +195,18 @@ if [ -n "$chantier" ]; then
   "$SQL" "select pourcentage, statut from signaler_activite('$(q "$projet")', '$id'::uuid, '$(q "$session")', '$(q "$etape")', $pct_sql, $eta_secondes, '$statut', $detail_sql)" >/dev/null
   # Une session qui termine ou échoue rend aussi le chantier lisible dans la colonne etat.
   if [ "$statut" = "termine" ]; then
-    "$SQL" "update chantiers set etat = case when etat in ('en_cours','libre','a_trier') then 'a_verifier' else etat end, comment_verifier = '$(q "$verifier")', pris_par = null, pris_jusqu_a = null where id = '$id'" >/dev/null
+    # Les images vont avec CE texte : un nouveau --termine sans image efface celles d'avant (périmées).
+    medias="[]"
+    if [ ${#images[@]} -gt 0 ]; then
+      pid=$("$SQL" "select projet_id from chantiers where id = '$id'" | jq -r '.rows[0].projet_id // empty')
+      medias=$("$RACINE/scripts/media.sh" --deposer "$pid" "$id" "${images[@]}")
+    fi
+    "$SQL" "update chantiers set etat = case when etat in ('en_cours','libre','a_trier') then 'a_verifier' else etat end, comment_verifier = '$(q "$verifier")', verifier_medias = '$(q "$medias")'::jsonb, pris_par = null, pris_jusqu_a = null where id = '$id'" >/dev/null
+    if [ ${#images[@]} -gt 0 ]; then
+      nm=$("$SQL" "select jsonb_array_length(verifier_medias) as n from chantiers where id = '$id'" | jq -r '.rows[0].n // 0')
+      [ "$nm" = "${#images[@]}" ] || { echo "Les images de « Comment vérifier » n'ont pas été enregistrées (relecture : $nm)." >&2; exit 1; }
+      echo "« Comment vérifier » : $nm image(s) jointe(s), visibles en miniature sous les étapes."
+    fi
   fi
 fi
 

@@ -26,7 +26,8 @@
 //   …
 //   18. réponses de Raphaël reprises par la chef (0017), projets de test jamais servis
 //   19. un chef PAR PROJET (0019) : la passe d'un projet ne sert jamais un autre projet
-//   20. renforts (0021) : une session par section, exclusivité, jamais deux renforts sur un chantier
+//   21. aucun reste de banc de test (« [TEST… ») dans un projet RÉEL
+//   22. renforts (0021) : une session par section, exclusivité, jamais deux renforts sur un chantier
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -43,6 +44,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGE_RESTE_MIN, projetsDeTestAbandonnes, restesDansLesVraisProjets } from "./bancs.mjs";
 
 const URL_ = process.env.SUPABASE_URL ?? "https://bexiyvmdbxcwxasgslxp.supabase.co";
 const CLE_PUBLIQUE = "sb_publishable_Ju0xC27cQ1JrN4IpWFfWxQ_Ntrd4P1U";
@@ -158,13 +160,16 @@ async function purgerProjetsDeTest(ids) {
   await sql(`delete from supprimes where projet_id in (${liste})`);
 }
 async function purgerRestesDePassesPrecedentes() {
-  const vieux = await sql(`select id, slug from projets where slug like 'test-verif-%'`);
+  // Seulement les passes ABANDONNÉES (> AGE_RESTE_MIN min) : jamais le projet
+  // ni le compte d'une passe vivante (verifier-reponses, un autre agent).
+  const vieux = await projetsDeTestAbandonnes(sql, "test-verif-");
   if (vieux.length) {
     console.log(`  (purge de ${vieux.length} projet(s) de test laissé(s) par une passe précédente : ${vieux.map((p) => p.slug).join(", ")})`);
     await purgerProjetsDeTest(vieux.map((p) => p.id));
   }
   const r = await authAdmin("admin/users?per_page=100&filter=test-verif-");
-  const comptes = (r.json?.users ?? []).filter((u) => /^test-verif-[a-z0-9]+@cockpit\.local$/.test(u.email ?? ""));
+  const limite = Date.now() - AGE_RESTE_MIN * 60_000;
+  const comptes = (r.json?.users ?? []).filter((u) => /^test-verif-[a-z0-9]+@cockpit\.local$/.test(u.email ?? "") && Date.parse(u.created_at) < limite);
   for (const u of comptes) {
     console.log(`  (purge du compte de test orphelin ${u.email})`);
     await supprimerCompte(u.id);
@@ -878,6 +883,61 @@ async function controle18_reponses_prises() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+async function controle20_images_session() {
+  section("20. Claude MONTRE une image (0020) : question, « Comment vérifier », fil — vrais scripts");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const dossier = mkdtempSync(join(tmpdir(), "verif-images-"));
+  const png = join(dossier, "écran test.png");
+  writeFileSync(png, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+  const txt = join(dossier, "notes.txt"); writeFileSync(txt, "pas une image");
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (script, args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts", script), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const nMessages = async () => (await une(`select count(*)::int as n from messages where projet_id = ${q(P1)}`)).n;
+  try {
+    const c = await creerChantier(P1, { titre: "Images de test", etat: "en_cours" });
+    const opts = ["--option", "Bleu|Le bouton devient bleu.|recommande", "--option", "Vert|Le bouton devient vert."];
+    // Refus AVANT toute écriture.
+    const avant = await nMessages();
+    const rType = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur ?", "--pourquoi", "Test.", ...opts, "--image", txt]);
+    const rAbsent = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur ?", "--pourquoi", "Test.", ...opts, "--image", join(dossier, "absent.png")]);
+    const rTrop = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur ?", "--pourquoi", "Test.", ...opts, ...Array(5).fill(["--image", png]).flat()]);
+    verifie("demander.sh --image REFUSE un fichier qui n'est pas une image, absent, ou plus de 4, sans rien écrire",
+      rType.code === 2 && rAbsent.code === 2 && rTrop.code === 2 && (await nMessages()) === avant, { rType, rAbsent, rTrop });
+    // Question avec image.
+    const rQ = lancer("demander.sh", ["--chantier", c, "--question", "Quelle couleur pour ce bouton ?", "--pourquoi", "Test.", ...opts, "--image", png]);
+    const qm = await une(`select id, medias from messages where chantier_id = ${q(c)} and kind = 'question' order by created_at desc limit 1`);
+    const m0 = qm?.medias?.[0];
+    verifie("demander.sh --image : la question porte l'image (messages.medias, chemin du chantier, image/png)",
+      rQ.code === 0 && qm?.medias?.length === 1 && m0.chemin.startsWith(`${P1}/${c}/`) && m0.type === "image/png" && m0.nom === "écran test.png" && m0.taille > 0, { rQ, qm });
+    const luMembre = m0 ? await stockage(`authenticated/cockpit-medias/${m0.chemin}`, { jwt }) : null;
+    verifie("un MEMBRE du projet lit l'image déposée par la session (droits du chantier)", luMembre?.status === 200, luMembre?.status);
+    const luAnon = m0 ? await fetch(`${URL_}/storage/v1/object/authenticated/cockpit-medias/${m0.chemin}`, { headers: { apikey: CLE_PUBLIQUE } }) : null;
+    verifie("un visiteur anonyme ne la lit PAS (stockage privé)", luAnon && luAnon.status >= 400, luAnon?.status);
+    const depAnon = await fetch(`${URL_}/storage/v1/object/cockpit-medias/${P1}/${c}/${randomUUID()}-x.png`, { method: "POST", headers: { apikey: CLE_PUBLIQUE, Authorization: `Bearer ${CLE_PUBLIQUE}`, "Content-Type": "image/png" }, body: "x" });
+    verifie("un visiteur anonyme ne DÉPOSE pas dans cockpit-medias", depAnon.status >= 400, depAnon.status);
+    // « Comment vérifier » avec image.
+    const rP0 = lancer("progression.sh", ["--chantier", c, "--etape", "en cours", "--image", png]);
+    verifie("progression.sh --image hors --termine est refusé (il n'accompagne que « Comment vérifier »)", rP0.code === 2, rP0);
+    const rP = lancer("progression.sh", ["--chantier", c, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton bleu.", "--pas-en-ligne", "test", "--image", png]);
+    const l = await chantier(c);
+    verifie("progression.sh --termine … --image : chantiers.verifier_medias porte l'image, le chantier passe « à vérifier »",
+      rP.code === 0 && l.etat === "a_verifier" && l.verifier_medias?.length === 1 && l.verifier_medias[0].chemin.startsWith(`${P1}/${c}/`), { rP: rP.sortie.slice(0, 400), l: { etat: l.etat, vm: l.verifier_medias } });
+    const vu = await rest(`chantiers?id=eq.${c}&select=verifier_medias`, { jwt });
+    verifie("le membre lit verifier_medias par l'API (ce que l'app affiche)", vu.status === 200 && vu.json?.[0]?.verifier_medias?.length === 1, vu);
+    await sql(`update chantiers set etat = 'en_cours' where id = ${q(c)}`);
+    lancer("progression.sh", ["--chantier", c, "--termine", "Relivré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+    verifie("un nouveau --termine SANS image efface les anciennes (périmées)", ((await chantier(c)).verifier_medias ?? []).length === 0);
+    // Fil.
+    const rE = lancer("media.sh", ["--envoyer", "--chantier", c, "--texte", "Voici l'écran actuel.", "--image", png, "--image", png]);
+    const fm = await une(`select corps, auteur_type, kind, medias from messages where chantier_id = ${q(c)} and kind = 'info' and auteur_type = 'session' order by created_at desc limit 1`);
+    verifie("media.sh --envoyer : un message de Claude dans le fil, avec ses 2 images",
+      rE.code === 0 && fm?.corps === "Voici l'écran actuel." && fm.medias?.length === 2, { rE, fm });
+  } finally { rmSync(dossier, { recursive: true, force: true }); }
+}
+
 // Deux projets NEUFS (C et D) : rien des sections précédentes dans leur file.
 const P3 = randomUUID(), P4 = randomUUID();
 const SLUG_C = `test-verif-${rand}-c`, SLUG_D = `test-verif-${rand}-d`;
@@ -940,8 +1000,8 @@ async function controle19_chef_par_projet() {
 // Un projet NEUF (E) pour les renforts : ses sections et ses chantiers seulement.
 const P5 = randomUUID();
 const SLUG_E = `test-verif-${rand}-e`;
-async function controle20_renforts() {
-  section("20. Renforts (0021) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
+async function controle22_renforts() {
+  section("22. Renforts (0021) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
   await sql(`insert into projets (id, slug, nom, depot) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E', 'rnab26/test-inexistant')`);
   const S1 = randomUUID(), S2 = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P5)}, 'Écran', 1), (${q(S2)}, ${q(P5)}, 'Base', 2)`);
@@ -1116,6 +1176,18 @@ async function controle20_renforts() {
   } finally { rmSync(copie, { recursive: true, force: true }); }
 }
 
+// 21. Aucun banc ne laisse rien dans un projet RÉEL (29 sept. 2026 : « [TEST
+// verifier-embed …] tri des clients » dans le cockpit de Raphaël, qui ne savait
+// pas s'il devait y répondre). Les bancs travaillent dans des projets `test-…`
+// (scripts/bancs.mjs) ; ce contrôle rougit si une ligne « [TEST… » vit ailleurs.
+async function controle21_aucun_reste_de_test() {
+  section("21. aucun reste de test dans un projet réel");
+  const r = await restesDansLesVraisProjets(sql);
+  verifie("aucun chantier, message, étape, session ou tâche « [TEST… » dans un projet réel", r.total === 0, r);
+  verifie("la règle « projet de test » des bancs = cockpit.projet_de_test (base)",
+    (await une(`select projet_de_test('test-embed-x') and projet_de_test('test-web-x') and projet_de_test('test-verif-x') and not projet_de_test('cockpit') and not projet_de_test('testeur') as ok`)).ok === true);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -1134,7 +1206,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_renforts,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle21_aucun_reste_de_test, controle22_renforts,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -1153,7 +1225,7 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where slug like 'test-verif-%')::int as projets,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}))::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
