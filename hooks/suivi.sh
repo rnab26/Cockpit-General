@@ -34,10 +34,10 @@ branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/d
 # Raphaël a répondu ou écrit sur un chantier qu'elle tient ; si oui, on le lui
 # met sous les yeux AVANT son prochain pas (additionalContext). 3 s au plus.
 reponses_fraiches() {
-  local rep="${TMPDIR:-/tmp}/cockpit-rep-$sid" depuis texte
+  local rep="${TMPDIR:-/tmp}/cockpit-rep-$sid" depuis texte sortie=""
   if [ -f "$rep" ] && [ $(( $(date +%s) - $(stat -c %Y "$rep" 2>/dev/null || echo 0) )) -lt 20 ]; then return; fi
   depuis=$(cat "$rep" 2>/dev/null); date -u +%Y-%m-%dT%H:%M:%SZ > "$rep" 2>/dev/null
-  [ -n "$depuis" ] || return   # premier passage : on part de maintenant, pas d'historique
+  [ -n "$depuis" ] || depuis=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # premier passage : pas d'historique
   local qs qb; qs=$(printf '%s' "$sid" | sed "s/'/''/g"); qb=$(printf '%s' "$branche" | sed "s/'/''/g")
   texte=$(timeout 3 "$SQL" "with mes as (
       select id from chantiers where pris_par = '$qb' and '$qb' <> ''
@@ -51,9 +51,26 @@ reponses_fraiches() {
     where m.chantier_id in (select id from mes)
       and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and m.created_at > '$depuis'::timestamptz)
         or (m.kind in ('question','action') and m.answered_at > '$depuis'::timestamptz))" 2>/dev/null | jq -r '.rows[0].nouvelles // empty' 2>/dev/null)
-  [ -n "$texte" ] || return
-  jq -n --arg t "RÉPONSE DE RAPHAËL dans le cockpit, à l'instant — prends-la en compte MAINTENANT, avant ton prochain pas (et adapte ce que tu fais) :
-$texte" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $t}}'
+  [ -n "$texte" ] && sortie="RÉPONSE DE RAPHAËL dans le cockpit, à l'instant — prends-la en compte MAINTENANT, avant ton prochain pas (et adapte ce que tu fais) :
+$texte"
+  # Tes questions encore ouvertes sur ces chantiers, alors que tu as avancé depuis
+  # (0015) : toutes les 15 min au plus, on te demande de les tenir à jour.
+  local rq="${TMPDIR:-/tmp}/cockpit-qst-$sid" qst
+  if [ ! -f "$rq" ] || [ $(( $(date +%s) - $(stat -c %Y "$rq" 2>/dev/null || echo 0) )) -ge 900 ]; then
+    touch "$rq" 2>/dev/null
+    qst=$(timeout 3 "$SQL" "with mes as (
+        select id from chantiers where pris_par = '$qb' and '$qb' <> ''
+        union select chantier_id from taches where session_id = '$qs' and statut = 'en_cours' and chantier_id is not null)
+      select string_agg(format('- %s (posée %s) « %s »', m.id, to_char(m.created_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), left(m.corps, 100)), chr(10)) as questions
+      from messages m where m.chantier_id in (select id from mes) and m.kind in ('question','action') and m.answered_at is null
+        and greatest(m.created_at, coalesce(m.confirmee_at, m.created_at)) < now() - interval '15 minutes'" 2>/dev/null | jq -r '.rows[0].questions // empty' 2>/dev/null)
+    [ -n "$qst" ] && sortie="${sortie:+$sortie
+
+}Tes questions encore ouvertes pour Raphaël sur tes chantiers — tu as avancé depuis : sont-elles TOUJOURS utiles ? Tiens-les à jour pour qu'il ne réponde pas pour rien : ${COCKPIT_DEM_CMD:-scripts/demander.sh} --confirmer <id> (toujours utile) ou --retirer <id> \"pourquoi\" (dépassée, déjà faite).
+$qst"
+  fi
+  [ -n "$sortie" ] || return
+  jq -n --arg t "$sortie" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $t}}'
 }
 
 case "$ev" in

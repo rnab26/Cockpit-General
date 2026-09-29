@@ -123,6 +123,14 @@ tient (réservé à sa branche, ou suivi par un de ses agents), `hooks/suivi.sh`
 session avant son prochain pas. Une session à l'arrêt ne le voit qu'à son
 prochain réveil (la chef : au plus une heure) ou quand il lui écrit.
 
+## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
+
+Une question ouverte que du travail a suivie s'affiche « Claude a avancé
+depuis : peut-être plus utile » ; la session la confirme (`demander.sh
+--confirmer`) ou la retire (`--retirer <id> "pourquoi"`), rappel du hook
+toutes les 15 min. Un assistant listé en cours reste « en cours » tant que sa
+session vit (trigger 0015 : `taches.vu_at` suit `sessions.vu_at`).
+
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 
 « Toutes les questions, les constats, tout ce qui demande une interaction et

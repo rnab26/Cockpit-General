@@ -16,6 +16,7 @@ import { presenceChantier, preuveDeVie, derniereDemandeOuCaEnEst, type CodePrese
 import { activiteDeTache, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, tacheEnCoursVivante, estSessionAutonome, type QuiTravaille } from './sessions.ts'
 import { syntheseMiseEnLigne } from './jalons.ts'
 import { extrait, nomCourtSession } from './texte.ts'
+import { dateRelative } from './dates.ts'
 
 type ChantierE = Chantier
 type MessageE = Message
@@ -105,6 +106,12 @@ export interface ElementAToi {
   chantier: Chantier | null
   /** La question/action pour « question » ; la suggestion pour « fusion » ; le dernier « blocage » pour « bloque ». */
   message: Message | null
+  /**
+   * Question : Claude a avancé sur ce chantier APRÈS l'avoir posée, sans la
+   * confirmer (date du dernier travail). Elle est peut-être dépassée : la
+   * session doit la confirmer ou la retirer (demander.sh). Sinon null.
+   */
+  avanceDepuis?: string | null
 }
 
 const estQuestionOuverte = (m: Pick<Message, 'kind' | 'answered_at'>) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
@@ -115,14 +122,29 @@ const estQuestionOuverte = (m: Pick<Message, 'kind' | 'answered_at'>) => (m.kind
  * → à vérifier → à cadrer → bloqués (priorité haute d'abord, puis le plus
  * récemment touché).
  */
-export function aToi(chantiers: readonly ChantierE[], messages: readonly MessageE[], projetId: string | null = null): ElementAToi[] {
+export function aToi(chantiers: readonly ChantierE[], messages: readonly MessageE[], projetId: string | null = null,
+  activites: readonly Activite[] = [], taches: readonly Tache[] = []): ElementAToi[] {
   const parId = new Map(chantiers.map((c) => [c.id, c]))
+  // Le dernier travail d'une session sur un chantier : message de session, étape signalée, étape d'agent.
+  const dernierTravail = (cid: string): string | null => {
+    let d = ''
+    for (const m of messages) if (m.chantier_id === cid && m.auteur_type === 'session' && m.kind !== 'question' && m.kind !== 'action' && m.created_at > d) d = m.created_at
+    for (const a of activites) if (a.chantier_id === cid && a.updated_at > d) d = a.updated_at
+    for (const t of taches) if (t.chantier_id === cid && t.progres_at && t.progres_at > d) d = t.progres_at
+    return d || null
+  }
+  const avance = (m: MessageE): string | null => {
+    if (!m.chantier_id) return null
+    const d = dernierTravail(m.chantier_id)
+    const reference = m.confirmee_at && m.confirmee_at > m.created_at ? m.confirmee_at : m.created_at
+    return d && d > reference ? d : null
+  }
   const dansProjet = (id: string) => !projetId || id === projetId
   const questions: ElementAToi[] = messages
     .filter((m) => estQuestionOuverte(m) && dansProjet(m.projet_id))
     .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && !c.archived_at) })
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((m) => ({ type: 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m }))
+    .map((m) => ({ type: 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, avanceDepuis: avance(m) }))
 
   // Une suggestion de fusion (0008) : Claude a trouvé deux chantiers qui sont le même sujet.
   const fusions: ElementAToi[] = messages
@@ -229,9 +251,11 @@ export function pastillesProjet(
 // petit ce qu'on attend, puis UN bouton-verbe.
 
 /** Ce qu'on attend de toi, en mots simples, sous le titre d'une ligne « À toi de jouer ». */
-export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message'>, now: Date = new Date()): string {
+export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message' | 'avanceDepuis'>, now: Date = new Date()): string {
   switch (e.type) {
-    case 'question': return e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
+    case 'question': return e.avanceDepuis
+      ? `Claude a avancé depuis (${dateRelative(e.avanceDepuis, now)}) : peut-être plus utile`
+      : e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
     case 'fusion': return 'Claude propose de fusionner deux chantiers'
     case 'a_verifier': {
       const s = e.chantier ? syntheseMiseEnLigne(e.chantier.jalons, now) : null

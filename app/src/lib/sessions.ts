@@ -245,8 +245,13 @@ export function quiTravaille(
 /** L'agent vivant d'un chantier : en cours, lié au chantier, et qui a signalé son avancement depuis moins que le délai de silence. */
 export function agentVivantDuChantier(taches: readonly Tache[], chantierId: string, now: Date, silenceMs: number): Tache | null {
   return taches
-    .filter((x) => x.chantier_id === chantierId && x.statut === 'en_cours' && x.type === 'agent' && depuis(x.progres_at, now) < silenceMs)
-    .sort((a, b) => (b.progres_at ?? '').localeCompare(a.progres_at ?? ''))[0] ?? null
+    // Vivant : il a signalé une étape récemment, OU sa session vit encore et
+    // Claude Code le liste en cours (0015 : vu_at suit la session). FacePro,
+    // 29 sept. : un agent au travail depuis 53 min, sans étape depuis 22 min,
+    // passait pour arrêté.
+    .filter((x) => x.chantier_id === chantierId && x.statut === 'en_cours' && x.type === 'agent'
+      && (depuis(x.progres_at, now) < silenceMs || depuis(x.vu_at, now) < silenceMs))
+    .sort((a, b) => (b.progres_at ?? b.vu_at ?? '').localeCompare(a.progres_at ?? a.vu_at ?? ''))[0] ?? null
 }
 
 /**
