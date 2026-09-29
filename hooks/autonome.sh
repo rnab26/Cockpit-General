@@ -34,6 +34,27 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty'); [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
+# UN SUJET = UN FIL (0027) : chaque chantier ouvert ou repris pendant ce tour
+# (message de Raphaël → chantier.sh --ouvrir) doit avoir reçu une réponse
+# ÉCRITE de session dans son fil depuis son message (progression.sh --point ;
+# la ligne « Chantier ouvert/repris… » posée par --ouvrir ne compte pas). Sinon
+# l'arrêt est refusé UNE fois, avec la liste ; jamais de boucle (« relance »).
+tour="${COCKPIT_TOUR:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"
+if [ -s "$tour" ] && grep -qxF "session $sid" "$tour" && ! grep -qxE 'relance|ok' "$tour"; then
+  ids=$(grep -E '^chantier [0-9a-f-]{36}' "$tour" | awk '{print $2}' | sort -u | tr '\n' ' ')
+  debut=$(sed -n 's/^debut //p' "$tour" | head -1 | tr -cd '0-9TZ:-')
+  if [ -n "${ids// /}" ] && [ -n "$debut" ]; then
+    liste=$(printf "'%s'," $ids); liste="${liste%,}"
+    manque=$(timeout 8 "$SQL" "select coalesce(string_agg(format('- « %s » : %s --chantier %s --point \"…\"', c.titre, '${COCKPIT_PROG_CMD:-scripts/progression.sh}', c.id), chr(10) order by c.titre), '') as m from chantiers c where c.id::text in ($liste) and not exists (select 1 from messages m where m.chantier_id = c.id and m.auteur_type = 'session' and m.created_at >= '$debut'::timestamptz and m.corps not like 'Chantier ouvert depuis une session : %' and m.corps not like 'Chantier ROUVERT %' and m.corps not like 'Chantier repris pour une nouvelle demande : %')" 2>/dev/null | jq -r '.rows[0].m // empty' 2>/dev/null)
+    if [ -n "$manque" ]; then
+      echo relance >> "$tour"
+      jq -n --arg r "UN SUJET = UN FIL : Raphaël suit aussi ces sujets dans le cockpit, et leur fil n'a pas encore ta réponse. Pour chacun, écris-y ce que tu viens de lui répondre sur CE sujet (400 caractères au plus, la réponse d'abord), puis termine :
+$manque" '{decision: "block", reason: $r}'
+      exit 0
+    fi
+    echo ok >> "$tour"
+  fi
+fi
 # Une session de RENFORT (0024) ne prend que SA section : son hook Stop lui
 # redonne ses chantiers suivants s'il y en a (jamais ceux d'une autre section).
 renfort_marque=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort

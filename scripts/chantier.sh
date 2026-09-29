@@ -111,6 +111,11 @@ case "$(printf '%s' "$r" | jq -r .action)" in
   *)       echo "Réponse inattendue : $r" >&2; exit 1 ;;
 esac
 cid=$(jq -r .id <<<"$r")
+# UN SUJET = UN FIL (0027) : noté dans le tour en cours (ouvert par le hook au
+# message de Raphaël) ; le hook Stop vérifie que ce fil a reçu ta réponse.
+tour="${COCKPIT_TOUR:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"
+[ -f "$tour" ] && printf 'chantier %s %s\n' "$cid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$tour" 2>/dev/null
+echo "Réponds à ce sujet DANS SON FIL aussi (Raphaël lit ici ou dans le cockpit) : ${COCKPIT_PROG_CMD:-scripts/progression.sh} --chantier $cid --point \"<ta réponse sur ce sujet, 400 caractères au plus>\"."
 if [ -n "$section" ]; then ranger_dans "$cid" "$section" || true
 else
   sec_actuelle="$("$SQL" "select coalesce(s.nom, '') as nom from chantiers c left join sections s on s.id = c.section_id where c.id = '$cid'" | jq -r '.rows[0].nom')"
