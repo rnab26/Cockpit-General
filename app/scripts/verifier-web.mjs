@@ -1356,6 +1356,17 @@ try {
   const renf = () => page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`)
   await renf().waitFor({ timeout: 10000 })
   const yRenf = (await renf().boundingBox())?.y ?? 1e9, yLancer = (await page.getByTestId('a-lancer').boundingBox())?.y ?? -1
+  // « Traiter ce projet » : sur tout projet, au-dessus des renforts, sans défiler ni déborder sur 390 px,
+  // état dit en clair, phrase visible, et un toucher ouvre la page des sessions (jamais un lien inventé).
+  const trait = page.locator(`[data-testid="traiter"][data-projet="${SLUG}"]`)
+  await trait.waitFor({ timeout: 10000 })
+  const bTr = await trait.boundingBox(), bBtn = await trait.getByTestId('traiter-lancer').boundingBox()
+  verifie('traiter : bloc au-dessus des renforts, dans l’écran (390 px)', !!bTr && bTr.y < yRenf && bTr.x >= 0 && bTr.x + bTr.width <= 390 && !!bBtn && bBtn.height >= 40, { bTr, bBtn, yRenf })
+  verifie('traiter : l’état est dit (session ? chantiers ?)', /(Aucune session ouverte|tient déjà)/.test(await trait.getByTestId('traiter-etat').textContent()) && /(chantier|Rien n’attend)/.test(await trait.getByTestId('traiter-etat').textContent()))
+  verifie('traiter : la phrase et les 3 gestes sont affichés', /Traite le projet/.test(await trait.getByTestId('traiter-phrase').textContent()) && (await trait.getByTestId('traiter-etapes').locator('li').count()) === 3)
+  const [ouvert] = await Promise.all([ctx.waitForEvent('page', { timeout: 5000 }).catch(() => null), trait.getByTestId('traiter-lancer').click()])
+  verifie('traiter : un toucher ouvre claude.ai/code et le dit', !!ouvert && /claude\.ai\/code/.test(ouvert.url() + '') , ouvert?.url())
+  if (ouvert) await ouvert.close().catch(() => {})
   verifie('renforts : un bloc à part, AU-DESSUS de « Prêt à lancer »', yRenf < yLancer, { yRenf, yLancer })
   const etatBase = sql(`select etat_renforts('${SLUG}') as e`)[0].e
   const nAtt = etatBase.attente.reduce((n, a) => n + a.n, 0)

@@ -26,7 +26,7 @@ invite=$(printf '%s' "$entree" | jq -r '.prompt // ""' 2>/dev/null)
 renfort_marque=$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort
 # Une session de RELAIS (0028 : ouverte par la chef d'un autre projet pour répondre
 # à ses messages, « [cockpit-relais] ») ne devient pas chef non plus.
-PAS_LUI='^[[:space:]]*(<(task-notification|system-reminder|wake)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
+PAS_LUI='^[[:space:]]*(<(task-notification|system-reminder|wake|agent-message|teammate-message)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
 if [ -n "$sid" ] && [ -x "$SQL" ] && [ ! -s "$renfort_marque" ] && ! printf '%s' "$invite" | grep -qE "$PAS_LUI"; then
   CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
   chef_txt=$(COCKPIT_PROJET="$PROJET" CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
@@ -43,7 +43,7 @@ branche=$(git -C "$RACINE" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 tour_txt=""
 # Même filtre que hooks/suivi.sh (consigner_message, 0027) : ce qu'il y recopie
 # dans le fil est exactement ce qui ouvre un tour ici.
-PAS_UN_MESSAGE='^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
+PAS_UN_MESSAGE='^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event|agent-message|teammate-message)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)'
 if [ -n "$sid" ] && [ ! -s "$renfort_marque" ] && [ -n "${invite//[[:space:]]/}" ] && ! printf '%s' "$invite" | grep -qE "$PAS_UN_MESSAGE" \
    && ! printf '%s' "$invite" | grep -qxE '[[:space:]]*/[A-Za-z0-9:_-]+[[:space:]]*'; then
   tour="${COCKPIT_TOUR:-$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"

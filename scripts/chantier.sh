@@ -131,7 +131,20 @@ case "$(printf '%s' "$r" | jq -r .action)" in
            exit 3 ;;
   *)       echo "Réponse inattendue : $r" >&2; exit 1 ;;
 esac
+# Ses messages de CE tour (0029) : rattachés au fil de CE chantier seulement
+# (le hook de suivi les garde en attente ; ni dépôt « partout où la session
+# tient un chantier », ni rattachement quand le mode autonome en prend un).
+rattacher_tour() {
+  local tour sid debut
+  tour="${COCKPIT_TOUR:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"
+  [ -f "$tour" ] || return 0
+  sid=$(awk '$1 == "session" { print $2; exit }' "$tour" 2>/dev/null)
+  debut=$(awk '$1 == "debut" { print $2; exit }' "$tour" 2>/dev/null)
+  [ -n "$sid" ] && [ -n "$debut" ] || return 0
+  "$SQL" "select rattacher_messages_session('$(q "$projet")', '$(q "$sid")', '$(q "$1")'::uuid, '$(q "$debut")'::timestamptz)" >/dev/null 2>&1 || true
+}
 cid=$(jq -r .id <<<"$r")
+rattacher_tour "$cid"
 # UN SUJET = UN FIL (0028) : noté dans le tour en cours (ouvert par le hook au
 # message de Raphaël) ; le hook Stop vérifie que ce fil a reçu ta réponse.
 tour="${COCKPIT_TOUR:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"

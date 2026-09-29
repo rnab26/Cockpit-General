@@ -22,6 +22,8 @@ type M = Pick<Message, 'id' | 'auteur_type' | 'kind' | 'corps' | 'created_at' | 
 
 /** Un assistant qui a pris un message et n'a pas répondu en 2 h : on le redonne (même délai qu'en base). */
 export const DELAI_PRISE_MS = 2 * 3600_000
+/** Sans réponse au-delà, on ne promet plus un « prochain passage » (réveil échoué). */
+export const DELAI_RETARD_MS = 30 * 60_000
 
 const estQuestion = (m: Pick<M, 'kind'>) => m.kind === 'question' || m.kind === 'action'
 
@@ -83,6 +85,11 @@ export function attenteReponse(fil: readonly M[], o: { maintenant: number; sessi
   if (prise) return { ...base, etat: 'prise', titre: 'Claude a reçu ton message', detail: 'Un assistant prépare la réponse : elle arrivera ici.' }
   if (enAttente.some((m) => m.recu_at && !m.recu_par?.startsWith('agent/'))) return { ...base, etat: 'recue', titre: 'Claude a reçu ton message', detail: 'La session qui travaille dessus te répond ici.' }
   if (o.sessionTient) return { ...base, etat: 'session', titre: 'Message envoyé', detail: 'La session qui travaille dessus le verra à son prochain pas, et te répondra ici.' }
+  // 29 sept. : le réveil annoncé peut échouer (session neuve sans dépôt) : on ne promet pas un passage
+  // qui n'a pas répondu. Passé DELAI_RETARD_MS sans réponse, on le dit et on dit quoi faire.
+  if (o.maintenant - Date.parse(base.depuis) > DELAI_RETARD_MS) {
+    return { ...base, etat: 'personne', titre: 'Pas de réponse pour l’instant', detail: 'Le réveil automatique n’a pas abouti. Ouvre Claude Code sur ce projet (ou rouvre sa session) et écris « je suis là » : il verra ton message et te répondra ici.' }
+  }
   if (o.prochainPassage) {
     const t = Date.parse(o.prochainPassage)
     const quand = t > o.maintenant ? `vers ${heure(o.prochainPassage)}` : 'dans l’heure'

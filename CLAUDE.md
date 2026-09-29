@@ -161,6 +161,18 @@ vie < 3 h), personne d'autre ne prend dans sa section (`chantiers_prenables`,
 « [cockpit-renfort] » et marque `cockpit-renfort` dans le `.git` de sa copie
 (lue par `prompt-rappel.sh` et `autonome.sh`). `verifier-base.mjs` §20.
 
+**« Traiter ce projet »** (29 sept., Raphaël : « j'appuie sur un bouton, ça lance une
+session […] plus d'heures à ouvrir des sessions et à configurer »). Bloc au-dessus des
+renforts (`Renforts.tsx::TraiterCeProjet`, logique `lib/traiter.ts`, test
+`verifier-traiter.ts` + `verifier-web.mjs`) : dit où en est le projet (session ? combien de
+chantiers, par section), copie la phrase « Traite le projet X en lot… » et ouvre
+`claude.ai/code`. Aucun réglage par projet : nom et dépôt viennent de la ligne `projets`.
+Mécanisme (vérifié dans `hooks/prompt-rappel.sh`) : le premier message d'une session ouverte sur le dépôt
+d'un projet branché la rend chef de CE projet. **Limite** : aucun lien de la doc Claude Code ne
+préremplit dépôt + message ; ne pas en inventer, l'app copie la phrase et ouvre la page.
+**Brancher un projet** = ouvrir une session sur son dépôt et dire « branche le cockpit »
+(skill `cockpit` → `scripts/brancher.sh`) ; puis « Traiter ce projet » suffit.
+
 **Une réponse de Raphaël est toujours reprise** (29 sept., migration 0017,
 « je réponds, mais je ne sais pas si c'est pris en compte ») : la passe de
 `chef.sh` sert D'ABORD `reprendre_reponse` — une question ou action répondue
@@ -283,6 +295,17 @@ recopiés dans le fil).
   UNE fois si un chantier du tour n'a aucune réponse de session dans son fil
   depuis le message (`--point` ; la ligne « Chantier ouvert/repris… » ne compte
   pas). La session répond normalement ici ET dans chaque fil.
+- **Ses mots tapés en session vont dans le BON fil, seulement lui (30 sept.
+  2026, migration 0029)** : constaté sur FacePro, ses questions RunPod
+  apparaissaient dans des chantiers sans rapport (déposées dans CHAQUE
+  chantier tenu par la session, puis rattachées à tout chantier pris ensuite,
+  mode autonome compris) et des rapports d'agents (« <agent-message ») y
+  étaient signés « Raphaël (session Claude) ». Désormais `suivi.sh` garde le
+  message en attente, et SEULS `chantier.sh --ouvrir` et `progression.sh
+  --point`, pendant le tour de ce message, le rattachent à leur chantier
+  (`rattacher_messages_session(projet, session, chantier, début du tour)`).
+  Plus de trigger sur `pris_par`. Filtre des hooks : `agent-message` et
+  `teammate-message` exclus. `verifier-base` §28, `verifier-reponses` §12.
 - **Côté cockpit** : case « Écrire à Claude sur ce projet… » (vue projet,
   `EcrireAuProjet`) → « Discussion du projet » ; un message multi-sujets est
   réparti par l'agent « Répondre » de la chef (un chantier par sujet, une
