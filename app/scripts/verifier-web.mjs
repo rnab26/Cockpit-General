@@ -430,6 +430,8 @@ try {
   sql(`update chantiers set etat = 'en_cours', pris_par = 'agent/reponse-test', pris_jusqu_a = now() + interval '1 hour' where id = '${RP1.id}'`)
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${RP1.id}', 'agent/reponse-test', 'session', 'info', 'Claude reprend ta réponse « Oui » : un assistant s''en occupe.')`)
   await actualiser()
+  // Attendre que l'écran ait relu la base (700 ms fixes ne suffisaient pas toujours : échec intermittent du 29 sept.).
+  for (let i = 0; i < 20 && (await lRP1.getByTestId('reprise-reponse').getAttribute('data-reprise').catch(() => null)) !== 'reprise'; i++) await page.waitForTimeout(500)
   verifie('…reprise par la chef : « Claude reprend ta réponse », toujours visible, jamais « sans nouvelles »',
     (await lRP1.getByTestId('reprise-reponse').getAttribute('data-reprise').catch(() => null)) === 'reprise' && await lRP1.getByTestId('sans-nouvelles').count() === 0, await lRP1.textContent().catch(() => null))
   // Ce qui travaille scintille, rien d'autre.
