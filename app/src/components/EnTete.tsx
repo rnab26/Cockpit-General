@@ -4,6 +4,7 @@ import type { Projet } from '../lib/types.ts'
 import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
 import { dateRelative } from '../lib/dates.ts'
+import { useMenuQuiSeFerme } from '../ui/Modale.ts'
 
 export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir'
 
@@ -35,12 +36,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
   const onglets = useRef<HTMLDivElement>(null)
   // L'onglet affiché reste entièrement visible (la rangée défile sur un téléphone).
   useEffect(() => { onglets.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }, [vueTout, projet?.id])
-  useEffect(() => {
-    if (!menu) return
-    const fermer = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setMenu(false) }
-    document.addEventListener('mousedown', fermer)
-    return () => document.removeEventListener('mousedown', fermer)
-  }, [menu])
+  useMenuQuiSeFerme(menu, ref, () => setMenu(false))
   const item = (a: ActionMenu, libelle: string, I: LucideIcon) => (
     <button type="button" role="menuitem" onClick={() => { setMenu(false); onMenu(a) }} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[15px] hover:bg-carte-2"><I size={17} className="shrink-0 text-texte-2" aria-hidden />{libelle}</button>
   )

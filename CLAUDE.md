@@ -236,6 +236,21 @@ une question, « Écrire à Claude », certifier/corriger). Stockage PRIVÉ
 pas de fichier : les médias partent dans un message `info` juste après. Une
 session les récupère avec `scripts/media.sh --message|--chantier <id>` (📎 dans
 le hook) et les REGARDE avant de répondre.
+**Crayon** (29 sept.) : sur toute image jointe (import fini), dessiner dessus
+(`Annoter.tsx`, un `<canvas>`) ; avant l'envoi l'annotée remplace la pièce,
+après l'envoi elle part en nouveau message « Image annotée : … » du fil.
+`verifier-annotation.ts`, et les contrôles « crayon » de `verifier-web.mjs`.
+
+## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
+
+Raphaël : « quitter en appuyant sur les zones extérieures de la carte ».
+Règle unique, `app/src/ui/Modale.ts` : toucher le fond ferme (la conversation
+laisse une bande visible en haut sur téléphone ; une zone libre du fil ferme
+aussi), Échap et le retour du téléphone ferment, un menu se ferme en touchant
+ailleurs ou avec Échap (sans fermer ce qui est dessous). Un texte, un fichier
+ou un dessin non envoyé : « Quitter sans envoyer ? » d'abord (`Dialog
+brouillon`, `aUnBrouillon`). Toute nouvelle fenêtre passe par `Dialog` ou ces
+fonctions. `verifier-web.mjs` : « quitter une carte ».
 
 ## Sessions, agents, doublons : ce que Claude décide seul (29 sept. 2026)
 

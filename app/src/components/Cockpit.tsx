@@ -80,15 +80,12 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
       return { projetId, chantierId }
     })
   }, [])
+  // Le « retour » lui-même est écouté par la conversation (elle protège un brouillon) : onRetour.
   const fermerConversation = useCallback(() => {
     if ((history.state as { conversation?: boolean } | null)?.conversation) history.back()
     else setConversation(null)
   }, [])
-  useEffect(() => {
-    const surRetour = () => setConversation(null)
-    window.addEventListener('popstate', surRetour)
-    return () => window.removeEventListener('popstate', surRetour)
-  }, [])
+  const conversationQuittee = useCallback(() => setConversation(null), [])
 
   const basculerSection = useCallback((cle: string) => setSectionsOuvertes((s) => { const n = new Set(s); if (n.has(cle)) n.delete(cle); else n.add(cle); return n }), [])
   const deplierTout = useCallback((cles: string[] | null) => setSectionsOuvertes((s) => {
@@ -193,7 +190,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         ) : null}
         {conversation ? (
           <AvecProjet projetId={conversation.projetId}>
-            <Conversation key={`${conversation.projetId}:${conversation.chantierId}`} cible={conversation} onFermer={fermerConversation} />
+            <Conversation key={`${conversation.projetId}:${conversation.chantierId}`} cible={conversation} onFermer={fermerConversation} onRetour={conversationQuittee} />
           </AvecProjet>
         ) : null}
         {/* Modifier / doublon : ouverts depuis une conversation, dans le projet du chantier (et par-dessus elle). */}

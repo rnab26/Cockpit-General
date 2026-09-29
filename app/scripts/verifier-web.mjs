@@ -37,6 +37,7 @@ import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { deflateSync, crc32 } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { AGE_RESTE_MIN, EST_TEST, projetsDeTestAbandonnes, purgerMarquesDansLesVraisProjets, restesDansLesVraisProjets } from '../../scripts/bancs.mjs'
@@ -69,6 +70,22 @@ const BASE = `${ORIGINE}/Cockpit-General/`
 const MARQUE = '[TEST verifier-web]'
 // Une image PNG réelle (1×1), pour les médias joints (0013).
 const PNG_TEST = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+// Une vraie photo (gris uni 240 × 180) pour le crayon : on doit pouvoir dessiner dessus.
+function pngUni(l, h, gris) {
+  const bloc = (type, data) => { const t = Buffer.from(type); const n = Buffer.alloc(4); n.writeUInt32BE(data.length); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(Buffer.concat([t, data]))); return Buffer.concat([n, t, data, c]) }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(l, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2
+  const ligne = Buffer.concat([Buffer.from([0]), Buffer.alloc(l * 3, gris)])
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), bloc('IHDR', ihdr), bloc('IDAT', deflateSync(Buffer.concat(Array(h).fill(ligne)))), bloc('IEND', Buffer.alloc(0))])
+}
+const PNG_PHOTO = pngUni(240, 180, 200)
+// Un trait au doigt (souris : mêmes « pointer events ») en travers de la toile du crayon.
+async function tracer(page) {
+  const b = await page.getByTestId('annoter-toile').boundingBox()
+  await page.mouse.move(b.x + b.width * 0.2, b.y + b.height * 0.3)
+  await page.mouse.down()
+  for (let i = 1; i <= 8; i++) await page.mouse.move(b.x + b.width * (0.2 + 0.07 * i), b.y + b.height * (0.3 + 0.05 * i))
+  await page.mouse.up()
+}
 // Préfixe des chantiers de test, identifiants générés ici (un `insert …
 // returning` ne renvoie rien par sql.sh) pour tout retrouver au nettoyage.
 const MARQUE2 = '[TEST web]'
@@ -400,9 +417,9 @@ try {
     /Plus de nouvelles · dernier signe il y a/.test(await snP3.getByTestId('sans-nouvelles').textContent()) && /Personne dessus/.test(await snP2.getByTestId('sans-nouvelles').textContent()), [await snP3.textContent(), await snP2.textContent()])
   verifie('une ligne vivante n’a pas de bouton « Relancer »', await ligneP1.getByTestId('ouvrir-relance').count() === 0)
   // Raphaël répond sur un chantier « à vérifier » que personne ne tient (0017) : sa réponse se VOIT dans « Ça avance ».
+  // Répondue DEPUIS L'APP = answered_by posé (0018 : sans lui, la réponse compte comme notée par une session).
   const RP1 = creerTest('réponse sans session', { etat: 'a_verifier' })
-  // answered_by posé : depuis 0018, seule une réponse donnée DEPUIS L'APP est « sans suite ».
-  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at, answered_by, created_at) values ('${projet.id}', '${RP1.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} On continue ?`)}', 'Oui', now(), '${moiId}', now() - interval '5 minutes')`)
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at, answered_by, created_at) values ('${projet.id}', '${RP1.id}', 'verifier-web', 'session', 'question', '${esc(`${MARQUE2} On continue ?`)}', 'Oui', now(), gen_random_uuid(), now() - interval '5 minutes')`)
   await actualiser()
   const lRP1 = await ligneAvance(RP1.id)
   verifie('réponse sur un chantier sans session : « Ta réponse est reçue : Claude va la reprendre » dans « Ça avance », sans « Relancer »',
@@ -449,6 +466,70 @@ try {
   await page.goBack()
   await conv().waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
   verifie('« retour » du téléphone : la conversation se ferme, on reste sur l’accueil', await conv().count() === 0 && await page.getByTestId('vue-tout').count() === 1)
+  // Quitter plus facilement (chantier 4e280265, 29 sept.) : toucher HORS de la carte ferme, toucher DEDANS
+  // non ; une zone libre du fil ferme ; Échap ferme ; un menu se ferme seul ; un brouillon n'est jamais perdu sans prévenir.
+  console.log('  — quitter une carte : fond, zones libres, Échap, retour, brouillon')
+  const rouvrirP1 = async () => { await ligneP1.locator('button').first().click(); await attendreConv(P1.titre) }
+  const fermee = async () => { await conv().waitFor({ state: 'detached', timeout: 5000 }).catch(() => {}); return await conv().count() === 0 }
+  const marqueRetour = () => page.evaluate(() => history.state?.conversation === true)
+  await rouvrirP1()
+  const bFeuille = await conv().boundingBox()
+  verifie('téléphone : une bande du fond reste visible au-dessus de la carte ouverte', bFeuille && bFeuille.y >= 30 && bFeuille.y <= 60 && Math.abs(bFeuille.y + bFeuille.height - 844) < 2, bFeuille)
+  await captureUx(page, 'ux-carte-ouverte-bande')
+  await conv().getByTestId('titre-conversation').click()
+  await conv().getByTestId('presence-conversation').click()
+  const bulleDem = await conv().getByTestId('bulle-demande').locator(':scope > div').boundingBox()
+  await page.mouse.click(bulleDem.x + bulleDem.width / 2, bulleDem.y + bulleDem.height / 2)
+  await conv().getByTestId('ecrire-a-claude').click({ position: { x: 5, y: 5 } })
+  await page.waitForTimeout(300)
+  verifie('toucher DANS la carte (titre, présence, bulle, barre du bas) ne la ferme pas', await conv().count() === 1)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('actions-admin').waitFor({ timeout: 5000 })
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  verifie('menu ⋯ : Échap ferme le menu, pas la carte', await conv().getByTestId('actions-admin').count() === 0 && await conv().count() === 1)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('titre-conversation').click()
+  await page.waitForTimeout(300)
+  verifie('menu ⋯ : toucher ailleurs le ferme, la carte reste', await conv().getByTestId('actions-admin').count() === 0 && await conv().count() === 1)
+  await page.mouse.click(195, 16)
+  verifie('toucher le fond, au-dessus de la carte, la ferme', await fermee())
+  verifie('…et le « retour » posé à l’ouverture est retiré (pas de retour fantôme)', !(await marqueRetour()))
+  await rouvrirP1()
+  const rangee = conv().getByTestId('bulle-demande')
+  const [bR, cote] = [await rangee.boundingBox(), await rangee.getAttribute('data-cote')]
+  const bBul = await rangee.locator(':scope > div').boundingBox()
+  const libreX = cote === 'droite' ? bR.x + 4 : bR.x + bR.width - 4
+  verifie('la bulle de la demande laisse une zone libre à côté d’elle', cote === "droite" ? bBul.x - bR.x > 12 : bR.x + bR.width - (bBul.x + bBul.width) > 12, { bR, bBul })
+  await page.mouse.click(libreX, bBul.y + bBul.height / 2)
+  verifie('toucher une zone libre du fil (à côté d’une bulle) ferme la carte', await fermee())
+  await rouvrirP1()
+  await page.keyboard.press('Escape')
+  verifie('Échap ferme la carte', await fermee())
+  // Brouillon : texte tapé, pas envoyé.
+  await rouvrirP1()
+  const zoneTexte = conv().getByTestId('ecrire-a-claude').locator('textarea')
+  await zoneTexte.fill('brouillon pas encore envoyé')
+  const confirmerAbandon = page.locator('dialog[open]', { hasText: 'Quitter sans envoyer ?' })
+  await page.mouse.click(195, 16)
+  await confirmerAbandon.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('brouillon : toucher le fond DEMANDE « Quitter sans envoyer ? » au lieu de fermer', await confirmerAbandon.count() === 1 && await conv().count() === 1)
+  await captureUx(page, 'ux-brouillon-protege')
+  await confirmerAbandon.getByRole('button', { name: 'Rester' }).click()
+  await page.waitForTimeout(300)
+  verifie('« Rester » : la carte reste ouverte et le texte est intact', await conv().count() === 1 && await zoneTexte.inputValue() === 'brouillon pas encore envoyé')
+  await page.goBack()
+  await confirmerAbandon.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('brouillon : le « retour » du téléphone demande aussi', await confirmerAbandon.count() === 1 && await conv().count() === 1)
+  await confirmerAbandon.getByRole('button', { name: 'Rester' }).click()
+  await page.waitForTimeout(300)
+  verifie('…« Rester » : carte ouverte, texte intact, « retour » toujours prêt', await conv().count() === 1 && await zoneTexte.inputValue() === 'brouillon pas encore envoyé' && await marqueRetour())
+  await zoneTexte.press('Escape')
+  await confirmerAbandon.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('brouillon : Échap demande aussi', await confirmerAbandon.count() === 1 && await conv().count() === 1)
+  await confirmerAbandon.getByRole('button', { name: 'Quitter sans envoyer' }).click()
+  verifie('« Quitter sans envoyer » : la carte se ferme, sans « retour » fantôme', await fermee() && !(await marqueRetour()))
+  verifie('rien n’a été envoyé', sql(`select count(*)::int n from messages where chantier_id = '${P1.id}' and corps like 'brouillon%'`)[0].n === 0)
   await (await ligneAvance(P2.id)).locator('button').first().click()
   await attendreConv(P2.titre)
   verifie('vieille de 2 h, sans réservation → « personne dessus » en tête', /personne dessus/.test(await conv().getByTestId('presence-conversation').textContent()))
@@ -818,15 +899,53 @@ try {
   verifie('la barre d’écriture est collée en bas de l’écran du téléphone', bEcr && Math.abs(bEcr.y + bEcr.height - 844) < 4, bEcr)
   verifie('« Envoyer » est inactif tant que rien n’est écrit', await ecrire.getByTestId('envoyer-message').isDisabled())
   await ecrire.locator('textarea').fill(`${MARQUE2} message à Claude`)
-  await ecrire.getByTestId('entree-medias').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: PNG_TEST })
+  await ecrire.getByTestId('entree-medias').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: PNG_PHOTO })
   await ecrire.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
   await capture(page, 'ecrire-avec-photo')
+  // Le crayon (29 sept.) : sur l'image jointe, une fois l'import fini.
+  const crayon = ecrire.getByTestId('crayon-media')
+  verifie('crayon : présent sur l’image jointe, en haut à droite', await crayon.count() === 1 && await (async () => { const c = await crayon.boundingBox(), v = await ecrire.getByTestId('piece-jointe').boundingBox(); return c.x + c.width / 2 > v.x + v.width / 2 && c.y < v.y + v.height / 2 })())
+  const pieceAvant = await ecrire.locator('[data-testid="piece-jointe"] img').getAttribute('src')
+  await crayon.click()
+  const annoter = page.getByTestId('annoter')
+  await annoter.getByTestId('annoter-toile').waitFor({ state: 'visible', timeout: 8000 })
+  const bAnn = await annoter.boundingBox()
+  verifie('crayon : l’image s’ouvre en plein écran', bAnn && bAnn.width >= 389 && bAnn.height >= 843, bAnn)
+  verifie('crayon : « Enregistrer » inactif tant que rien n’est dessiné', await annoter.getByTestId('annoter-enregistrer').isDisabled())
+  verifie('crayon : 4 couleurs, annuler le trait, tout effacer', await annoter.getByTestId('annoter-couleur').count() === 4 && await annoter.getByTestId('annoter-defaire').count() === 1 && await annoter.getByTestId('annoter-effacer').count() === 1)
+  await tracer(page)
+  await capture(page, 'crayon-trait')
+  await annoter.getByTestId('annoter-annuler').click()
+  await annoter.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  verifie('crayon : « Annuler » ferme sans rien changer', await page.getByTestId('annoter').count() === 0 && await ecrire.locator('[data-testid="piece-jointe"] img').getAttribute('src') === pieceAvant && await conv().count() === 1)
+  await crayon.click()
+  await annoter.getByTestId('annoter-toile').waitFor({ state: 'visible', timeout: 8000 })
+  await tracer(page)
+  await annoter.getByTestId('annoter-defaire').click()
+  verifie('crayon : « annuler le dernier trait » le retire', await annoter.getByTestId('annoter-enregistrer').isDisabled())
+  await tracer(page)
+  await page.keyboard.press('Escape')
+  const confDessin = page.locator('dialog[open]', { hasText: 'Quitter sans garder le dessin ?' })
+  await confDessin.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('crayon : Échap avec un dessin demande avant de le perdre', await confDessin.count() === 1 && await annoter.count() === 1)
+  await confDessin.getByRole('button', { name: 'Rester' }).click()
+  await page.waitForTimeout(300)
+  verifie('crayon : « Rester » garde le dessin', await annoter.count() === 1 && !(await annoter.getByTestId('annoter-enregistrer').isDisabled()))
+  const rouge = await annoter.getByTestId('annoter-toile').evaluate((c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 100) n++; return n })
+  verifie('crayon : le trait est bien peint en rouge sur l’image', rouge > 50, rouge)
+  await annoter.getByTestId('annoter-enregistrer').click()
+  await annoter.waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+  verifie('crayon : « Enregistrer » : toast visible', await toastAuPremierPlan(/Image annotée/), { auPremierPlan: dernierDessus })
+  verifie('crayon : l’image annotée remplace la pièce jointe', await ecrire.getByTestId('piece-jointe').count() === 1 && await ecrire.locator('[data-testid="piece-jointe"] img').getAttribute('alt') === 'photo-annotee.png' && await ecrire.locator('[data-testid="piece-jointe"] img').getAttribute('src') !== pieceAvant)
+  await capture(page, 'crayon-remplace')
   await ecrire.getByTestId('envoyer-message').click()
   verifie('« Envoyer » : toast visible', await toastAuPremierPlan(/Message envoyé/), { auPremierPlan: dernierDessus })
   const ecrits = sql(`select kind, auteur_type, corps from messages where chantier_id = '${R1.id}'`)
   verifie('le message est en base (info, propriétaire)', ecrits.length === 1 && ecrits[0].kind === 'info' && ecrits[0].auteur_type === 'proprietaire' && ecrits[0].corps === `${MARQUE2} message à Claude`, ecrits)
   const mR1 = sql(`select medias from messages where chantier_id = '${R1.id}'`)[0]?.medias ?? []
-  verifie('« Écrire à Claude » : la photo part avec le message', mR1.length === 1 && mR1[0].nom === 'photo.png', mR1)
+  verifie('« Écrire à Claude » : la photo (annotée) part avec le message', mR1.length === 1 && mR1[0].nom === 'photo-annotee.png', mR1)
+  const objR1 = sql(`select name from storage.objects where bucket_id = 'cockpit-medias' and name like '${projet.id}/${R1.id}/%'`).map((r) => r.name)
+  verifie('crayon : dans le stockage, l’annotée est là et l’originale retirée', objR1.length === 1 && objR1[0] === mR1[0]?.chemin, objR1)
   verifie('après l’envoi, plus de vignette en attente dans la barre', await ecrire.getByTestId('piece-jointe').count() === 0 && (await ecrire.locator('textarea').inputValue()) === '')
   const bulleR1 = conv().locator('[data-testid="bulle"][data-cote="droite"]', { hasText: 'message à Claude' })
   await bulleR1.waitFor({ timeout: 10000 }).catch(() => {})
@@ -837,7 +956,7 @@ try {
   verifie('la photo s’affiche dans la bulle (lien signé, image réellement chargée)', await vignette.count() === 1 && await vignette.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   if (await vignette.count()) {
     await vignette.click()
-    const grande = page.locator('dialog[open] img[alt="photo.png"]').last()
+    const grande = page.locator('dialog[open] img[alt="photo-annotee.png"]').last()
     await grande.waitFor({ timeout: 8000 }).catch(() => {})
     verifie('un toucher sur la vignette l’ouvre en grand', await grande.count() >= 1)
     await capture(page, 'photo-en-grand')
@@ -845,6 +964,21 @@ try {
     await page.waitForTimeout(300)
   }
   verifie('Échap ferme la photo, pas la conversation', await conv().count() === 1)
+  // Le crayon sur une image déjà envoyée : l'annotée part comme une nouvelle pièce, dans le même fil.
+  const crayonBulle = bulleR1.getByTestId('crayon-media')
+  verifie('crayon : aussi sur la photo envoyée (bulle de Raphaël)', await crayonBulle.count() === 1)
+  if (await crayonBulle.count()) {
+    await crayonBulle.click()
+    await page.getByTestId('annoter-toile').waitFor({ state: 'visible', timeout: 15000 })
+    await tracer(page)
+    await page.getByTestId('annoter-enregistrer').click()
+    await page.getByTestId('annoter').waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+    verifie('crayon après envoi : toast visible', await toastAuPremierPlan(/Image annotée envoyée/), { auPremierPlan: dernierDessus })
+    const nouv = sql(`select corps, medias from messages where chantier_id = '${R1.id}' and corps like 'Image annotée%'`)
+    verifie('crayon après envoi : nouvelle pièce dans le fil (l’envoyée ne change pas)', nouv.length === 1 && nouv[0].medias.length === 1 && nouv[0].medias[0].chemin !== mR1[0]?.chemin && sql(`select medias from messages where chantier_id = '${R1.id}'`).some((m) => m.medias?.[0]?.chemin === mR1[0]?.chemin), nouv)
+    await conv().locator('[data-testid="bulle"]', { hasText: 'Image annotée' }).waitFor({ timeout: 10000 }).catch(() => {})
+    verifie('crayon après envoi : la nouvelle bulle s’affiche', await conv().locator('[data-testid="bulle"]', { hasText: 'Image annotée' }).count() === 1)
+  }
   await capture(page, 'conversation-reportee')
   await conv().getByTestId('relancer-maintenant').click()
   verifie('« Relancer maintenant » : toast visible', await toastAuPremierPlan(/relancé/), { auPremierPlan: dernierDessus })
@@ -945,6 +1079,27 @@ try {
   await page.keyboard.press('Escape')
   await dlgM.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   verifie('Échap ferme « Modifier », la conversation reste', await conv().count() === 1)
+  // Même règle pour les dialogues : toucher le fond ferme, une modification non enregistrée est protégée.
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('modifier').click()
+  await dlgM.waitFor({ timeout: 5000 })
+  await page.mouse.click(195, 12)
+  await dlgM.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  verifie('« Modifier » sans changement : toucher le fond au-dessus le ferme, la conversation reste', !(await dlgM.isVisible()) && await conv().count() === 1)
+  await conv().getByTestId('menu-chantier').click()
+  await conv().getByTestId('modifier').click()
+  await dlgM.waitFor({ timeout: 5000 })
+  await dlgM.getByRole('textbox').first().fill('Titre changé mais pas enregistré')
+  await page.mouse.click(195, 12)
+  const confModif = page.locator('dialog[open]', { hasText: 'Quitter sans envoyer ?' })
+  await confModif.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('« Modifier » avec un changement : toucher le fond demande d’abord', await confModif.count() === 1 && await dlgM.isVisible())
+  await confModif.getByRole('button', { name: 'Rester' }).click()
+  await page.waitForTimeout(300)
+  verifie('…« Rester » : le changement est toujours là', await dlgM.getByRole('textbox').first().inputValue() === 'Titre changé mais pas enregistré')
+  await dlgM.getByRole('button', { name: 'Annuler' }).click()
+  await dlgM.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  verifie('« Annuler » reste un abandon explicite (sans question), la conversation reste', !(await dlgM.isVisible()) && await conv().count() === 1)
   await conv().getByTestId('menu-chantier').click()
   await conv().getByTestId('doublon-de').click()
   const dlgDd = page.getByRole('dialog').filter({ hasText: 'Chantier à garder' })
@@ -1145,7 +1300,10 @@ try {
   verifie('desktop : la conversation est un dialogue centré (pas plein écran)', bConvD && bConvD.width <= 680 && bConvD.x > 200, bConvD)
   verifie('desktop : pas de défilement horizontal non plus', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'desktop-conversation')
-  await fermerConv()
+  await page.mouse.click(60, 450)
+  await conv().waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  verifie('desktop : cliquer à côté du dialogue le ferme', await conv().count() === 0)
+  if (await conv().count()) await fermerConv()
   await capture(page, 'desktop')
 
   // Le 403 de GitHub est provoqué exprès (simulation de la limite) : c'est son effet voulu.
