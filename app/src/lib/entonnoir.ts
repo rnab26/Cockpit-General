@@ -326,7 +326,9 @@ export function repriseReponse(
   const limite = new Date(now.getTime() - JOURS_REPONSE_REPRISE * 86_400_000).toISOString()
   let r: MessageE | null = null
   for (const m of messages) {
-    if (m.chantier_id !== c.id || (m.kind !== 'question' && m.kind !== 'action') || !m.answered_at) continue
+    // Seules SES réponses depuis l'app (answered_by) : une réponse notée par une session
+    // vient de sa conversation, elle est déjà prise (0018, même règle que la base).
+    if (m.chantier_id !== c.id || (m.kind !== 'question' && m.kind !== 'action') || !m.answered_at || !m.answered_by) continue
     if (!r || m.answered_at > r.answered_at!) r = m
   }
   if (!r || r.answered_at! <= limite || (r.reponse ?? '').startsWith('Retirée par Claude')) return null

@@ -771,7 +771,9 @@ async function controle15_limites_autonome() {
 
 async function controle18_reponses_prises() {
   section("18. Une réponse de Raphaël est toujours reprise, même sans session (0017, scripts/chef.sh)");
-  const repondre = (mid, reponse) => sql(`update messages set reponse = ${q(reponse)}, answered_at = now() where id = ${q(mid)}`);
+  // Comme depuis l'app : answered_by = l'utilisateur qui répond (auth.uid()). Une
+  // réponse notée par une session (answered_by null) vient de sa conversation (0018).
+  const repondre = (mid, reponse) => sql(`update messages set reponse = ${q(reponse)}, answered_at = now(), answered_by = ${q(userId)} where id = ${q(mid)}`);
   const enAttente = async () => (await sql(`select chantier_id from reponses_sans_suite(${q(P1)})`)).map((r) => r.chantier_id);
   // Le cas signalé : un chantier « à vérifier », personne dessus, Raphaël répond.
   const c = await creerChantier(P1, { titre: "Test réponse prise (à vérifier)", etat: "a_verifier", demande: "demande de test" });
@@ -794,9 +796,18 @@ async function controle18_reponses_prises() {
   await repondre(mS, "Oui");
   await attendre(50);
   await creerMessage(P1, cS, { kind: "info", corps: "Je m'en occupe." });
+  // Notée par une session (repondre_message en service : answered_by null) : déjà prise (0018).
+  const cN = await creerChantier(P1, { titre: "Test réponse notée par une session", etat: "bloque" });
+  const mN = await creerMessage(P1, cN, { kind: "question", corps: "Notée par une session ?" });
+  await sql(`select repondre_message(${q(mN)}, 'claude/test', 'Dit dans la conversation', null, null) as r`);
   const liste = await enAttente();
   verifie("une question RETIRÉE par Claude n'est jamais reprise", !liste.includes(cR), liste);
+  verifie("une réponse notée par une SESSION (dite dans sa conversation) n'est pas « sans suite » (0018)", !liste.includes(cN), liste);
   verifie("un chantier TENU (réservation en cours) n'est pas repris par la chef", !liste.includes(cT), liste);
+  // Le hook de démarrage passe SA branche : un chantier réservé à cette branche est le sien (0018).
+  const pourBranche = async (br) => (await sql(`select chantier_id from reponses_sans_suite(${q(P1)}, ${q(br)})`)).map((r) => r.chantier_id);
+  verifie("tenu par MA branche → « sans suite » pour moi (démarrage d'une session sur cette branche)", (await pourBranche("claude/tenu")).includes(cT));
+  verifie("tenu par une AUTRE branche → pas pour moi", !(await pourBranche("claude/autre")).includes(cT));
   verifie("une réponse déjà SUIVIE d'un message de session n'est pas reprise", !liste.includes(cS), liste);
   // Projets de TEST jamais donnés par la chef (incident du 29/09 : deux chantiers
   // « test-web-… » réservés en plein parcours). On rejoue les VRAIES requêtes de
@@ -817,8 +828,8 @@ async function controle18_reponses_prises() {
   await sql(`update chantiers set verif_demandee_at = null where id = ${q(cV)}`);
   // Une question SANS chantier (niveau projet), répondue, que personne n'a suivie.
   const mP = randomUUID();
-  await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at)
-             values (${q(mP)}, ${q(P1)}, null, 'verifier-base', 'session', 'question', 'Installer le module de test ?', 'Seulement pour moi (admin)', now())`);
+  await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, reponse, answered_at, answered_by)
+             values (${q(mP)}, ${q(P1)}, null, 'verifier-base', 'session', 'question', 'Installer le module de test ?', 'Seulement pour moi (admin)', now(), ${q(userId)})`);
   verifie("une question de PROJET (sans chantier) répondue est aussi « sans suite »", (await sql(`select message_id from reponses_sans_suite(${q(P1)})`)).some((r) => r.message_id === mP));
   const pirate = await rpcUtilisateur("reprendre_reponse", { p_branche: "agent/pirate" }, jwt);
   const pirate2 = await rpcUtilisateur("reponses_sans_suite", {}, jwt);

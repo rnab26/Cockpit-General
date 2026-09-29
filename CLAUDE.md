@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises (179 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises (182 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -113,7 +113,8 @@ dossier partagé avec un agent (incident du 29 sept., commit 964528e).
 **Une réponse de Raphaël est toujours reprise** (29 sept., migration 0017,
 « je réponds, mais je ne sais pas si c'est pris en compte ») : la passe de
 `chef.sh` sert D'ABORD `reprendre_reponse` — une question ou action répondue
-(pas retirée, 7 derniers jours) que rien n'a suivie (aucun message de session,
+depuis l'app (`answered_by` posé ; notée par une session = déjà prise, 0018 ;
+pas retirée, 7 derniers jours) que rien n'a suivie (aucun message de session,
 aucune étape, aucune étape d'agent) sur un chantier que personne ne tient
 (réservation expirée, aucun agent ni session vivante), ou une question SANS
 chantier (un chantier interne est alors ouvert et la question y est
@@ -169,9 +170,10 @@ session avant son prochain pas. Une session à l'arrêt le reçoit à son révei
 Un agent reçoit les réponses de SES chantiers (`agent_id` + branche de son
 dossier), avec son propre curseur. Curseur = heure de la base au dernier
 passage réussi (une panne ne fait rien perdre). Nouvelle session : le hook de
-démarrage montre « Ses RÉPONSES que personne n'a encore prises » (répondues,
-7 jours, aucun message de session depuis dans le fil) et pose le curseur.
-Bilan du 29 sept. et preuve : `node scripts/verifier-reponses.mjs` (15
+démarrage montre « Ses RÉPONSES que personne n'a encore prises » : la MÊME règle
+que la chef, `reponses_sans_suite(projet, sa branche)` (0018 ; jamais réécrite
+dans le hook), et pose le curseur.
+Bilan du 29 sept. et preuve : `node scripts/verifier-reponses.mjs` (16
 contrôles, vrais hooks, vraie base, projet jetable). Le cas « personne ne
 tient le chantier » relève de `scripts/chef.sh` (chantier 6c8c6084).
 
