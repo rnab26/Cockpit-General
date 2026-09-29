@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import type { Activite, Chantier, Message, Projet, Section, SessionClaude, Tache } from '../lib/types.ts'
+import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
 export const INTERVALLE_SONDAGE_MS = 30_000
@@ -23,9 +24,16 @@ export const VUE_TOUT = 'tout'
  * les mêmes tableaux ; un projet n'est qu'un filtre dessus (Cockpit.tsx).
  * Volumes mesurés le 29 sept. 2026 : 26 chantiers, 6 messages, 19 activités
  * sur deux projets — tout charger coûte moins qu'une requête par projet.
+ *
+ * Les projets de TEST des bancs (slug `test-…`) sont retirés ICI, à la source,
+ * pour tout l'écran (onglets, « Tout », pastilles, réglages) : leurs lignes
+ * aussi, y compris celles qui arrivent en direct d'un projet de test créé
+ * pendant que l'app est ouverte (on ne garde que les lignes des projets
+ * visibles). Seul un compte de test les voit (lib/projetsDeTest.ts).
  */
-export function useDonnees(pret: boolean) {
-  const [projets, setProjets] = useState<Projet[]>([])
+export function useDonnees(pret: boolean, email: string | null = null) {
+  const [tousProjets, setProjets] = useState<Projet[]>([])
+  const projets = useMemo(() => projetsVisibles(tousProjets, email), [tousProjets, email])
   const [vue, setVue] = useState<string | null>(null)
   const [sections, setSections] = useState<Section[]>([])
   const [chantiers, setChantiers] = useState<Chantier[]>([])
@@ -50,8 +58,8 @@ export function useDonnees(pret: boolean) {
     setProjets(liste)
     setErreur(null)
     setChargementProjets(false)
-    return liste
-  }, [])
+    return projetsVisibles(liste, email)
+  }, [email])
 
   // Au démarrage : les projets, puis la vue du lien (#projet=slug) ou « Tout » (l'accueil).
   useEffect(() => {
@@ -161,9 +169,15 @@ export function useDonnees(pret: boolean) {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [recharger])
 
+  const ids = useMemo(() => new Set(projets.map((p) => p.id)), [projets])
+  const vis = useMemo(() => ({
+    sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messages, ids),
+    activites: lignesVisibles(activites, ids), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
+  }), [ids, sections, chantiers, messages, activites, sessions, taches])
+
   return {
     projets, projet, projetId, vue, choisirVue, chargerProjets,
-    sections, chantiers, messages, activites, sessions, taches,
+    ...vis,
     chargementProjets, chargement, charge, erreur, direct, derniereMaj,
     recharger, rechargerCible, rechargerProjets,
   }

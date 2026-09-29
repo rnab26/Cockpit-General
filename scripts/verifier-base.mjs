@@ -25,6 +25,7 @@
 //   13. exec_sql : le search_path est porté par la fonction (profil cockpit)
 //   …
 //   18. réponses de Raphaël reprises par la chef (0017), projets de test jamais servis
+//   19. aucun reste de banc de test (« [TEST… ») dans un projet RÉEL
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -41,6 +42,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGE_RESTE_MIN, projetsDeTestAbandonnes, restesDansLesVraisProjets } from "./bancs.mjs";
 
 const URL_ = process.env.SUPABASE_URL ?? "https://bexiyvmdbxcwxasgslxp.supabase.co";
 const CLE_PUBLIQUE = "sb_publishable_Ju0xC27cQ1JrN4IpWFfWxQ_Ntrd4P1U";
@@ -156,13 +158,16 @@ async function purgerProjetsDeTest(ids) {
   await sql(`delete from supprimes where projet_id in (${liste})`);
 }
 async function purgerRestesDePassesPrecedentes() {
-  const vieux = await sql(`select id, slug from projets where slug like 'test-verif-%'`);
+  // Seulement les passes ABANDONNÉES (> AGE_RESTE_MIN min) : jamais le projet
+  // ni le compte d'une passe vivante (verifier-reponses, un autre agent).
+  const vieux = await projetsDeTestAbandonnes(sql, "test-verif-");
   if (vieux.length) {
     console.log(`  (purge de ${vieux.length} projet(s) de test laissé(s) par une passe précédente : ${vieux.map((p) => p.slug).join(", ")})`);
     await purgerProjetsDeTest(vieux.map((p) => p.id));
   }
   const r = await authAdmin("admin/users?per_page=100&filter=test-verif-");
-  const comptes = (r.json?.users ?? []).filter((u) => /^test-verif-[a-z0-9]+@cockpit\.local$/.test(u.email ?? ""));
+  const limite = Date.now() - AGE_RESTE_MIN * 60_000;
+  const comptes = (r.json?.users ?? []).filter((u) => /^test-verif-[a-z0-9]+@cockpit\.local$/.test(u.email ?? "") && Date.parse(u.created_at) < limite);
   for (const u of comptes) {
     console.log(`  (purge du compte de test orphelin ${u.email})`);
     await supprimerCompte(u.id);
@@ -874,6 +879,18 @@ async function controle18_reponses_prises() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+// 19. Aucun banc ne laisse rien dans un projet RÉEL (29 sept. 2026 : « [TEST
+// verifier-embed …] tri des clients » dans le cockpit de Raphaël, qui ne savait
+// pas s'il devait y répondre). Les bancs travaillent dans des projets `test-…`
+// (scripts/bancs.mjs) ; ce contrôle rougit si une ligne « [TEST… » vit ailleurs.
+async function controle19_aucun_reste_de_test() {
+  section("19. aucun reste de test dans un projet réel");
+  const r = await restesDansLesVraisProjets(sql);
+  verifie("aucun chantier, message, étape, session ou tâche « [TEST… » dans un projet réel", r.total === 0, r);
+  verifie("la règle « projet de test » des bancs = cockpit.projet_de_test (base)",
+    (await une(`select projet_de_test('test-embed-x') and projet_de_test('test-web-x') and projet_de_test('test-verif-x') and not projet_de_test('cockpit') and not projet_de_test('testeur') as ok`)).ok === true);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -892,7 +909,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises,
+    controle18_reponses_prises, controle19_aucun_reste_de_test,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -911,7 +928,7 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where slug like 'test-verif-%')::int as projets,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}))::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);

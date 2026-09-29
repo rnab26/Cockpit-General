@@ -193,6 +193,10 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
   dire (29 sept. : « Où j'en suis » disparu, vécu comme une régression). Et
   pas de pavés colorés : couleur = liseré, point ou texte.
 - `pgrep`/`pkill` : motifs ancrés, sinon la commande se tue elle-même.
+- Un banc de test qui écrit dans un VRAI projet finit par y laisser des
+  chantiers « [TEST… » que Raphaël prend pour du vrai (29 sept., chantier
+  `0b54f4f8`). Tout banc : projet jetable `test-…`, `scripts/bancs.mjs`
+  (voir CLAUDE.md) ; `verifier-base` §19 le garde.
 - Les hooks déclarés dans `.claude/settings.json` d'un projet ne se
   propagent pas seuls : un nouvel événement = relancer `brancher.sh` sur
   chaque projet branché (idempotent).

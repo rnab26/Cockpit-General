@@ -37,7 +37,7 @@ export const TIC_PRESENCE_MS = 30_000
  * sections dépliées, sélection, dialogues).
  */
 export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi; theme: Theme; changerTheme: (t: Theme) => void; seDeconnecter: () => Promise<void> }) {
-  const d = useDonnees(true)
+  const d = useDonnees(true, moi.email)
   const { prefs, poser } = usePreferences(moi.user_id)
   const [sectionsOuvertes, setSectionsOuvertes] = useState<Set<string>>(new Set())
   const [conversation, setConversation] = useState<CibleConversation | null>(null)
