@@ -35,8 +35,9 @@
 // SUPABASE_SERVICE_ROLE_KEY pour scripts/sql.sh.
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { deflateSync, crc32 } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -719,6 +720,58 @@ try {
   verifie('la photo s’affiche dans une bulle de la conversation (lien signé, image chargée)', await vignetteQ.count() === 1 && await vignetteQ.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await fermerConv()
   verifie('la question répondue quitte « À toi de jouer »', await page.locator(elQsel).count() === 0)
+
+  // ===================================================================
+  // 4 bis. Claude MONTRE une image (0020) : sous une question, sous « Comment vérifier » — posées par les VRAIS scripts.
+  console.log('  — images de Claude : question, comment vérifier')
+  const imgDossier = mkdtempSync(path.join(tmpdir(), 'web-images-'))
+  const imgFichier = path.join(imgDossier, 'apercu-test.png')
+  await page.screenshot({ path: imgFichier })   // une vraie capture d'écran, comme une session la ferait
+  const envScripts = { ...process.env, COCKPIT_PROJET: SLUG, COCKPIT_SESSION: `${SESSION_TEST}images` }
+  const script = (nom, args) => execFileSync('bash', [path.resolve(racineApp, '..', 'scripts', nom), ...args], { encoding: 'utf8', env: envScripts, stdio: ['ignore', 'pipe', 'pipe'] })
+  const QI = creerTest('question avec image', { etat: 'libre' })
+  script('demander.sh', ['--chantier', QI.id, '--question', 'Ce bouton te convient ?', '--pourquoi', 'Pour vérifier l’image sous la question.', '--option', 'Oui|On garde.|recommande', '--option', 'Non|On change.', '--image', imgFichier])
+  await allerCockpit()
+  await actualiser()
+  await (await elementAToi(QI.id, 'question')).getByTestId('verbe-a-toi').click()
+  await attendreConv(QI.titre)
+  const blocQI = conv().getByTestId('bloc-question')
+  const vigQI = blocQI.locator('[data-testid="images-question"] [data-testid="media"] img').first()
+  await vigQI.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  const boiteQI = await vigQI.boundingBox().catch(() => null)
+  verifie('question de Claude : l’image s’affiche en miniature SOUS la question (chargée, ≥ 100 px)',
+    await vigQI.count() === 1 && await vigQI.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false) && (boiteQI?.width ?? 0) >= 100, boiteQI)
+  verifie('…avec « Touche l’image pour l’agrandir »', /Touche l’image pour l’agrandir/.test(await blocQI.textContent()))
+  await capture(page, 'question-image-claude')
+  await vigQI.click()
+  const grandeQI = page.locator('dialog[open] img[alt="apercu-test.png"]').last()
+  await page.waitForTimeout(600)
+  const boiteGrande = await grandeQI.boundingBox().catch(() => null)
+  verifie('un toucher l’ouvre en GRAND (plein écran, au moins 4 fois la surface de la miniature)', (boiteGrande?.width ?? 0) * (boiteGrande?.height ?? 0) > (boiteQI?.width ?? 999) * (boiteQI?.height ?? 999) * 4 && await grandeQI.evaluate((i) => i.naturalWidth > 0).catch(() => false), { boiteGrande, boiteQI })
+  verifie('image en grand : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'question-image-claude-grand')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
+  // « Comment vérifier » avec « Ce que tu dois voir ».
+  const VI = creerTest('verif avec image', { etat: 'en_cours' })
+  script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--pas-en-ligne', 'test', '--image', imgFichier])
+  await allerTout()
+  await actualiser()
+  await (await elementAToi(VI.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+  await attendreConv(VI.titre)
+  const encVI = conv().getByTestId('comment-verifier')
+  const vigVI = encVI.locator('[data-testid="images-verifier"] [data-testid="media"] img').first()
+  await vigVI.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  verifie('« Comment vérifier » : « Ce que tu dois voir » et la miniature sous les étapes (chargée)',
+    /Ce que tu dois voir/.test(await encVI.textContent()) && await vigVI.count() === 1 && await vigVI.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
+  const [bEt, bIm] = [await encVI.getByTestId('etapes-verifier').boundingBox(), await vigVI.boundingBox()]
+  verifie('…l’image est APRÈS les étapes', bEt && bIm && bIm.y >= bEt.y + bEt.height, { bEt, bIm })
+  await capture(page, 'comment-verifier-image')
+  await fermerConv()
+  rmSync(imgDossier, { recursive: true, force: true })
 
   // ===================================================================
   // 5. À vérifier : « Tester » → la conversation (frise, comment vérifier, Ça marche / Corriger)

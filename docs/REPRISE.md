@@ -169,6 +169,17 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
   session FacePro : elle le deviendra et créera SON réveil (consigne de
   `--prendre`). D'ici là, FacePro garde le fonctionnement par session.
 
+## 2 sexies. 29 sept. après-midi : Claude MONTRE des images (chantier `2d51d3f8`, migration 0020)
+
+`demander.sh --image`, `progression.sh --termine … --image` (« Ce que tu dois
+voir », `chantiers.verifier_medias`), `media.sh --envoyer` (fil). Miniatures
+cliquables dans l'app (plein écran). Règle « montre, ne décris pas » dans
+CLAUDE.md et `docs/bloc-CLAUDE.md`. Vérifié : verifier-base §20 (205/205),
+verifier-web 282/282, preuve sur le site en ligne (projet jetable, nettoyé).
+Reste : le module embarqué (`embed/`) n'affiche pas encore ces images.
+`verifier-web.mjs` ne purge plus que les projets de test de plus de 2 h
+(plusieurs agents le lançaient en même temps et se purgeaient l'un l'autre).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
@@ -204,7 +215,7 @@ Raphaël : « vas-y fais A + D et mets des logos plutôt que des emojis ».
 - Un banc de test qui écrit dans un VRAI projet finit par y laisser des
   chantiers « [TEST… » que Raphaël prend pour du vrai (29 sept., chantier
   `0b54f4f8`). Tout banc : projet jetable `test-…`, `scripts/bancs.mjs`
-  (voir CLAUDE.md) ; `verifier-base` §20 le garde.
+  (voir CLAUDE.md) ; `verifier-base` §21 le garde.
 - Les hooks déclarés dans `.claude/settings.json` d'un projet ne se
   propagent pas seuls : un nouvel événement = relancer `brancher.sh` sur
   chaque projet branché (idempotent).
