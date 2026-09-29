@@ -88,6 +88,19 @@ if [ "$statut" = "termine" ] && [ -n "$chantier" ] && [ -z "$agent" ] && [ -z "$
   echo "--verifier manque : dis à Raphaël comment vérifier (où aller, quoi faire, ce qu'il doit voir), en étapes numérotées." >&2
   exit 2
 fi
+# Règle de clarté (Raphaël, 29 sept. 2026) : ce qu'il lit doit se comprendre d'un coup d'œil.
+if [ -n "${verifier//[[:space:]]/}" ]; then
+  nv=$(printf '%s' "$verifier" | python3 -c 'import sys; print(len(sys.stdin.read()))')
+  ne=$( { printf '%s' "$verifier" | grep -oE '(^|[[:space:]])[0-9]+\.' || true; } | wc -l)
+  if [ "$nv" -gt 500 ] || [ "$ne" -gt 5 ] || ! printf '%s' "$verifier" | grep -qE '^[[:space:]]*1\.'; then
+    echo "Refusé (règle de clarté) : --verifier = 5 étapes au plus, numérotées « 1. 2. 3. », 500 caractères au plus ($nv ici, $ne étapes). Où aller, quoi toucher, ce qu'il doit voir ; en mots simples, sans jargon." >&2
+    exit 2
+  fi
+fi
+if [ "$statut" = "termine" ] && [ -z "$agent" ]; then
+  nt=$(printf '%s' "$etape" | python3 -c 'import sys; print(len(sys.stdin.read()))')
+  [ "$nt" -le 120 ] || { echo "Refusé (règle de clarté) : le résumé de --termine fait $nt caractères, 120 au plus : ce qui est livré, en une phrase simple." >&2; exit 2; }
+fi
 
 if [ -z "$projet" ]; then
   echo "Projet inconnu : pose COCKPIT_PROJET (brancher.sh le fait) ou passe --projet <slug>." >&2

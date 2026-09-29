@@ -89,6 +89,10 @@ a_ranger=$(un "select coalesce(string_agg(format('- %s | %s', c.id, c.titre), ch
 emettre "$(cat <<FIN
 # Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
 
+RÈGLE DE CLARTÉ : tout ce que Raphaël lit ici (questions, constats, « comment vérifier ») se
+comprend d'un coup d'œil par quelqu'un qui ne code pas : le sujet, ce qu'il y a à faire, des
+réponses toutes prêtes. Pas de jargon ; le détail va dans le fil.
+
 Lu dans la base centrale à l'instant. Avant toute proposition : réserve un chantier avec
 \`$SQL_CMD "select reserver_chantier('<id>', '<ta branche>', 120)"\` (false = une autre
 session l'a), signale ta progression avec \`$PROG_CMD\` à chaque étape et en

@@ -59,6 +59,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$projet" ] || { echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2; }
+# Règle de clarté (Raphaël, 29 sept. 2026) : un titre de chantier se lit d'un coup d'œil sur un téléphone.
+if [ -n "$titre" ]; then
+  nt=$(printf '%s' "$titre" | python3 -c 'import sys; print(len(sys.stdin.read()))')
+  [ "$nt" -le 80 ] || { echo "Refusé (règle de clarté) : titre de $nt caractères, 80 au plus. Le sujet en mots simples ; le détail va dans --demande." >&2; exit 2; }
+fi
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 
 sections() { "$SQL" "select coalesce(string_agg(s.nom, ' · ' order by s.position, s.nom), '(aucune)') as l from sections s join projets p on p.id = s.projet_id where p.slug = '$(q "$projet")'" | jq -r '.rows[0].l'; }

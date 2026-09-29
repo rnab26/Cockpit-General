@@ -98,19 +98,19 @@ export function frise(brut: unknown, now: Date = new Date()): EtapeFrise[] | nul
   const code = !!j.code || pousse || !!j.pas_en_ligne
 
   const etapes: EtapeFrise[] = [
-    { cle: 'code', libelle: '✍️ Codé', etat: code ? 'fait' : 'attente', heure: h('code'), detail: null, url: null },
-    { cle: 'pousse', libelle: '📤 Envoyé', etat: pousse ? 'fait' : 'attente', heure: h('pousse'), detail: j.pousse?.detail ?? null, url: null },
+    { cle: 'code', libelle: 'Codé', etat: code ? 'fait' : 'attente', heure: h('code'), detail: null, url: null },
+    { cle: 'pousse', libelle: 'Envoyé', etat: pousse ? 'fait' : 'attente', heure: h('pousse'), detail: j.pousse?.detail ?? null, url: null },
     j.ci_ko && !ciOk
-      ? { cle: 'ci', libelle: '❌ Les robots ont trouvé un problème, Claude corrige', etat: 'echec', heure: h('ci_ko'), detail: j.ci_ko.detail, url: null }
-      : { cle: 'ci', libelle: '🤖 Vérifié par les robots', etat: ciOk ? 'fait' : 'attente', heure: h('ci_ok'), detail: j.ci_ok?.detail ?? null, url: null },
+      ? { cle: 'ci', libelle: 'Les robots ont trouvé un problème, Claude corrige', etat: 'echec', heure: h('ci_ko'), detail: j.ci_ko.detail, url: null }
+      : { cle: 'ci', libelle: 'Vérifié par les robots', etat: ciOk ? 'fait' : 'attente', heure: h('ci_ok'), detail: j.ci_ok?.detail ?? null, url: null },
   ]
   if (j.pas_en_ligne && !enLigne) {
     const raison = j.pas_en_ligne.detail
     etapes.push({ cle: 'ligne', etat: 'info', heure: h('pas_en_ligne'), detail: null, url: null,
-      libelle: demandeUnGeste(raison) ? `👉 Il faut ton geste${raison ? ` : ${raison}` : ''}` : `ℹ️ Rien à mettre en ligne${raison ? ` : ${raison}` : ''}` })
+      libelle: demandeUnGeste(raison) ? `Il faut ton geste${raison ? ` : ${raison}` : ''}` : `Rien à mettre en ligne${raison ? ` : ${raison}` : ''}` })
   } else {
     const d = j.en_ligne?.detail ?? null
-    etapes.push({ cle: 'ligne', libelle: '🌐 En ligne', etat: enLigne ? 'fait' : 'attente', heure: h('en_ligne'),
+    etapes.push({ cle: 'ligne', libelle: 'En ligne', etat: enLigne ? 'fait' : 'attente', heure: h('en_ligne'),
       detail: d, url: d && URL_SEULE.test(d) ? d : null })
   }
   return etapes
@@ -123,15 +123,15 @@ export function syntheseMiseEnLigne(brut: unknown, now: Date = new Date()): Synt
   if (j.en_ligne) {
     const h = momentLisible(j.en_ligne.at, now)
     return { code: 'en_ligne', teinte: 'ok', peutVerifier: true,
-      texte: `🌐 C’est en ligne${h ? ` depuis ${h}` : ''} : tu peux vérifier maintenant.` }
+      texte: `C’est en ligne${h ? ` depuis ${h}` : ''} : tu peux vérifier maintenant.` }
   }
   if (j.ci_ko && !j.ci_ok) return { code: 'ci_ko', teinte: 'alerte', peutVerifier: false,
-    texte: '❌ Les robots ont trouvé un problème : Claude corrige. Attends avant de vérifier.' }
+    texte: 'Les robots ont trouvé un problème : Claude corrige. Attends avant de vérifier.' }
   if (j.pas_en_ligne) {
     const raison = j.pas_en_ligne.detail
     return demandeUnGeste(raison)
-      ? { code: 'geste', teinte: 'attention', peutVerifier: false, texte: `👉 Il faut ton geste avant de vérifier${raison ? ` : ${raison}` : '.'}` }
-      : { code: 'rien', teinte: 'info', peutVerifier: true, texte: `ℹ️ Rien à mettre en ligne${raison ? ` (${raison})` : ''} : tu peux vérifier.` }
+      ? { code: 'geste', teinte: 'attention', peutVerifier: false, texte: `Il faut ton geste avant de vérifier${raison ? ` : ${raison}` : '.'}` }
+      : { code: 'rien', teinte: 'info', peutVerifier: true, texte: `Rien à mettre en ligne${raison ? ` (${raison})` : ''} : tu peux vérifier.` }
   }
-  return { code: 'pas_encore', teinte: 'attention', peutVerifier: false, texte: '⏳ Pas encore en ligne : attends avant de vérifier.' }
+  return { code: 'pas_encore', teinte: 'attention', peutVerifier: false, texte: 'Pas encore en ligne : attends avant de vérifier.' }
 }
