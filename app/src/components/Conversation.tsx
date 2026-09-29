@@ -381,6 +381,8 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger } = useCockpit()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
+  // « Ça marche » avec une question ouverte : ses cartes s'affichent dans le bloc de validation, pas deux fois.
+  const [questionsDansValidation, setQuestionsDansValidation] = useState(false)
   const c = chantiers.find((x) => x.id === chantierId) ?? null
   const fil = useMemo(() => messages.filter((m) => m.chantier_id === chantierId).sort((a, b) => a.created_at.localeCompare(b.created_at)), [messages, chantierId])
   const pd = useMemo(() => (c ? presenceDe(c, activites, enAttente, now, silenceMs, taches) : null), [c, activites, taches, enAttente, now, silenceMs])
@@ -478,11 +480,12 @@ function FilChantier({ chantierId }: { chantierId: string }) {
         {attente ? <BulleAttente attente={attente} /> : null}
 
         {/* 4. TOUJOURS EN DERNIER : ce qui attend ton choix (cartes). */}
-        {c.etat === 'a_verifier' ? <AFaire><BlocValidation chantier={c} /></AFaire> : null}
+        {c.etat === 'a_verifier' ? <AFaire><BlocValidation chantier={c} onQuestionsAffichees={setQuestionsDansValidation} /></AFaire> : null}
         {c.etat === 'a_cadrer' ? <AFaire><BlocCadrer chantier={c} /></AFaire> : null}
         {c.etat === 'bloque' ? <AFaire><BlocBloque chantier={c} blocage={dernierBlocage} /></AFaire> : null}
         {aChoisir.map((m) => m.kind === 'fusion'
           ? <AFaire key={m.id}><BlocFusion message={m} /></AFaire>
+          : questionsDansValidation && c.etat === 'a_verifier' ? null
           : <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>)}
       </Corps>
     </>
