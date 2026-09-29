@@ -2,7 +2,8 @@
 // sur deux projets à la fois. Le premier cas rejoue la capture de Raphaël du
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
-import { enCeMoment, aToi, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe } from '../src/lib/entonnoir.ts'
+import { enCeMoment, aToi, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots } from '../src/lib/entonnoir.ts'
+import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
 
 const now = new Date('2026-09-29T01:04:00Z')
@@ -145,6 +146,35 @@ console.log('verifier-entonnoir')
   })
   const ordre = trierParPresence(liste).map((x) => (x.c as { id: string }).id)
   verifie('tri : ce qui bouge, puis à vérifier, puis silencieux, puis personne', JSON.stringify(ordre) === JSON.stringify(['fp-vivant', 'fp-verif', 'fp-silence', 'fp-bouche']), ordre)
+}
+
+// 6. « Vérifie pour moi » (29 sept., Raphaël : « je ne vois pas où ce chantier part ») :
+// il sort de « À toi » et se voit dans « Ça avance tout seul », compté, sous UN nom partout.
+{
+  const cv = [
+    C('v-demande', 'ck', 'a_verifier', { verif_demandee_at: il(3) }),
+    C('v-a-toi', 'ck', 'a_verifier'),
+    C('v-verdict', 'ck', 'a_verifier', { verif_demandee_at: null, verdict_at: il(1), verdict_ok: true }),
+  ]
+  const p = presenceDe(cv[0], [], new Set(), now, SILENCE).presence
+  verifie('vérifie pour moi : présence « Claude vérifie pour toi », rien à faire', p.code === 'claude_verifie' && p.libelle === 'Claude vérifie pour toi' && /Rien à faire/.test(p.tonAction ?? ''), p)
+  verifie('vérifie pour moi : même libellé court (liste, en-tête de conversation)', LIBELLE_COURT_PRESENCE.claude_verifie === 'Claude vérifie pour toi' && presenceEnMots(p, null) === 'Claude vérifie pour toi')
+  const t = aToi(cv, [])
+  verifie('vérifie pour moi : pas dans « À toi » ; les deux autres y sont', !t.some((e) => e.chantier?.id === 'v-demande') && t.length === 2, t.map((e) => e.chantier?.id))
+  const l = caAvanceToutSeul(cv, [], [], [], [], now, SILENCE)
+  const ligne = l.find((x) => x.c.id === 'v-demande')
+  verifie('vérifie pour moi : dans « Ça avance tout seul », vivant, « Claude vérifie pour toi », sans « Relancer »',
+    l.length === 1 && !!ligne && ligne.vivant && ligne.qui === 'Claude vérifie pour toi', l)
+  const tb = tableauDeBord({ chantiers: cv, messages: [], activites: [], sessions: [], taches: [] }, now, SILENCE, '7j', ['ck'])
+  verifie('vérifie pour moi : compté dans la tuile « ça avance » (1) et pas dans « pour toi » (2)', tb.tuiles.caAvance === 1 && tb.tuiles.pourToi === 2, tb.tuiles)
+  // Un agent de vérification vivant ne change pas le nom (il reste « Claude vérifie pour toi »), sa barre s'affiche.
+  const agent = { id: 't1', projet_id: 'ck', chantier_id: 'v-demande', type: 'agent', statut: 'en_cours', vu_at: il(1), progres_at: il(1), pourcentage: 40, etape: 'compare à la source', description: 'vérif' } as never
+  const la = caAvanceToutSeul(cv, [], [], [], [agent], now, SILENCE).find((x) => x.c.id === 'v-demande')
+  verifie('vérifie pour moi + agent vivant : même nom, sa barre et son étape', la?.presence.code === 'claude_verifie' && la.activite?.pourcentage === 40 && la.etape === 'compare à la source', la)
+  // Le verdict rendu (verif_demandee_at remis à null) : de retour dans « À toi ».
+  verifie('verdict rendu : de retour dans « À toi », hors de « Ça avance »', t.some((e) => e.chantier?.id === 'v-verdict') && !l.some((x) => x.c.id === 'v-verdict'))
+  const ordre = trierParPresence([{ c: cv[1], presence: presenceDe(cv[1], [], new Set(), now, SILENCE).presence }, { c: cv[0], presence: p }]).map((x) => (x.c as { id: string }).id)
+  verifie('tri : « Claude vérifie » avant « à vérifier »', ordre[0] === 'v-demande', ordre)
 }
 
 bilan('verifier-entonnoir')

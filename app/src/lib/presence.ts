@@ -33,6 +33,7 @@ export type CodePresence =
   | 'personne'       // ouvert, personne dessus
   | 'attend_toi'     // une question t'attend
   | 'a_verifier'     // livré, à toi de vérifier
+  | 'claude_verifie' // « Vérifie pour moi » demandé : Claude juge, rien à faire de ta part
   | 'a_cadrer'       // à cadrer avec toi
   | 'bloque'         // bloqué
   | 'reporte'        // mis de côté exprès
@@ -55,7 +56,7 @@ export interface Presence {
   tonAction: string | null
 }
 
-type C = Pick<Chantier, 'etat' | 'pris_par' | 'pris_jusqu_a' | 'archived_at'>
+type C = Pick<Chantier, 'etat' | 'pris_par' | 'pris_jusqu_a' | 'archived_at' | 'verif_demandee_at'>
 type A = Pick<Activite, 'statut' | 'updated_at' | 'session' | 'pourcentage' | 'etape'>
 
 const ms = (iso: string | null | undefined) => {
@@ -91,6 +92,12 @@ export function presenceChantier(
   if (questionEnAttente) return { ...base, code: 'attend_toi', libelle: 'Attend ta réponse', teinte: 'alerte',
     detail: vie ? `Claude attend ta réponse pour continuer (${activite!.session})` : null,
     tonAction: 'Claude attend ta réponse : réponds à la question en rouge ci-dessous.' }
+  // Retour de Raphaël, 29 sept. : après « vérifie pour moi », le chantier
+  // « disparaît ou prend un autre nom ». Il a un nom, partout le même, et il
+  // revient dans « À toi » avec le verdict (verif_demandee_at remis à null).
+  if (c.etat === 'a_verifier' && c.verif_demandee_at) return { ...base, code: 'claude_verifie', libelle: 'Claude vérifie pour toi', teinte: 'info',
+    detail: `demandé ${dateRelative(c.verif_demandee_at, now) || 'à l’instant'}`,
+    tonAction: 'Rien à faire : Claude vérifie, puis le chantier revient dans « À toi » avec son verdict.' }
   if (c.etat === 'a_verifier') return { ...base, code: 'a_verifier', libelle: 'À toi de vérifier', teinte: 'attention',
     tonAction: 'C’est livré : suis « Comment vérifier » ci-dessous, puis dis si ça fonctionne.' }
   if (c.etat === 'a_cadrer') return { ...base, code: 'a_cadrer', libelle: 'À cadrer avec toi', teinte: 'info',
