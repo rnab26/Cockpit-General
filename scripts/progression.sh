@@ -63,6 +63,12 @@ chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
+  # Une option sans sa valeur faisait échouer « shift 2 » en silence (code 1,
+  # rien d'écrit) : constaté le 29 sept. avec « --en-ligne » sans adresse.
+  case "$1" in
+    -h|--help) ;;
+    --*) if [ $# -lt 2 ]; then echo "$1 attend une valeur (ex. $1 \"…\")." >&2; exit 2; fi ;;
+  esac
   case "$1" in
     --projet)   projet="${2:-}"; shift 2 ;;
     --chantier) chantier="${2:-}"; shift 2 ;;
