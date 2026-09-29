@@ -191,13 +191,26 @@ verifier-web 299/299 (image + PDF + .dwg, `media.sh --chantier` les récupère).
 Reste : le module embarqué (`embed/`, « Nouvelle demande ») ne joint aucun
 fichier — à décider avec Raphaël.
 
-## 2 octies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
+## 2 octies. 29 sept. soir : section « Correctifs » rangée toute seule (chantier `ea21b577`, migration 0021)
+
+Trigger `before insert` sur `chantiers` : un chantier créé sans section dont
+`est_correctif(titre, demande, origine)` est vrai va dans « Correctifs »
+(créée si besoin), toutes voies (app, session, module embarqué). Règle :
+mot visuel/ergonomie et aucun mot de gros chantier dans le titre (titre +
+demande pour un utilisateur final). `ranger_correctifs(slug)` pour les
+ouverts sans section : passé sur cockpit et facepro le 29 sept., 0 rangé
+(aucun chantier ouvert n'est un correctif visuel). Vérifié :
+`verifier-correctifs` 32/32, `verifier-base` 216/216 (§22),
+`verifier-reponses` 16/16, `verifier-embed` 80/80. App inchangée. Pas de
+réglage pour éteindre le tri par projet (à ajouter si Raphaël le veut).
+
+## 2 nonies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
 
 Bouton « Lancer des renforts » (au-dessus de « Prêt à lancer », vue projet et
 « Tout »), réglages (sessions 0-4, agents 1-5), états demande envoyée / en
-route / erreur / terminé. Migration 0021 appliquée (le brouillon 0020 de
-agent/646460 a été repris, renuméroté : 0020 est pris par l'aperçu d'image).
-Voir CLAUDE.md « Renforts ». Vérifié : verifier-base 244/244 (§22),
+route / erreur / terminé. Migration 0022 appliquée (le brouillon 0020 de
+agent/646460 a été repris, renuméroté : 0020 et 0021 étaient pris).
+Voir CLAUDE.md « Renforts ». Vérifié : verifier-base §23,
 verifier-renforts 16/16, verifier-web 299/299 (section « renforts »).
 **Pas encore observé en vrai** : aucune session renfort n'a été ouverte. La
 première ouverture réelle sera faite par la session chef du cockpit (Raphaël
@@ -223,7 +236,7 @@ lanceur ; `cockpit-renfort.sh` arrive au prochain démarrage (brancher.sh --maj)
 - Une prochaine session FacePro devrait apparaître dans « Qui travaille » :
   le vérifier en base (`select * from sessions order by vu_at desc`).
 - À cadrer avec Raphaël (dans le cockpit, `demander.sh`, pas d'artefact) :
-  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 octies.)
+  rejeu de scénario (D-05). (Le bouton D-10 est livré : les renforts, §2 nonies.)
 - Brancher Jarvis et le Trieur (`brancher.sh`) une fois le pilote validé.
 
 ## 4. Pièges déjà payés (ne pas les repayer)

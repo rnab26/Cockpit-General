@@ -27,7 +27,8 @@
 //   18. réponses de Raphaël reprises par la chef (0017), projets de test jamais servis
 //   19. un chef PAR PROJET (0019) : la passe d'un projet ne sert jamais un autre projet
 //   21. aucun reste de banc de test (« [TEST… ») dans un projet RÉEL
-//   22. renforts (0021) : une session par section, exclusivité, jamais deux renforts sur un chantier
+//   22. correctifs rangés tout seuls (0021)
+//   23. renforts (0022) : une session par section, exclusivité, jamais deux renforts sur un chantier
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -1000,8 +1001,8 @@ async function controle19_chef_par_projet() {
 // Un projet NEUF (E) pour les renforts : ses sections et ses chantiers seulement.
 const P5 = randomUUID();
 const SLUG_E = `test-verif-${rand}-e`;
-async function controle22_renforts() {
-  section("22. Renforts (0021) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
+async function controle23_renforts() {
+  section("23. Renforts (0022) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
   await sql(`insert into projets (id, slug, nom, depot) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E', 'rnab26/test-inexistant')`);
   const S1 = randomUUID(), S2 = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P5)}, 'Écran', 1), (${q(S2)}, ${q(P5)}, 'Base', 2)`);
@@ -1191,6 +1192,46 @@ async function controle21_aucun_reste_de_test() {
     (await une(`select projet_de_test('test-embed-x') and projet_de_test('test-web-x') and projet_de_test('test-verif-x') and not projet_de_test('cockpit') and not projet_de_test('testeur') as ok`)).ok === true);
 }
 
+// 22. Section « Correctifs » rangée toute seule (0021, chantier ea21b577).
+// La règle elle-même (table de cas) : scripts/verifier-correctifs.mjs.
+async function controle22_correctifs() {
+  section("22. Correctifs : un correctif visuel est rangé tout seul, à la création, par toutes les voies (0021)");
+  const secDe = async (id) => (await une(`select s.nom from chantiers c left join sections s on s.id = c.section_id where c.id = ${q(id)}`))?.nom ?? null;
+  const avant = (await une(`select count(*)::int as n from sections where projet_id = ${q(P2)} and cle = 'correctifs'`)).n;
+  const c1 = await creerChantier(P2, { titre: "Bouton décalé sur mobile" });
+  verifie("session (SQL) : « Bouton décalé sur mobile » → section Correctifs, créée si besoin", avant === 0 && await secDe(c1) === "Correctifs");
+  const c2 = await creerChantier(P2, { titre: "Texte qui déborde de la carte" });
+  verifie("un deuxième correctif réutilise la MÊME section (pas de doublon)", await secDe(c2) === "Correctifs"
+    && (await une(`select count(*)::int as n from sections where projet_id = ${q(P2)} and cle = 'correctifs'`)).n === 1);
+  const c3 = await creerChantier(P2, { titre: "Nouvelle fonctionnalité : export", demande: "avec un joli design" });
+  verifie("un gros chantier n'y va pas (reste sans section, la session le range)", await secDe(c3) === null);
+  const c4 = await creerChantier(P2, { titre: "Problème page panier", demande: "le texte déborde", origine: "utilisateur" });
+  verifie("utilisateur final (module embarqué) : la demande décrit un défaut visuel → Correctifs", await secDe(c4) === "Correctifs");
+  const sid = (await une(`select ranger_chantier(${q(c1)}, 'Application', 'claude/test') as s`)).s;
+  await sql(`update chantiers set titre = 'Bouton décalé sur mobile (bis)' where id = ${q(c1)}`);
+  verifie("la session corrige le tri avec --ranger, et une mise à jour ne le défait pas", sid && await secDe(c1) === "Application");
+  // Un membre (non admin) crée depuis l'app : il n'a pas le droit d'écrire dans sections, le trigger le fait pour lui.
+  const cree = await rest("chantiers", { methode: "POST", jwt, prefer: "return=representation",
+    corps: { projet_id: P1, titre: "Couleurs illisibles en mode sombre", etat: "a_trier", origine: "utilisateur" } });
+  const cm = cree.json?.[0]?.id;
+  verifie("app, membre non admin : son correctif est rangé dans Correctifs du projet A", cree.status === 201 && cm && await secDe(cm) === "Correctifs", cree);
+  // Chantiers ouverts existants sans section : rangés d'un appel, jamais un chantier déjà rangé ni un certifié.
+  // « Existants » : créés avant 0021, donc sans section. Le trigger ne joue qu'à l'insertion :
+  // on les crée puis on leur retire la section (jamais de désactivation du trigger, table partagée).
+  const e1 = await creerChantier(P2, { titre: "Marges trop grandes", etat: "libre" });
+  const e2 = await creerChantier(P2, { titre: "Police trop petite", etat: "valide" });
+  const e3 = await creerChantier(P2, { titre: "Espacement des tuiles", etat: "libre" });
+  await sql(`update chantiers set section_id = null where id in (${q(e1)}, ${q(e2)}, ${q(e3)})`);
+  await sql(`select ranger_chantier(${q(e3)}, 'Écran', 'claude/test') as s`);
+  const ranges = (await sql(`select ranger_correctifs(${q(SLUG_B)}, 'claude/test') as id`)).map((r) => r.id);
+  verifie("ranger_correctifs : l'ouvert sans section est rangé ; le certifié et le déjà rangé ne bougent pas",
+    ranges.length === 1 && ranges[0] === e1 && await secDe(e1) === "Correctifs" && await secDe(e2) === null && await secDe(e3) === "Écran", ranges);
+  const pirate = await rpcUtilisateur("ranger_correctifs", { p_projet: SLUG_A }, jwt);
+  verifie("ranger_correctifs avec un JWT de membre non admin → refusé", pirate.status >= 400, pirate);
+  const anon = await rest("rpc/section_correctifs", { methode: "POST", jwt, corps: { p_projet: P1 } });
+  verifie("section_correctifs n'est pas appelable par un utilisateur", anon.status >= 400, anon);
+}
+
 // ------------------------------------------------------------------ main
 console.log(`verifier-base — projets ${SLUG_A} / ${SLUG_B}, compte ${EMAIL}`);
 const debut = Date.now();
@@ -1209,7 +1250,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle21_aucun_reste_de_test, controle22_renforts,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle21_aucun_reste_de_test, controle22_correctifs, controle23_renforts,
   ];
   for (const etape of etapes) {
     try { await etape(); }

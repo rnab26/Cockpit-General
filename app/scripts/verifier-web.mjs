@@ -1109,7 +1109,7 @@ try {
   await allerCockpit()
 
   // ===================================================================
-  // 7 ter. Renforts (0021, D-10) : bouton distinct au-dessus de « Prêt à lancer »,
+  // 7 ter. Renforts (0022, D-10) : bouton distinct au-dessus de « Prêt à lancer »,
   // réglages, demande envoyée / en route / erreur / terminé. Aucune vraie session :
   // le projet de test n'est jamais servi à une chef (renforts_a_ouvrir).
   console.log('  — renforts')

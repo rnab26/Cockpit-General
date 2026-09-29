@@ -15,7 +15,7 @@
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
 #   scripts/chef.sh --reveil <trig_…> [--distante <session_…>]   note le réveil horaire du projet
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
-#   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0021)
+#   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0022)
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
 #   (renforts : Raphaël les demande d'un bouton de l'app ; voir scripts/renfort.sh)
 #
@@ -102,7 +102,7 @@ fi
 agents=$(printf '%s' "$etat" | jq -r '.agents // 0'); maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 3')
 depot=$(printf '%s' "$etat" | jq -r '.depot // ""')
 libres=$(( maxa - agents ))
-# RENFORTS (0021) : Raphaël les demande d'un bouton dans l'app (une session par
+# RENFORTS (0022) : Raphaël les demande d'un bouton dans l'app (une session par
 # SECTION en attente) ; la chef les OUVRE (create_session), les note, et archive
 # ceux qui ont fini. Jamais leur travail elle-même. Projets de test : jamais.
 RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"

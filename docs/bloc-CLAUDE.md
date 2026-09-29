@@ -45,7 +45,10 @@ demandes des utilisateurs, progression des autres sessions.
   de trier, catégoriser à chaque fois ») : sur « ambigu », lis les extraits
   affichés et relance avec `--id <le bon>` ou `--nouveau`, sans lui demander.
   Range toujours dans une section (`--section`, créée si elle n'existe pas ;
-  après coup : `--ranger <id> --section "…"`). Si deux chantiers existants
+  après coup : `--ranger <id> --section "…"`). Un petit correctif visuel, de
+  mise en page ou d'ergonomie va dans **« Correctifs »** : sans `--section`, il
+  y est rangé tout seul à la création (règle `cockpit.est_correctif`, même pour
+  l'app et le module embarqué) ; un faux tri se corrige par `--ranger`. Si deux chantiers existants
   sont en fait le même sujet, **suggère** la fusion :
   `--suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi "…"` —
   il l'accepte d'un toucher dans l'app. Un rappel le redit à chaque message
@@ -68,7 +71,7 @@ demandes des utilisateurs, progression des autres sessions.
   le devient, la consigne dit de créer (ou déplacer) SON réveil horaire, puis
   de le noter : `scripts/cockpit-chef.sh --reveil <trig_…> --distante <session_…>`.
   `--etat` : qui dirige ; `--max <n>` : agents en parallèle pour ce projet.
-- **RENFORTS** (0021) : Raphaël les demande d'un bouton du cockpit (« Lancer
+- **RENFORTS** (0022) : Raphaël les demande d'un bouton du cockpit (« Lancer
   des renforts ») : une session cloud par SECTION en attente. La passe de la
   chef te dit d'ouvrir chaque demande (`create_session`, titre « Renfort ·
   <projet> · <section> — ne pas toucher », tags `cockpit-renfort`), de la

@@ -45,7 +45,7 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
-      {/* Renforts (0021, D-10) : au-dessus de ce qui attend, bien distinct. */}
+      {/* Renforts (0022, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
     </div>

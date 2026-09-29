@@ -1,4 +1,4 @@
-// Les renforts (src/lib/renforts.ts, 0021) : ce que dit chaque ligne, quand le
+// Les renforts (src/lib/renforts.ts, 0022) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
 import { boutonRenforts, erreurReglageRenforts, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
