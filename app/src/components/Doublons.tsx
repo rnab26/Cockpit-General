@@ -96,7 +96,7 @@ export function DoublonDe({ source, onFermer }: { source: Chantier | null; onFer
     toast.succes('Doublon fusionné.'); setCible(''); setNote(''); onFermer(); await recharger()
   }
   return (
-    <Dialog ouvert={!!source} onFermer={onFermer} titre="C’est un doublon de…"
+    <Dialog ouvert={!!source} onFermer={onFermer} titre="C’est un doublon de…" brouillon={!!note.trim()}
       pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} disabled={!cible} onClick={fusionner}>Fusionner</Button></>}>
       <p className="mb-3 text-sm text-texte-2">« <b>{source?.titre}</b> » sera archivé comme doublon ; sa demande et ses messages rejoignent le chantier gardé.</p>
       <Champ label="Chantier à garder">

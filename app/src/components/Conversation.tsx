@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, ArrowLeft, CircleCheck, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
+import { CONFIRMER_ABANDON, aUnBrouillon, useMenuQuiSeFerme, useToucherLeFond } from '../ui/Modale.ts'
 import { Button } from '../ui/Button.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
@@ -45,43 +46,88 @@ const PLACEHOLDER: Record<string, string> = {
   a_verifier: 'Ce que tu as constaté, une correction…',
 }
 
-export function Conversation({ cible, onFermer }: { cible: CibleConversation; onFermer: () => void }) {
+export function Conversation({ cible, onFermer, onRetour }: { cible: CibleConversation; onFermer: () => void; onRetour: () => void }) {
   return (
-    <Feuille onFermer={onFermer}>
-      {cible.chantierId ? <FilChantier chantierId={cible.chantierId} onFermer={onFermer} /> : <FilProjet onFermer={onFermer} />}
+    <Feuille onFermer={onFermer} onRetour={onRetour}>
+      {cible.chantierId ? <FilChantier chantierId={cible.chantierId} /> : <FilProjet />}
     </Feuille>
   )
 }
 
 /**
- * La feuille : un <dialog> modal (focus piégé, Échap), plein écran sur
- * téléphone. Le geste « retour » du téléphone la ferme : c'est Cockpit.tsx
- * qui pose l'entrée d'historique à l'ouverture et l'écoute.
+ * Fermer la conversation. `demander` : les gestes « je quitte » (flèche, fond,
+ * zone libre du fil, Échap, retour) — si un texte ou un fichier n'est pas
+ * envoyé, on demande d'abord. `forcer` : après une suppression, sans question.
  */
-function Feuille({ onFermer, children }: { onFermer: () => void; children: ReactNode }) {
+interface Fermeture { demander: () => void; forcer: () => void }
+const FermetureCtx = createContext<Fermeture>({ demander: () => {}, forcer: () => {} })
+
+/** Un toucher sur une zone LIBRE du fil (entre et à côté des bulles, sous la dernière) ferme aussi. */
+const estZoneLibre = (cible: EventTarget) => cible instanceof HTMLElement && cible.dataset.zoneLibre === 'oui'
+
+/**
+ * La feuille : un <dialog> modal (focus piégé, Échap). Sur téléphone elle
+ * monte du bas et laisse voir une bande du fond en haut : toucher le fond la
+ * ferme (règle commune, ui/Modale.ts). Le geste « retour » du téléphone la
+ * ferme aussi : Cockpit.tsx pose l'entrée d'historique à l'ouverture, la
+ * feuille écoute le retour — et, s'il reste un brouillon, remet l'entrée et
+ * demande avant de quitter.
+ */
+function Feuille({ onFermer, onRetour, children }: { onFermer: () => void; onRetour: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
-  const fermer = useRef(onFermer)
-  fermer.current = onFermer
+  const confirmer = useConfirmer()
+  const rappels = useRef({ onFermer, onRetour })
+  rappels.current = { onFermer, onRetour }
+  const sansQuestion = useRef(false)
+  const question = useRef(false)
+  const fermeture = useMemo<Fermeture>(() => {
+    const forcer = () => { sansQuestion.current = true; rappels.current.onFermer() }
+    return {
+      forcer,
+      demander: () => {
+        if (question.current) return
+        if (!aUnBrouillon(ref.current)) { forcer(); return }
+        question.current = true
+        void confirmer(CONFIRMER_ABANDON).then((ok) => { question.current = false; if (ok) forcer() })
+      },
+    }
+  }, [confirmer])
   useEffect(() => {
     const d = ref.current
     if (d && !d.open) d.showModal()
-    const onCancel = (e: Event) => { e.preventDefault(); fermer.current() }
+    const onCancel = (e: Event) => { e.preventDefault(); fermeture.demander() }
     d?.addEventListener('cancel', onCancel)
     return () => { d?.removeEventListener('cancel', onCancel); if (d?.open) d.close() }
-  }, [])
+  }, [fermeture])
+  useEffect(() => {
+    const surRetour = () => {
+      if (sansQuestion.current || !aUnBrouillon(ref.current)) { rappels.current.onRetour(); return }
+      // Un brouillon : on remet la conversation dans l'historique, puis on demande.
+      history.pushState({ conversation: true }, '', location.href)
+      if (question.current) return
+      question.current = true
+      void confirmer(CONFIRMER_ABANDON).then((ok) => { question.current = false; if (ok) { sansQuestion.current = true; history.back() } })
+    }
+    window.addEventListener('popstate', surRetour)
+    return () => window.removeEventListener('popstate', surRetour)
+  }, [confirmer])
+  const fond = useToucherLeFond<HTMLDialogElement>(fermeture.demander, (c, z) => c === z || estZoneLibre(c))
   return (
-    <dialog ref={ref} data-testid="conversation" aria-label="Conversation"
-      className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none border-0 bg-transparent p-0 backdrop:bg-black/50 sm:m-auto sm:h-[88vh] sm:max-w-2xl">
-      <div className="flex h-full flex-col overflow-hidden bg-fond text-texte sm:rounded-2xl sm:border sm:border-bord">{children}</div>
+    <dialog ref={ref} data-testid="conversation" aria-label="Conversation" {...fond}
+      className="fixed inset-x-0 bottom-0 top-auto m-0 h-[calc(100dvh-2.75rem)] max-h-none w-full max-w-none border-0 bg-transparent p-0 backdrop:bg-black/50 sm:inset-0 sm:m-auto sm:h-[88vh] sm:max-w-2xl">
+      <FermetureCtx.Provider value={fermeture}>
+        <div className="flex h-full flex-col overflow-hidden rounded-t-2xl bg-fond text-texte sm:rounded-2xl sm:border sm:border-bord">{children}</div>
+      </FermetureCtx.Provider>
     </dialog>
   )
 }
 
-function EnTete({ titre, sousTitre, onFermer, menu }: { titre: ReactNode; sousTitre?: ReactNode; onFermer: () => void; menu?: ReactNode }) {
+function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: ReactNode; menu?: ReactNode }) {
   const { projet } = useCockpit()
+  const fermeture = useContext(FermetureCtx)
   return (
-    <header className="flex items-start gap-1.5 border-b border-bord bg-carte px-2 pb-2 pt-[max(env(safe-area-inset-top),8px)]">
-      <button type="button" onClick={onFermer} aria-label="Fermer la conversation" data-testid="fermer-conversation"
+    <header className="flex items-start gap-1.5 border-b border-bord bg-carte px-2 pb-2 pt-2">
+      <button type="button" onClick={fermeture.demander} aria-label="Fermer la conversation" data-testid="fermer-conversation"
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-texte-2 hover:bg-carte-2 hover:text-texte"><ArrowLeft size={20} /></button>
       <div className="min-w-0 flex-1 py-0.5">
         <p className="flex items-center gap-1.5 text-xs text-texte-2"><PointProjet couleur={projet.couleur} /><span className="truncate">{projet.nom}</span></p>
@@ -99,7 +145,7 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false }: {
 }) {
   const { now } = useCockpit()
   return (
-    <div className={`flex ${cote === 'droite' ? 'justify-end' : 'justify-start'}`} data-testid={testId} data-cote={cote} data-a-faire={aFaire ? 'oui' : undefined}>
+    <div className={`flex ${cote === 'droite' ? 'justify-end' : 'justify-start'}`} data-zone-libre="oui" data-testid={testId} data-cote={cote} data-a-faire={aFaire ? 'oui' : undefined}>
       <div className={`max-w-[88%] rounded-2xl border border-bord px-3 py-2 ${cote === 'droite' ? 'rounded-br-md bg-carte-2' : 'rounded-bl-md bg-carte'}`}>
         {auteur || quand ? (
           <p className="mb-0.5 flex items-baseline justify-between gap-3 text-[11px] text-texte-2">
@@ -157,7 +203,7 @@ function Corps({ children, chantierId, placeholder }: { children: ReactNode; cha
   }, [])
   return (
     <>
-      <div ref={corps} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3" data-testid="fil-conversation">{children}</div>
+      <div ref={corps} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
       <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => window.setTimeout(() => corps.current?.scrollTo({ top: corps.current.scrollHeight, behavior: 'smooth' }), 150)} />
     </>
   )
@@ -211,18 +257,14 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
 }
 
 /** Le menu ⋯ d'un chantier (admin) : les gestes rares, avec confirmation avant toute suppression. */
-function MenuChantier({ chantier, nMessages, onHistorique, onFermer }: { chantier: Chantier; nMessages: number; onHistorique: () => void; onFermer: () => void }) {
+function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantier; nMessages: number; onHistorique: () => void }) {
   const { recharger, ouvrirModifier, ouvrirDoublonDe } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
+  const fermeture = useContext(FermetureCtx)
   const [ouvert, setOuvert] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!ouvert) return
-    const f = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOuvert(false) }
-    document.addEventListener('mousedown', f)
-    return () => document.removeEventListener('mousedown', f)
-  }, [ouvert])
+  useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
   const maj = async (valeurs: Partial<Chantier>, succes: string) => {
     const { error } = await supabase.from('chantiers').update(valeurs).eq('id', chantier.id)
     if (error) { toast.erreur(messageErreur(error)); return }
@@ -239,7 +281,7 @@ function MenuChantier({ chantier, nMessages, onHistorique, onFermer }: { chantie
     if (!ok) return
     const { error } = await supabase.from('chantiers').delete().eq('id', chantier.id)
     if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes(`« ${chantier.titre} » supprimé.`); onFermer(); await recharger()
+    toast.succes(`« ${chantier.titre} » supprimé.`); fermeture.forcer(); await recharger()
   }
   const item = (icone: ReactNode, libelle: string, action: () => void, testId?: string, danger = false) => (
     <button type="button" role="menuitem" data-testid={testId} onClick={() => { setOuvert(false); action() }}
@@ -266,7 +308,7 @@ function MenuChantier({ chantier, nMessages, onHistorique, onFermer }: { chantie
   )
 }
 
-function FilChantier({ chantierId, onFermer }: { chantierId: string; onFermer: () => void }) {
+function FilChantier({ chantierId }: { chantierId: string }) {
   const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger } = useCockpit()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
@@ -277,7 +319,7 @@ function FilChantier({ chantierId, onFermer }: { chantierId: string; onFermer: (
   if (!c || !pd) {
     return (
       <>
-        <EnTete titre="Chantier introuvable" onFermer={onFermer} />
+        <EnTete titre="Chantier introuvable" />
         <div className="flex-1 p-4 text-sm text-texte-2">Ce chantier n’existe plus (supprimé ou fusionné dans un autre).</div>
       </>
     )
@@ -294,14 +336,14 @@ function FilChantier({ chantierId, onFermer }: { chantierId: string; onFermer: (
 
   return (
     <>
-      <EnTete titre={c.titre} onFermer={onFermer}
+      <EnTete titre={c.titre}
         sousTitre={
           <p className={`mt-0.5 flex items-center gap-1.5 text-xs ${teinte}`} data-testid="presence-conversation" data-presence={presence.code}>
             {presence.code === 'travaille' ? <span className="point-vivant inline-block h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden /> : <IconePresence code={presence.code} taille={14} />}
             <span className="truncate">{presenceEnMots(presence, activite)}</span>
           </p>
         }
-        menu={admin ? <MenuChantier chantier={c} nMessages={fil.length} onHistorique={() => setSignalHistorique((n) => n + 1)} onFermer={onFermer} /> : null} />
+        menu={admin ? <MenuChantier chantier={c} nMessages={fil.length} onHistorique={() => setSignalHistorique((n) => n + 1)} /> : null} />
       <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'}>
         {/* 1. La demande, en premier. */}
         <Bulle cote={c.origine === 'session' ? 'gauche' : 'droite'} auteur={c.origine === 'session' ? 'Claude · la demande' : c.origine === 'utilisateur' ? 'Demande d’un utilisateur' : 'La demande'} quand={c.created_at} testId="bulle-demande">
@@ -370,12 +412,12 @@ function FilChantier({ chantierId, onFermer }: { chantierId: string; onFermer: (
 }
 
 /** Les questions du projet qui ne portent sur aucun chantier. */
-function FilProjet({ onFermer }: { onFermer: () => void }) {
+function FilProjet() {
   const { messages } = useCockpit()
   const fil = useMemo(() => messages.filter((m) => !m.chantier_id).sort((a, b) => a.created_at.localeCompare(b.created_at)), [messages])
   return (
     <>
-      <EnTete titre="Questions sur le projet" sousTitre={<p className="text-xs text-texte-2">Ce qui ne porte sur aucun chantier en particulier</p>} onFermer={onFermer} />
+      <EnTete titre="Questions sur le projet" sousTitre={<p className="text-xs text-texte-2">Ce qui ne porte sur aucun chantier en particulier</p>} />
       <Corps chantierId={null} placeholder="Écrire à Claude…">
         {fil.length ? fil.map((m) => (m.kind === 'question' || m.kind === 'action') && !m.answered_at
           ? <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>
