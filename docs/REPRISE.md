@@ -304,6 +304,20 @@ Limite : un message qui porte sur un AUTRE sujet que le chantier tenu y est
 quand même déposé (la session ne sait qu'après) ; il rejoint aussi le
 nouveau chantier si la session l'ouvre dans les 15 min.
 
+## 2 sexdecies. 29 sept. nuit : un sujet = un fil, relais, réveil immédiat (chantiers `450afa9e` + `58e0f05c`, migration 0028)
+
+Branche `agent/synchro` (contient la PR #7). Voir CLAUDE.md « Session et
+cockpit : deux portes égales ». Vérifié : verifier-base 357/357 (§29),
+verifier-reponses 56/56 (§13-14), verifier-web 376/376, tests purs (reporter
+10/10, renforts 17/17). Preuve du réveil : un faux jeton part vraiment vers
+api.anthropic.com (401 authentication_error enregistré). Reste :
+- le JETON de la routine : geste de Raphaël (action posée sur `450afa9e`) ;
+  pas encore constaté qu'un /fire réveille la session chef elle-même ;
+- FacePro : les 2 demandes de renfort seront ouvertes par la chef relais (cockpit)
+  à son prochain passage, une fois `main` à jour (le lanceur prend main).
+- non fait : la case « Écrire à Claude » dans l'onglet « Tout » (seulement vue
+  projet) ; le module embarqué (`embed/`) n'a pas les boutons de côté / reporter.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

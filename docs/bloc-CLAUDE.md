@@ -32,6 +32,19 @@ demandes des utilisateurs, progression des autres sessions.
   sans `--chantier`). Son écran affiche « réponse en attente » jusque-là. Sur un
   fil que personne ne tient, la session chef confie la réponse à un agent
   (« Répondre : … ») : ne réponds pas en doublon.
+- **UN SUJET = UN FIL, LA SESSION ET LE COCKPIT SONT DEUX PORTES ÉGALES** (29
+  sept. : « on discute de plusieurs points et tu y réponds en essayant de tout
+  condenser […] je zappe certaines choses » ; « on peut utiliser peu importe
+  soit le cockpit soit la session Claude »). Un message qui aborde plusieurs
+  sujets : rattache CHACUN à son chantier (`scripts/cockpit-chantier.sh
+  --ouvrir` : il reprend, regroupe ou crée), réponds normalement dans la
+  session ET écris la réponse de chaque sujet dans son fil
+  (`scripts/cockpit-progression.sh --chantier <id> --point "…"`). Ses mots y
+  sont recopiés tout seuls (hook de suivi) ; ta réponse, c'est toi. Le hook
+  d'arrêt refuse UNE fois l'arrêt si un chantier ouvert ou repris pendant le
+  tour n'a pas sa réponse dans son fil. Il demande de mettre de côté, reporter
+  ou abandonner : `scripts/cockpit-chantier.sh --de-cote <id> [--jusqu-au
+  AAAA-MM-JJ]` ou `--abandonner <id>` (mêmes gestes que les boutons du fil).
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh

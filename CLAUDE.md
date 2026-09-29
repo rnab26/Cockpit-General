@@ -55,8 +55,8 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28)
-node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil (vrais hooks)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29)
+node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -266,9 +266,53 @@ récent en bas, ouverture en bas, Claude à gauche / toi à droite, les cartes
 (question, fusion, vérification, décision) TOUJOURS en dernier, et après son
 message « réponse en attente » (qui, et le prochain passage de la chef :
 `prochain_passage_chef`, `chefs.reveil_minute` posé par `chef.sh --reveil …
---minute`). Réveil immédiat quand il écrit : possible par le déclencheur API
-d'une routine (doc Claude Code « routines », `/fire`, jeton créé à la main sur
-claude.ai), question posée à Raphaël le 29 sept. `verifier-reponses` §9-11.
+--minute`). `verifier-reponses` §9-11.
+
+## Session et cockpit : deux portes égales, un sujet = un fil (29 sept. 2026, migration 0028)
+
+Raphaël : « tu réponds en essayant de tout condenser dans un message […] je
+zappe certaines choses. Le but du cockpit est de créer des chantiers et une
+ligne avec un chat sur chaque sujet […] le mettre de côté, l'abandonner ou le
+reporter […] en live » ; « on peut utiliser peu importe soit le cockpit soit la
+session Claude ». Complète la PR #7 (0027 : ses mots tapés en session sont
+recopiés dans le fil).
+- **Côté session** : `hooks/prompt-rappel.sh` ouvre un « tour » à chaque VRAI
+  message (fichier `<.git>/cockpit-tour`, même filtre que `suivi.sh`) et dit
+  « un sujet = un fil » ; `chantier.sh --ouvrir` y note le chantier ; le hook
+  Stop (`autonome.sh`, déjà déclaré partout : rien à relancer) refuse l'arrêt
+  UNE fois si un chantier du tour n'a aucune réponse de session dans son fil
+  depuis le message (`--point` ; la ligne « Chantier ouvert/repris… » ne compte
+  pas). La session répond normalement ici ET dans chaque fil.
+- **Côté cockpit** : case « Écrire à Claude sur ce projet… » (vue projet,
+  `EcrireAuProjet`) → « Discussion du projet » ; un message multi-sujets est
+  réparti par l'agent « Répondre » de la chef (un chantier par sujet, une
+  réponse par fil). Menu ⋯ du fil : Mettre de côté, Reporter… (4 choix ou une
+  date, `lib/reporter.ts`), Abandonner (archivé, Désarchiver le rend) →
+  `mettre_de_cote`, `abandonner_chantier` (admin ou session :
+  `chantier.sh --de-cote|--abandonner`). Un report daté revient seul dans
+  « Prêt à lancer » (`reveiller_reportes` : passe de la chef, ouverture de l'app).
+- **Projet sans chef vivante** (`chef_vivante` : vue < 3 h) : LA chef relais
+  (`chef_relais()` : celle du cockpit si elle vit) ouvre ses renforts et, s'il a
+  des messages sans réponse et aucune session vivante, UNE session du projet
+  (« [cockpit-relais] », au plus 1/h, `chef.sh --ouverture`) — jamais son
+  travail ni sa réponse d'ici (`relais_a_servir`, `chef.sh --relais-texte`).
+  Une session relais ne devient jamais chef. L'app : « en attente : aucune
+  session <projet> active · la session chef de cockpit l'ouvre vers HH h MM ».
+- **Réveil immédiat** (déclencheur API d'une Routine, doc « routines » lue le
+  29 sept. : `POST https://api.anthropic.com/v1/claude_code/routines/<trig>/fire`,
+  `Authorization: Bearer`, `anthropic-beta: experimental-cc-routine-2026-04-01`,
+  `anthropic-version: 2023-06-01`, corps `{"text"}`). Raphaël colle adresse +
+  jeton dans Réglages du projet (`ReveilImmediat.tsx`) → `regler_reveil_immediat`
+  met le jeton dans le COFFRE (Vault), jamais dans une table ; un trigger sur
+  ses messages libres, ses réponses et les demandes de renfort appelle
+  `reveiller_chef` → pg_net (après validation), au plus 1 / 5 min par projet,
+  rien si une session vivante tient le chantier ; cible = `cible_reveil` (sa
+  chef vivante, sinon la chef relais ; un projet de test : lui seul). Sans
+  jeton : passage horaire, l'app dit l'heure (`prochain_passage_chef` ; ~3 min
+  après un réveil). Non vérifié : qu'un /fire sur la routine liée à la session
+  chef la réveille (la doc parle de « nouvelle session ») — à constater au
+  premier jeton (`etat_reveil_immediat` → `session`).
+`verifier-base` §29, `verifier-reponses` §13-14, `verifier-reporter.ts`.
 
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 
