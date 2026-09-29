@@ -1267,12 +1267,19 @@ try {
   await dlgN.waitFor({ timeout: 5000 })
   const titrePhoto2 = `${MARQUE} chantier avec photo directe`
   await page.getByTestId('titre').fill(titrePhoto2)
-  await dlgN.getByTestId('entree-medias').setInputFiles({ name: 'capture.png', mimeType: 'image/png', buffer: PNG_TEST })
+  verifie('création : la taille max est affichée (50 Mo)', /50 Mo au plus par fichier/.test(await dlgN.getByTestId('limite-medias').innerText()))
+  verifie('création : le sélecteur accepte tout type de fichier (aucun filtre)', await dlgN.getByTestId('entree-medias').getAttribute('accept') === null)
+  await dlgN.getByTestId('entree-medias').setInputFiles([{ name: 'capture.png', mimeType: 'image/png', buffer: PNG_TEST }, { name: 'devis.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n') }, { name: 'plan.dwg', mimeType: 'application/octet-stream', buffer: Buffer.from('AC1027 plan de test') }])
   await page.getByTestId('creer-chantier').click()
-  verifie('création avec photo : toast « créé, avec 1 pièce jointe »', await toastAuPremierPlan(/créé, avec 1 pièce jointe\./))
+  verifie('création avec photo + PDF + fichier quelconque : toast « créé, avec 3 pièces jointes »', await toastAuPremierPlan(/créé, avec 3 pièces jointes\./))
   const idPhoto2 = sql(`select id from chantiers where titre = '${esc(titrePhoto2)}'`)[0]?.id
   const msgPhoto2 = idPhoto2 ? sql(`select medias from messages where chantier_id = '${idPhoto2}'`) : []
-  verifie('création avec photo : la photo est dans le fil, dans le dossier du chantier', msgPhoto2.length === 1 && msgPhoto2[0].medias[0]?.chemin.startsWith(`${projet.id}/${idPhoto2}/`), msgPhoto2)
+  verifie('création avec photo + PDF + fichier : les trois sont dans le fil, dans le dossier du chantier', msgPhoto2.length === 1 && msgPhoto2[0].medias.length === 3 && msgPhoto2[0].medias.every((m) => m.chemin.startsWith(`${projet.id}/${idPhoto2}/`)) && ['capture.png', 'devis.pdf', 'plan.dwg'].every((n) => msgPhoto2[0].medias.some((m) => m.nom === n)), msgPhoto2)
+  let recupere2 = ''
+  try { recupere2 = idPhoto2 ? execFileSync(path.resolve(racineApp, '..', 'scripts', 'media.sh'), ['--chantier', idPhoto2], { encoding: 'utf8', env: { ...process.env, COCKPIT_MEDIAS_DIR: path.join(CAPTURES, 'medias-creation-2') } }) : '' } catch (e) { recupere2 = String(e.stderr ?? e.message) }
+  const lignes2 = recupere2.split('\n').map((l) => l.trim())
+  const pdfRecupere = lignes2.find((l) => l.endsWith('devis.pdf'))
+  verifie('scripts/media.sh --chantier récupère la photo, le PDF et le fichier joints à la création', !!pdfRecupere && existsSync(pdfRecupere) && readFileSync(pdfRecupere).subarray(0, 5).toString() === '%PDF-' && lignes2.some((l) => l.endsWith('capture.png')) && lignes2.some((l) => l.endsWith('plan.dwg')), recupere2)
   await deplierTout()
   const lignePhoto = ligneDe(titrePhoto2)
   await lignePhoto.waitFor({ timeout: 15000 })

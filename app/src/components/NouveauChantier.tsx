@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { Champ, Input, Select, Textarea } from '../ui/Champs.tsx'
 import { ETATS, PRIORITES, infoEtat } from '../lib/etats.ts'
 import { titresProches } from '../lib/doublons.ts'
-import { resumeMedias } from '../lib/medias.ts'
+import { MEDIAS_MAX_PAR_MESSAGE, TAILLE_MAX_MEDIA, resumeMedias } from '../lib/medias.ts'
 import type { Etat, Priorite } from '../lib/types.ts'
 import { useConfirmer } from '../ui/Confirm.tsx'
 import { CONFIRMER_ABANDON } from '../ui/Modale.ts'
@@ -128,9 +128,9 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
           <Textarea rows={4} value={demande} onChange={(e) => setDemande(e.target.value)} data-testid="demande" />
         </Champ>
         <div>
-          <span className="mb-1 block text-sm font-medium text-texte-2">Photos, vidéos, fichiers</span>
+          <span className="mb-1 block text-sm font-medium text-texte-2">Pièces jointes <span className="font-normal">(photo, vidéo, PDF, tout fichier)</span></span>
           <ChoisirMedias ctrl={pj} testId="medias-creation" />
-          {pj.pieces.length ? <p className="mt-1 text-xs text-texte-2">Envoyées avec la demande, quand tu touches « Créer ». Le crayon sur une photo : dessiner dessus.</p> : null}
+          <p className="mt-1 text-xs text-texte-2" data-testid="limite-medias">{pj.pieces.length ? 'Envoyées avec la demande, quand tu touches « Créer ». Le crayon sur une photo : dessiner dessus. ' : ''}{TAILLE_MAX_MEDIA / 1024 / 1024} Mo au plus par fichier, {MEDIAS_MAX_PAR_MESSAGE} fichiers au plus.</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Champ label="Section">

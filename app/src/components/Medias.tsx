@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { File, FileText, Film, Image, Mic, Paperclip, PenLine, X, type LucideIcon } from 'lucide-react'
 import type { Media } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
-import { ACCEPT_MEDIAS, BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
+import { BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { Annoter } from './Annoter.tsx'
@@ -212,7 +212,7 @@ export function BoutonJoindre({ ctrl, icone = false }: { ctrl: MediasAJoindre; i
   const input = useRef<HTMLInputElement>(null)
   return (
     <>
-      <input ref={input} type="file" multiple accept={ACCEPT_MEDIAS} className="hidden" data-testid="entree-medias"
+      <input ref={input} type="file" multiple className="hidden" data-testid="entree-medias"
         onChange={(e) => { ctrl.ajouter(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       <button type="button" onClick={() => input.current?.click()} data-testid="ajouter-media"
         title="Joindre une photo, une vidéo ou un fichier" aria-label="Joindre une photo, une vidéo ou un fichier"
