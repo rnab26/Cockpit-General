@@ -72,7 +72,8 @@
  --muted-bg:#1f2937;--track:#374151;--primary:#2dd4bf;--primary-fg:#042f2e;--danger:#f87171;
  --warning:#fbbf24;--warning-fg:#1c1917;--success:#4ade80}}
 .ck p,.ck ul,.ck h2{margin:0;padding:0}.ck ul{list-style:none}
-.ck button,.ck input,.ck textarea{font:inherit;color:inherit;letter-spacing:inherit;text-transform:none}
+/* :where() = spécificité de .ck seule : .btn, .champ… (déclarés après) gardent leur couleur et leur taille */
+.ck :where(button,input,textarea){font:inherit;color:inherit;letter-spacing:inherit;text-transform:none}
 .entete{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;
  padding:0 0 8px;border-bottom:1px solid var(--border);margin-bottom:10px}
 .entete h2{font-size:17px;font-weight:700;line-height:1.3}
