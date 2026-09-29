@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { SquareCheck, Copy, FolderTree, Layers, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
+import { SquareCheck, Copy, Download, FolderTree, Layers, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { useMenuQuiSeFerme } from '../ui/Modale.ts'
 
-export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir'
+export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir' | 'installer'
 
 export interface Pastilles { travaillent: number; aToi: number }
 
@@ -25,11 +25,13 @@ function PastillesOnglet({ p }: { p: Pastilles | undefined; actif?: boolean }) {
   )
 }
 
-export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin, chargement, direct, derniereMaj, onActualiser, onNouveau, onMenu, selectionActive }: {
+export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin, chargement, direct, derniereMaj, onActualiser, onNouveau, onMenu, selectionActive, installable }: {
   projets: Projet[]; projet: Projet | null; vueTout: boolean; choisirVue: (id: string) => void
   pastilles: Map<string, Pastilles>; admin: boolean
   chargement: boolean; direct: EtatDirect; derniereMaj: Date | null
   onActualiser: () => void; onNouveau: () => void; onMenu: (a: ActionMenu) => void; selectionActive: boolean
+  /** Faux quand le cockpit tourne déjà en appli installée. */
+  installable: boolean
 }) {
   const [menu, setMenu] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -75,6 +77,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
               {projet && !vueTout && admin ? item('doublons', 'Doublons', Copy) : null}
               {projet && !vueTout && admin ? item('choisir', selectionActive ? 'Terminer la sélection' : 'Choisir (sélection groupée)', SquareCheck) : null}
               {admin ? item('projets', 'Projets & membres', Layers) : null}
+              {installable ? item('installer', 'Installer l’appli', Download) : null}
               {item('reglages', 'Réglages', Settings)}
             </div>
           ) : null}

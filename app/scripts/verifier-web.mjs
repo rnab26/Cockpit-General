@@ -1642,6 +1642,45 @@ try {
   verifie('le bouton choisi est marqué', (await page.getByTestId('silence-minutes').getByRole('button', { name: `${autreSilence} min`, exact: true }).getAttribute('aria-pressed')) === 'true')
   await capture(page, 'reglages')
   await page.getByTestId('silence-minutes').getByRole('button', { name: `${silenceMin} min`, exact: true }).click()
+  verifie('Réglages : section « Appli sur le téléphone » avec son bouton', await page.getByTestId('installer-appli-reglages').count() === 1)
+  await page.keyboard.press('Escape')
+
+  // --- appli installable (manifeste, service worker, « Installer l'appli »)
+  console.log('  — appli installable')
+  const manif = await page.evaluate(async () => {
+    const l = document.querySelector('link[rel="manifest"]')
+    if (!l) return null
+    const r = await fetch(l.href)
+    return r.ok ? r.json() : null
+  })
+  verifie('manifeste servi : plein écran, départ sous /Cockpit-General/, icônes 192 et 512', manif?.display === 'standalone' && manif?.start_url === '/Cockpit-General/'
+    && ['192x192', '512x512'].every((s) => manif.icons.some((i) => i.sizes === s)), manif)
+  const icones = await page.evaluate(async (m) => Promise.all(m.icons.map(async (i) => (await fetch(new URL(i.src, document.querySelector('link[rel="manifest"]').href))).headers.get('content-type'))), manif ?? { icons: [] })
+  verifie('icônes du manifeste servies en PNG', icones.length >= 3 && icones.every((t) => t?.startsWith('image/png')), icones)
+  const sw = await page.evaluate(() => Promise.race([navigator.serviceWorker.ready.then((r) => r.active?.scriptURL ?? null), new Promise((ok) => setTimeout(() => ok(null), 8000))]))
+  verifie('service worker enregistré et actif (sw.js, portée /Cockpit-General/)', typeof sw === 'string' && sw.endsWith('/Cockpit-General/sw.js'), sw)
+  await page.getByTestId('menu').click()
+  const itemInstaller = page.getByRole('menuitem', { name: /Installer l’appli/ })
+  verifie('menu ⋯ : « Installer l’appli » présent', await itemInstaller.count() === 1)
+  await itemInstaller.click()
+  const aide = page.getByTestId('aide-installation')
+  await aide.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('sans invite du navigateur : la marche à suivre s’affiche', await aide.isVisible().catch(() => false) && /Installer l’appli/.test(await aide.textContent()))
+  await capture(page, 'installer-aide')
+  await page.keyboard.press('Escape')
+  await aide.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  // Chrome Android : l'invite arrive → le même toucher ouvre la vraie fenêtre d'installation.
+  await page.evaluate(() => {
+    const e = new Event('beforeinstallprompt', { cancelable: true })
+    e.prompt = async () => { window.__inviteOuverte = true }
+    e.userChoice = Promise.resolve({ outcome: 'accepted' })
+    window.dispatchEvent(e)
+  })
+  await page.getByTestId('menu').click()
+  await page.getByRole('menuitem', { name: /Installer l’appli/ }).click()
+  verifie('avec l’invite de Chrome : un toucher l’ouvre, toast « Appli installée »', await toastAuPremierPlan(/Appli installée/) && await page.evaluate(() => window.__inviteOuverte === true))
+  await page.getByTestId('menu').click()
+  verifie('une fois installée : « Installer l’appli » disparaît du menu', await page.getByRole('menuitem', { name: /Installer l’appli/ }).count() === 0)
   await page.keyboard.press('Escape')
 
   // ===================================================================
