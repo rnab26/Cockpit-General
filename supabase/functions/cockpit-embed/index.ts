@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { type SupabaseClient, createClient } from "jsr:@supabase/supabase-js@2"
+import { bornerReproduction } from "./reproduction.ts"
 
 /**
  * cockpit-embed — la fonction serveur du module embarqué du Cockpit.
@@ -20,6 +21,12 @@ import { type SupabaseClient, createClient } from "jsr:@supabase/supabase-js@2"
  * `reproduction`, `cle_embed`, `created_by`, `answered_by` — le travail
  * interne des sessions n'est pas pour l'utilisateur final (D-03, D-05).
  * Les colonnes renvoyées sont listées explicitement, jamais `select *`.
+ *
+ * `reproduction` (D-05) ENTRE mais ne ressort pas : `creer` et `corriger`
+ * acceptent ce que le module a capturé (page, appareil, actions, erreurs),
+ * refait entièrement le tri et les bornes (./reproduction.ts), et l'écrivent
+ * pour les sessions et l'app. Une capture illisible est ignorée, jamais une
+ * cause d'échec de la demande.
  *
  * verify_jwt = false (déployée avec VERIFY_JWT=false
  * scripts/deployer-fonction.sh cockpit-embed) : la clé du projet EST
@@ -197,6 +204,7 @@ async function actionCreer(sb: SupabaseClient, projet: Projet, corps: Record<str
     origine: "utilisateur",
     etat: "a_trier",
     created_by: null,
+    reproduction: bornerReproduction(corps.reproduction, "creation"),
   }).select(COLONNES_CHANTIER).single()
   if (error) throw erreurDepuis(error)
   // Qui a demandé : la table ne porte pas de nom en clair (created_by est un
@@ -255,6 +263,13 @@ async function actionCorriger(sb: SupabaseClient, projet: Projet, corps: Record<
   if (!mots) throw new ErreurLisible(400, "Écris ce qui ne marche pas avant d'envoyer la correction.")
   const { error } = await sb.rpc("corriger_chantier", { p_id: id, p_par: auteurDe(corps), p_mots: mots })
   if (error) throw erreurDepuis(error)
+  // Le scénario qui plante MAINTENANT remplace celui de la création : c'est
+  // lui qu'une session doit rejouer. Pas de capture (désactivée) → on garde l'ancienne.
+  const repro = bornerReproduction(corps.reproduction, "correction")
+  if (repro) {
+    const { error: e2 } = await sb.from("chantiers").update({ reproduction: repro }).eq("id", id).eq("projet_id", projet.id)
+    if (e2) console.error("cockpit-embed : reproduction de la correction non écrite :", e2.message)
+  }
   return { ok: true }
 }
 

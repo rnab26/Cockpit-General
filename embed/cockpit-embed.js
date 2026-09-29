@@ -11,7 +11,9 @@
  *   après la balise), data-fonction="<url de la fonction>", data-intervalle
  *   ="15" (secondes entre deux rafraîchissements), data-titre="Demandes et
  *   corrections", data-silence="15" (minutes sans nouvelle d'une session
- *   avant de ne plus la montrer « en cours » — même défaut que l'app).
+ *   avant de ne plus la montrer « en cours » — même défaut que l'app),
+ *   data-reproduction="non" (ne rien joindre pour rejouer, voir <capture>),
+ *   data-version="<commit>" (la version servie, si le site n'a pas de /health).
  *
  * POURQUOI PAS DE FRAMEWORK : ce script doit vivre dans FacePro (Jinja + JS
  * vanilla), dans le Trieur (React) et dans n'importe quelle page HTML à
@@ -48,6 +50,9 @@
     titre: balise.getAttribute('data-titre') || 'Demandes et corrections',
     // null = défaut de l'app (SILENCE_DEFAUT_MIN, bloc <presence>).
     silenceMin: parseInt(balise.getAttribute('data-silence') || '', 10) > 0 ? parseInt(balise.getAttribute('data-silence'), 10) : null,
+    // D-05 : joindre de quoi rejouer la demande (bloc <capture>), sauf data-reproduction="non".
+    reproduction: !/^(non|no|false|0|off)$/i.test((balise.getAttribute('data-reproduction') || '').trim()),
+    version: (balise.getAttribute('data-version') || '').trim().slice(0, 64),
   }
 
   let hote = cfg.cible ? document.querySelector(cfg.cible) : null
@@ -57,6 +62,229 @@
     balise.insertAdjacentElement('afterend', hote)
   }
   const racine = hote.attachShadow({ mode: 'open' })
+
+  // <nettoyer-url> — COPIE de supabase/functions/cockpit-embed/reproduction.ts
+  // (nettoyerUrl, masquerSecrets) : le module n'a pas d'étape de build, et la
+  // fonction serveur refait le même nettoyage (on ne fait pas confiance au
+  // navigateur). app/scripts/verifier-reproduction.ts exécute ce bloc à côté de
+  // la version serveur, sur les mêmes cas, et refuse toute divergence.
+  /** Noms de paramètres qui portent un secret ou une donnée personnelle. */
+  const NOM_SECRET = /(^|[_\-.])(token|jeton|key|cle|clef|secret|password|passwd|pass|pwd|mdp|auth|authorization|code|session|sessionid|sid|jwt|signature|sig|otp|apikey|access|refresh|credential|credentials|nonce|state|email|mail|tel|phone|telephone)([_\-.]|$)/i
+  /** Une longue suite sans espace mêlant lettres ET chiffres (24 caractères ou plus) : un jeton, pas un mot. */
+  function aleatoire(mot) {
+    return mot.length >= 24 && /[0-9]/.test(mot) && /[A-Za-z]/.test(mot)
+  }
+  /** Une valeur qui ressemble à un secret : jeton JWT, e-mail, ou longue suite aléatoire.
+   * Un identifiant (uuid) ou un nom lisible (« rapport-2026-09-29-clients ») reste. */
+  function valeurSecrete(v) {
+    if (/^eyJ[\w-]+\.[\w-]+/.test(v)) return true
+    if (/[^@\s/]+@[^@\s/]+\.[a-z]{2,}/i.test(v)) return true
+    return (v.match(/[A-Za-z0-9_]{24,}/g) || []).some(aleatoire)
+  }
+  function nettoyerParams(qs) {
+    const garde = []
+    for (const morceau of qs.split('&')) {
+      if (!morceau) continue
+      const i = morceau.indexOf('=')
+      const nom = i < 0 ? morceau : morceau.slice(0, i)
+      const brute = i < 0 ? '' : morceau.slice(i + 1)
+      let nomLu = nom, valeur = brute
+      try { nomLu = decodeURIComponent(nom.replace(/\+/g, ' ')) } catch { /* garde tel quel */ }
+      try { valeur = decodeURIComponent(brute.replace(/\+/g, ' ')) } catch { /* garde tel quel */ }
+      if (NOM_SECRET.test(nomLu) || valeurSecrete(valeur)) continue
+      garde.push(morceau)
+    }
+    return garde.join('&')
+  }
+  function nettoyerChemin(chemin) {
+    return chemin.split('/').map((s) => {
+      let lu = s
+      try { lu = decodeURIComponent(s) } catch { /* garde tel quel */ }
+      return valeurSecrete(lu) ? '(retire)' : s
+    }).join('/')
+  }
+  /** Une adresse sans rien de secret : ni identifiant:mot de passe, ni jeton dans
+   * les paramètres, le fragment (#access_token=…) ou le chemin. `null` si ce
+   * n'est pas une adresse http(s) lisible. */
+  function nettoyerUrl(brut) {
+    if (typeof brut !== 'string' || !brut.trim()) return null
+    let u
+    try { u = new URL(brut.trim()) } catch { return null }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    u.username = ''
+    u.password = ''
+    const chemin = nettoyerChemin(u.pathname)
+    const qs = nettoyerParams(u.search.replace(/^\?/, ''))
+    let fragment = u.hash.replace(/^#/, '')
+    if (fragment) {
+      const q = fragment.indexOf('?')
+      if (q >= 0) {
+        const p = nettoyerParams(fragment.slice(q + 1))
+        fragment = nettoyerChemin(fragment.slice(0, q)) + (p ? '?' + p : '')
+      } else if (fragment.includes('=')) {
+        fragment = nettoyerParams(fragment)
+      } else {
+        fragment = nettoyerChemin(fragment)
+      }
+    }
+    let out = u.origin + chemin + (qs ? '?' + qs : '') + (fragment ? '#' + fragment : '')
+    if (out.length > 500) out = u.origin + chemin
+    return out.length > 500 ? u.origin : out
+  }
+  /** Un texte libre (message d'erreur, libellé) sans jeton, e-mail ni adresse secrète. */
+  function masquerSecrets(texte, max) {
+    if (typeof texte !== 'string') return ''
+    let t = texte.replace(/\s+/g, ' ').trim()
+    t = t.replace(/https?:\/\/[^\s"'<>]+/g, (m) => nettoyerUrl(m) ?? '(adresse)')
+    t = t.replace(/eyJ[\w-]+\.[\w-]+(\.[\w-]+)?/g, '(retire)')
+    t = t.replace(/[^@\s"'<>()]+@[^@\s"'<>()]+\.[a-z]{2,}/gi, '(e-mail)')
+    t = t.replace(/[A-Za-z0-9_]{24,}/g, (mot) => aleatoire(mot) ? '(retire)' : mot)
+    return t.length > max ? t.slice(0, max - 1) + '…' : t
+  }
+  // </nettoyer-url>
+
+  // <capture> — ce qui permet de REJOUER une demande (D-05). Joint à chaque
+  // demande et à chaque correction, sauf data-reproduction="non" sur la balise.
+  // Ce qui est capturé (et dit dans la doc d'installation) : l'adresse de la
+  // page (sans jetons, mots de passe ni e-mails), son titre, la taille de
+  // l'écran, l'appareil et le navigateur, la langue, l'heure, la version
+  // servie (/health du site, ou data-version), les 20 dernières actions
+  // (pages visitées, boutons et liens touchés par leur LIBELLÉ, champs remplis
+  // par leur NOM — jamais ce qui est tapé) et les 5 dernières erreurs
+  // JavaScript. Rien ne part avant qu'une demande soit envoyée ; le journal vit
+  // dans la mémoire de l'onglet (sessionStorage), jamais ailleurs.
+  const REPRO_CLE = 'cockpit-embed-repro'
+  const journal = { actions: [], erreurs: [], derniere: '' }
+  function lireJournal() {
+    try {
+      const j = JSON.parse(sessionStorage.getItem(REPRO_CLE) || 'null')
+      if (j && Array.isArray(j.actions) && Array.isArray(j.erreurs)) { journal.actions = j.actions.slice(-20); journal.erreurs = j.erreurs.slice(-5) }
+    } catch (e) { /* pas de stockage : journal en mémoire seulement */ }
+  }
+  function garderJournal() {
+    try { sessionStorage.setItem(REPRO_CLE, JSON.stringify({ actions: journal.actions, erreurs: journal.erreurs })) } catch (e) { /* idem */ }
+  }
+  function noter(type, quoi, libelle) {
+    journal.actions.push({ t: new Date().toISOString(), type: type, quoi: quoi, libelle: libelle })
+    if (journal.actions.length > 20) journal.actions.splice(0, journal.actions.length - 20)
+    garderJournal()
+  }
+  function noterErreur(message, source) {
+    journal.erreurs.push({ t: new Date().toISOString(), message: masquerSecrets(message, 300), source: source })
+    if (journal.erreurs.length > 5) journal.erreurs.splice(0, journal.erreurs.length - 5)
+    garderJournal()
+  }
+  function pageVue() {
+    const url = nettoyerUrl(location.href)
+    if (url && url !== journal.derniere) { journal.derniere = url; noter('page', 'page', url) }
+  }
+  // Le libellé VISIBLE d'un élément touché, jamais sa valeur.
+  function libelleDe(el) {
+    const tag = el.tagName.toLowerCase()
+    const aria = el.getAttribute('aria-label') || el.getAttribute('title') || ''
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+      const type = (el.getAttribute('type') || '').toLowerCase()
+      if (type === 'password') return 'mot de passe'
+      let lab = ''
+      try { lab = el.labels && el.labels[0] ? el.labels[0].textContent : '' } catch (e) { /* rien */ }
+      if ((type === 'submit' || type === 'button') && el.value) lab = lab || el.value
+      return lab || aria || el.getAttribute('placeholder') || el.getAttribute('name') || el.id || type || tag
+    }
+    return aria || (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() || el.getAttribute('alt') || tag
+  }
+  function quoiDe(el) {
+    const tag = el.tagName.toLowerCase(), role = el.getAttribute('role') || ''
+    const type = (el.getAttribute('type') || '').toLowerCase()
+    if (tag === 'a' || role === 'link') return 'lien'
+    if (tag === 'input' && (type === 'checkbox' || type === 'radio')) return 'case'
+    if (tag === 'input' && (type === 'submit' || type === 'button')) return 'bouton'
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return 'champ'
+    if (tag === 'summary' || role === 'tab') return 'onglet'
+    return 'bouton'
+  }
+  const INTERACTIF = 'a,button,input,select,textarea,label,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[onclick]'
+  function horsModule(el) { return el instanceof Element && el !== hote && !hote.contains(el) }
+  function installerCapture() {
+    lireJournal()
+    const dernier = journal.actions.filter((a) => a.type === 'page').pop()
+    journal.derniere = dernier ? dernier.libelle : ''
+    pageVue()
+    document.addEventListener('click', (e) => {
+      if (!horsModule(e.target)) return
+      const el = e.target.closest(INTERACTIF)
+      if (!el) return
+      pageVue()
+      noter('clic', quoiDe(el), masquerSecrets(libelleDe(el), 80))
+    }, true)
+    document.addEventListener('change', (e) => {
+      const el = e.target
+      if (!horsModule(el)) return
+      const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || '').toLowerCase()
+      if (!/^(input|textarea|select)$/.test(tag) || type === 'checkbox' || type === 'radio') return
+      noter('saisie', 'champ', masquerSecrets(libelleDe(el), 80))
+    }, true)
+    window.addEventListener('popstate', pageVue)
+    window.addEventListener('hashchange', pageVue)
+    window.addEventListener('error', (e) => {
+      if (!e || !e.message) return
+      noterErreur(e.message, e.filename ? (nettoyerUrl(e.filename) || '') + (e.lineno ? ':' + e.lineno + (e.colno ? ':' + e.colno : '') : '') : '')
+    })
+    window.addEventListener('unhandledrejection', (e) => {
+      const r = e && e.reason
+      noterErreur('Promesse rejetée : ' + (r && r.message ? r.message : typeof r === 'string' ? r : 'sans message'), '')
+    })
+  }
+  // « iPhone · Safari 17 », « Android · Chrome 128 », « Windows · Edge 129 »…
+  function appareilEnMots(ua) {
+    const sys = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+      : /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Appareil inconnu'
+    const nav = [['Edge', /Edg(?:e|A|iOS)?\/(\d+)/], ['Samsung Internet', /SamsungBrowser\/(\d+)/], ['Opera', /OPR\/(\d+)/],
+      ['Firefox', /(?:Firefox|FxiOS)\/(\d+)/], ['Chrome', /(?:Chrome|CriOS)\/(\d+)/], ['Safari', /Version\/(\d+).*Safari/]]
+      .map((n) => { const m = ua.match(n[1]); return m ? n[0] + ' ' + m[1] : null }).find(Boolean)
+    return sys + ' · ' + (nav || 'navigateur inconnu')
+  }
+  // La version servie : data-version sur la balise, sinon /health du site (le
+  // commit que la plupart des hébergeurs y exposent). 1,5 s au plus ; rien si absent.
+  async function versionServie() {
+    if (cfg.version) return cfg.version
+    try {
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null
+      const minuterie = setTimeout(() => { if (ctl) ctl.abort() }, 1500)
+      const r = await fetch(location.origin + '/health', { cache: 'no-store', credentials: 'omit', signal: ctl ? ctl.signal : undefined })
+      clearTimeout(minuterie)
+      if (!r.ok || !/json/.test(r.headers.get('content-type') || '')) return null
+      const j = await r.json()
+      for (const k of ['commit', 'version', 'sha', 'git_sha', 'git_commit', 'render_git_commit', 'build']) {
+        if (j && (typeof j[k] === 'string' || typeof j[k] === 'number') && String(j[k]).length <= 64) return String(j[k])
+      }
+    } catch (e) { /* pas de /health : pas de version */ }
+    return null
+  }
+  // Ce qui part avec la demande (null si désactivé). La fonction serveur refait
+  // tout le tri. Jamais une cause d'échec : au moindre souci, la demande part sans.
+  async function capturer() {
+    try { return await capturerBrut() } catch (e) { return null }
+  }
+  async function capturerBrut() {
+    if (!cfg.reproduction) return null
+    pageVue()
+    const ua = navigator.userAgent || ''
+    let fuseau = ''
+    try { fuseau = Intl.DateTimeFormat().resolvedOptions().timeZone || '' } catch (e) { /* rien */ }
+    return {
+      page: { url: nettoyerUrl(location.href), titre: masquerSecrets(document.title || '', 200) },
+      ecran: { largeur: window.innerWidth, hauteur: window.innerHeight, ratio: window.devicePixelRatio || 1 },
+      appareil: { resume: appareilEnMots(ua), ua: ua.slice(0, 300), tactile: (navigator.maxTouchPoints || 0) > 0 },
+      langue: navigator.language || '',
+      fuseau: fuseau,
+      heure: new Date().toISOString(),
+      version: await versionServie(),
+      actions: journal.actions.slice(-20),
+      erreurs: journal.erreurs.slice(-5),
+    }
+  }
+  if (cfg.reproduction) installerCapture()
+  // </capture>
 
   // ------------------------------------------------------------- styles
   const CSS = `
@@ -599,7 +827,7 @@
   function creer() {
     const n = ui.nouveau
     agir('nouveau', 'form', async () => {
-      await api('creer', { titre: n.titre.trim(), demande: n.demande.trim() })
+      await api('creer', { titre: n.titre.trim(), demande: n.demande.trim(), reproduction: await capturer() })
       ui.nouveau = { titre: '', demande: '' }
       ui.formulaire = false
       ui.bacEnCours = true
@@ -736,7 +964,7 @@
         oninput: (e) => { u.mots = e.target.value; rendre() } }, u.mots),
       h('div', { class: 'ligne' },
         h('button', { class: 'btn', disabled: envoi || !u.mots.trim(), onclick: () => agir(c.id, 'validation', async () => {
-          await api('corriger', { chantier_id: c.id, mots: u.mots.trim() })
+          await api('corriger', { chantier_id: c.id, mots: u.mots.trim(), reproduction: await capturer() })
           u.correction = false; u.mots = ''
         }) }, envoi ? 'Enregistrement…' : '📩 Envoyer la correction'),
         h('button', { class: 'btn sec', disabled: envoi, onclick: () => { u.correction = false; rendre() } }, 'Annuler')))
