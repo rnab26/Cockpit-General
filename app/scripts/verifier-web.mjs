@@ -35,7 +35,7 @@
 // SUPABASE_SERVICE_ROLE_KEY pour scripts/sql.sh.
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { deflateSync, crc32 } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
@@ -1147,6 +1147,83 @@ try {
   await ligneTest.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
   verifie('le chantier supprimé disparaît de l’écran et de la base', await ligneTest.count() === 0 && sql(`select count(*) as n from chantiers where titre like '${MARQUE}%'`)[0].n === 0)
   verifie('la suppression a laissé sa trace dans « supprimes »', sql(`select count(*) as n from supprimes where ligne->>'titre' like '${MARQUE}%'`)[0].n >= 1)
+
+  // Joindre une photo DÈS la création (29 sept. 2026 : le dessin de Raphaël sur « Quitter une carte » n'avait jamais été enregistré).
+  const objetsDuProjet = () => sql(`select count(*) as n from storage.objects where bucket_id = 'cockpit-medias' and name like '${projet.id}/%'`)[0].n
+  const objetsAvantCreation = objetsDuProjet()
+  await page.getByTestId('nouveau-chantier').click()
+  const dlgN = page.getByRole('dialog').filter({ has: page.getByTestId('creer-chantier') })
+  await dlgN.waitFor({ timeout: 5000 })
+  const titrePhoto = `${MARQUE} chantier avec photo`
+  await page.getByTestId('titre').fill(titrePhoto)
+  verifie('création : « Joindre » est proposé dans le formulaire', await dlgN.getByTestId('ajouter-media').isVisible())
+  await dlgN.getByTestId('entree-medias').setInputFiles({ name: 'zones.png', mimeType: 'image/png', buffer: PNG_PHOTO })
+  await dlgN.locator('[data-testid="piece-jointe"][data-etat="attente"]').waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('création : la photo s’affiche en vignette, gardée sur l’appareil tant que « Créer » n’est pas touché', await dlgN.locator('[data-testid="piece-jointe"][data-etat="attente"] img').count() === 1 && objetsDuProjet() === objetsAvantCreation)
+  // Le crayon, avant la création : l'image annotée remplace la pièce, sur l'appareil.
+  const crayonN = dlgN.getByTestId('crayon-media')
+  verifie('création : le crayon est sur la photo jointe', await crayonN.count() === 1)
+  await crayonN.click()
+  const annoterN = page.getByTestId('annoter')
+  await annoterN.getByTestId('annoter-toile').waitFor({ state: 'visible', timeout: 8000 })
+  await tracer(page)
+  await annoterN.getByTestId('annoter-enregistrer').click()
+  await annoterN.waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+  verifie('création : le dessin remplace la photo jointe (toujours pas envoyée)', await dlgN.locator('[data-testid="piece-jointe"][data-etat="attente"] img').getAttribute('alt').catch(() => null) === 'zones-annotee.png' && objetsDuProjet() === objetsAvantCreation)
+  await capture(page, 'creation-avec-photo')
+  // Quitter avec une photo jointe : on demande d'abord (règle commune, ui/Modale.ts).
+  await page.keyboard.press('Escape')
+  const confN = page.locator('dialog[open]', { hasText: 'Quitter sans envoyer ?' })
+  await confN.waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('création : Échap avec une photo jointe demande avant de la perdre', await confN.count() === 1)
+  await confN.getByRole('button', { name: 'Rester' }).click()
+  await page.waitForTimeout(300)
+  verifie('création : « Rester » garde le titre et la photo', await dlgN.isVisible() && await page.getByTestId('titre').inputValue() === titrePhoto && await dlgN.getByTestId('piece-jointe').count() === 1)
+  // Premier envoi : le stockage refuse (réseau coupé) → le chantier est créé, la photo reste là, avec « réessayer ».
+  const routeStockage = '**/storage/v1/object/cockpit-medias/**'
+  await page.route(routeStockage, (r) => r.abort())
+  await page.getByTestId('creer-chantier').click()
+  await page.getByTestId('pieces-a-renvoyer').waitFor({ timeout: 15000 }).catch(() => {})
+  const creePhoto = sql(`select id from chantiers where titre = '${esc(titrePhoto)}'`)
+  verifie('dépôt en échec : le chantier est créé quand même', creePhoto.length === 1, creePhoto)
+  verifie('dépôt en échec : la fenêtre reste ouverte sur la photo non partie, marquée « réessayer »', await page.getByTestId('pieces-a-renvoyer').isVisible() && await page.locator('[data-testid="pieces-a-renvoyer"] [data-testid="piece-jointe"][data-etat="erreur"]').count() === 1)
+  await capture(page, 'creation-photo-echec')
+  await page.unroute(routeStockage)
+  // La panne était voulue (route coupée) : son ERR_FAILED n'est pas une erreur de l'app.
+  for (let i = erreursConsole.length - 1; i >= 0; i--) if (/ERR_FAILED.*storage\/v1\/object\/cockpit-medias\//.test(erreursConsole[i])) erreursConsole.splice(i, 1)
+  await page.getByTestId('envoyer-pieces').click()
+  await page.getByTestId('pieces-a-renvoyer').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {})
+  verifie('« Envoyer les pièces » : toast visible, la fenêtre se ferme', await toastAuPremierPlan(/Pièces jointes ajoutées/) && await page.getByTestId('pieces-a-renvoyer').count() === 0)
+  const idPhoto = creePhoto[0]?.id
+  const msgPhoto = idPhoto ? sql(`select kind, corps, medias from messages where chantier_id = '${idPhoto}'`) : []
+  verifie('la photo est dans le fil du chantier (un message info, rangée dans son dossier)', msgPhoto.length === 1 && msgPhoto[0].kind === 'info' && msgPhoto[0].medias.length === 1 && msgPhoto[0].medias[0].nom === 'zones-annotee.png' && msgPhoto[0].medias[0].chemin.startsWith(`${projet.id}/${idPhoto}/`), msgPhoto)
+  // Une session la récupère (scripts/media.sh --chantier) : le fichier arrive, c'est bien une image PNG.
+  let recupere = ''
+  try { recupere = execFileSync(path.resolve(racineApp, '..', 'scripts', 'media.sh'), ['--chantier', idPhoto], { encoding: 'utf8', env: { ...process.env, COCKPIT_MEDIAS_DIR: path.join(CAPTURES, 'medias-creation') } }) } catch (e) { recupere = String(e.stderr ?? e.message) }
+  const fichierRecupere = recupere.split('\n').map((l) => l.trim()).find((l) => l.endsWith('zones-annotee.png'))
+  verifie('scripts/media.sh --chantier récupère la photo jointe à la création', !!fichierRecupere && existsSync(fichierRecupere) && readFileSync(fichierRecupere).subarray(1, 4).toString() === 'PNG', recupere)
+  // Et sans panne : Créer envoie tout d'un coup.
+  await page.getByTestId('nouveau-chantier').click()
+  await dlgN.waitFor({ timeout: 5000 })
+  const titrePhoto2 = `${MARQUE} chantier avec photo directe`
+  await page.getByTestId('titre').fill(titrePhoto2)
+  await dlgN.getByTestId('entree-medias').setInputFiles({ name: 'capture.png', mimeType: 'image/png', buffer: PNG_TEST })
+  await page.getByTestId('creer-chantier').click()
+  verifie('création avec photo : toast « créé, avec 1 pièce jointe »', await toastAuPremierPlan(/créé, avec 1 pièce jointe\./))
+  const idPhoto2 = sql(`select id from chantiers where titre = '${esc(titrePhoto2)}'`)[0]?.id
+  const msgPhoto2 = idPhoto2 ? sql(`select medias from messages where chantier_id = '${idPhoto2}'`) : []
+  verifie('création avec photo : la photo est dans le fil, dans le dossier du chantier', msgPhoto2.length === 1 && msgPhoto2[0].medias[0]?.chemin.startsWith(`${projet.id}/${idPhoto2}/`), msgPhoto2)
+  await deplierTout()
+  const lignePhoto = ligneDe(titrePhoto2)
+  await lignePhoto.waitFor({ timeout: 15000 })
+  await lignePhoto.getByTestId('ouvrir-chantier').click()
+  await attendreConv(titrePhoto2)
+  const vignetteN = conv().locator('[data-testid="media"] img').first()
+  await vignetteN.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  verifie('la photo jointe à la création s’affiche dans la conversation du chantier', await vignetteN.count() === 1 && await vignetteN.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
+  await capture(page, 'creation-photo-dans-le-fil')
+  await fermerConv()
 
   // --- menu et réglages (délai de silence, fenêtre « fini »)
   await page.getByTestId('menu').click()

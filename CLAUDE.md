@@ -224,6 +224,12 @@ une question, « Écrire à Claude », certifier/corriger). Stockage PRIVÉ
 pas de fichier : les médias partent dans un message `info` juste après. Une
 session les récupère avec `scripts/media.sh --message|--chantier <id>` (📎 dans
 le hook) et les REGARDE avant de répondre.
+Dès la création aussi (« + Chantier », 29 sept.) : le chantier n'a pas d'id
+avant, donc les fichiers restent sur l'appareil (crayon possible), l'id est
+choisi par l'app à l'insertion, puis ils partent dans `<projet>/<chantier>/`
+et un message `info` (`useMediasAJoindre(…, { differe: true })`). Dépôt en
+échec : chantier créé, pièces gardées, « Envoyer les pièces ». Le module
+embarqué (`embed/`) ne joint PAS de fichier : décision à prendre à part.
 **Crayon** (29 sept.) : sur toute image jointe (import fini), dessiner dessus
 (`Annoter.tsx`, un `<canvas>`) ; avant l'envoi l'annotée remplace la pièce,
 après l'envoi elle part en nouveau message « Image annotée : … » du fil.

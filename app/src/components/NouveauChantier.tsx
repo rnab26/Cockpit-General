@@ -1,5 +1,5 @@
 import { TriangleAlert } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
@@ -8,12 +8,27 @@ import { Button } from '../ui/Button.tsx'
 import { Champ, Input, Select, Textarea } from '../ui/Champs.tsx'
 import { ETATS, PRIORITES, infoEtat } from '../lib/etats.ts'
 import { titresProches } from '../lib/doublons.ts'
+import { resumeMedias } from '../lib/medias.ts'
 import type { Etat, Priorite } from '../lib/types.ts'
+import { useConfirmer } from '../ui/Confirm.tsx'
+import { CONFIRMER_ABANDON } from '../ui/Modale.ts'
+import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 
-/** Créer un chantier. Un utilisateur non admin crée une demande « à trier » (la RLS l'impose). */
+/**
+ * Créer un chantier. Un utilisateur non admin crée une demande « à trier » (la RLS l'impose).
+ * Photos, vidéos, fichiers (et le crayon) dès la création (29 sept. 2026) : ils
+ * restent sur l'appareil jusqu'à « Créer » ; le chantier est créé, puis ils
+ * partent dans son dossier et dans un message `info` de son fil (comme les
+ * réponses). Si un dépôt échoue, le chantier existe déjà : la fenêtre reste
+ * ouverte sur les pièces non parties, avec « réessayer ».
+ */
 export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFermer: () => void }) {
-  const { admin, projet, sections, chantiers, recharger, moi } = useCockpit()
+  const { admin, projet, sections, chantiers, recharger, moi, par } = useCockpit()
   const toast = useToast()
+  const confirmer = useConfirmer()
+  const pj = useMediasAJoindre(projet.id, null, { differe: true })
+  /** Le chantier déjà créé dont des pièces restent à envoyer. */
+  const [cree, setCree] = useState<{ id: string; titre: string } | null>(null)
   const [titre, setTitre] = useState('')
   const [demande, setDemande] = useState('')
   const [sectionId, setSectionId] = useState('')
@@ -22,24 +37,82 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
   const [enCours, setEnCours] = useState(false)
   const proches = useMemo(() => titresProches(titre, chantiers).slice(0, 3), [titre, chantiers])
 
-  const reinitialiser = () => { setTitre(''); setDemande(''); setSectionId(''); setPriorite('normale'); setEtat('a_trier') }
+  const { vider } = pj
+  const reinitialiser = useCallback(() => { setTitre(''); setDemande(''); setSectionId(''); setPriorite('normale'); setEtat('a_trier'); setCree(null); vider() }, [vider])
+  // Quitter : le brouillon (texte ou pièce jointe) est perdu, la fenêtre l'a demandé (Dialog `brouillon`) ou « Annuler » l'a dit.
+  const fermer = useCallback(() => { reinitialiser(); onFermer() }, [reinitialiser, onFermer])
+  const annuler = async () => {
+    // Chantier créé mais pièces pas parties : « Fermer » les abandonne, on le demande d'abord.
+    if (cree && pj.pieces.length && !(await confirmer(CONFIRMER_ABANDON))) return
+    fermer()
+  }
+
+  /** Dépose les pièces dans le dossier du chantier et les écrit dans son fil. Vrai si plus rien n'attend. */
+  const envoyerPieces = async (id: string): Promise<boolean> => {
+    const r = await pj.envoyerTout(id)
+    if (r.medias.length) {
+      const err = await ecrireAvecMedias({ projetId: projet.id, chantierId: id, par, admin, medias: r.medias, corps: `Joint à la demande : ${resumeMedias(r.medias)}` })
+      if (err) { toast.erreur(`Les pièces jointes n’ont pas pu être ajoutées au fil : ${err}`); return false }
+      pj.oublier(r.ids)
+    }
+    return r.echecs === 0
+  }
+
   const creer = async () => {
     if (!titre.trim()) { toast.erreur('Donne un titre.'); return }
     setEnCours(true)
+    // L'id est choisi ici : les pièces savent où aller sans relire la ligne (un non-admin ne relit pas toujours ce qu'il crée).
+    const id = crypto.randomUUID()
     const { error } = await supabase.from('chantiers').insert({
-      projet_id: projet.id, titre: titre.trim(), demande: demande.trim() || null,
+      id, projet_id: projet.id, titre: titre.trim(), demande: demande.trim() || null,
       section_id: sectionId || null, priorite,
       etat: admin ? etat : 'a_trier', origine: admin ? 'proprietaire' : 'utilisateur', created_by: moi.user_id,
     })
+    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    const nb = pj.pieces.length
+    const complet = nb ? await envoyerPieces(id) : true
     setEnCours(false)
-    if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes(admin ? `Chantier « ${titre.trim()} » créé.` : 'Demande envoyée : elle apparaît « Pas encore examinée ».')
-    reinitialiser(); onFermer(); await recharger()
+    void recharger()
+    if (!complet) {
+      setCree({ id, titre: titre.trim() })
+      toast.erreur(`${admin ? 'Chantier créé' : 'Demande envoyée'}, mais des pièces jointes ne sont pas parties : touche « Envoyer les pièces ».`)
+      return
+    }
+    const avec = nb ? `, avec ${nb} pièce${nb > 1 ? 's' : ''} jointe${nb > 1 ? 's' : ''}` : ''
+    toast.succes(admin ? `Chantier « ${titre.trim()} » créé${avec}.` : `Demande envoyée${avec} : elle apparaît « Pas encore examinée ».`)
+    fermer()
+  }
+
+  const renvoyer = async () => {
+    if (!cree) return
+    setEnCours(true)
+    const complet = await envoyerPieces(cree.id)
+    setEnCours(false)
+    if (!complet) return
+    toast.succes(`Pièces jointes ajoutées au fil de « ${cree.titre} ».`)
+    fermer()
+  }
+
+  const brouillon = !!(titre.trim() || demande.trim() || pj.pieces.length)
+  const envoiEnCours = pj.enCours || enCours
+
+  if (cree) {
+    const restent = pj.pieces.length
+    return (
+      <Dialog ouvert={ouvert} onFermer={fermer} brouillon={restent > 0} titre="Pièces jointes à envoyer"
+        pied={<><Button onClick={() => { void annuler() }}>Fermer</Button><Button variante="primaire" chargement={envoiEnCours} onClick={renvoyer} data-testid="envoyer-pieces">Envoyer les pièces</Button></>}>
+        <div className="space-y-3" data-testid="pieces-a-renvoyer">
+          <p className="text-sm">« {cree.titre} » est {admin ? 'créé' : 'envoyé'}. {restent > 1 ? `${restent} pièces ne sont` : 'Une pièce n’est'} pas encore partie{restent > 1 ? 's' : ''} : elles sont gardées ici.</p>
+          <p className="text-xs text-texte-2">Touche « Envoyer les pièces » (ou « réessayer » sur une vignette). Si ça échoue encore, vérifie ta connexion.</p>
+          <ChoisirMedias ctrl={pj} testId="medias-creation" />
+        </div>
+      </Dialog>
+    )
   }
 
   return (
-    <Dialog ouvert={ouvert} onFermer={onFermer} titre={admin ? '+ Nouveau chantier' : '+ Nouvelle demande'}
-      pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} onClick={creer} data-testid="creer-chantier">Créer</Button></>}>
+    <Dialog ouvert={ouvert} onFermer={fermer} brouillon={brouillon} titre={admin ? '+ Nouveau chantier' : '+ Nouvelle demande'}
+      pied={<><Button onClick={() => { void annuler() }}>Annuler</Button><Button variante="primaire" chargement={envoiEnCours} onClick={creer} data-testid="creer-chantier">Créer</Button></>}>
       <div className="space-y-3">
         <Champ label="Titre"><Input autoFocus value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="En une phrase : ce qu’il faut faire" data-testid="titre" /></Champ>
         {proches.length ? (
@@ -54,6 +127,11 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
         <Champ label="Demande" aide="Tes mots : ce que tu veux, ce qui ne va pas, comment le reproduire.">
           <Textarea rows={4} value={demande} onChange={(e) => setDemande(e.target.value)} data-testid="demande" />
         </Champ>
+        <div>
+          <span className="mb-1 block text-sm font-medium text-texte-2">Photos, vidéos, fichiers</span>
+          <ChoisirMedias ctrl={pj} testId="medias-creation" />
+          {pj.pieces.length ? <p className="mt-1 text-xs text-texte-2">Envoyées avec la demande, quand tu touches « Créer ». Le crayon sur une photo : dessiner dessus.</p> : null}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Champ label="Section">
             <Select value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
