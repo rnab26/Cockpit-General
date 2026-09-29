@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs (216 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « où ça en est » (233 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 bash -n scripts/*.sh hooks/*.sh
@@ -122,7 +122,8 @@ et de lui seul). Table `cockpit.chefs` (une ligne par projet : session,
 `max_agents`, `reveil_trigger`) ; `prendre_chef(projet, …)`,
 `est_chef(projet, session)`, `chef_existe(projet)` (service seulement).
 La chef ne code pas elle-même : `scripts/chef.sh` lui donne, DANS SON PROJET
-SEULEMENT, un travail par place libre (réponses sans suite, chantiers
+SEULEMENT, un travail par place libre (réponses sans suite, « où ça en est ? »
+que personne ne recevra (0022), chantiers
 prenables si le mode autonome est allumé, « vérifie pour moi » ; 3 agents en
 parallèle par défaut, `--max` règle le projet courant), elle lance un agent
 par chantier (isolation worktree, sa branche), et relance `chef.sh` à la fin
@@ -206,6 +207,22 @@ dans le hook), et pose le curseur.
 Bilan du 29 sept. et preuve : `node scripts/verifier-reponses.mjs` (16
 contrôles, vrais hooks, vraie base, projet jetable). Le cas « personne ne
 tient le chantier » relève de `scripts/chef.sh` (chantier 6c8c6084).
+
+## « Où ça en est ? » se suit, jamais empilé (29 sept. 2026, migration 0022)
+
+Raphaël : « on ne voit pas de différence en cliquant […] qu'on ne pollue pas
+les sessions en cliquant 10 fois, et que ça ne reste pas statique ». L'app
+passe par `demander_ou_en_est` : UNE demande en attente par chantier
+(`messages.ou_en_est`), un deuxième toucher rend la même (verrou, 10 touchers
+= 1 ligne). Répondue = un message de session après elle ; périmée après
+`delai_ou_en_est()` (2 h, = `DELAI_OU_EN_EST_MS` de `lib/ouEnEst.ts`,
+comparés par verifier-base §23). Suivi : envoyée → reçue (`recu_at`, posé par
+`hooks/suivi.sh` en la remettant à la session qui tient le chantier) ou en
+file (position) → un assistant regarde (la chef : `prendre_ou_en_est`, branche
+`agent/point-…`, sans réserver le chantier) → réponse (`progression.sh
+--point`, `repondre_ou_en_est`, `repond_a`). Dans l'app, le chantier passe
+dans « Ça avance tout seul » avec une frise, bouton désactivé tant qu'on
+attend ; la réponse y reste un quart d'heure. `verifier-reponses` §7-8.
 
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 

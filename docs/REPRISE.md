@@ -204,6 +204,14 @@ ouverts sans section : passé sur cockpit et facepro le 29 sept., 0 rangé
 `verifier-reponses` 16/16, `verifier-embed` 80/80. App inchangée. Pas de
 réglage pour éteindre le tri par projet (à ajouter si Raphaël le veut).
 
+## 2 octies. 29 sept. soir : « Où ça en est ? » suivi en direct (chantier `73fddb87`, migration 0022)
+
+Un toucher = UNE demande (`demander_ou_en_est`), suivie en direct dans « Ça
+avance tout seul » (frise Envoyée → Reçue / En file → Réponse), bouton
+désactivé tant qu'on attend. Reçue : hook de suivi ; personne dessus : la chef
+lance un assistant « Point » qui répond avec `progression.sh --point`. Voir
+CLAUDE.md. Reste : le module embarqué (`embed/`) n'a pas ce bouton.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet

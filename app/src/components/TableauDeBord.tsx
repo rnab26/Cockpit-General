@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, CirclePause, Rocket, Settings2 } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
@@ -349,6 +349,9 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
   const ouvrir = () => g.ouvrirChantier(l.c.projet_id, l.c.id)
   // « Où ça en est ? » en attente (0022) : la ligne la suit, et rien ne se renvoie.
   const oe = ouEnEstVisible(l.ouEnEst, g.now) ? l.ouEnEst! : null
+  // Demande partie : le panneau « Relancer » se referme (la ligne montre le suivi, une seule fois).
+  const attente = !!oe?.enAttente
+  useEffect(() => { if (attente) setRelance(false) }, [attente])
   return (
     <li data-testid="ligne-en-ce-moment" data-chantier-ligne={l.c.id} data-vivant={l.vivant ? 'oui' : 'non'} data-flash={flash ? 'oui' : 'non'} className={flash ? 'flash-etape' : ''}>
       <div className="flex items-start gap-2 px-3 py-2.5">
@@ -388,7 +391,7 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
           <Button taille="sm" onClick={() => setRelance(!relance)} aria-expanded={relance} data-testid="ouvrir-relance" className="shrink-0">Relancer</Button>
         ) : null}
       </div>
-      {oe ? <div className="-mt-1 px-3 pb-2.5" data-testid="suivi-ligne"><SuiviOuEnEst etat={oe} compact={l.vivant} /></div> : null}
+      {oe && !(relance && !oe.enAttente) ? <div className="-mt-1 px-3 pb-2.5" data-testid="suivi-ligne"><SuiviOuEnEst etat={oe} compact={l.vivant} /></div> : null}
       {relance && !oe?.enAttente ? <div className="px-3 pb-2.5"><AvecProjet projetId={l.c.projet_id}><BoutonsRelance chantier={l.c} /></AvecProjet></div> : null}
     </li>
   )

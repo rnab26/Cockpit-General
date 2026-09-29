@@ -600,19 +600,20 @@ try {
   // La session la reçoit (hook de suivi) puis répond (progression.sh --point) : la ligne suit.
   sql(`update messages set recu_at = now(), recu_par = 'claude/test-web' where id = '${demandesOu[0].id}'`)
   await actualiser()
-  const suivi2 = (await ligneAvance(P2.id)).getByTestId('etat-ou-en-est')
+  const suivi2 = (await ligneAvance(P2.id)).getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
   verifie('reçue par la session → « Reçue par Claude … : réponse en préparation »', (await suivi2.getAttribute('data-code')) === 'recue' && /Reçue par Claude/.test(await suivi2.textContent()), await suivi2.textContent().catch(() => null))
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, repond_a) values ('${projet.id}', '${P2.id}', 'claude/test-web', 'session', 'info', 'Fait : l’écran. Reste : les tests. Bloque : rien.', '${demandesOu[0].id}')`)
   await actualiser()
   const lP2b = await ligneAvance(P2.id)
-  const suivi3 = lP2b.getByTestId('etat-ou-en-est')
+  const suivi3 = lP2b.getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
   verifie('réponse arrivée → la ligne le dit, avec l’extrait de la réponse, frise complète',
     (await suivi3.getAttribute('data-code')) === 'repondue' && /Réponse arrivée/.test(await suivi3.textContent()) && /Reste : les tests/.test(await suivi3.getByTestId('reponse-ou-en-est').textContent())
     && await suivi3.locator('[data-etape="faite"]').count() === 3, await suivi3.textContent().catch(() => null))
   await captureUx(page, 'ux-ou-en-est-reponse')
   verifie('…et on peut de nouveau relancer (« Relancer » revient)', await lP2b.getByTestId('ouvrir-relance').count() === 1)
   await lP2b.getByTestId('ouvrir-relance').click()
-  verifie('…le bouton dit « Redemander où ça en est », actif', /Redemander où ça en est/.test(await lP2b.getByTestId('demander-ou-ca-en-est').textContent()) && !(await lP2b.getByTestId('demander-ou-ca-en-est').isDisabled()))
+  verifie('…le bouton dit « Redemander où ça en est », actif, et le suivi n’est affiché qu’une fois', /Redemander où ça en est/.test(await lP2b.getByTestId('demander-ou-ca-en-est').textContent()) && !(await lP2b.getByTestId('demander-ou-ca-en-est').isDisabled())
+    && await lP2b.getByTestId('etat-ou-en-est').count() === 1)
   await lP2b.getByTestId('ouvrir-relance').click()
 
   // ===================================================================
