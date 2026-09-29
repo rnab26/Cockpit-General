@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises (182 contrôles)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude (205 contrôles)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions (vrais hooks)
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -234,6 +234,21 @@ embarqué (`embed/`) ne joint PAS de fichier : décision à prendre à part.
 (`Annoter.tsx`, un `<canvas>`) ; avant l'envoi l'annotée remplace la pièce,
 après l'envoi elle part en nouveau message « Image annotée : … » du fil.
 `verifier-annotation.ts`, et les contrôles « crayon » de `verifier-web.mjs`.
+
+**Et dans l'autre sens : montre, ne décris pas** (29 sept. 2026, migration
+0020, Raphaël : « montre-moi des images pour que je comprenne mieux, ou ce
+que je suis censé voir »). Une question ou une vérification qui porte sur
+quelque chose de visible → joins une capture : `demander.sh --image f.png`
+(dans `messages.medias`, miniature sous la question), `progression.sh
+--termine … --verifier … --image f.png` (`chantiers.verifier_medias`, « Ce que
+tu dois voir » sous les étapes ; un `--termine` sans image efface les
+anciennes), `media.sh --envoyer --chantier <id> --texte "…" --image f.png`
+(message du fil). Contrôle AVANT toute écriture (`media.sh
+--verifier-images` : png/jpg/webp/gif/mp4/webm, 4 au plus, 10 Mo) ; dépôt
+service_role dans `cockpit-medias` au chemin du chantier (les droits de
+lecture suivent donc ceux du chantier). Écran du cockpit : `node
+app/scripts/capture-ecran.mjs <url> <dossier>`. Pas encore affiché par le
+module embarqué (`embed/`) : seulement l'app.
 
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 

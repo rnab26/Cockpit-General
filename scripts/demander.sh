@@ -33,12 +33,19 @@
 #   --pourquoi : 250 max, en mots de tous les jours (ce qui dépend de la réponse).
 #   --option   : 2 à 4 pour une question ; libellé 45 max ; une aide OBLIGATOIRE
 #                (140 max) qui dit ce qui se passe si on choisit ça.
+#
+# IMAGES (0020, Raphaël : « montre-moi des images pour que je comprenne mieux
+# de quoi il s'agit ») : une question qui porte sur quelque chose de VISIBLE
+# (un écran, un rendu, un avant/après) joint sa capture :
+#   --image capture.png   (répétable, 4 au plus ; png, jpg, webp, gif, mp4, webm ; 10 Mo)
+# Elle s'affiche en miniature sous la question ; un toucher l'ouvre en grand.
+# Capture d'un écran web : node app/scripts/capture-ecran.mjs <url> <dossier>.
 
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
-projet="${COCKPIT_PROJET:-}"; question=""; pourquoi=""; chantier=""; kind="question"; options=(); mode="poser"; cible=""; raison=
+projet="${COCKPIT_PROJET:-}"; question=""; pourquoi=""; chantier=""; kind="question"; options=(); images=(); mode="poser"; cible=""; raison=
 auteur="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
@@ -49,10 +56,11 @@ while [ $# -gt 0 ]; do
     --chantier)  chantier="${2:-}"; shift 2 ;;
     --auteur)    auteur="${2:-}"; shift 2 ;;
     --option)    options+=("${2:-}"); shift 2 ;;
+    --image)     images+=("${2:-}"); shift 2 ;;
     --action)    kind="action"; shift ;;
     --retirer)   mode="retirer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     --confirmer) mode="confirmer"; cible="${2:-}"; shift 2 ;;
-    -h|--help)   sed -n '2,22p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help)   sed -n '2,42p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
@@ -102,6 +110,9 @@ if [ "$kind" = "question" ]; then
   done
 fi
 
+# Les images se contrôlent aussi AVANT d'écrire (fichier absent, type, taille, nombre).
+if [ ${#images[@]} -gt 0 ]; then "$RACINE/scripts/media.sh" --verifier-images "${images[@]}"; fi
+
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 
 pid=$("$SQL" "select id from projets where slug = '$(q "$projet")'" | jq -r '.rows[0].id // empty')
@@ -136,8 +147,15 @@ fi
 # L'id est généré ICI : exec_sql enveloppe la requête dans un select, et un
 # `insert … returning` n'y renvoie rien (exécuté, mais sans ligne). On relit
 # ensuite par l'id pour prouver que la question est bien en base.
+# Les images d'abord : si le dépôt échoue, aucune question à moitié posée.
+medias_sql="'[]'::jsonb"
+if [ ${#images[@]} -gt 0 ]; then
+  dossier=projet; [ "$cid" != "null" ] && dossier=$(printf '%s' "$cid" | tr -d "'")
+  medias=$("$RACINE/scripts/media.sh" --deposer "$pid" "$dossier" "${images[@]}")
+  medias_sql="'$(q "$medias")'::jsonb"
+fi
 id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-"$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options) values ('$id', '$pid', $cid, '$(q "$auteur")', 'session', '$kind', '$(q "$question")', '$(q "$pourquoi")', $opts_json)" >/dev/null
+"$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options, medias) values ('$id', '$pid', $cid, '$(q "$auteur")', 'session', '$kind', '$(q "$question")', '$(q "$pourquoi")', $opts_json, $medias_sql)" >/dev/null
 relu=$("$SQL" "select id from messages where id = '$id'" | jq -r '.rows[0].id // empty')
 [ "$relu" = "$id" ] || { echo "La question n'a pas été enregistrée (relecture vide pour $id)." >&2; exit 1; }
-echo "Question posée (message $id). Elle s'affiche dans le cockpit ; la réponse reviendra au démarrage des sessions suivantes."
+echo "Question posée (message $id)${images[0]:+, avec ${#images[@]} image(s)}. Elle s'affiche dans le cockpit ; la réponse reviendra au démarrage des sessions suivantes."

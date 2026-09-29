@@ -8,6 +8,20 @@ import { Button } from '../ui/Button.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { corpsDemandeVerifier, derniereDemandeVerifier, etapesVerifier, segmentsAvecLiens } from '../lib/commentVerifier.ts'
 import { dateRelative } from '../lib/dates.ts'
+import { mediasVerifier } from '../lib/medias.ts'
+import { MediasMessage } from './Medias.tsx'
+
+/** 0020 : « voici ce que tu dois voir » — les images jointes par la session. */
+function CeQueTuDoisVoir({ chantier }: { chantier: Chantier }) {
+  const medias = mediasVerifier(chantier)
+  if (!medias.length) return null
+  return (
+    <div className="mt-2" data-testid="images-verifier">
+      <p className="mb-1 text-xs font-medium text-texte-2">Ce que tu dois voir :</p>
+      <MediasMessage medias={medias} apercu testId="images-verifier-liste" />
+    </div>
+  )
+}
 
 /** Un texte dont les adresses http(s) deviennent des liens (nouvel onglet). */
 function TexteAvecLiens({ texte }: { texte: string }) {
@@ -49,6 +63,7 @@ export function EncadreCommentVerifier({ chantier }: { chantier: Chantier }) {
       <div data-testid="comment-verifier" className="rounded-lg border border-bord bg-carte px-3 py-2">
         <p className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</p>
         <Etapes texte={texte} />
+        <CeQueTuDoisVoir chantier={chantier} />
       </div>
     )
   }
@@ -86,6 +101,7 @@ export function CommentVerifierReplie({ chantier }: { chantier: Chantier }) {
   return (
     <Repliable testId="comment-verifier-replie" titre={<span className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</span>}>
       <Etapes texte={texte} />
+      <CeQueTuDoisVoir chantier={chantier} />
     </Repliable>
   )
 }

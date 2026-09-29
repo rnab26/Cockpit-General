@@ -35,8 +35,9 @@
 // SUPABASE_SERVICE_ROLE_KEY pour scripts/sql.sh.
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { deflateSync, crc32 } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -137,16 +138,20 @@ const purgerProjetsDeTest = (ids) => {
   sql(`delete from historique where chantier_id in (select chantier_id from supprimes where projet_id in (${liste}))`)
   sql(`delete from supprimes where projet_id in (${liste})`)
 }
-const vieux = sql(`select id, slug from projets where slug like 'test-web-%'`)
+// Plusieurs agents lancent ce script EN MÊME TEMPS (29 sept. 2026 : une passe purgeait le projet
+// d'une autre en plein parcours) : on ne purge que les projets de test vieux de plus de 2 h, et les
+// restes des anciennes versions seulement HORS des projets de test (ceux d'une passe vivante).
+const HORS_TESTS = `projet_id not in (select id from projets where slug like 'test-web-%')`
+const vieux = sql(`select id, slug from projets where slug like 'test-web-%' and created_at < now() - interval '2 hours'`)
 if (vieux.length) { console.log(`  (purge de ${vieux.length} projet(s) de test d’une passe précédente : ${vieux.map((v) => v.slug).join(', ')})`); purgerProjetsDeTest(vieux.map((v) => v.id)) }
 // Les restes des anciennes versions de ce script (qui écrivaient dans « cockpit ») :
-sql(`delete from messages where corps like '${MARQUE}%'`)
-sql(`delete from chantiers where titre like '${MARQUE}%'`)
-sql(`delete from historique where chantier_id in (select id from chantiers where titre like '${MARQUE2}%') or chantier_id in (select chantier_id from supprimes where ligne->>'titre' like '${MARQUE2}%')`)
-sql(`delete from chantiers where titre like '${MARQUE2}%'`)
-sql(`delete from supprimes where ligne->>'titre' like '${MARQUE2}%'`)
-sql(`delete from activite where session like '${SESSION_TEST}%'`)
-sql(`delete from sessions where id like '${SESSION_TEST}%'`)
+sql(`delete from messages where corps like '${MARQUE}%' and ${HORS_TESTS}`)
+sql(`delete from chantiers where titre like '${MARQUE}%' and ${HORS_TESTS}`)
+sql(`delete from historique where chantier_id in (select id from chantiers where titre like '${MARQUE2}%' and ${HORS_TESTS}) or chantier_id in (select chantier_id from supprimes where ligne->>'titre' like '${MARQUE2}%' and ${HORS_TESTS})`)
+sql(`delete from chantiers where titre like '${MARQUE2}%' and ${HORS_TESTS}`)
+sql(`delete from supprimes where ligne->>'titre' like '${MARQUE2}%' and ${HORS_TESTS}`)
+sql(`delete from activite where session like '${SESSION_TEST}%' and ${HORS_TESTS}`)
+sql(`delete from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS})`)
 const moiId = sql(`select id from auth.users where email = '${esc(EMAIL)}'`)[0]?.id
 if (!moiId) throw new Error('compte de test introuvable dans auth.users')
 const prefDoublonsExistait = sql(`select cle from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`).length > 0
@@ -712,6 +717,58 @@ try {
   verifie('la photo s’affiche dans une bulle de la conversation (lien signé, image chargée)', await vignetteQ.count() === 1 && await vignetteQ.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await fermerConv()
   verifie('la question répondue quitte « À toi de jouer »', await page.locator(elQsel).count() === 0)
+
+  // ===================================================================
+  // 4 bis. Claude MONTRE une image (0020) : sous une question, sous « Comment vérifier » — posées par les VRAIS scripts.
+  console.log('  — images de Claude : question, comment vérifier')
+  const imgDossier = mkdtempSync(path.join(tmpdir(), 'web-images-'))
+  const imgFichier = path.join(imgDossier, 'apercu-test.png')
+  await page.screenshot({ path: imgFichier })   // une vraie capture d'écran, comme une session la ferait
+  const envScripts = { ...process.env, COCKPIT_PROJET: SLUG, COCKPIT_SESSION: `${SESSION_TEST}images` }
+  const script = (nom, args) => execFileSync('bash', [path.resolve(racineApp, '..', 'scripts', nom), ...args], { encoding: 'utf8', env: envScripts, stdio: ['ignore', 'pipe', 'pipe'] })
+  const QI = creerTest('question avec image', { etat: 'libre' })
+  script('demander.sh', ['--chantier', QI.id, '--question', 'Ce bouton te convient ?', '--pourquoi', 'Pour vérifier l’image sous la question.', '--option', 'Oui|On garde.|recommande', '--option', 'Non|On change.', '--image', imgFichier])
+  await allerCockpit()
+  await actualiser()
+  await (await elementAToi(QI.id, 'question')).getByTestId('verbe-a-toi').click()
+  await attendreConv(QI.titre)
+  const blocQI = conv().getByTestId('bloc-question')
+  const vigQI = blocQI.locator('[data-testid="images-question"] [data-testid="media"] img').first()
+  await vigQI.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  const boiteQI = await vigQI.boundingBox().catch(() => null)
+  verifie('question de Claude : l’image s’affiche en miniature SOUS la question (chargée, ≥ 100 px)',
+    await vigQI.count() === 1 && await vigQI.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false) && (boiteQI?.width ?? 0) >= 100, boiteQI)
+  verifie('…avec « Touche l’image pour l’agrandir »', /Touche l’image pour l’agrandir/.test(await blocQI.textContent()))
+  await capture(page, 'question-image-claude')
+  await vigQI.click()
+  const grandeQI = page.locator('dialog[open] img[alt="apercu-test.png"]').last()
+  await page.waitForTimeout(600)
+  const boiteGrande = await grandeQI.boundingBox().catch(() => null)
+  verifie('un toucher l’ouvre en GRAND (plein écran, au moins 4 fois la surface de la miniature)', (boiteGrande?.width ?? 0) * (boiteGrande?.height ?? 0) > (boiteQI?.width ?? 999) * (boiteQI?.height ?? 999) * 4 && await grandeQI.evaluate((i) => i.naturalWidth > 0).catch(() => false), { boiteGrande, boiteQI })
+  verifie('image en grand : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'question-image-claude-grand')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+  await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
+  // « Comment vérifier » avec « Ce que tu dois voir ».
+  const VI = creerTest('verif avec image', { etat: 'en_cours' })
+  script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--pas-en-ligne', 'test', '--image', imgFichier])
+  await allerTout()
+  await actualiser()
+  await (await elementAToi(VI.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
+  await attendreConv(VI.titre)
+  const encVI = conv().getByTestId('comment-verifier')
+  const vigVI = encVI.locator('[data-testid="images-verifier"] [data-testid="media"] img').first()
+  await vigVI.waitFor({ timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  verifie('« Comment vérifier » : « Ce que tu dois voir » et la miniature sous les étapes (chargée)',
+    /Ce que tu dois voir/.test(await encVI.textContent()) && await vigVI.count() === 1 && await vigVI.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
+  const [bEt, bIm] = [await encVI.getByTestId('etapes-verifier').boundingBox(), await vigVI.boundingBox()]
+  verifie('…l’image est APRÈS les étapes', bEt && bIm && bIm.y >= bEt.y + bEt.height, { bEt, bIm })
+  await capture(page, 'comment-verifier-image')
+  await fermerConv()
+  rmSync(imgDossier, { recursive: true, force: true })
 
   // ===================================================================
   // 5. À vérifier : « Tester » → la conversation (frise, comment vérifier, Ça marche / Corriger)
@@ -1393,20 +1450,22 @@ try {
   // leur trace de suppression, les paires « pas un doublon » et le réglage de silence.
   try {
     const ids = idsTest.length ? idsTest.map((i) => `'${i}'`).join(', ') : `'00000000-0000-0000-0000-000000000000'`
-    sql(`delete from messages where chantier_id in (${ids}) or corps like '%${MARQUE2}%'`)
-    sql(`delete from activite where chantier_id in (${ids}) or session like '${SESSION_TEST}%'`)
-    sql(`delete from sessions where id like '${SESSION_TEST}%'`)
+    // Jamais les lignes d'une AUTRE passe en cours (ses projets test-web-… : HORS_TESTS) ; le nôtre part en cascade plus bas.
+    sql(`delete from messages where chantier_id in (${ids}) or (corps like '%${MARQUE2}%' and ${HORS_TESTS})`)
+    sql(`delete from activite where chantier_id in (${ids}) or (session like '${SESSION_TEST}%' and ${HORS_TESTS})`)
+    sql(`delete from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS}${projet ? ` or projet_id = '${projet.id}'` : ''})`)
     sql(`delete from ce_qui_marche where chantier_id in (${ids})`)
-    sql(`delete from chantiers where id in (${ids}) or titre like '${MARQUE2}%'`)
+    sql(`delete from chantiers where id in (${ids}) or (titre like '${MARQUE2}%' and ${HORS_TESTS})`)
     sql(`delete from historique where chantier_id in (${ids})`)
-    sql(`delete from supprimes where chantier_id in (${ids}) or ligne->>'titre' like '${MARQUE2}%'`)
+    sql(`delete from supprimes where chantier_id in (${ids}) or (ligne->>'titre' like '${MARQUE2}%' and ${HORS_TESTS})`)
     if (!prefDoublonsExistait) sql(`delete from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`)
     else if (idsTest.length) sql(`update preferences set valeur = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements_text(valeur) e where not (e ~ '${idsTest.join('|')}')) where user_id = '${moiId}' and cle = 'doublons_ignores'`)
     if (!prefSilenceAvant) sql(`delete from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)
     else sql(`update preferences set valeur = '${esc(JSON.stringify(prefSilenceAvant.valeur))}'::jsonb where user_id = '${moiId}' and cle = 'silence_minutes'`)
     if (projet) purgerProjetsDeTest([projet.id])
-    const reste = sql(`select (select count(*) from chantiers where id in (${ids}) or titre like '${MARQUE2}%') + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids})) + (select count(*) from activite where session like '${SESSION_TEST}%') + (select count(*) from sessions where id like '${SESSION_TEST}%') as n`)[0].n
-    const restesReels = sql(`select (select count(*) from projets where slug like 'test-web-%') + (select count(*) from chantiers where titre like '[TEST%') + (select count(*) from messages where corps like '%[TEST%') + (select count(*) from activite where session like '${SESSION_TEST}%' or etape like '[TEST%') + (select count(*) from sessions where id like '${SESSION_TEST}%' or sujet like '[TEST%') + (select count(*) from taches where description like '[TEST%') + (select count(*) from supprimes where ligne->>'titre' like '[TEST%') as n`)[0].n
+    const reste = sql(`select (select count(*) from chantiers where id in (${ids}) or (titre like '${MARQUE2}%' and ${HORS_TESTS})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids})) + (select count(*) from activite where session like '${SESSION_TEST}%' and ${HORS_TESTS}) + (select count(*) from sessions where id like '${SESSION_TEST}%' and (projet_id is null or ${HORS_TESTS})) as n`)[0].n
+    // Les projets réels (hors test-web-…, que d'autres passes peuvent tenir en ce moment) et NOTRE projet de test.
+    const restesReels = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where titre like '[TEST%' and ${HORS_TESTS}) + (select count(*) from messages where corps like '%${MARQUE2}%' and ${HORS_TESTS}) + (select count(*) from activite where (session like '${SESSION_TEST}%' or etape like '[TEST%') and ${HORS_TESTS}) + (select count(*) from sessions where (id like '${SESSION_TEST}%' or sujet like '[TEST%') and (projet_id is null or ${HORS_TESTS})) + (select count(*) from taches where description like '[TEST%' and ${HORS_TESTS}) + (select count(*) from supprimes where ligne->>'titre' like '[TEST%' and ${HORS_TESTS}) as n`)[0].n
     verifie('nettoyage : plus AUCUNE ligne de test, ni projet de test, ni trace dans les projets réels', reste === 0 && restesReels === 0, { reste, restesReels })
   } catch (e) { console.log(`  (nettoyage SQL [TEST web] : ${e.message})`) }
   await navigateur.close()
