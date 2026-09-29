@@ -193,7 +193,7 @@ await ctx.route('https://api.github.com/**', (route) => {
 const page = await ctx.newPage()
 const erreursConsole = []
 page.on('pageerror', (e) => erreursConsole.push(String(e)))
-page.on('console', (m) => { if (m.type() === 'error') erreursConsole.push(m.text()) })
+page.on('console', (m) => { if (m.type() === 'error') erreursConsole.push(m.text() + (m.location()?.url ? ` [${m.location().url}]` : '')) })
 
 // Le navigateur de CE conteneur peut-il ouvrir une WebSocket ? Constaté le
 // 28 sept. 2026 : non, vers aucun service (echo.websocket.org compris) — une

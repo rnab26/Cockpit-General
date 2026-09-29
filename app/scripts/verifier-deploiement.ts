@@ -1,7 +1,7 @@
 // L'état des déploiements d'un projet (src/lib/deploiement.ts), sur des
 // exécutions au format réel de l'API GitHub (relevé le 29 sept. 2026).
 import { verifie, bilan } from './_assert.ts'
-import { etatDuProjet, etatExecution, estUnDeploiement, phraseSite, type ExecutionGitHub } from '../src/lib/deploiement.ts'
+import { etatDuProjet, etatExecution, estUnDeploiement, phraseSite, siteASonder, type ExecutionGitHub } from '../src/lib/deploiement.ts'
 
 const now = new Date('2026-09-29T01:00:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
@@ -56,4 +56,7 @@ verifie('« Vérifications » n’en est pas un', !estUnDeploiement('Vérificati
   verifie('site injoignable → l’erreur est dite, pas tue', phraseSite({ commit: null, lu: null, erreur: 'Site injoignable' }, now) === 'Site injoignable')
   verifie('rien lu, pas d’erreur → rien à dire', phraseSite({ commit: null, lu: null, erreur: null }, now) === null)
 }
+verifie('site GitHub Pages → pas de sonde /health (GitHub dit la version)', siteASonder('https://rnab26.github.io/Melissa-Nabet/') === null)
+verifie('site Render → sondé', siteASonder(' https://facepro.onrender.com ') === 'https://facepro.onrender.com')
+verifie('pas d’adresse ou adresse illisible → pas de sonde', siteASonder('') === null && siteASonder(null) === null && siteASonder('pas une url') === null)
 bilan('verifier-deploiement')

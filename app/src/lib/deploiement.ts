@@ -137,6 +137,16 @@ export interface LectureSite {
 }
 
 /** Une phrase simple pour la ligne « site » ; null s'il n'y a rien à dire. */
+// Un site GitHub Pages est statique : il n'a pas de route /health (404 à
+// chaque lecture, constaté le 29 sept. sur un vrai projet) et GitHub dit déjà
+// ce qu'il sert. On ne le sonde donc pas.
+export function siteASonder(url: string | null | undefined): string | null {
+  const u = url?.trim()
+  if (!u) return null
+  try { if (/\.github\.io$/i.test(new URL(u).hostname)) return null } catch { return null }
+  return u
+}
+
 export function phraseSite(l: LectureSite, now: Date = new Date()): string | null {
   if (l.commit && l.lu !== null) {
     const quand = now.getTime() - l.lu < 60_000 ? 'à l’instant' : `il y a ${duree(now.getTime() - l.lu)}`
