@@ -15,6 +15,7 @@
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
 #   scripts/chef.sh --reveil <trig_…> [--distante <session_…>]   note le réveil horaire du projet
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
+#   scripts/chef.sh --renforts <n>  sessions de RENFORT du projet (0 à 4, 0 = aucune ; migration 0020)
 #
 # Projet : $COCKPIT_PROJET (posé par brancher.sh), --projet <slug>, sinon le
 # dépôt courant (projets.depot). Session : $CLAUDE_CODE_SESSION_ID (ou --session <id>).
@@ -32,6 +33,7 @@ while [ $# -gt 0 ]; do
     --reveil)  mode="reveil"; reveil="${2:-}"; shift 2 ;;
     --distante) distante="${2:-}"; shift 2 ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
+    --renforts) mode="renforts"; max="${2:-}"; shift 2 ;;
     --session) sid="${2:-}"; shift 2 ;;
     --projet)  projet="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
@@ -69,6 +71,10 @@ case "$mode" in
     [[ "$max" =~ ^[1-8]$ ]] || { echo "--max : un nombre de 1 à 8." >&2; exit 2; }
     "$SQL" "insert into chefs (projet_id, max_agents) select id, $max from projets where slug = $P on conflict (projet_id) do update set max_agents = excluded.max_agents" >/dev/null \
       && echo "Agents en parallèle pour $projet : $max." ; exit 0 ;;
+  renforts)
+    [[ "$max" =~ ^[0-4]$ ]] || { echo "--renforts : un nombre de 0 à 4." >&2; exit 2; }
+    "$SQL" "insert into chefs (projet_id, max_renforts) select id, $max from projets where slug = $P on conflict (projet_id) do update set max_renforts = excluded.max_renforts" >/dev/null \
+      && echo "Sessions de renfort pour $projet : $max." ; exit 0 ;;
 esac
 
 # Le chef DE CE PROJET ; ses agents = les tâches « agent » de sa session, dans ce projet.
@@ -89,6 +95,21 @@ fi
 agents=$(printf '%s' "$etat" | jq -r '.agents // 0'); maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 3')
 depot=$(printf '%s' "$etat" | jq -r '.depot // ""')
 libres=$(( maxa - agents ))
+# RENFORTS (0020) : sessions cloud à part, une par SECTION chargée ; la chef les
+# ouvre, les note, et archive celles qui ont fini. Jamais le travail elle-même.
+RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
+finis=$("$SQL" "select r.id, r.session_distante from renforts r join projets p on p.id = r.projet_id where p.slug = $P and r.statut = 'fini' and r.session_distante is not null" 2>/dev/null | jq -c '.rows // [] | .[]')
+nouveaux=$(un "select ouvrir_renforts($P) as r" | jq -c '.r // [] | .[]')
+if [ -n "$finis$nouveaux" ]; then
+  echo "RENFORTS de $projet (sessions à part, chacune sa machine ; ne fais pas leur travail) :"
+  while IFS= read -r f; do [ -n "$f" ] || continue
+    printf '%s' "$f" | jq -r --arg r "$RENF" '"- Renfort fini : archive_session(\"\(.session_distante)\"), puis \($r) --archive \(.id)"'
+  done <<< "$finis"
+  while IFS= read -r n; do [ -n "$n" ] || continue
+    printf '%s' "$n" | jq -r --arg r "$RENF" '"- Nouveau renfort « \(.section) » (\(.chantiers) chantiers) : create_session(title: \"Renfort · \(.slug) · \(.section) — ne pas toucher\", tags: [\"cockpit-renfort\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"Tu es un RENFORT du cockpit (projet \(.slug), section « \(.section) »). Lance \($r) --suivant \(.id) et suis sa consigne, chantier après chantier, jusqu’à ce qu’elle dise FINI ; alors arrête-toi en une ligne. Ne prends rien d’autre, ne parle pas à Raphaël ici : il répond dans le cockpit.\"), puis \($r) --session \(.id) <session_… rendu>"'
+  done <<< "$nouveaux"
+  echo
+fi
 if [ "$libres" -le 0 ]; then echo "RIEN — $agents agent(s) travaillent déjà sur $projet (maximum $maxa). Termine ta réponse en une ligne."; exit 0; fi
 
 donnes=()
