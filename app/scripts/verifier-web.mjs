@@ -156,6 +156,11 @@ const moiId = sql(`select id from auth.users where email = '${esc(EMAIL)}'`)[0]?
 if (!moiId) throw new Error('compte de test introuvable dans auth.users')
 const prefDoublonsExistait = sql(`select cle from preferences where user_id = '${moiId}' and cle = 'doublons_ignores'`).length > 0
 const prefSilenceAvant = sql(`select valeur from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)[0]
+// Le tri de « À toi » part de sa valeur par défaut (« Plus récents d’abord ») : une passe
+// interrompue entre les deux touchers du bouton laissait « anciens », et les contrôles du tri
+// rougissaient à la passe suivante (constaté le 30 sept.). Compte de test : rien à restaurer,
+// on le laisse aussi au défaut en fin de passe.
+sql(`delete from preferences where user_id = '${moiId}' and cle = 'tri_a_toi'`)
 const silenceMin = [5, 10, 15, 30, 60].includes(Number(prefSilenceAvant?.valeur)) ? Number(prefSilenceAvant.valeur) : 15
 // Un chantier de test : titre préfixé, id connu d'avance.
 const creerTest = (titre, extra = {}) => {
@@ -603,6 +608,8 @@ try {
   sql(`update messages set recu_at = now(), recu_par = 'claude/test-web' where id = '${demandesOu[0].id}'`)
   await actualiser()
   const suivi2 = (await ligneAvance(P2.id)).getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  // « Actualiser » n'attend que 700 ms : sous latence, la ligne n'a pas encore changé (rouge au hasard, 30 sept.).
+  await page.locator(`[data-chantier-ligne="${P2.id}"] [data-testid="suivi-ligne"] [data-testid="etat-ou-en-est"][data-code="recue"]`).first().waitFor({ timeout: 8000 }).catch(() => {})
   verifie('reçue par la session → « Reçue par Claude … : réponse en préparation »', (await suivi2.getAttribute('data-code')) === 'recue' && /Reçue par Claude/.test(await suivi2.textContent()), await suivi2.textContent().catch(() => null))
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, repond_a) values ('${projet.id}', '${P2.id}', 'claude/test-web', 'session', 'info', 'Fait : l’écran. Reste : les tests. Bloque : rien.', '${demandesOu[0].id}')`)
   await actualiser()
@@ -1499,7 +1506,10 @@ try {
   // 0028 : Mettre de côté / Reporter / Abandonner, depuis le fil ; chacun se défait.
   const ch = () => sql(`select etat, reporte_jusqu_a, archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]
   await conv().getByTestId('menu-chantier').click()
-  verifie('menu ⋯ : Mettre de côté, Reporter…, Abandonner', await conv().getByTestId('mettre-de-cote').count() === 1 && await conv().getByTestId('reporter').count() === 1 && await conv().getByTestId('abandonner').count() === 1)
+  // Le toast « désarchivé » part avant le rechargement : « Abandonner » n'apparaît qu'une fois l'écran à jour (rouge au hasard, 30 sept.).
+  await conv().getByTestId('abandonner').waitFor({ timeout: 8000 }).catch(() => {})
+  verifie('menu ⋯ : Mettre de côté, Reporter…, Abandonner', await conv().getByTestId('mettre-de-cote').count() === 1 && await conv().getByTestId('reporter').count() === 1 && await conv().getByTestId('abandonner').count() === 1,
+    { deCote: await conv().getByTestId('mettre-de-cote').count(), reporter: await conv().getByTestId('reporter').count(), abandonner: await conv().getByTestId('abandonner').count(), etat: ch() })
   await conv().getByTestId('mettre-de-cote').click()
   verifie('« Mettre de côté » : toast, en base « reporte » sans date', await toastAuPremierPlan(/Mis de côté/) && ch()?.etat === 'reporte' && !ch()?.reporte_jusqu_a, ch())
   await conv().getByTestId('bulle-reporte').waitFor({ timeout: 10000 }).catch(() => {})
@@ -1849,6 +1859,7 @@ try {
     else if (idsTest.length) sql(`update preferences set valeur = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements_text(valeur) e where not (e ~ '${idsTest.join('|')}')) where user_id = '${moiId}' and cle = 'doublons_ignores'`)
     if (!prefSilenceAvant) sql(`delete from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)
     else sql(`update preferences set valeur = '${esc(JSON.stringify(prefSilenceAvant.valeur))}'::jsonb where user_id = '${moiId}' and cle = 'silence_minutes'`)
+    sql(`delete from preferences where user_id = '${moiId}' and cle = 'tri_a_toi'`)
     if (projet) purgerProjetsDeTest([projet.id])
     const reste = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where id in (${ids})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids}) or projet_id = ${monProjet}) + (select count(*) from activite where projet_id = ${monProjet}) + (select count(*) from sessions where projet_id = ${monProjet}) as n`)[0].n
     // Les restes d'un banc dans un projet RÉEL (même règle que verifier-base.mjs) : une

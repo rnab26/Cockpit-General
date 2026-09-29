@@ -14,7 +14,9 @@ export function usePreferences(userId: string | null) {
   useEffect(() => {
     if (!userId) return
     let vivant = true
-    supabase.from('preferences').select('cle, valeur').then(({ data }) => {
+    // Filtre sur SOI : un admin voit aussi les préférences des autres (politique admin_tout),
+    // et sans filtre le tri de Raphaël s'appliquait au compte de test (et inversement).
+    supabase.from('preferences').select('cle, valeur').eq('user_id', userId).then(({ data }) => {
       if (!vivant || !data) { setChargees(true); return }
       setPrefs(Object.fromEntries(data.map((r: { cle: string; valeur: unknown }) => [r.cle, r.valeur])))
       setChargees(true)
