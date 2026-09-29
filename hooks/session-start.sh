@@ -43,9 +43,35 @@ fi
 # CLAUDE.md. Seulement via un lanceur (cache) dans un projet branché — jamais
 # dans le dépôt du cockpit lui-même. Ce qui a changé est dit à la session, qui
 # le commite ; la base garde la preuve que le projet est branché et à jour.
-maj=""
+maj=""; commit_maj=""
 if [ -n "${COCKPIT_CACHE:-}" ] && [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -f "$COCKPIT_CACHE/scripts/brancher.sh" ]; then
+  # Les fichiers du cockpit dans le projet, et ceux qui étaient PROPRES avant la
+  # mise à jour : seuls ceux-là seront commités (jamais un travail en cours de
+  # Raphaël ou d'une session, mélangé à la mise à jour).
+  cd "$CLAUDE_PROJECT_DIR" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && {
+    propres=()
+    for f in CLAUDE.md .claude/settings.json scripts/cockpit-*.sh .claude/hooks/cockpit-*.sh; do
+      [ -e "$f" ] || continue
+      git diff --quiet HEAD -- "$f" 2>/dev/null && propres+=("$f")
+    done
+  }
   maj=$(timeout 30 bash "$COCKPIT_CACHE/scripts/brancher.sh" --maj --projet "$PROJET" --dossier "$CLAUDE_PROJECT_DIR" 2>/dev/null | sed 's/^ *//' | head -20)
+  # 29 sept. : FacePro n'avait JAMAIS gardé une mise à jour — la consigne « commite »
+  # était ignorée, et chaque nouvelle session repartait des anciennes règles. Le
+  # cockpit commite donc lui-même ses fichiers, sur la branche courante (ils
+  # partent avec le prochain push de la session), sans rien pousser d'autre.
+  if [ -n "$maj" ] && git -C "$CLAUDE_PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    a_commiter=()
+    for f in "${propres[@]}" scripts/cockpit-*.sh .claude/hooks/cockpit-*.sh; do
+      [ -e "$CLAUDE_PROJECT_DIR/$f" ] || continue
+      git -C "$CLAUDE_PROJECT_DIR" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 || { git -C "$CLAUDE_PROJECT_DIR" add -- "$f" 2>/dev/null; }
+      git -C "$CLAUDE_PROJECT_DIR" diff --quiet HEAD -- "$f" 2>/dev/null || a_commiter+=("$f")
+    done
+    if [ ${#a_commiter[@]} -gt 0 ] && git -C "$CLAUDE_PROJECT_DIR" -c user.name="${GIT_AUTHOR_NAME:-Cockpit}" -c user.email="${GIT_AUTHOR_EMAIL:-cockpit@noreply}" \
+         commit -q --only -m "Cockpit : mise à jour automatique (consignes et commandes du cockpit central)" -- "${a_commiter[@]}" >/dev/null 2>&1; then
+      commit_maj="Déjà commité sur ta branche ($(git -C "$CLAUDE_PROJECT_DIR" rev-parse --short HEAD)) : il part avec ton prochain push. Pousse-le au plus tôt."
+    fi
+  fi
 fi
 majsql="null"; [ -n "$maj" ] && majsql="'$(printf '%s' "$maj" | sed "s/'/''/g")'"
 un "update projets set branchement_vu_at = now(), branchement_maj = coalesce($majsql, branchement_maj), branchement_maj_at = case when $majsql is not null then now() else branchement_maj_at end where slug = $P" >/dev/null 2>&1 || true
@@ -54,7 +80,10 @@ if [ -n "$maj" ]; then
   bloc_maj="## ⚠️ Le cockpit vient de METTRE À JOUR ce projet (nouvelle version du cockpit)
 $maj
 
-Commite ces fichiers TOUT DE SUITE, seuls, dans un commit « Cockpit : mise à jour automatique », et pousse-le sur la branche principale (si ta branche de travail est une autre : pousse-les sur main avec l'API GitHub, create_or_update_file / push_files). Ne les modifie pas. Les nouveaux hooks s'appliquent aux PROCHAINES sessions.
+${commit_maj:-Commite ces fichiers TOUT DE SUITE, seuls, dans un commit « Cockpit : mise à jour automatique », et pousse-le.} Ne les modifie pas. Les nouveaux hooks s'appliquent aux PROCHAINES sessions.
+
+Les consignes du cockpit ont changé et ton CLAUDE.md était chargé AVANT cette mise à jour : voici la version à jour, qui fait foi pour cette session :
+$(sed "s/{{SLUG}}/$PROJET/g" "$COCKPIT_CACHE/docs/bloc-CLAUDE.md" 2>/dev/null | grep -v '^<!--')
 "
 fi
 
