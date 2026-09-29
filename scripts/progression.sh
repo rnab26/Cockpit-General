@@ -175,6 +175,18 @@ if [ -n "$agent" ]; then
   exit 0
 fi
 
+# Ses messages de CE tour (0029) : rattachés au fil de CE chantier seulement
+# (le hook de suivi les garde en attente ; ni dépôt « partout où la session
+# tient un chantier », ni rattachement quand le mode autonome en prend un).
+rattacher_tour() {
+  local tour sid debut
+  tour="${COCKPIT_TOUR:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-tour}"
+  [ -f "$tour" ] || return 0
+  sid=$(awk '$1 == "session" { print $2; exit }' "$tour" 2>/dev/null)
+  debut=$(awk '$1 == "debut" { print $2; exit }' "$tour" 2>/dev/null)
+  [ -n "$sid" ] && [ -n "$debut" ] || return 0
+  "$SQL" "select rattacher_messages_session('$(q "$projet")', '$(q "$sid")', '$(q "$1")'::uuid, '$(q "$debut")'::timestamptz)" >/dev/null 2>&1 || true
+}
 if [ -n "$point" ]; then
   np=$(printf '%s' "$point" | python3 -c 'import sys; print(len(sys.stdin.read().strip()))')
   if [ "$np" -eq 0 ] || [ "$np" -gt 400 ]; then
@@ -188,6 +200,8 @@ if [ -n "$point" ]; then
   fi
   cid=$("$SQL" "select c.id from chantiers c join projets p on p.id = c.projet_id where p.slug = '$(q "$projet")' and (c.id::text = '$(q "$chantier")' or (length('$(q "$chantier")') >= 8 and c.id::text like '$(q "$chantier")' || '%')) order by (c.id::text = '$(q "$chantier")') desc limit 1" | jq -r '.rows[0].id // empty')
   [ -n "$cid" ] || { echo "Aucun chantier d'id « $chantier » dans le projet $projet." >&2; exit 1; }
+  # Son message de ce tour d'abord (à son heure), puis la réponse (0029).
+  rattacher_tour "$cid"
   r=$("$SQL" "select repondre_ou_en_est('$cid'::uuid, '$(q "$session")', '$(q "$point")') as r" | jq -c '.rows[0].r // empty')
   [ -n "$r" ] && [ "$r" != "null" ] || { echo "La réponse n'a pas été écrite (base injoignable ?). Réessaie." >&2; exit 1; }
   if [ "$(printf '%s' "$r" | jq -r '.demande // empty')" != "" ]; then echo "Réponse écrite dans le fil : Raphaël voit « Réponse arrivée » sous sa demande « Où ça en est ? »."

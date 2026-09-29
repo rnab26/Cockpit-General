@@ -127,7 +127,7 @@ consigner_message() {
   [ -n "${invite//[[:space:]]/}" ] || return 0
   marque="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort"
   [ -s "$marque" ] && return 0
-  printf '%s' "$invite" | grep -qE '^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)' && return 0
+  printf '%s' "$invite" | grep -qE '^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event|agent-message|teammate-message)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)' && return 0
   printf '%s' "$invite" | grep -qxE '[[:space:]]*/[A-Za-z0-9:_-]+[[:space:]]*' && return 0
   local qp qs qb qt
   qp=$(printf '%s' "$PROJET" | sed "s/'/''/g"); qs=$(printf '%s' "$sid" | sed "s/'/''/g")
