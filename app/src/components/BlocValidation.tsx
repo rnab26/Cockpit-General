@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Check, FlaskConical, Pencil } from 'lucide-react'
+import { Check, FlaskConical, HelpCircle, Pencil } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
+import { dateRelative } from '../lib/dates.ts'
 import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
 import { EncadreCommentVerifier } from './CommentVerifier.tsx'
@@ -15,9 +16,9 @@ import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx
  * capture de ce qui ne marche pas (ou de ce qui marche) part dans le fil.
  */
 export function BlocValidation({ chantier, sansEntete = false }: { chantier: Chantier; sansEntete?: boolean }) {
-  const { par, admin, projet, recharger } = useCockpit()
+  const { par, admin, projet, recharger, now } = useCockpit()
   const toast = useToast()
-  const [mode, setMode] = useState<'choix' | 'certifier' | 'corriger'>('choix')
+  const [mode, setMode] = useState<'choix' | 'certifier' | 'corriger' | 'verifier'>('choix')
   const [mots, setMots] = useState('')
   const [enCours, setEnCours] = useState(false)
   const pj = useMediasAJoindre(projet.id, chantier.id)
@@ -53,6 +54,21 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
     await recharger()
   }
 
+  // « Je ne sais pas : vérifie pour moi » (0016, Raphaël : « c'est à Claude de
+  // constater à partir de ce que je lui apporte, pas juste oui / non »).
+  const demanderVerification = async () => {
+    if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
+    setEnCours(true)
+    const { error } = await supabase.rpc('demander_verification', { p_id: chantier.id, p_par: par, p_mots: mots.trim() || null })
+    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    const ok = await joindre('Ce que j’ai vu, en image')
+    setEnCours(false)
+    if (ok) toast.succes('C’est noté : Claude vérifie pour toi et te dit si c’est bon.')
+    setMots(''); setMode('choix')
+    await recharger()
+  }
+  const enVerification = !!chantier.verif_demandee_at
+
   return (
     <div data-testid="bloc-validation" className="rounded-2xl border border-l-4 border-bord border-l-attention bg-carte p-3">
       {sansEntete ? null : <p className="mb-2 flex items-center gap-1.5 text-[15px] font-medium"><FlaskConical size={16} className="text-attention" aria-hidden />C’est livré : à toi de tester</p>}
@@ -61,21 +77,40 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
         <EncadreCommentVerifier chantier={chantier} />
         <PhraseMiseEnLigne chantier={chantier} />
       </div>
+      {enVerification ? (
+        <p data-testid="verification-en-cours" className="mt-2 flex items-center gap-1.5 rounded-xl border border-bord bg-carte-2/60 px-3 py-2 text-sm">
+          <HelpCircle size={16} className="shrink-0 text-info" aria-hidden />Claude vérifie pour toi (demandé {dateRelative(chantier.verif_demandee_at!, now)}) : il te dira si c’est bon.
+        </p>
+      ) : chantier.verdict_at ? (
+        <div data-testid="verdict-claude" className={`mt-2 rounded-xl border border-l-4 border-bord bg-carte px-3 py-2 text-sm ${chantier.verdict_ok ? 'border-l-ok' : 'border-l-alerte'}`}>
+          <p className={`font-medium ${chantier.verdict_ok ? 'text-ok' : 'text-alerte'}`}>Claude a vérifié : {chantier.verdict_ok ? 'c’est bon' : 'ça ne va pas'}</p>
+          {chantier.verdict_texte ? <p className="mt-0.5 whitespace-pre-wrap text-texte-2">{chantier.verdict_texte}</p> : null}
+        </div>
+      ) : null}
       {mode === 'choix' ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button variante="ok" taille="lg" onClick={() => setMode('certifier')} data-testid="btn-certifier"><Check size={18} aria-hidden />Ça marche</Button>
           <Button variante="attention" taille="lg" onClick={() => setMode('corriger')} data-testid="btn-corriger"><Pencil size={18} aria-hidden />Corriger</Button>
+          {enVerification ? null : (
+            <Button taille="lg" onClick={() => setMode('verifier')} data-testid="btn-verifie-pour-moi" className="sm:col-span-2">
+              <HelpCircle size={18} aria-hidden />Je ne sais pas : vérifie pour moi
+            </Button>
+          )}
         </div>
       ) : (
         <div className="mt-2 space-y-2">
           <Textarea autoFocus rows={3} value={mots} onChange={(e) => setMots(e.target.value)}
-            placeholder={mode === 'certifier' ? 'Tes mots (facultatif) : « testé sur mon téléphone, nickel »' : 'Ce qui ne marche pas, précisément (obligatoire)'} />
+            placeholder={mode === 'certifier' ? 'Tes mots (facultatif) : « testé sur mon téléphone, nickel »'
+              : mode === 'verifier' ? 'Colle ici ce que tu as vu (réponse, message…), ou joins une capture. Claude jugera.'
+              : 'Ce qui ne marche pas, précisément (obligatoire)'} />
           <ChoisirMedias ctrl={pj} testId="medias-validation" />
           <div className="flex justify-end gap-2">
             <Button onClick={() => { setMode('choix'); setMots(''); pj.vider() }}>Annuler</Button>
             {mode === 'certifier'
               ? <Button variante="ok" chargement={enCours || pj.enCours} onClick={certifier}><Check size={16} aria-hidden />Je certifie</Button>
-              : <Button variante="attention" chargement={enCours || pj.enCours} onClick={corriger}><Pencil size={16} aria-hidden />Envoyer la correction</Button>}
+              : mode === 'verifier'
+                ? <Button variante="primaire" chargement={enCours || pj.enCours} onClick={demanderVerification} data-testid="envoyer-verification"><HelpCircle size={16} aria-hidden />Demander à Claude</Button>
+                : <Button variante="attention" chargement={enCours || pj.enCours} onClick={corriger}><Pencil size={16} aria-hidden />Envoyer la correction</Button>}
           </div>
         </div>
       )}

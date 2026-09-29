@@ -79,12 +79,41 @@ for slug in $("$SQL" "select slug from projets where actif and (autonome_toujour
     donnes+=("$(printf '%s' "$c" | jq -c --arg slug "$slug" --arg depot "$depot" --arg br "$br" '. + {slug: $slug, depot: $depot, branche: $br}')")
   done
 done
+# « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, tous projets.
+while [ ${#donnes[@]} -lt "$libres" ]; do
+  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
+    from chantiers c join projets p on p.id = c.projet_id
+    where c.verif_demandee_at is not null and c.archived_at is null and p.actif
+      and (c.pris_par is null or c.pris_jusqu_a < now()) order by c.verif_demandee_at limit 1")
+  vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break
+  br="agent/verif-$(date +%s%N | tail -c 7)"
+  [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
+  donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
+done
 if [ ${#donnes[@]} -eq 0 ]; then echo "RIEN — aucun chantier à prendre ($agents agent(s) au travail). Termine ta réponse en une ligne."; exit 0; fi
 
 echo "SESSION CHEF : lance ${#donnes[@]} agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\" pour le cockpit ; pour un autre dépôt, l'agent travaille dans son propre clone). Chaque chantier est déjà réservé à sa branche."
 echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance scripts/chef.sh pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 echo
+VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
 for c in "${donnes[@]}"; do
+  if [ "$(printf '%s' "$c" | jq -r '.verif // false')" = "true" ]; then
+    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg verdict "$VERDICT" '
+"━━ Agent « Vérifier : \(.titre) » (projet \(.slug), dépôt \(.depot), chantier \(.id))
+Consigne à lui donner, telle quelle :
+---
+Tu es un agent du cockpit. Raphaël a testé le chantier « \(.titre) » (projet \(.slug)) mais ne sait pas dire si le résultat est le bon : c’est TOI qui juges.
+Ce qu’on lui a demandé de vérifier :
+\(.comment // "(rien d’écrit)")
+Ce qu’il a vu et collé :
+\(.apporte // "(rien)")
+
+Compare ce qu’il a vu au résultat attendu, en vérifiant toi-même à la source (base du cockpit, code du dépôt, site en ligne). Photos jointes : COCKPIT_PROJET=\(.slug) scripts/media.sh --chantier \(.id), puis regarde-les. Ne modifie rien. Puis rends ton verdict en mots simples, preuve à l’appui (400 caractères au plus) :
+COCKPIT_PROJET=\(.slug) \($verdict) --chantier \(.id) --bon \"…\"   ou   --pas-bon \"…\"
+Rends un rapport de 3 lignes.
+---"'
+    echo; continue
+  fi
   printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
 "━━ Agent « \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :

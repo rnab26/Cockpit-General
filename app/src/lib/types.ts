@@ -54,6 +54,11 @@ export interface Chantier {
   resume_simple: string | null
   /** Étapes écrites par la session qui livre, pour la personne qui certifie (0005). */
   comment_verifier: string | null
+  /** 0016 : Raphaël a demandé « vérifie pour moi » (Claude juge) ; puis le verdict de Claude. */
+  verif_demandee_at?: string | null
+  verdict_ok?: boolean | null
+  verdict_texte?: string | null
+  verdict_at?: string | null
   /** Étapes de mise en ligne (0007) : code, pousse, ci_ok|ci_ko, en_ligne|pas_en_ligne → {at, detail}. Lire avec lib/jalons.ts. */
   jalons: unknown
   etat: Etat

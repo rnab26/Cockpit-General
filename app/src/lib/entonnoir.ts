@@ -155,7 +155,8 @@ export function aToi(chantiers: readonly ChantierE[], messages: readonly Message
   const ouverts = chantiers.filter((c) => !c.archived_at && dansProjet(c.projet_id))
   const tri = (a: ChantierE, b: ChantierE) => (RANG_PRIORITE[a.priorite] ?? 1) - (RANG_PRIORITE[b.priorite] ?? 1) || b.updated_at.localeCompare(a.updated_at)
   const dernierBlocage = (id: string) => messages.filter((m) => m.chantier_id === id && m.kind === 'blocage').sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null
-  const deType = (type: 'a_verifier' | 'a_cadrer' | 'bloque'): ElementAToi[] => ouverts.filter((c) => c.etat === type).sort(tri)
+  // « Vérifie pour moi » en cours (0016) : ce n'est plus à Raphaël de jouer, Claude juge.
+  const deType = (type: 'a_verifier' | 'a_cadrer' | 'bloque'): ElementAToi[] => ouverts.filter((c) => c.etat === type && !(type === 'a_verifier' && c.verif_demandee_at)).sort(tri)
     .map((c) => ({ type, cle: `${type}-${c.id}`, projetId: c.projet_id, chantier: c, message: type === 'bloque' ? dernierBlocage(c.id) : null }))
   return [...questions, ...fusions, ...deType('a_verifier'), ...deType('a_cadrer'), ...deType('bloque')]
 }
@@ -258,6 +259,7 @@ export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message'
       : e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
     case 'fusion': return 'Claude propose de fusionner deux chantiers'
     case 'a_verifier': {
+      if (e.chantier?.verdict_at && e.chantier.verdict_ok) return 'Claude a vérifié : c’est bon, confirme d’un toucher'
       const s = e.chantier ? syntheseMiseEnLigne(e.chantier.jalons, now) : null
       if (!s) return 'livré, à tester'
       if (s.code === 'ci_ko') return 'livré, mais les robots ont trouvé un problème'

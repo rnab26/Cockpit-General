@@ -127,6 +127,15 @@ démarrage commite lui-même les fichiers du cockpit sur la branche courante
 (seulement ceux qui étaient propres avant : jamais un travail en cours), et
 injecte le bloc à jour dans le contexte de la session.
 
+## « Je ne sais pas : vérifie pour moi » (29 sept. 2026, migration 0016)
+
+Troisième bouton sous « Ça marche / Corriger » : Raphaël colle ce qu'il a vu
+(ou une capture), Claude juge. `demander_verification` pose la demande (le
+chantier sort de « À toi ») ; `scripts/chef.sh` lance un agent qui compare à la
+source et rend `scripts/verdict.sh --bon|--pas-bon` (`rendre_verdict`,
+service seulement) : bon → retour à Raphaël pour un toucher, pas bon →
+correction. « Comment vérifier » : une observation évidente, jamais compter.
+
 ## Réponses courtes (Raphaël, 29 sept. 2026)
 
 « Je veux des réponses simples, courtes, nettes et précises. » Dans la
