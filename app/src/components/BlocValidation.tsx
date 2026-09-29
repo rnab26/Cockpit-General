@@ -79,7 +79,7 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
       </div>
       {enVerification ? (
         <p data-testid="verification-en-cours" className="mt-2 flex items-center gap-1.5 rounded-xl border border-bord bg-carte-2/60 px-3 py-2 text-sm">
-          <HelpCircle size={16} className="shrink-0 text-info" aria-hidden />Claude vérifie pour toi (demandé {dateRelative(chantier.verif_demandee_at!, now)}) : il te dira si c’est bon.
+          <HelpCircle size={16} className="shrink-0 text-info" aria-hidden />En attente de Claude : il vérifie pour toi (demandé {dateRelative(chantier.verif_demandee_at!, now)}). Tu n’as rien à faire ; le chantier reviendra ici avec son verdict.
         </p>
       ) : chantier.verdict_at ? (
         <div data-testid="verdict-claude" className={`mt-2 rounded-xl border border-l-4 border-bord bg-carte px-3 py-2 text-sm ${chantier.verdict_ok ? 'border-l-ok' : 'border-l-alerte'}`}>
@@ -87,7 +87,7 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
           {chantier.verdict_texte ? <p className="mt-0.5 whitespace-pre-wrap text-texte-2">{chantier.verdict_texte}</p> : null}
         </div>
       ) : null}
-      {mode === 'choix' ? (
+      {enVerification ? null : mode === 'choix' ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button variante="ok" taille="lg" onClick={() => setMode('certifier')} data-testid="btn-certifier"><Check size={18} aria-hidden />Ça marche</Button>
           <Button variante="attention" taille="lg" onClick={() => setMode('corriger')} data-testid="btn-corriger"><Pencil size={18} aria-hidden />Corriger</Button>
