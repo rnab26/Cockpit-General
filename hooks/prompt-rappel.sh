@@ -13,6 +13,17 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROJET="${COCKPIT_PROJET:-}"
 CHANTIER_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"; PROG_CMD="${COCKPIT_PROG_CMD:-scripts/progression.sh}"
 [ -n "$PROJET" ] || exit 0
+entree=$(cat 2>/dev/null || true)
+sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
+# Session chef (0014) : là où Raphaël écrit, là est le chef. Une notification ou
+# un réveil programmé n'est pas un message de lui : on ne prend la main que sur
+# un vrai message (pas de balise système en tête).
+chef_txt=""
+invite=$(printf '%s' "$entree" | jq -r '.prompt // ""' 2>/dev/null)
+if [ -n "$sid" ] && [ -x "$SQL" ] && ! printf '%s' "$invite" | grep -qE '^[[:space:]]*<(task-notification|system-reminder|wake)|Réveil (horaire|du chef)'; then
+  CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
+  chef_txt=$(CLAUDE_CODE_SESSION_ID="$sid" timeout 8 bash "$RACINE/$CHEF" --prendre 2>/dev/null || true)
+fi
 branche=$(git -C "$RACINE" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 tenus=""
 if [ -n "$branche" ] && [ -x "$SQL" ]; then
@@ -20,4 +31,5 @@ if [ -n "$branche" ] && [ -x "$SQL" ]; then
 fi
 texte="Cockpit (projet $PROJET) — si ce message demande du TRAVAIL (fonctionnalité, correctif, reprise d'un sujet), enregistre-le AVANT de coder : $CHANTIER_CMD --ouvrir \"<titre court, lisible par Raphaël>\" --demande \"<ses mots>\" --section \"<rubrique>\" (il reprend ou rouvre le chantier existant au lieu d'en créer un doublon). Doublons et rangement, c'est TOI qui tranches, jamais Raphaël : sur « ambigu », lis les extraits et relance avec --id ou --nouveau ; deux chantiers existants identiques → --suggerer-fusion (il accepte d'un toucher). Puis $PROG_CMD à chaque étape, les jalons pousse / ci-ok / en-ligne, et --termine avec --verifier et --en-ligne. Chaque agent que tu lances : écris dans sa consigne d'appeler $PROG_CMD --agent \"<sa description exacte>\" --etape … --pct … --eta … à chaque étape. Une simple question ou discussion : rien à enregistrer."
 [ -n "$tenus" ] && texte="$texte Ta session tient déjà : $tenus."
+[ -n "$chef_txt" ] && texte="$texte $chef_txt"
 jq -n --arg c "$texte" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'

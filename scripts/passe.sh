@@ -13,6 +13,10 @@ set -uo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 PROJET="${COCKPIT_PROJET:-${1:-}}"
+# Depuis la session chef (0014), un réveil de projet ne prend plus rien lui-même.
+if [ "$("$SQL" "select chef_existe() as e" 2>/dev/null | jq -r '.rows[0].e // false')" = "true" ]; then
+  exec bash "$RACINE/scripts/chef.sh" "$@"
+fi
 [ -n "$PROJET" ] || { echo "RIEN — projet inconnu (COCKPIT_PROJET)."; exit 0; }
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")

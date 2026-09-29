@@ -94,6 +94,21 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
 
+## UNE session chef, des agents (29 sept. 2026, migration 0014)
+
+Raphaël : « les sessions se marchent dessus » → une seule session dirige tous
+les projets : celle où il a écrit en dernier (hook UserPromptSubmit →
+`scripts/chef.sh --prendre`). Elle ne code pas elle-même : `scripts/chef.sh`
+lui donne un chantier par place libre (3 agents en parallèle, `--max`), elle
+lance un agent par chantier (isolation worktree, sa branche), et relance
+`chef.sh` à la fin de CHAQUE agent (et le hook Stop le fait aussi) : le travail
+continue sans attendre l'heure. Les autres sessions n'enchaînent plus rien
+(`autonome.sh`, `passe.sh`). Un seul réveil horaire, sur la chef
+(`chef.reveil_trigger`) ; une nouvelle chef le déplace sur elle. Si le
+conteneur de la chef s'arrête, ses agents s'arrêtent : chantiers réservés
+3 h, repris au réveil suivant (abandon détecté). Jamais `git add -A` dans un
+dossier partagé avec un agent (incident du 29 sept., commit 964528e).
+
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 
 « Toutes les questions, les constats, tout ce qui demande une interaction et

@@ -31,6 +31,16 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty'); [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
+# Session chef (0014) : s'il y en a une, seule elle fait avancer le travail, par
+# des agents. Les autres sessions n'enchaînent plus rien (« elles se marchent dessus »).
+chef=$(timeout 8 "$SQL" "select chef_existe() as e, est_chef('$(q "$sid")') as c" 2>/dev/null | jq -c '.rows[0] // {}' 2>/dev/null)
+if [ "$(printf '%s' "$chef" | jq -r '.e // false')" = "true" ]; then
+  [ "$(printf '%s' "$chef" | jq -r '.c // false')" = "true" ] || exit 0
+  CHEF="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
+  passe=$(CLAUDE_CODE_SESSION_ID="$sid" timeout 20 bash "$RACINE/${CHEF}" 2>/dev/null || true)
+  case "$passe" in ""|RIEN*) exit 0 ;; esac
+  jq -n --arg r "$passe" '{decision: "block", reason: $r}'; exit 0
+fi
 r=$(timeout 8 "$SQL" "select prochain_chantier_autonome('$(q "$PROJET")', '$(q "$sid")', '$(q "$branche")') as c" 2>/dev/null | jq -c '.rows[0].c // empty' 2>/dev/null)
 [ -n "$r" ] && [ "$r" != "null" ] || exit 0
 raison=$(consigne "$r")
