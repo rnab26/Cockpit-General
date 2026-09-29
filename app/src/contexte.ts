@@ -34,8 +34,8 @@ export interface Contexte {
   selection: { actif: boolean; ids: Set<string>; basculer: (id: string) => void }
   ouvrirModifier: (c: Chantier) => void
   ouvrirDoublonDe: (c: Chantier) => void
-  /** Ouvre la carte d'un chantier dans la vue de son projet, et y fait défiler l'écran. */
-  ouvrirChantier: (chantierId: string) => void
+  /** Ouvre la conversation d'un chantier (null : les questions du projet), sans changer d'onglet. */
+  ouvrirChantier: (chantierId: string | null) => void
 }
 
 export interface Global {
@@ -58,7 +58,7 @@ export interface Global {
   rechargerProjets: () => Promise<void>
   /** 'tout' ou l'id du projet affiché. */
   vue: string
-  ouvrirChantier: (projetId: string, chantierId: string) => void
+  ouvrirChantier: (projetId: string, chantierId: string | null) => void
   /** Le contexte d'un projet (null s'il n'est pas/plus visible). */
   contexteDe: (projetId: string) => Contexte | null
 }

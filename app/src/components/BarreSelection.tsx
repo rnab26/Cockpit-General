@@ -1,3 +1,4 @@
+import { Archive, ArchiveRestore, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Chantier, Etat, Priorite } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
@@ -76,9 +77,9 @@ export function BarreSelection({ onQuitter }: { onQuitter: () => void }) {
           </Select>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <Button taille="sm" disabled={!ids.length} chargement={enCours} onClick={() => appliquer('archived_at', new Date().toISOString(), 'archivés')}>📥 Archiver</Button>
-          <Button taille="sm" disabled={!ids.length} chargement={enCours} onClick={() => appliquer('archived_at', null, 'désarchivés')}>📤 Désarchiver</Button>
-          <Button taille="sm" variante="danger" disabled={!ids.length} chargement={enCours} onClick={supprimer}>🗑️ Supprimer</Button>
+          <Button taille="sm" disabled={!ids.length} chargement={enCours} onClick={() => appliquer('archived_at', new Date().toISOString(), 'archivés')}><Archive size={15} aria-hidden />Archiver</Button>
+          <Button taille="sm" disabled={!ids.length} chargement={enCours} onClick={() => appliquer('archived_at', null, 'désarchivés')}><ArchiveRestore size={15} aria-hidden />Désarchiver</Button>
+          <Button taille="sm" variante="danger" disabled={!ids.length} chargement={enCours} onClick={supprimer}><Trash2 size={15} aria-hidden />Supprimer</Button>
         </div>
       </div>
     </div>

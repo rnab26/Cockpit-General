@@ -38,7 +38,7 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
   }
 
   return (
-    <Dialog ouvert={!!chantier} onFermer={onFermer} titre="✏️ Modifier le chantier"
+    <Dialog ouvert={!!chantier} onFermer={onFermer} titre="Modifier le chantier"
       pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} onClick={enregistrer}>Enregistrer</Button></>}>
       <div className="space-y-3">
         <Champ label="Titre"><Input value={v.titre} onChange={(e) => setV({ ...v, titre: e.target.value })} /></Champ>

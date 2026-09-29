@@ -80,7 +80,7 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
   }
 
   return (
-    <Dialog ouvert={ouvert} onFermer={onFermer} titre="🏗️ Projets & membres" large pied={<Button onClick={onFermer}>Fermer</Button>}>
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre="Projets & membres" large pied={<Button onClick={onFermer}>Fermer</Button>}>
       {selection === null ? (
         <div className="space-y-2">
           {projets.map((p) => (

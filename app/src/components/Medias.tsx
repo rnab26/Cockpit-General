@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Paperclip, X } from 'lucide-react'
+import { File, FileText, Film, Image, Mic, Paperclip, X, type LucideIcon } from 'lucide-react'
 import type { Media } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
-import { ACCEPT_MEDIAS, BUCKET_MEDIAS, cheminMedia, genreMedia, ICONE_MEDIA, refusMedias, tailleLisible } from '../lib/medias.ts'
+import { ACCEPT_MEDIAS, BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 
@@ -79,11 +79,27 @@ export function useMediasAJoindre(projetId: string, chantierId: string | null): 
   }
 }
 
-/** Le bouton « 📎 Photo ou fichier » et les vignettes de ce qui est joint. */
+/** L'icône d'un genre de fichier (des logos, pas des emojis : 29 sept. 2026). */
+const ICONE_MEDIA: Record<GenreMedia, LucideIcon> = { image: Image, video: Film, audio: Mic, pdf: FileText, fichier: File }
+function IconeMedia({ genre }: { genre: GenreMedia }) {
+  const I = ICONE_MEDIA[genre]
+  return <I size={18} aria-hidden className="mx-auto mb-0.5 text-texte-2" />
+}
+
+/** Le bouton « Joindre » (trombone) et les vignettes de ce qui est joint. */
 export function ChoisirMedias({ ctrl, testId = 'choisir-medias' }: { ctrl: MediasAJoindre; testId?: string }) {
-  const input = useRef<HTMLInputElement>(null)
   return (
     <div className="space-y-2" data-testid={testId}>
+      <VignettesPieces ctrl={ctrl} />
+      <BoutonJoindre ctrl={ctrl} />
+    </div>
+  )
+}
+
+/** Les vignettes de ce qui est joint (envoi en cours, erreur avec « réessayer », retirer). */
+export function VignettesPieces({ ctrl }: { ctrl: MediasAJoindre }) {
+  return (
+    <>
       {ctrl.pieces.length ? (
         <ul className="flex flex-wrap gap-2" data-testid="pieces-jointes">
           {ctrl.pieces.map((p) => (
@@ -91,7 +107,7 @@ export function ChoisirMedias({ ctrl, testId = 'choisir-medias' }: { ctrl: Media
               <div className={`flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border bg-carte-2 ${p.etat === 'erreur' ? 'border-alerte' : 'border-bord'}`} title={`${p.fichier.name} · ${tailleLisible(p.fichier.size)}`}>
                 {p.apercu && p.fichier.type.startsWith('image/') ? <img src={p.apercu} alt={p.fichier.name} className="h-full w-full object-cover" />
                   : p.apercu ? <video src={p.apercu} muted playsInline className="h-full w-full object-cover" />
-                  : <span className="px-1 text-center text-[10px] leading-tight text-texte-2">{ICONE_MEDIA[genreMedia(p.fichier.type, p.fichier.name)]}<br />{p.fichier.name.slice(0, 14)}</span>}
+                  : <span className="px-1 text-center text-[10px] leading-tight text-texte-2"><IconeMedia genre={genreMedia(p.fichier.type, p.fichier.name)} />{p.fichier.name.slice(0, 14)}</span>}
                 {p.etat === 'envoi' ? <span className="absolute inset-0 flex items-center justify-center bg-carte/60"><span className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-label="Envoi…" /></span> : null}
                 {p.etat === 'erreur' ? (
                   <button type="button" onClick={() => ctrl.reessayer(p.id)} className="absolute inset-0 flex items-center justify-center bg-carte/80 text-[11px] font-medium text-alerte">réessayer</button>
@@ -103,14 +119,25 @@ export function ChoisirMedias({ ctrl, testId = 'choisir-medias' }: { ctrl: Media
           ))}
         </ul>
       ) : null}
+    </>
+  )
+}
+
+/** « Joindre » : ouvre le choix de fichiers. `icone` : le trombone seul (barre de saisie d'une conversation). */
+export function BoutonJoindre({ ctrl, icone = false }: { ctrl: MediasAJoindre; icone?: boolean }) {
+  const input = useRef<HTMLInputElement>(null)
+  return (
+    <>
       <input ref={input} type="file" multiple accept={ACCEPT_MEDIAS} className="hidden" data-testid="entree-medias"
         onChange={(e) => { ctrl.ajouter(Array.from(e.target.files ?? [])); e.target.value = '' }} />
       <button type="button" onClick={() => input.current?.click()} data-testid="ajouter-media"
-        title="Joindre une photo, une vidéo ou un fichier"
-        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-bord bg-carte px-2.5 text-sm text-texte-2 hover:bg-carte-2 hover:text-texte">
-        <Paperclip size={16} aria-hidden /> Joindre
+        title="Joindre une photo, une vidéo ou un fichier" aria-label="Joindre une photo, une vidéo ou un fichier"
+        className={icone
+          ? 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-texte-2 hover:bg-carte-2 hover:text-texte'
+          : 'inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-bord bg-carte px-2.5 text-sm text-texte-2 hover:bg-carte-2 hover:text-texte'}>
+        <Paperclip size={icone ? 18 : 16} aria-hidden />{icone ? null : ' Joindre'}
       </button>
-    </div>
+    </>
   )
 }
 
@@ -154,7 +181,7 @@ export function MediasMessage({ medias, petit = false }: { medias: Media[]; peti
                 className={`flex ${taille} items-center justify-center overflow-hidden rounded-lg border border-bord bg-carte-2`}>
                 {url && genre === 'image' ? <img src={url} alt={m.nom} loading="lazy" className="h-full w-full object-cover" />
                   : url && genre === 'video' ? <video src={`${url}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-                  : <span className="px-1 text-center text-[10px] leading-tight text-texte-2">{ICONE_MEDIA[genre]}<br />{m.nom.slice(0, 14)}</span>}
+                  : <span className="px-1 text-center text-[10px] leading-tight text-texte-2"><IconeMedia genre={genre} />{m.nom.slice(0, 14)}</span>}
               </button>
             </li>
           )

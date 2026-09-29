@@ -1,3 +1,4 @@
+import { ChevronDown, RefreshCw, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { Projet } from '../lib/types.ts'
 import { etatDuProjet, phraseSite, type ExecutionGitHub, type LectureSite } from '../lib/deploiement.ts'
@@ -121,13 +122,13 @@ function EtatDepot({ depot, projet, now }: { depot: string; projet: Projet; now:
         <button type="button" onClick={() => setOuvert(!ouvert)} aria-expanded={ouvert} disabled={!synthese?.lignes.length}
           className={`min-w-0 flex-1 text-left font-semibold leading-snug ${couleur}`} data-testid="deploiement-titre">
           {synthese?.enCours ? <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-info align-middle" aria-hidden /> : null}
-          {synthese ? synthese.titre : erreurDiscrete ? ligneSite : e.erreur ? `⚠️ ${e.erreur}` : 'Lecture de GitHub…'}
-          {synthese?.lignes.length ? <span className="ml-1 text-xs font-normal text-texte-2">{ouvert ? '▲' : '▼'}</span> : null}
+          {synthese ? synthese.titre : erreurDiscrete ? ligneSite : e.erreur ? e.erreur : 'Lecture de GitHub…'}
+          {synthese?.lignes.length ? <ChevronDown size={14} aria-hidden className={`ml-1 inline align-[-2px] text-texte-2 transition ${ouvert ? 'rotate-180' : ''}`} /> : null}
         </button>
         <button type="button" onClick={() => { void charger(depot); if (urlSite) void chargerSite(urlSite) }} aria-label="Relire" title="Relire GitHub et le site" data-testid="deploiement-relire"
-          className={`shrink-0 rounded-lg px-1.5 text-texte-2 hover:bg-carte-2 ${e.chargement || site.chargement ? 'animate-spin' : ''}`}>↻</button>
+          className="shrink-0 rounded-lg p-1 text-texte-2 hover:bg-carte-2"><RefreshCw size={15} className={e.chargement || site.chargement ? 'animate-spin' : ''} /></button>
       </div>
-      {synthese && e.erreur ? <p className="text-xs text-attention">⚠️ {e.erreur} (état affiché : le dernier lu)</p> : null}
+      {synthese && e.erreur ? <p className="flex items-center gap-1 text-xs text-attention"><TriangleAlert size={13} className="shrink-0" aria-hidden />{e.erreur} (état affiché : le dernier lu)</p> : null}
       {ouvert && synthese ? (
         <ul className="mt-1 space-y-1 border-l-2 border-bord pl-2" data-testid="deploiement-lignes">
           {synthese.lignes.map((l) => (

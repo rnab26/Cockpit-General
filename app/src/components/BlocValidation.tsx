@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Check, FlaskConical, Pencil } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -23,7 +24,7 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
   /** Les médias partent juste après la décision ; renvoie false si leur envoi a échoué (le toast le dit). */
   const joindre = async (quoi: string) => {
     if (!pj.medias.length) return true
-    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId: chantier.id, par, admin, medias: pj.medias, corps: `📎 ${quoi}` })
+    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId: chantier.id, par, admin, medias: pj.medias, corps: quoi })
     if (erreur) { toast.erreur(`Les fichiers ne sont pas partis : ${erreur}`); return false }
     pj.vider()
     return true
@@ -36,7 +37,7 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
     if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
     const ok = await joindre('Capture jointe à la certification')
     setEnCours(false)
-    if (ok) toast.succes(`« ${chantier.titre} » certifié. Il passe dans ✅ Actif.`)
+    if (ok) toast.succes(`« ${chantier.titre} » certifié. Il passe dans « Fini ».`)
     await recharger()
   }
   const corriger = async () => {
@@ -53,8 +54,8 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
   }
 
   return (
-    <div data-testid="bloc-validation" className="rounded-xl border border-l-4 border-bord border-l-attention bg-carte p-3">
-      {sansEntete ? null : <p className="mb-2 text-sm font-medium text-attention">Livré par la session : à toi de dire si ça marche.</p>}
+    <div data-testid="bloc-validation" className="rounded-2xl border border-l-4 border-bord border-l-attention bg-carte p-3">
+      {sansEntete ? null : <p className="mb-2 flex items-center gap-1.5 text-[15px] font-medium"><FlaskConical size={16} className="text-attention" aria-hidden />C’est livré : à toi de tester</p>}
       <div className="space-y-2">
         <FriseMiseEnLigne chantier={chantier} />
         <EncadreCommentVerifier chantier={chantier} />
@@ -62,8 +63,8 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
       </div>
       {mode === 'choix' ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button variante="ok" taille="lg" onClick={() => setMode('certifier')} data-testid="btn-certifier">✅ Ça fonctionne, je certifie</Button>
-          <Button variante="attention" taille="lg" onClick={() => setMode('corriger')} data-testid="btn-corriger">✏️ Ça ne marche pas, corriger</Button>
+          <Button variante="ok" taille="lg" onClick={() => setMode('certifier')} data-testid="btn-certifier"><Check size={18} aria-hidden />Ça marche</Button>
+          <Button variante="attention" taille="lg" onClick={() => setMode('corriger')} data-testid="btn-corriger"><Pencil size={18} aria-hidden />Corriger</Button>
         </div>
       ) : (
         <div className="mt-2 space-y-2">
@@ -73,8 +74,8 @@ export function BlocValidation({ chantier, sansEntete = false }: { chantier: Cha
           <div className="flex justify-end gap-2">
             <Button onClick={() => { setMode('choix'); setMots(''); pj.vider() }}>Annuler</Button>
             {mode === 'certifier'
-              ? <Button variante="ok" chargement={enCours || pj.enCours} onClick={certifier}>✅ Je certifie</Button>
-              : <Button variante="attention" chargement={enCours || pj.enCours} onClick={corriger}>✏️ Envoyer la correction</Button>}
+              ? <Button variante="ok" chargement={enCours || pj.enCours} onClick={certifier}><Check size={16} aria-hidden />Je certifie</Button>
+              : <Button variante="attention" chargement={enCours || pj.enCours} onClick={corriger}><Pencil size={16} aria-hidden />Envoyer la correction</Button>}
           </div>
         </div>
       )}
@@ -91,7 +92,7 @@ export function SignalerProbleme({ chantier }: { chantier: Chantier }) {
   const [enCours, setEnCours] = useState(false)
   if (!ouvert) return <button type="button" className="text-sm text-texte-2 underline-offset-2 hover:underline" onClick={() => setOuvert(true)}>Signaler un problème</button>
   return (
-    <div className="rounded-xl border border-attention/50 p-3">
+    <div className="rounded-xl border border-bord border-l-4 border-l-attention p-3">
       <p className="text-sm font-semibold">Qu’est-ce qui ne marche plus ?</p>
       <Textarea className="mt-2" rows={3} autoFocus value={mots} onChange={(e) => setMots(e.target.value)} placeholder="Précisément, pour que la session puisse reproduire" />
       <div className="mt-2 flex justify-end gap-2">

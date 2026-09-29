@@ -1,3 +1,4 @@
+import { Monitor, Moon, Sun } from 'lucide-react'
 import { useGlobal } from '../contexte.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -6,8 +7,8 @@ import { FENETRES, FENETRE_DEFAUT, estFenetre, type Fenetre } from '../lib/fenet
 import { CLE_PREF_SILENCE, SILENCES_MIN, silenceMsDe } from '../lib/presence.ts'
 import type { Theme } from '../hooks/useTheme.ts'
 
-const THEMES: { valeur: Theme; libelle: string }[] = [
-  { valeur: 'systeme', libelle: '📱 Système' }, { valeur: 'clair', libelle: '☀️ Clair' }, { valeur: 'sombre', libelle: '🌙 Sombre' },
+const THEMES: { valeur: Theme; libelle: string; I: typeof Sun }[] = [
+  { valeur: 'systeme', libelle: 'Système', I: Monitor }, { valeur: 'clair', libelle: 'Clair', I: Sun }, { valeur: 'sombre', libelle: 'Sombre', I: Moon },
 ]
 
 export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seDeconnecter }: {
@@ -19,7 +20,7 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
   const fenetre: Fenetre = estFenetre(prefs.fenetre_livre) ? prefs.fenetre_livre : FENETRE_DEFAUT
   const silenceMin = silenceMsDe(prefs[CLE_PREF_SILENCE]) / 60_000
   const choisirSilence = async (m: number) => {
-    try { await poser(CLE_PREF_SILENCE, m); toast.succes(`Une session sans nouvelle depuis ${m} min passe en « 🟡 Pris, mais silencieux ».`) }
+    try { await poser(CLE_PREF_SILENCE, m); toast.succes(`Une session sans nouvelle depuis ${m} min passe en « Pris, mais silencieux ».`) }
     catch (e) { toast.erreur((e as Error).message) }
   }
   const choisirFenetre = async (f: Fenetre) => {
@@ -27,7 +28,7 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
     catch (e) { toast.erreur((e as Error).message) }
   }
   return (
-    <Dialog ouvert={ouvert} onFermer={onFermer} titre="⚙️ Réglages" pied={<Button onClick={onFermer}>Fermer</Button>}>
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre="Réglages" pied={<Button onClick={onFermer}>Fermer</Button>}>
       <div className="space-y-5">
         <section>
           <h3 className="mb-1 text-sm font-semibold">Délai avant de considérer une session comme silencieuse</h3>
@@ -37,7 +38,7 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
           </div>
         </section>
         <section>
-          <h3 className="mb-1 text-sm font-semibold">« Certifiés récemment » (en-tête ✅ Actif)</h3>
+          <h3 className="mb-1 text-sm font-semibold">« Certifiés récemment » (tuile « fini »)</h3>
           <p className="mb-2 text-xs text-texte-2">Depuis minuit local. Suit ton compte, pas ton téléphone.</p>
           <div className="grid grid-cols-3 gap-2" data-testid="fenetre-livre">
             {FENETRES.map((f) => <Button key={f.valeur} variante={fenetre === f.valeur ? 'primaire' : 'secondaire'} onClick={() => choisirFenetre(f.valeur)}>{f.libelle}</Button>)}
@@ -46,13 +47,13 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
         <section>
           <h3 className="mb-2 text-sm font-semibold">Thème</h3>
           <div className="grid grid-cols-3 gap-2">
-            {THEMES.map((t) => <Button key={t.valeur} variante={theme === t.valeur ? 'primaire' : 'secondaire'} onClick={() => changerTheme(t.valeur)}>{t.libelle}</Button>)}
+            {THEMES.map((t) => <Button key={t.valeur} variante={theme === t.valeur ? 'primaire' : 'secondaire'} onClick={() => changerTheme(t.valeur)}><t.I size={16} aria-hidden />{t.libelle}</Button>)}
           </div>
         </section>
         {admin ? (
           <section>
             <h3 className="mb-2 text-sm font-semibold">Administration</h3>
-            <Button pleine onClick={() => { onFermer(); onProjets() }}>🏗️ Projets & membres</Button>
+            <Button pleine onClick={() => { onFermer(); onProjets() }}>Projets & membres</Button>
           </section>
         ) : null}
         <section className="rounded-xl bg-carte-2 p-3 text-sm">

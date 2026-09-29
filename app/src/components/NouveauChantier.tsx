@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -43,7 +44,7 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
         <Champ label="Titre"><Input autoFocus value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="En une phrase : ce qu’il faut faire" data-testid="titre" /></Champ>
         {proches.length ? (
           <div className="rounded-xl border border-l-4 border-bord border-l-attention bg-carte px-3 py-2 text-sm" data-testid="ca-existe-deja">
-            <p className="font-semibold text-attention">⚠️ Ça existe déjà, peut-être :</p>
+            <p className="flex items-center gap-1.5 font-medium text-attention"><TriangleAlert size={15} aria-hidden />Ça existe déjà, peut-être :</p>
             <ul className="mt-1 space-y-0.5">
               {proches.map((p) => <li key={p.id}>• {p.titre} <span className="text-texte-2">({infoEtat(p.etat).libelle}{p.archived_at ? ', archivé' : ''})</span></li>)}
             </ul>
@@ -72,7 +73,7 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
               {ETATS.filter((e) => e.etat !== 'valide').map((e) => <option key={e.etat} value={e.etat}>{e.libelle}</option>)}
             </Select>
           </Champ>
-        ) : <p className="text-xs text-texte-2">Ta demande arrive « ⏳ Pas encore examinée » ; Claude la range, une session la prend, et tu certifies quand c’est livré.</p>}
+        ) : <p className="text-xs text-texte-2">Ta demande arrive « Pas encore examinée » ; Claude la range, une session la prend, et tu certifies quand c’est livré.</p>}
       </div>
     </Dialog>
   )

@@ -19,8 +19,6 @@ export function genreMedia(type: string, nom = ''): GenreMedia {
   return 'fichier'
 }
 
-export const ICONE_MEDIA: Record<GenreMedia, string> = { image: '🖼️', video: '🎬', audio: '🎙️', pdf: '📄', fichier: '📎' }
-
 /** Un nom de fichier sûr pour un chemin de stockage (sans accents, espaces ni caractères spéciaux). */
 export function nomSur(nom: string): string {
   const base = nom.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^[-.]+|-+$/g, '')

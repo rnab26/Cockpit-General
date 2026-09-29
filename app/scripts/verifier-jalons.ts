@@ -53,7 +53,7 @@ verifie('jsonb mal formé : ignoré sans planter', frise('n’importe quoi', now
 {
   const rien = { ...J('code', a(15, 0)), ...J('pas_en_ligne', a(15, 5), 'documentation seulement') }
   const f = frise(rien, now)!
-  verifie('pas en ligne : dernière étape « ℹ️ Rien à mettre en ligne : documentation seulement »', f[3].etat === 'info' && f[3].libelle === 'ℹ️ Rien à mettre en ligne : documentation seulement', f[3].libelle)
+  verifie('pas en ligne : dernière étape « Rien à mettre en ligne : documentation seulement »', f[3].etat === 'info' && f[3].libelle === 'Rien à mettre en ligne : documentation seulement', f[3].libelle)
   verifie('pas en ligne : la phrase dit qu’il peut vérifier', syntheseMiseEnLigne(rien, now)!.code === 'rien' && syntheseMiseEnLigne(rien, now)!.peutVerifier)
   const geste = J('pas_en_ligne', a(15, 5), 'installe la nouvelle APK sur ton téléphone')
   verifie('geste : « 👉 Il faut ton geste : … »', frise(geste, now)![3].libelle.startsWith('Il faut ton geste : installe'))

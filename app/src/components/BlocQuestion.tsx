@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Ban, Check, Clock, Star } from 'lucide-react'
 import type { Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -6,14 +7,15 @@ import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
 import { dateRelative } from '../lib/dates.ts'
-import { extrait, nomCourtSession } from '../lib/texte.ts'
+import { extrait } from '../lib/texte.ts'
 import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 
 /**
  * Une question (options cliquables + précision) ou une action (Fait / Pas
- * encore / Ça bloque) qui attend l'humain. Toujours dépliée ; carte neutre
- * avec un liseré (29 sept. : « très coloré, ça fait mal aux yeux »). Photos
- * et fichiers joints partent dans le fil, juste sous la réponse.
+ * encore / Ça bloque) qui attend l'humain : une bulle de la conversation.
+ * Règle de clarté (29 sept.) : la question en gros, le pourquoi en petit
+ * dessous, les réponses toutes prêtes bien visibles. Carte neutre avec un
+ * liseré ; photos et fichiers joints partent dans le fil, sous la réponse.
  */
 export function BlocQuestion({ message }: { message: Message }) {
   const { par, admin, projet, recharger, now } = useCockpit()
@@ -35,7 +37,7 @@ export function BlocQuestion({ message }: { message: Message }) {
     let erreurMedias: string | null = null
     if (pj.medias.length) {
       erreurMedias = await ecrireAvecMedias({ projetId: projet.id, chantierId: message.chantier_id, par, admin, medias: pj.medias,
-        corps: `📎 Pour ma réponse « ${extrait(reponse, 60)} » à : ${extrait(message.corps, 80)}` })
+        corps: `Pièces jointes à ma réponse « ${extrait(reponse, 60)} » à : ${extrait(message.corps, 80)}` })
     }
     setEnCours(false)
     if (erreurMedias) toast.erreur(`Réponse enregistrée, mais les fichiers ne sont pas partis : ${erreurMedias}`)
@@ -51,19 +53,19 @@ export function BlocQuestion({ message }: { message: Message }) {
   }
 
   return (
-    <div data-testid="bloc-question" className="rounded-xl border border-l-4 border-bord border-l-alerte bg-carte p-3">
+    <div data-testid="bloc-question" className="rounded-2xl border border-l-4 border-bord border-l-alerte bg-carte p-3">
       <div className="flex items-baseline justify-between gap-2 text-xs text-texte-2">
-        <span><span className="font-medium text-alerte">{estAction ? 'Action attendue de toi' : 'Question'}</span> · {nomCourtSession(message.auteur)}</span>
+        <span className="font-medium text-alerte">{estAction ? 'Claude attend un geste de toi' : 'Claude te pose une question'}</span>
         <span>{dateRelative(message.created_at, now)}</span>
       </div>
-      <p className="mt-1 whitespace-pre-wrap text-[15px] font-medium leading-snug">{message.corps}</p>
-      {message.pourquoi ? <p className="mt-1 whitespace-pre-wrap text-sm text-texte-2"><span className="font-medium">Pourquoi :</span> {message.pourquoi}</p> : null}
+      <p className="mt-1 whitespace-pre-wrap text-base font-medium leading-snug">{message.corps}</p>
+      {message.pourquoi ? <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-texte-2">{message.pourquoi}</p> : null}
 
       {estAction ? (
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <Button variante="ok" chargement={enCours} onClick={() => envoyer('Fait', 'fait')}>✅ Fait</Button>
-          <Button chargement={enCours} onClick={() => envoyer('Pas encore', 'pas_encore')}>🕒 Pas encore</Button>
-          <Button variante="danger" chargement={enCours} onClick={() => envoyer('Ça bloque', 'bloque')}>⛔ Ça bloque</Button>
+          <Button variante="ok" chargement={enCours} onClick={() => envoyer('Fait', 'fait')}><Check size={16} aria-hidden />Fait</Button>
+          <Button chargement={enCours} onClick={() => envoyer('Pas encore', 'pas_encore')}><Clock size={16} aria-hidden />Pas encore</Button>
+          <Button variante="attention" chargement={enCours} onClick={() => envoyer('Ça bloque', 'bloque')}><Ban size={16} aria-hidden />Ça bloque</Button>
         </div>
       ) : (
         <>
@@ -73,7 +75,7 @@ export function BlocQuestion({ message }: { message: Message }) {
                 <button key={o.libelle} type="button" role="radio" aria-checked={choix === o.libelle} onClick={() => setChoix(o.libelle)}
                   className={`min-h-12 rounded-xl border px-3 py-2.5 text-left transition ${choix === o.libelle ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-bord bg-carte hover:bg-carte-2'}`}>
                   <span className="font-medium">{o.libelle}</span>
-                  {o.recommande ? <span className="ml-2 text-xs font-medium text-accent">★ recommandé</span> : null}
+                  {o.recommande ? <span className="ml-2 inline-flex items-center gap-0.5 text-xs font-medium text-accent"><Star size={12} aria-hidden />recommandé</span> : null}
                   {o.aide ? <span className="mt-0.5 block text-sm text-texte-2">{o.aide}</span> : null}
                 </button>
               ))}

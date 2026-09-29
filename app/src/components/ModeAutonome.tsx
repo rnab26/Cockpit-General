@@ -1,3 +1,4 @@
+import { Moon } from 'lucide-react'
 import { useState } from 'react'
 import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
@@ -42,22 +43,22 @@ export function ModeAutonome({ projet }: { projet: Projet }) {
     if (toujours) {
       const pb = erreurReglage(new Date(Date.now() + 3600_000), n, new Date())
       if (pb) { toast.erreur(pb); return }
-      if (await regler(null, n, true)) { toast.succes(`🌙 Autonome tout le temps, au plus ${n} chantiers par session.`); setOuvert(false) }
+      if (await regler(null, n, true)) { toast.succes(`Autonome tout le temps, au plus ${n} chantiers par session.`); setOuvert(false) }
       return
     }
     if (!estHeure(heure)) { toast.erreur('Choisis une heure de fin (HH:MM).'); return }
     const fin = prochaineHeure(heure, new Date())
     const pb = erreurReglage(fin, n, new Date())
     if (pb) { toast.erreur(pb); return }
-    if (await regler(fin, n)) { toast.succes(`🌙 Autonome jusqu’à ${heureIsrael(fin)} (heure d’Israël), au plus ${n} chantiers par session.`); setOuvert(false) }
+    if (await regler(fin, n)) { toast.succes(`Autonome jusqu’à ${heureIsrael(fin)} (heure d’Israël), au plus ${n} chantiers par session.`); setOuvert(false) }
   }
   const arreter = async () => { if (await regler(null, null)) toast.succes('Mode autonome arrêté : les sessions s’arrêteront à la fin de leur tâche.') }
 
   if (actif && !ouvert) {
     return (
-      <div data-testid="mode-autonome" data-actif="oui" className="flex items-center gap-2 rounded-xl border border-bord bg-carte-2/60 px-2.5 py-1.5 text-sm">
+      <div data-testid="mode-autonome" data-actif="oui" className="flex items-center gap-2 rounded-xl border border-bord bg-carte px-2.5 py-1.5 text-sm">
         <p className="min-w-0 flex-1 leading-snug" data-testid="autonome-bandeau">
-          <span className="font-semibold text-info">🌙 Autonome {projet.autonome_toujours ? 'tout le temps' : `jusqu’à ${heureIsrael(projet.autonome_jusqu_a!)}`}</span>
+          <span className="inline-flex items-center gap-1 font-medium text-info"><Moon size={14} aria-hidden />Autonome {projet.autonome_toujours ? 'tout le temps' : `jusqu’à ${heureIsrael(projet.autonome_jusqu_a!)}`}</span>
           <span className="text-texte-2"> — {libellePrets} · au plus {projet.autonome_max} par session</span>
         </p>
         <div className="flex shrink-0 flex-col gap-1">
@@ -71,10 +72,10 @@ export function ModeAutonome({ projet }: { projet: Projet }) {
     <div data-testid="mode-autonome" data-actif={actif ? 'oui' : 'non'} className="text-sm">
       {!ouvert ? (
         <button type="button" onClick={() => setOuvert(true)} data-testid="autonome-ouvrir" className="text-left font-medium text-texte-2 underline-offset-2 hover:underline">
-          🌙 Travailler en autonomie…
+          <span className="inline-flex items-center gap-1.5"><Moon size={15} aria-hidden />Travailler en autonomie…</span>
         </button>
       ) : (
-        <div className="space-y-2 rounded-xl border border-bord bg-carte-2/60 p-2.5" data-testid="autonome-formulaire">
+        <div className="space-y-2 rounded-xl border border-bord bg-carte p-2.5" data-testid="autonome-formulaire">
           <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Jusqu’à quand">
             <label className="flex items-center gap-2">
               <input type="radio" name={`autonome-${projet.id}`} checked={!toujours} onChange={() => setToujours(false)} className="accent-accent" data-testid="autonome-jusqua" />
@@ -94,7 +95,7 @@ export function ModeAutonome({ projet }: { projet: Projet }) {
           <p className="text-xs text-texte-2">{AIDE_AUTONOME} Heure d’Israël ; 24 h au plus, ou « tout le temps ». {libellePrets} maintenant.</p>
           <div className="flex justify-end gap-2">
             <Button taille="sm" onClick={() => setOuvert(false)}>Annuler</Button>
-            <Button taille="sm" variante="primaire" chargement={enCours} onClick={allumer} data-testid="autonome-allumer">🌙 Allumer</Button>
+            <Button taille="sm" variante="primaire" chargement={enCours} onClick={allumer} data-testid="autonome-allumer"><Moon size={15} aria-hidden />Allumer</Button>
           </div>
         </div>
       )}

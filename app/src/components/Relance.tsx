@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CircleHelp, ClipboardCopy } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -55,8 +56,8 @@ export function BoutonsRelance({ chantier }: { chantier: Chantier }) {
   return (
     <div data-testid="relance">
       <div className="grid grid-cols-2 gap-2">
-        <Button taille="sm" onClick={copier} data-testid="copier-consigne" className="h-auto! min-h-9 whitespace-normal! py-1.5 text-[13px] leading-tight">📋 Copier la consigne</Button>
-        <Button taille="sm" chargement={enCours} onClick={demander} data-testid="demander-ou-ca-en-est" className="h-auto! min-h-9 whitespace-normal! py-1.5 text-[13px] leading-tight">❓ Demander où ça en est</Button>
+        <Button taille="sm" onClick={copier} data-testid="copier-consigne" className="h-auto! min-h-9 whitespace-normal! py-1.5 text-[13px] leading-tight"><ClipboardCopy size={15} aria-hidden />Copier la consigne</Button>
+        <Button taille="sm" chargement={enCours} onClick={demander} data-testid="demander-ou-ca-en-est" className="h-auto! min-h-9 whitespace-normal! py-1.5 text-[13px] leading-tight"><CircleHelp size={15} aria-hidden />Demander où ça en est</Button>
       </div>
       {demande ? <p className="mt-1 text-xs text-texte-2" data-testid="deja-demande-ou">Demandé {dateRelative(demande.created_at, now)} — la réponse arrivera dans le fil.</p> : null}
       {repli ? (

@@ -258,11 +258,11 @@ export interface LigneCaAvance {
   activite: Activite | null
   /** Preuve de vie : barre vive. Sinon « sans nouvelles » : à relancer. */
   vivant: boolean
-  /** Qui avance : « Claude (session autonome) », « 1 agent », « Claude (session x) · 2 agents ». */
+  /** Qui avance, en mots de tous les jours : « Claude, en autonomie », « 1 assistant de Claude », « Claude (conversation « x ») · 2 assistants de Claude ». */
   qui: string
   /** La dernière étape signalée (« écran refait, tests en cours »), ou null. */
   etape: string | null
-  /** Sans nouvelles : pourquoi (« Pris, mais silencieux » / « Personne dessus »), et la dernière demande « où ça en est ». */
+  /** Sans nouvelles : pourquoi (« Plus de nouvelles » / « Personne dessus »), et la dernière demande « où ça en est ». */
   pourquoi: string | null
   demandeLe: string | null
 }
@@ -289,9 +289,9 @@ export function caAvanceToutSeul(
       const morceaux: string[] = []
       if (parSession) {
         const s = sessions.find((x) => x.projet_id === c.projet_id && x.branche === parSession.session)
-        morceaux.push(`Claude (session ${s ? nomSession(s) : nomCourtSession(parSession.session)})`)
+        morceaux.push(s && estSessionAutonome(s) ? 'Claude, en autonomie' : `Claude (conversation « ${s ? nomSession(s) : nomCourtSession(parSession.session)} »)`)
       }
-      if (agents) morceaux.push(`${agents} agent${agents > 1 ? 's' : ''}`)
+      if (agents) morceaux.push(`${agents} assistant${agents > 1 ? 's' : ''} de Claude`)
       // Jamais une vieille barre sous une ligne vivante : celle de la session, ou celle de l'agent s'il a signalé un %.
       const barre = parSession ?? (presence.barreVive ? activite : null)
       const agent = agentVivantDuChantier(taches, c.id, now, silenceMs)
@@ -299,7 +299,7 @@ export function caAvanceToutSeul(
         etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null })
     } else if (estEnCoursSansNouvelles(c, presence)) {
       const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
-      lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: presence.code === 'silencieux' ? 'Pris, mais silencieux' : 'Personne dessus',
+      lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: presence.code === 'silencieux' ? 'Plus de nouvelles' : 'Personne dessus',
         demandeLe: demande?.created_at ?? null })
     }
   }
@@ -329,15 +329,15 @@ export function horsChantier(groupes: readonly QuiTravaille[]): LigneHorsChantie
       const surChantier = vs.activites.some((a) => a.chantier_id) || vs.taches.some((t) => t.chantier)
       if (surChantier) continue
       const nom = nomSession(vs.session)
-      const texte = vs.pause ? `Session ${nom} ${vs.pause.charAt(0).toLowerCase()}${vs.pause.slice(1)}`
-        : vs.repond ? `Claude travaille hors chantier (session ${nom})`
-        : estSessionAutonome(vs.session) ? 'Session autonome en veille — se réveille toute seule chaque heure'
-        : `Session ${nom} ouverte — attend ton message`
+      const texte = vs.pause ? `Claude (« ${nom} ») ${vs.pause.charAt(0).toLowerCase()}${vs.pause.slice(1)}`
+        : vs.repond ? `Claude travaille sur autre chose (« ${nom} »)`
+        : estSessionAutonome(vs.session) ? 'Claude en autonomie : en veille, se réveille tout seul chaque heure'
+        : `Conversation « ${nom} » ouverte : attend ton message`
       r.push({ cle: `s-${vs.session.id}`, projetId: g.projetId, texte, pause: !!vs.pause })
     }
     for (const a of g.activitesSeules) {
       if (a.chantier_id) continue
-      r.push({ cle: `a-${a.id}`, projetId: g.projetId, texte: `Claude travaille hors chantier (session ${nomCourtSession(a.session)})${a.etape ? ` · ${a.etape}` : ''}`, pause: false })
+      r.push({ cle: `a-${a.id}`, projetId: g.projetId, texte: `Claude travaille sur autre chose (« ${nomCourtSession(a.session)} »)${a.etape ? ` · ${a.etape}` : ''}`, pause: false })
     }
   }
   return r

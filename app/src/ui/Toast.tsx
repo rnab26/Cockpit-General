@@ -1,3 +1,4 @@
+import { CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 interface Toast { id: number; texte: string; type: 'succes' | 'erreur' | 'info'; action?: { libelle: string; onClick: () => void }; duree: number }
@@ -11,7 +12,11 @@ const Ctx = createContext<Api>({ succes() {}, erreur() {}, info() {}, avecAction
 export function useToast() { return useContext(Ctx) }
 
 const STYLE = { succes: 'border-ok/40', erreur: 'border-alerte/60', info: 'border-info/40' }
-const ICONE = { succes: '✅', erreur: '⚠️', info: 'ℹ️' }
+const ICONE = {
+  succes: <CircleCheck size={18} className="shrink-0 text-ok" />,
+  erreur: <TriangleAlert size={18} className="shrink-0 text-alerte" />,
+  info: <Info size={18} className="shrink-0 text-info" />,
+}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [liste, setListe] = useState<Toast[]>([])
@@ -48,13 +53,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div ref={zone} popover="manual" className="pointer-events-none fixed inset-x-0 top-auto bottom-[max(env(safe-area-inset-bottom),12px)] z-[60] m-0 flex h-auto w-auto flex-col items-center gap-2 overflow-visible border-0 bg-transparent px-3 py-0 text-texte" role="status" aria-live="polite">
         {liste.map((t) => (
           <div key={t.id} className={`toast-in pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl border bg-carte px-3 py-2.5 text-[15px] shadow-xl ${STYLE[t.type]}`}>
-            <span aria-hidden>{ICONE[t.type]}</span>
+            <span aria-hidden className="flex">{ICONE[t.type]}</span>
             <span className="flex-1">{t.texte}</span>
             {t.action ? (
               <button type="button" className="rounded-lg bg-accent px-2.5 py-1 text-sm font-semibold text-accent-fg"
                 onClick={() => { t.action?.onClick(); retirer(t.id) }}>{t.action.libelle}</button>
             ) : null}
-            <button type="button" aria-label="Fermer" className="text-texte-2" onClick={() => retirer(t.id)}>✕</button>
+            <button type="button" aria-label="Fermer" className="text-texte-2" onClick={() => retirer(t.id)}><X size={16} /></button>
           </div>
         ))}
       </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CircleHelp, ListChecks } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -45,8 +46,8 @@ export function EncadreCommentVerifier({ chantier }: { chantier: Chantier }) {
 
   if (texte) {
     return (
-      <div data-testid="comment-verifier" className="rounded-lg border border-accent/40 bg-carte px-3 py-2">
-        <p className="text-sm font-semibold">👉 Comment vérifier</p>
+      <div data-testid="comment-verifier" className="rounded-lg border border-bord bg-carte px-3 py-2">
+        <p className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</p>
         <Etapes texte={texte} />
       </div>
     )
@@ -66,11 +67,11 @@ export function EncadreCommentVerifier({ chantier }: { chantier: Chantier }) {
   }
 
   return (
-    <div data-testid="comment-verifier-vide" className="rounded-lg border border-dashed border-attention/60 bg-carte px-3 py-2">
+    <div data-testid="comment-verifier-vide" className="rounded-lg border border-dashed border-bord bg-carte px-3 py-2">
       <p className="text-sm">La session n’a pas dit comment vérifier. Demande-lui avant de certifier :</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button taille="sm" chargement={enCours} onClick={demander} data-testid="btn-demander-verifier">
-          {deja ? '❓ Redemander comment vérifier' : '❓ Demander comment vérifier'}
+          <CircleHelp size={16} aria-hidden />{deja ? 'Redemander comment vérifier' : 'Demander comment vérifier'}
         </Button>
         {deja ? <span className="text-xs text-texte-2" data-testid="deja-demande">Déjà demandé {dateRelative(deja.created_at)}</span> : null}
       </div>
@@ -83,7 +84,7 @@ export function CommentVerifierReplie({ chantier }: { chantier: Chantier }) {
   const texte = chantier.comment_verifier?.trim()
   if (!texte) return null
   return (
-    <Repliable testId="comment-verifier-replie" titre={<span className="text-sm">👉 Comment vérifier</span>}>
+    <Repliable testId="comment-verifier-replie" titre={<span className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</span>}>
       <Etapes texte={texte} />
     </Repliable>
   )

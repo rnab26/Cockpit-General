@@ -1,36 +1,29 @@
 import { useMemo, useState } from 'react'
+import { Archive, ChevronRight, CircleCheck, Plus, Search } from 'lucide-react'
 import type { Chantier, Section } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { bacDe } from '../lib/etats.ts'
-import { compteursPresence, estEnCoursSansNouvelles, presenceDe, trierParPresence, LIBELLE_COURT_PRESENCE } from '../lib/entonnoir.ts'
+import { compteursPresence, presenceDe, trierParPresence, LIBELLE_COURT_PRESENCE } from '../lib/entonnoir.ts'
 import type { Presence } from '../lib/presence.ts'
 import { normaliser } from '../lib/doublons.ts'
 import { dansFenetre, estFenetre, FENETRES, FENETRE_DEFAUT } from '../lib/fenetre.ts'
-import { CarteChantier } from './CarteChantier.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { Vide } from '../ui/Etats.tsx'
 import { Input } from '../ui/Champs.tsx'
 import { Button } from '../ui/Button.tsx'
+import { IconePresence } from './Icones.tsx'
 
 export const cleSection = (projetId: string, sectionId: string | null) => `${projetId}:${sectionId ?? 'sans'}`
-/** Le repli qui contient un chantier : sa section s'il est ouvert, sinon « Actif » ou « Archives ». */
-export function cleDuChantier(c: Pick<Chantier, 'projet_id' | 'section_id' | 'etat' | 'archived_at'>, sectionsConnues: ReadonlySet<string>): string {
-  const bac = bacDe(c)
-  if (bac === 'actif') return `${c.projet_id}:__actif`
-  if (bac === 'archives') return `${c.projet_id}:__archives`
-  return cleSection(c.projet_id, c.section_id && sectionsConnues.has(c.section_id) ? c.section_id : null)
-}
 
 type Avec = { c: Chantier; presence: Presence }
 
 /**
- * « Tous les chantiers » d'un projet, SOUS l'entonnoir : la liste complète,
- * sections repliées par défaut. Chaque en-tête dit d'un coup d'œil ce qui s'y
- * passe (🟢 1 · 🔴 2 · ⏸ 4) — c'est ce qui remplace « Où j'en suis ».
- * Certifiés et archives restent à part, repliés.
+ * « Tous les chantiers » d'un projet, sous le tableau de bord : une LIGNE
+ * compacte par chantier (le sujet, et où il en est en mots), rangées par
+ * section, repliées. Une ligne s'ouvre en conversation. Recherche, sélection
+ * groupée, « Fini » et « Archives » à part.
  */
-export function TousLesChantiers({ ouverts, basculer, sectionOuverte, basculerSection, deplierTout, onNouveau }: {
-  ouverts: Set<string>; basculer: (id: string) => void
+export function TousLesChantiers({ sectionOuverte, basculerSection, deplierTout, onNouveau }: {
   sectionOuverte: (cle: string) => boolean; basculerSection: (cle: string) => void
   deplierTout: (cles: string[] | null) => void; onNouveau: () => void
 }) {
@@ -40,41 +33,36 @@ export function TousLesChantiers({ ouverts, basculer, sectionOuverte, basculerSe
   const avec = useMemo<Avec[]>(() => chantiers.map((c) => ({ c, presence: presenceDe(c, activites, enAttente, now, silenceMs, taches).presence })),
     [chantiers, activites, taches, enAttente, now, silenceMs])
   const trouves = useMemo(() => q ? trierParPresence(avec.filter(({ c }) => normaliser(`${c.titre} ${c.demande ?? ''} ${c.resume_simple ?? ''}`).includes(q))) : [], [avec, q])
-  const ouvertsBac = trierParPresence(avec.filter(({ c }) => bacDe(c) === 'optimisation'))
-  const actifs = avec.filter(({ c }) => bacDe(c) === 'actif')
+  const ouverts = trierParPresence(avec.filter(({ c }) => bacDe(c) === 'optimisation'))
+  const finis = avec.filter(({ c }) => bacDe(c) === 'actif')
   const archives = avec.filter(({ c }) => bacDe(c) === 'archives')
   const fenetre = estFenetre(prefs.fenetre_livre) ? prefs.fenetre_livre : FENETRE_DEFAUT
   const libelleFenetre = FENETRES.find((f) => f.valeur === fenetre)?.libelle.toLowerCase() ?? ''
-  const recents = actifs.filter(({ c }) => dansFenetre(c.valide_at, fenetre, now)).length
-  const rendre = ({ c }: Avec) => <CarteChantier key={c.id} chantier={c} ouverte={ouverts.has(c.id)} onToggle={() => basculer(c.id)} />
-  const groupes = grouper(ouvertsBac, sections)
+  const recents = finis.filter(({ c }) => dansFenetre(c.valide_at, fenetre, now)).length
+  const groupes = grouper(ouverts, sections)
   const cles = groupes.map((gr) => cleSection(projet.id, gr.section?.id ?? null))
   const toutOuvert = cles.length > 0 && cles.every(sectionOuverte)
   const forcer = selection.actif  // on ne coche pas ce qu'on ne voit pas
-  // Tout ce qui est en cours se lit au même endroit, « En ce moment » : on y renvoie, pas de seconde liste.
-  const nEnCours = ouvertsBac.filter(({ c, presence }) => presence.code === 'travaille' || estEnCoursSansNouvelles(c, presence)).length
+  const lignes = (l: Avec[]) => <ul className="-mx-3 divide-y divide-bord/70">{l.map((x) => <LigneChantier key={x.c.id} {...x} />)}</ul>
 
   return (
-    <section className="space-y-2.5" data-testid="tous-les-chantiers" aria-label="Tous les chantiers">
-      <h2 className="flex items-center justify-between gap-2 px-1 pt-2 text-base font-bold">
-        <span>📋 Tous les chantiers <span className="text-sm font-semibold text-texte-2">({chantiers.length})</span></span>
+    <section className="space-y-2" data-testid="tous-les-chantiers" aria-label="Tous les chantiers">
+      <h2 className="flex items-center justify-between gap-2 px-1 text-[13px] font-medium uppercase tracking-wide text-texte-2">
+        <span>Tous les chantiers <span className="tabular-nums">({chantiers.length})</span></span>
         {!q && cles.length ? (
-          <Button taille="sm" variante="discret" onClick={() => deplierTout(toutOuvert ? null : cles)} data-testid="tout-deplier">
+          <Button taille="sm" variante="discret" onClick={() => deplierTout(toutOuvert ? null : cles)} data-testid="tout-deplier" className="normal-case tracking-normal">
             {toutOuvert ? 'Tout replier' : 'Tout déplier'}
           </Button>
         ) : null}
       </h2>
-      {nEnCours ? (
-        <button type="button" data-testid="voir-en-ce-moment" className="w-full rounded-xl border border-bord bg-carte px-3 py-2 text-left text-sm font-medium text-ok"
-          onClick={() => document.querySelector('[data-testid="en-ce-moment"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-          ⬆ {nEnCours} en cours : tout est regroupé dans « En ce moment », en haut
-        </button>
-      ) : null}
-      <Input type="search" value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="🔍 Chercher un chantier…" aria-label="Chercher" className="h-10" />
+      <div className="relative">
+        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-texte-2" aria-hidden />
+        <Input type="search" value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Chercher un chantier…" aria-label="Chercher" className="h-10 pl-9" />
+      </div>
 
       {q ? (
-        trouves.length ? <div className="space-y-2">{trouves.map(rendre)}</div>
-          : <Vide emoji="🔎" titre="Rien ne correspond" texte="Essaie un autre mot." />
+        trouves.length ? <div className="rounded-2xl border border-bord bg-carte px-3">{lignes(trouves)}</div>
+          : <Vide icone={<Search size={28} strokeWidth={1.5} />} titre="Rien ne correspond" texte="Essaie un autre mot." />
       ) : (
         <>
           {groupes.length ? groupes.map((gr) => {
@@ -82,33 +70,65 @@ export function TousLesChantiers({ ouverts, basculer, sectionOuverte, basculerSe
             const compteurs = compteursPresence(gr.liste.map((x) => x.presence.code))
             return (
               <Repliable key={cle} testId="groupe-section" ouvert={forcer || sectionOuverte(cle)} onToggle={() => basculerSection(cle)}
-                titre={<span className="truncate">{gr.section?.nom ?? 'Sans section'}</span>}
+                titre={<span className="truncate text-[15px] font-medium">{gr.section?.nom ?? 'Sans section'}</span>}
                 badge={
-                  <span className="flex items-center gap-1.5 text-xs font-semibold" data-testid="compteurs-section"
+                  <span className="flex items-center gap-2 text-xs" data-testid="compteurs-section"
                     aria-label={compteurs.map((x) => `${x.n} ${LIBELLE_COURT_PRESENCE[x.code]}`).join(', ')}>
-                    {compteurs.map((x) => <span key={x.code} className="tabular-nums">{x.icone} {x.n}</span>)}
+                    {compteurs.map((x) => <span key={x.code} className="inline-flex items-center gap-0.5 tabular-nums" title={LIBELLE_COURT_PRESENCE[x.code]}><IconePresence code={x.code} taille={13} />{x.n}</span>)}
                   </span>
                 }>
-                {gr.section?.description ? <p className="mb-2 text-xs text-texte-2">{gr.section.description}</p> : null}
-                <div className="space-y-2">{gr.liste.map(rendre)}</div>
+                {gr.section?.description ? <p className="mb-1 text-xs text-texte-2">{gr.section.description}</p> : null}
+                {lignes(gr.liste)}
               </Repliable>
             )
           }) : (
-            <Vide emoji="🎉" titre="Rien d’ouvert" texte={chantiers.length ? 'Tout ce qui est ouvert a été certifié.' : 'Aucun chantier sur ce projet pour l’instant.'}
-              action={<Button variante="primaire" onClick={onNouveau}>+ Nouveau chantier</Button>} />
+            <Vide titre="Rien d’ouvert" texte={chantiers.length ? 'Tout ce qui était ouvert est fini.' : 'Aucun chantier sur ce projet pour l’instant.'}
+              action={<Button variante="primaire" onClick={onNouveau}><Plus size={16} aria-hidden />Nouveau chantier</Button>} />
           )}
-          <Repliable testId="bac-actif" ouvert={sectionOuverte(`${projet.id}:__actif`)} onToggle={() => basculerSection(`${projet.id}:__actif`)} titre={<span>✅ Actif (certifiés)</span>}
-            badge={<span className="text-xs font-semibold">{actifs.length}{recents ? ` · ${recents} ${libelleFenetre}` : ''}</span>}>
-            {actifs.length ? <div className="space-y-2">{actifs.map(rendre)}</div> : <p className="text-sm text-texte-2">Aucun chantier certifié pour l’instant.</p>}
+          <Repliable testId="bac-actif" ouvert={forcer || sectionOuverte(`${projet.id}:__actif`)} onToggle={() => basculerSection(`${projet.id}:__actif`)}
+            titre={<span className="flex items-center gap-1.5 text-[15px] font-medium"><CircleCheck size={16} className="text-ok" aria-hidden />Fini (certifiés)</span>}
+            badge={<span className="text-xs">{finis.length}{recents ? ` · ${recents} ${libelleFenetre}` : ''}</span>}>
+            {finis.length ? lignes(finis) : <p className="text-sm text-texte-2">Aucun chantier certifié pour l’instant.</p>}
           </Repliable>
           {archives.length || admin ? (
-            <Repliable testId="bac-archives" ouvert={sectionOuverte(`${projet.id}:__archives`)} onToggle={() => basculerSection(`${projet.id}:__archives`)} titre={<span className="text-texte-2">🗃️ Archives</span>} badge={<span className="text-xs font-semibold">{archives.length}</span>}>
-              {archives.length ? <div className="space-y-2">{archives.map(rendre)}</div> : <p className="text-sm text-texte-2">Rien d’archivé (hors certifiés) et aucun doublon fusionné.</p>}
+            <Repliable testId="bac-archives" ouvert={forcer || sectionOuverte(`${projet.id}:__archives`)} onToggle={() => basculerSection(`${projet.id}:__archives`)}
+              titre={<span className="flex items-center gap-1.5 text-[15px] font-medium text-texte-2"><Archive size={16} aria-hidden />Archives</span>} badge={<span className="text-xs">{archives.length}</span>}>
+              {archives.length ? lignes(archives) : <p className="text-sm text-texte-2">Rien d’archivé (hors certifiés) et aucun doublon fusionné.</p>}
             </Repliable>
           ) : null}
         </>
       )}
     </section>
+  )
+}
+
+/** Une ligne : [case à cocher] · icône de présence · le sujet · où il en est en mots · › — un toucher ouvre la conversation. */
+function LigneChantier({ c, presence }: Avec) {
+  const { selection, ouvrirChantier } = useCockpit()
+  const coche = selection.ids.has(c.id)
+  const details = [
+    c.priorite === 'haute' ? 'priorité haute' : null,
+    c.origine === 'session' ? 'lancé par Claude' : c.origine === 'utilisateur' ? 'demande d’un utilisateur' : null,
+    c.doublon_de ? 'doublon fusionné' : null,
+  ].filter(Boolean)
+  return (
+    <li data-testid="ligne-chantier" data-chantier={c.id} data-etat={c.etat} data-presence={presence.code} className={coche ? 'bg-carte-2' : ''}>
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        {selection.actif ? (
+          <input type="checkbox" aria-label={`Choisir ${c.titre}`} checked={coche} onChange={() => selection.basculer(c.id)} className="h-5 w-5 shrink-0 accent-accent" />
+        ) : null}
+        <button type="button" onClick={() => ouvrirChantier(c.id)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left" data-testid="ouvrir-chantier">
+          <IconePresence code={presence.code} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] leading-snug">{c.titre}</span>
+            <span className="block truncate text-xs text-texte-2">
+              <span data-testid="badge-presence">{presence.libelle}</span>{details.length ? ` · ${details.join(' · ')}` : ''}
+            </span>
+          </span>
+          <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
+        </button>
+      </div>
+    </li>
   )
 }
 

@@ -18,11 +18,11 @@ function Branchement({ projet }: { projet: Projet }) {
 }
 
 /** En tête de la vue d'un projet : l'état de sa mise en ligne et son mode autonome, en une ou deux lignes. */
-export function BarreProjet({ projet }: { projet: Projet }) {
+export function BarreProjet({ projet, nu = false }: { projet: Projet; nu?: boolean }) {
   const { now, admin } = useGlobal()
   if (!projet.depot && !admin) return null
   return (
-    <section data-testid="barre-projet" className="space-y-1.5 rounded-2xl border border-bord bg-carte px-3 py-2">
+    <section data-testid="barre-projet" className={nu ? 'space-y-2' : 'space-y-1.5 rounded-2xl border border-bord bg-carte px-3 py-2'}>
       <Branchement projet={projet} />
       <EtatDeploiement projet={projet} now={now} />
       <ModeAutonome projet={projet} />
@@ -30,16 +30,15 @@ export function BarreProjet({ projet }: { projet: Projet }) {
   )
 }
 
-/** Dans « Tout », en bas : chaque projet, sa mise en ligne et son mode autonome (raccourci). */
+/** Dans « Tout », replié en bas : chaque projet, sa mise en ligne et son mode autonome. */
 export function ProjetsResume() {
   const { projets, now, admin } = useGlobal()
   const liste = projets.filter((p) => p.actif && (p.depot || admin))
   if (!liste.length) return null
   return (
-    <section data-testid="projets-resume" aria-label="Tes projets" className="space-y-2">
-      <h2 className="px-1 text-base font-bold">🛠️ Branchement, mises en ligne et mode autonome</h2>
+    <section data-testid="projets-resume" aria-label="Tes projets" className="divide-y divide-bord/70">
       {liste.map((p) => (
-        <div key={p.id} data-testid="projet-resume" data-projet={p.slug} className="space-y-1.5 rounded-2xl border border-bord bg-carte px-3 py-2">
+        <div key={p.id} data-testid="projet-resume" data-projet={p.slug} className="space-y-1.5 py-2 first:pt-0 last:pb-0">
           <PastilleProjet projet={p} />
           <Branchement projet={p} />
           <EtatDeploiement projet={p} now={now} />

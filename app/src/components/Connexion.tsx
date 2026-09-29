@@ -1,3 +1,4 @@
+import { LayoutDashboard } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button.tsx'
 import { Champ, Input } from '../ui/Champs.tsx'
@@ -38,7 +39,7 @@ export function Connexion({ seConnecter, sInscrire, motDePasseOublie }: {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-4 py-8">
       <div className="mb-6 text-center">
-        <div className="text-4xl" aria-hidden>🛩️</div>
+        <div className="flex justify-center text-accent" aria-hidden><LayoutDashboard size={36} strokeWidth={1.5} /></div>
         <h1 className="mt-2 text-2xl font-bold">Cockpit</h1>
         <p className="text-sm text-texte-2">Les chantiers de tes projets, en direct.</p>
       </div>
