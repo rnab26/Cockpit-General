@@ -586,14 +586,17 @@ try {
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, demarre_at, vu_at) values ('${SID}', '${projet.id}', 'cmd-1', 'commande', '${esc(`${MARQUE2} commande muette`)}', 'en_cours', now() - interval '3 minutes', now())`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, demarre_at, vu_at, fini_at) values ('${SID}', '${projet.id}', 'fini-1', 'agent', '${esc(`${MARQUE2} agent fini`)}', 'termine', now() - interval '20 minutes', now(), now() - interval '2 minutes')`)
   // Une conversation qui répond sans chantier : une ligne discrète « hors chantier ».
+  // Sujets suffixés par l'id de CETTE passe : le compte de test voit tous les projets de
+  // test, donc aussi ceux d'une autre passe qui tourne en même temps (un agent).
   const SIDH = `${SESSION_TEST}hors-${randomUUID().slice(0, 8)}`
-  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at) values ('${SIDH}', '${projet.id}', '${esc(`${MARQUE2} ranger la doc`)}', true, now())`)
+  const SUJET_H = `${MARQUE2} ranger la doc ${SLUG.slice(-4)}`   // ≤ 32 car. : nomSession tronque au-delà
+  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at) values ('${SIDH}', '${projet.id}', '${esc(SUJET_H)}', true, now())`)
   await actualiser()
   const lP4 = await ligneAvance(P4.id)
   verifie('un agent qui a signalé : la ligne du CHANTIER dit « 1 assistant de Claude · « Étape de test » »', (await lP4.getAttribute('data-vivant')) === 'oui' && /1 assistant de Claude · « Étape de test »/.test(await lP4.textContent()), await lP4.textContent())
   verifie('…sa barre vive, 40 %, et le temps restant signalé', await lP4.locator('[data-vive="oui"]').count() === 1 && /40 % · reste ~\d+ min/.test(await lP4.textContent()), await lP4.textContent())
-  const hors = page.getByTestId('hors-chantier').filter({ hasText: 'ranger la doc' })
-  verifie('le travail hors chantier : une ligne discrète « Claude travaille sur autre chose (« … ») »', await hors.count() === 1 && /Claude travaille sur autre chose \(« \[TEST web\] ranger la doc »\)/.test(await hors.textContent()), await hors.textContent().catch(() => null))
+  const hors = page.getByTestId('hors-chantier').filter({ hasText: SUJET_H })
+  verifie('le travail hors chantier : une ligne discrète « Claude travaille sur autre chose (« … ») »', await hors.count() === 1 && (await hors.textContent()).includes(`Claude travaille sur autre chose (« ${SUJET_H} »)`), await hors.textContent().catch(() => null))
   verifie('résumé en mots simples (conversations · assistants · commandes), replié', /Qui travaille : \d+ conversations? · \d+ assistants? · \d+ commandes?/.test(await page.getByTestId('resume-travail').textContent()) && (await page.getByTestId('detail-sessions').getAttribute('aria-expanded')) === 'false', await page.getByTestId('resume-travail').textContent())
   await page.getByTestId('detail-sessions').click()
   const blocSession = page.locator(`[data-testid="session-active"][data-session="${SID}"]`)
@@ -621,10 +624,10 @@ try {
 
   // Une session arrêtée sur une limite (0010) : « En pause », rien ne s'anime.
   const SIDP = `${SESSION_TEST}pause-${randomUUID().slice(0, 8)}`
-  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at, pause_raison, pause_at, pause_detail) values ('${SIDP}', '${projet.id}', '${esc(`${MARQUE2} session en pause`)}', false, now() - interval '90 minutes', 'rate_limit', now() - interval '80 minutes', 'Limite atteinte, reprise à 4 h')`)
+  sql(`insert into sessions (id, projet_id, sujet, tour_en_cours, vu_at, pause_raison, pause_at, pause_detail) values ('${SIDP}', '${projet.id}', '${esc(`${MARQUE2} session en pause ${SLUG.slice(-4)}`)}', false, now() - interval '90 minutes', 'rate_limit', now() - interval '80 minutes', 'Limite atteinte, reprise à 4 h')`)
   sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, etape, pourcentage, progres_at, vu_at) values ('${SIDP}', '${projet.id}', 'agent-p', 'agent', '${esc(`${MARQUE2} agent arrêté`)}', 'en_cours', 'Étape', 30, now(), now())`)
   await actualiser()
-  const horsPause = page.getByTestId('hors-chantier').filter({ hasText: 'session en pause' })
+  const horsPause = page.getByTestId('hors-chantier').filter({ hasText: `session en pause ${SLUG.slice(-4)}` })
   await horsPause.waitFor({ timeout: 15000 }).catch(() => {})
   verifie('session en pause : une ligne « … en pause — limite d’usage atteinte (reprend toute seule quand la limite se lève) »',
     await horsPause.count() === 1 && (await horsPause.textContent()).includes('en pause — limite d’usage atteinte (reprend toute seule quand la limite se lève)'), await horsPause.textContent().catch(() => null))
