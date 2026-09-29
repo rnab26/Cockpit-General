@@ -180,6 +180,17 @@ Reste : le module embarqué (`embed/`) n'affiche pas encore ces images.
 `verifier-web.mjs` ne purge plus que les projets de test de plus de 2 h
 (plusieurs agents le lançaient en même temps et se purgeaient l'un l'autre).
 
+## 2 septies. 29 sept. soir : pièces jointes dès la création (chantier `db78423d`, fusionné avec `e68e0efd`)
+
+« + Chantier » accepte tout type de fichier (aucun filtre `accept` ; bucket
+`cockpit-medias` : tout type, 50 Mo, limite écrite sous le bouton), crayon sur
+les images avant envoi. Le chantier est créé (id choisi par l'app), puis les
+pièces partent dans `<projet>/<chantier>/` et un message `info`. Dépôt en
+échec : pièces gardées, « Envoyer les pièces ». En ligne (PR #1, 9358916),
+verifier-web 299/299 (image + PDF + .dwg, `media.sh --chantier` les récupère).
+Reste : le module embarqué (`embed/`, « Nouvelle demande ») ne joint aucun
+fichier — à décider avec Raphaël.
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
