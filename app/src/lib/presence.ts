@@ -77,7 +77,7 @@ function dernierAvancement(a: A | null | undefined, now: Date): string | null {
   return `dernier avancement connu : ${a.pourcentage} %${quand ? ` (${quand})` : ''}${a.etape ? ` — ${a.etape}` : ''}`
 }
 
-/** Délai de grâce d'un renfort de section sur une vérification (= cockpit.delai_verif_renfort_min(), 0044). */
+/** Délai de grâce d'un renfort de section sur une vérification (= cockpit.delai_verif_renfort_min(), 0046). */
 export const DELAI_VERIF_RENFORT_MIN = 10
 
 /**

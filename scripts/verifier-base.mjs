@@ -1186,7 +1186,7 @@ async function controle19_chef_par_projet() {
   verifie("--max règle le projet courant seulement", /pour .*: 8/.test(lancer(SLUG_C, "chef-c", ["--max", "8"]))
     && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 2);
   const sortieC = lancer(SLUG_C, "chef-c");
-  verifie("la consigne de la chef donne le modèle de chaque agent et le frein", /\[model: sonnet\]/.test(sortieC) && /\[model: haiku\]/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
+  verifie("la consigne de la chef donne le modèle de chaque agent (Sonnet, jamais Haiku au plein gaz) et le frein", /\[model: sonnet\]/.test(sortieC) && !/\[model: haiku\]/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
   const idsD = [libre.D, rep.D, verif.D];
   verifie("la passe de C sert SES trois sortes de travail (réponse, chantier libre, vérifie pour moi)",
     sortieC.includes(`SESSION CHEF de ${SLUG_C}`) && sortieC.includes(rep.C) && sortieC.includes(libre.C) && sortieC.includes(verif.C), sortieC.slice(0, 600));
@@ -1198,7 +1198,7 @@ async function controle19_chef_par_projet() {
     { encoding: "utf8", input: JSON.stringify({ hook_event_name: "Stop", session_id: session }), env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_PROJECT_DIR: racine } });
   verifie("hook Stop : la chef de C, dans une session de D, n'est ni bloquée ni pilotée", stop(SLUG_D, "chef-c").trim() === "");
   const sortieD = lancer(SLUG_D, "chef-d");
-  verifie("la passe de D sert D (2 places : réponse + vérification, prioritaire depuis 0044, avant le code libre), et rien de C", (sortieD.includes(libre.D) || sortieD.includes(verif.D)) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
+  verifie("la passe de D sert D (2 places : réponse + vérification, prioritaire depuis 0046, avant le code libre), et rien de C", (sortieD.includes(libre.D) || sortieD.includes(verif.D)) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
   // Le hook de message : Raphaël écrit dans une session de D → elle devient chef de D, C garde la sienne.
   execFileSync("bash", [join(racine, "hooks/prompt-rappel.sh")],
     { encoding: "utf8", input: JSON.stringify({ session_id: "nouvelle-d", prompt: "fais ceci" }), env: { ...process.env, COCKPIT_PROJET: SLUG_D, CLAUDE_PROJECT_DIR: racine } });
@@ -2035,19 +2035,19 @@ async function controle36_deplacer_chantier() {
   verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
 }
 
-// 38. « Vérifie pour moi » sans retour (0044) : priorité sur le code, la section d'un renfort ne la garde que 10 min, jamais un certifié/archivé, le relais ouvre une session, --verifs la sert.
+// 38. « Vérifie pour moi » sans retour (0046) : priorité sur le code, la section d'un renfort ne la garde que 10 min, jamais un certifié/archivé, le relais ouvre une session, --verifs la sert.
 async function controle38_verif_sans_retour() {
-  section("38. Vérifie pour moi servi (0044) : priorité, renfort de section limité à 10 min, certifié/archivé jamais, relais, --verifs");
+  section("38. Vérifie pour moi servi (0046) : priorité, renfort de section limité à 10 min, certifié/archivé jamais, relais, --verifs");
   const S = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'VERIF Section', 8)`);
   const v = await creerChantier(P9, { titre: "VERIF à juger", etat: "a_verifier" });
   const code = await creerChantier(P9, { titre: "VERIF du code libre", etat: "libre" });
   await sql(`update chantiers set section_id = ${q(S)} where id in (${q(v)}, ${q(code)})`);
   const R = randomUUID();
-  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/vv0044', 'actif', now())`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/vv0046', 'actif', now())`);
   const verifs = async (par = null) => (await sql(`select id from verifs_prenables(${q(P9)}, ${par ? q(par) : "null"})`)).map((r) => r.id);
   await sql(`update chantiers set verif_demandee_at = now() where id = ${q(v)}`);
-  verifie("demande fraîche, renfort vivant sur sa section : le renfort la prend, pas la chef", (await verifs("renfort/vv0044/")).includes(v) && !(await verifs()).includes(v));
+  verifie("demande fraîche, renfort vivant sur sa section : le renfort la prend, pas la chef", (await verifs("renfort/vv0046/")).includes(v) && !(await verifs()).includes(v));
   await sql(`update chantiers set verif_demandee_at = now() - interval '11 minutes' where id = ${q(v)}`);
   verifie("au-delà de 10 min : n'importe qui la prend (le renfort muet ne la garde plus)", (await verifs()).includes(v));
   const rf = (await une(`select prochain_renfort(${q(R)}) as r`)).r;
@@ -2331,8 +2331,8 @@ async function controle32_economie_modeles() {
   };
   await sql(`delete from chefs where projet_id = ${q(P1)}`);
   const d = await une(`select etat_modeles(${q(SLUG_A)}) as e`);
-  verifie("défauts : code sonnet, lecture haiku, effort moyen, 2 agents, revue 24 h, pas de frein",
-    d.e.modele_code === "sonnet" && d.e.modele_leger === "haiku" && d.e.effort === "moyen" && d.e.agents === 2 && d.e.revue_h === 24 && d.e.frein.actif === false, d.e);
+  verifie("défauts : code sonnet, lecture sonnet (Haiku en dernier), effort moyen, 2 agents, revue 24 h, pas de frein",
+    d.e.modele_code === "sonnet" && d.e.modele_leger === "sonnet" && d.e.effort === "moyen" && d.e.agents === 2 && d.e.revue_h === 24 && d.e.frein.actif === false, d.e);
   const mauvais = await sql(`select regler_modeles(${q(SLUG_A)}, 'gpt', 'haiku', 'moyen') as r`).then(() => "accepté", (e) => e.message);
   verifie("un modèle inconnu est refusé", /Modèle de code/.test(String(mauvais)), mauvais);
   const cli = chef({ ARGS: ["--modeles", "opus", "haiku", "eleve", "4"] });
@@ -2358,21 +2358,51 @@ async function controle32_economie_modeles() {
   verifie("chef.sh --frein 2 : frein posé à la main, puis levé par --frein 0",
     (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === true && (chef({ ARGS: ["--frein", "0"] }), (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === false));
   // Bascule par mesure d'usage : monte tout de suite, plafonne à haiku, interrupteur.
-  const pal = async (st, pct) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}) as e`)).e;
+  // Échelle 0045 : effort d'abord, modèle ensuite, Haiku en dernier ; rythme = temps écoulé de la fenêtre (rate_limit_info n'a AUCUN %).
+  const pal = async (st, pct, type = null, resetsDans = null) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}, null, ${type ? q(type) : "null"}, ${resetsDans == null ? "null" : `extract(epoch from now() + interval '${resetsDans} minutes')::bigint`}) as e`)).e;
+  const raz = () => sql(`update chefs set palier = 0, palier_at = null, palier_reset_at = null where projet_id = ${q(P1)}`);
   chef({ ARGS: ["--modeles", "opus", "sonnet", "eleve", "2"] });
-  let e = await pal("allowed", 10);
-  verifie("palier 0 : les modèles réglés (opus/sonnet, effort élevé)", e.palier === 0 && e.effectifs.modele_code === "opus" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "eleve", e.effectifs);
-  e = await pal("allowed_warning", null);
-  verifie("palier 1 (avertissement) : code opus → sonnet, lecture inchangée", e.palier === 1 && e.effectifs.modele_code === "sonnet" && e.effectifs.modele_leger === "sonnet", e.effectifs);
-  e = await pal("allowed", 85);
-  verifie("palier 2 (85 %) : code haiku, lecture haiku, effort bas", e.palier === 2 && e.effectifs.modele_code === "haiku" && e.effectifs.modele_leger === "haiku" && e.effectifs.effort === "bas", e.effectifs);
+  let e = await pal("allowed", null, "five_hour", 200);
+  verifie("palier 0 : plein gaz, les modèles et l'effort réglés (opus/sonnet, élevé)", e.palier === 0 && e.effectifs.modele_code === "opus" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "eleve", e.effectifs);
+  await raz();
+  // Fenêtre de 5 h écoulée à 20 % (reset dans 240 min) : avertissement = on brûle trop vite → palier 2 ; effort bas, opus → sonnet, jamais sous sonnet.
+  e = await pal("allowed_warning", null, "five_hour", 240);
+  verifie("avertissement tôt dans la fenêtre : palier 2, effort bas, code opus → sonnet, lecture sonnet (jamais Haiku)", e.palier === 2 && e.effectifs.modele_code === "sonnet" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "bas" && e.fenetre?.type === "five_hour", e);
+  await raz();
+  e = await pal("allowed_warning", null, "five_hour", 100);
+  verifie("avertissement après 50 % de la fenêtre : palier 1 = effort d'un cran plus bas, modèles inchangés", e.palier === 1 && e.effectifs.effort === "moyen" && e.effectifs.modele_code === "opus", e.effectifs);
+  await raz();
+  e = await pal("allowed_warning", null, "five_hour", 20);
+  verifie("avertissement dans les 10 % finaux : palier 0, on consomme le crédit avant la remise à zéro", e.palier === 0 && e.effectifs.effort === "eleve", e);
+  await raz();
+  e = await pal("allowed", 40, "seven_day", 60 * 24 * 3);
+  verifie("pourcentage sous le seuil (40 < 50) : palier 0", e.palier === 0, e);
+  await raz();
+  e = await pal("allowed", 90, "seven_day", 60 * 24 * 3);
+  verifie("90 % à 57 % de la fenêtre de 7 jours (avance > 15 pts) : palier 2, pas Haiku", e.palier === 2 && e.effectifs.modele_code === "sonnet" && e.effectifs.effort === "bas", e);
+  await raz();
+  e = await pal("rejected", null, "five_hour", 120);
+  verifie("limite atteinte (rejected) : palier 3, Haiku, effort bas", e.palier === 3 && e.effectifs.modele_code === "haiku" && e.effectifs.modele_leger === "haiku" && e.effectifs.effort === "bas", e);
+  await sql(`update chefs set bascule_haiku = false where projet_id = ${q(P1)}`);
+  verifie("Haiku non autorisé pour le projet : palier 3 reste sur Sonnet", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.effectifs.modele_code === "sonnet");
+  const rs = await une(`select regler_bascule_seuils(${q(SLUG_A)}, 70, true) as e`);
+  verifie("réglage par projet : seuil 70 % enregistré, Haiku de nouveau autorisé", rs.e.bascule_seuil_pct === 70 && rs.e.bascule_haiku === true && rs.e.effectifs.modele_code === "haiku", rs.e);
+  const seuilMauvais = await sql(`select regler_bascule_seuils(${q(SLUG_A)}, 5, true) as r`).then(() => "accepté", (er) => er.message);
+  verifie("un seuil hors 10 à 90 est refusé", /Seuil du plein gaz/.test(String(seuilMauvais)), seuilMauvais);
+  await sql(`update chefs set bascule_seuil_pct = 50, bascule_haiku = true where projet_id = ${q(P1)}`);
+  await raz();
+  e = await pal("allowed_warning", null, "five_hour", 240);
+  await sql(`update chefs set palier_reset_at = now() - interval '1 minute' where projet_id = ${q(P1)}`);
+  verifie("nouvelle fenêtre (resetsAt passé) : retour au plein gaz", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.palier === 0);
+  await raz();
+  e = await pal("allowed", 90, "seven_day", 60 * 24 * 3);
   e = await pal("allowed", 5);
   verifie("pas de yo-yo : une mesure calme juste après ne redescend pas le palier", e.palier === 2, e);
   await sql(`update chefs set palier_at = now() - interval '31 minutes' where projet_id = ${q(P1)}`);
   e = await pal("allowed", 5);
   verifie("après 30 min de calme le palier redescend à 0", e.palier === 0, e);
-  const ligne = chef({ ARGS: ["--usage", "allowed", "95"] });
-  verifie("chef.sh --usage : dit le palier et les modèles à utiliser", /palier 3 sur 3/.test(ligne) && /code = haiku/.test(ligne) && /nombre d’agents ne change pas/.test(ligne), ligne);
+  const ligne = chef({ ARGS: ["--usage", "rejected", "--fenetre", "five_hour", "--reset", String(Math.floor(Date.now() / 1000) + 7200)] });
+  verifie("chef.sh --usage <status> --fenetre --reset : dit le palier, les modèles et l'effort à utiliser", /palier 3 sur 3/.test(ligne) && /code = haiku/.test(ligne) && /effort = bas/.test(ligne) && /nombre d’agents ne change pas/.test(ligne), ligne);
   chef({ ARGS: ["--bascule", "off"] });
   verifie("bascule off : retour aux modèles réglés malgré la mesure", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.effectifs.modele_code === "opus");
   chef({ ARGS: ["--bascule", "on"] });
@@ -2445,6 +2475,59 @@ async function controle34_fermeture_sessions() {
   await sql(`delete from projets where id = ${q(pv)}`);
 }
 
+const P11 = randomUUID(), SLUG_K = `test-verif-${rand}-k`;
+async function controle38_filet_securite() {
+  section("38. Filet de sécurité (0044) : du travail attend + personne de vivant = un réveil journalisé ; sinon rien");
+  await sql(`insert into projets (id, slug, nom) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test filet')`);
+  const passe = async (test = true, simuler = true) => (await une(`select filet_passe(${q(SLUG_K)}, ${simuler}, ${test}) as r`)).r[0]?.resultat;
+  const journal = async () => (await une(`select count(*)::int as n from filet_reveils where projet_id = ${q(P11)}`)).n;
+  const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
+  // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
+  const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
+    has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
+    has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
+    has_function_privilege('service_role', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as srv`);
+  verifie("filet_passe et reveiller_chef : réservés au service (ni anon ni authenticated)", !droits.anon && !droits.auth && !droits.reveil && droits.srv, droits);
+  verifie("rien n'attend : aucun réveil", await passe() === "rien_en_attente" && await journal() === 0);
+  await vieux(1);
+  verifie("travail arrivé il y a 1 min : on laisse la chef et les hooks d'abord (trop_recent)", await passe() === "trop_recent" && await journal() === 0);
+  await sql(`delete from messages where projet_id = ${q(P11)}`);
+  await vieux(30);
+  verifie("projet de test sans p_test : jamais réveillé", await passe(false, true) === "projet_de_test" && await journal() === 0);
+  const sid = `test-filet-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(P11)}, 'claude/vivante-filet', now())`);
+  verifie("travail en attente + session vivante : aucun réveil", await passe() === "session_vivante" && await journal() === 0);
+  await sql(`delete from sessions where id = ${q(sid)}`);
+  await sql(`update projets set filet_actif = false where id = ${q(P11)}`);
+  verifie("interrupteur du projet éteint : aucun réveil", await passe() === "eteint" && await journal() === 0);
+  await sql(`update projets set filet_actif = true where id = ${q(P11)}`);
+  verifie("travail en attente depuis 30 min + personne de vivant : un réveil journalisé", await passe() === "simule" && await journal() === 1);
+  const j = await une(`select pourquoi, resultat from filet_reveils where projet_id = ${q(P11)}`);
+  verifie("… avec son pourquoi", /1 message\(s\) sans réponse/.test(j.pourquoi) && j.resultat === "simule", j);
+  verifie("deux passes rapprochées : un seul réveil (anti-rafale 5 min)", await passe() === "trop_tot" && await journal() === 1);
+  await sql(`update filet_reveils set at = now() - interval '10 minutes' where projet_id = ${q(P11)}`);
+  await sql(`update projets set filet_plafond_jour = 1 where id = ${q(P11)}`);
+  verifie("plafond du jour atteint : aucun réveil de plus", await passe() === "plafond" && await journal() === 1);
+  await sql(`update projets set filet_plafond_jour = 2 where id = ${q(P11)}`);
+  verifie("plafond relevé et 5 min passées : le réveil repart", await passe() === "simule" && await journal() === 2);
+  // Sans jeton : le vrai chemin (sans simulation) n'appelle rien et ne journalise rien.
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  const r = await passe(true, false);
+  verifie("sans jeton : rien n'est appelé, rien n'est journalisé (pas_configure)", r === "pas_configure" && await journal() === 0, r);
+  // Réglages : bornes, et la ligne d'écran.
+  const mauvais = await sql(`select regler_filet(${q(SLUG_K)}, null, 99, null) as r`).then(() => "accepté", (e) => e.message);
+  verifie("plafond hors 0-48 refusé", /48/.test(String(mauvais)), mauvais);
+  const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e;
+  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 2, e);
+  // Le vrai cron ne touche jamais un projet de test.
+  const vraie = await une(`select filet_passe() as r`);
+  verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
+  const reel = await une(`select count(*)::int as n from filet_reveils f join projets p on p.id = f.projet_id where f.simule and p.slug not like 'test-%'`);
+  verifie("aucun réveil simulé sur un vrai projet", reel.n === 0, reel);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2496,6 +2579,7 @@ try {
     controle38_pr_propre,
     controle38_prochaine_migration,
     controle38_verif_sans_retour,
+    controle38_filet_securite,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2506,7 +2590,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2514,8 +2598,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

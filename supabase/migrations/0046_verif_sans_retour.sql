@@ -1,4 +1,4 @@
--- 0044 — « Je ne sais pas : vérifie pour moi » ne reste plus sans retour (30 sept. 2026, chantier b4937471).
+-- 0046 — « Je ne sais pas : vérifie pour moi » ne reste plus sans retour (30 sept. 2026, chantier b4937471).
 -- Raphaël : « des fois j'ai demandé à Claude de vérifier quelque chose et je n'ai jamais de retour ».
 -- Cause prouvée sur les 2 demandes en base :
 --   FacePro (00:39) : un renfort vivant sur SA section (renfort_vivant, 3 h) l'excluait de verifs_prenables pour
@@ -40,7 +40,7 @@ begin
   en_cours := cockpit.renfort_en_cours(rf);
   places := rf.max_agents - en_cours;
   while places > 0 loop
-    -- 0044 : « Vérifie pour moi » PASSE AVANT le code (une vérification est courte et Raphaël l'attend).
+    -- 0046 : « Vérifie pour moi » PASSE AVANT le code (une vérification est courte et Raphaël l'attend).
     select v.* into c from cockpit.verifs_prenables(rf.projet_id, rf.prefixe || '/') v
      where v.section_id is not distinct from rf.section_id limit 1;
     v_verif := c.id is not null;
@@ -90,7 +90,7 @@ begin
     v_renf := cockpit.renforts_a_ouvrir(p.slug, p_test is not null);
     select count(*) into v_msg from cockpit.messages_sans_reponse(p.id);
     select count(*) into v_verif from cockpit.verifs_prenables(p.id, null);
-    -- 0044 : une vérification en attente ouvre aussi une session (même plafond : 1 par heure) ; une session
+    -- 0046 : une vérification en attente ouvre aussi une session (même plafond : 1 par heure) ; une session
     -- vivante ne l'en dispense pas (elle ne sert que ses messages), un message sans réponse si.
     v_ouvrir := (v_verif > 0 or (v_msg > 0
       and not exists (select 1 from cockpit.sessions s where s.projet_id = p.id and s.fin_at is null and s.vu_at > now() - interval '30 minutes')))
