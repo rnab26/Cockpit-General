@@ -226,6 +226,11 @@ export function estEnCoursSansNouvelles(c: Pick<Chantier, 'etat'>, p: Pick<Prese
   return p.code === 'silencieux' || (p.code === 'personne' && c.etat === 'en_cours')
 }
 
+/** Personne ne tient ce chantier encore en travail : seul cas où « Où ça en est ? » le remet dans « Ça avance ». */
+function enCoursSansPersonne(p: Pick<Presence, 'code'>): boolean {
+  return p.code === 'personne' || p.code === 'silencieux'
+}
+
 function sansPersonne(
   chantiers: readonly ChantierE[], activites: readonly Activite[], messages: readonly MessageE[],
   now: Date, silenceMs: number, ordreProjets: readonly string[], projetId: string | null, taches: readonly Tache[],
@@ -236,7 +241,7 @@ function sansPersonne(
   for (const c of chantiers) {
     if (c.archived_at || (projetId && c.projet_id !== projetId)) continue
     const { presence, activite } = presenceDe(c, activites, enAttente, now, silenceMs, taches)
-    if (presence.code !== 'personne' && presence.code !== 'silencieux') continue
+    if (!enCoursSansPersonne(presence)) continue
     // « Où ça en est ? » en attente (0023) : il est reparti, il se suit dans « Ça avance tout seul ».
     if (ouEnEstVisible(etatOuEnEst(c, messages, false, now), now)) continue
     const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
@@ -440,8 +445,11 @@ export function caAvanceToutSeul(
       // reprendre) : ça avance, ce n'est ni « sans nouvelles » ni à relancer.
       const reprise = repriseReponse(c, messages, activites, taches, now)!
       lignes.push({ c, presence, activite: null, vivant: false, qui: '', etape: null, pourquoi: LIBELLE_REPRISE[reprise], demandeLe: null, reprise })
-    } else if (ouEnEstVisible(etatOuEnEst(c, messages, false, now, tenus), now)) {
+    } else if (enCoursSansPersonne(presence) && ouEnEstVisible(etatOuEnEst(c, messages, false, now, tenus), now)) {
       // « Où ça en est ? » (0023) : sa demande le remet dans ce qui avance ;
+      // JAMAIS un chantier fini ou qui t'attend (à vérifier, bloqué, à cadrer,
+      // reporté, question ouverte) : il est déjà dans « À toi » (Raphaël,
+      // 30 sept. : « un chantier fini reste dans ce qui avance, ça pollue »).
       // la ligne suit la demande (envoyée → en file / reçue → réponse), en direct.
       // Jamais la vieille barre grise d'une livraison passée sous la demande
       // (Raphaël, 30 sept. : « la barre ne se réactive pas ») : la ligne suit
