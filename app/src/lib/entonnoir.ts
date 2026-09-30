@@ -436,7 +436,11 @@ export function caAvanceToutSeul(
       }
       if (agents) morceaux.push(`${agents} assistant${agents > 1 ? 's' : ''} de Claude`)
       // Jamais une vieille barre sous une ligne vivante : celle de la session, ou celle de l'agent s'il a signalé un %.
-      const barre = parSession ?? (presence.barreVive ? (presenceBase.code === 'travaille' ? activite : agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : null) : null)
+      // Deux sources vivantes (conversation ET assistant) : la barre est celle du signal le PLUS RÉCENT,
+      // jamais l'ancien pourcentage d'une conversation devant l'avancement frais de l'assistant.
+      const barreAgent = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : null
+      const barre = parSession && barreAgent ? (barreAgent.updated_at > parSession.updated_at ? barreAgent : parSession)
+        : parSession ?? (presence.barreVive ? (presenceBase.code === 'travaille' ? activite : barreAgent) : null)
       const agent = agentVivant
       lignes.push({ c, presence, activite: barre, vivant: true, qui: morceaux.join(' · ') || 'Claude',
         etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null, ouEnEst: etatOuEnEst(c, messages, true, now, tenus) })

@@ -131,7 +131,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
         </button>
       </div>
       {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
-      <ListeChantiers liste={liste} onFermer={() => setListe(null)} />
+      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} />
     </section>
   )
 }
@@ -192,8 +192,10 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
 }
 
 /** La liste des chantiers derrière un nombre ; chacun ouvre sa conversation. */
-function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: () => void }) {
+function ListeChantiers({ liste, onFermer, avance }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[] }) {
   const g = useGlobal()
+  // La MÊME ligne que « Ça avance tout seul » (une seule source) : barre et % du dépliage = ceux de la ligne.
+  const ligneDe = useMemo(() => new Map(avance.map((l) => [l.c.id, l])), [avance])
   const chantiers = useMemo(() => {
     if (!liste) return []
     const ids = new Set(liste.ids)
@@ -219,6 +221,7 @@ function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: ()
                       ? <span className="truncate tabular-nums" data-testid="quand-fini" title={dateLongue(c.valide_at)}>{quandFini(c, g.moi.email, g.now)}</span>
                       : <span>{infoEtat(c.etat).court}</span>}
                   </span>
+                  {ligneDe.get(c.id) ? <BarreDeLigne l={ligneDe.get(c.id)!} /> : null}
                 </span>
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
               </button>
@@ -404,6 +407,19 @@ function Barre({ pct, vive }: { pct: number; vive: boolean }) {
       data-testid="progression" data-vive={vive ? 'oui' : 'non'}>
       <div className={`h-full rounded-full ${vive ? 'barre-vive bg-ok transition-[width] duration-700' : 'bg-texte-2/35'}`} style={{ width: `${Math.max(vive ? 3 : 2, p)}%` }} />
     </div>
+  )
+}
+
+/** Barre + % + temps restant d'une ligne qui avance (dépliage des tuiles et « Ça avance tout seul » : même rendu). */
+function BarreDeLigne({ l }: { l: LigneCaAvance }) {
+  const a = l.activite
+  if (!a) return <span className="mt-1 block text-xs text-texte-2" data-testid="avancement-non-signale">Claude y travaille · avancement pas encore signalé</span>
+  const reste = l.vivant ? etaLisible(a.eta_secondes) : null
+  return (
+    <span className="mt-1 flex items-center gap-2" data-testid="barre-liste">
+      <Barre pct={a.pourcentage} vive={l.vivant} />
+      <span className={`shrink-0 text-xs tabular-nums ${l.vivant ? 'text-texte' : 'text-texte-2'}`}>{a.pourcentage} %{reste ? ` · reste ${reste}` : ''}</span>
+    </span>
   )
 }
 
