@@ -24,6 +24,12 @@ import { dateRelative } from './dates.ts'
 export const DELAI_OU_EN_EST_MS = 2 * 3600_000
 /** La branche des assistants que la chef lance pour répondre (scripts/chef.sh, prendre_ou_en_est). */
 export const PREFIXE_ASSISTANT_POINT = 'agent/point-'
+/**
+ * Toute branche d'assistant de la chef : « Point » (agent/point-…), mais aussi
+ * « Répondre » (agent/message-…) qui, depuis 0032, prend la demande avec son
+ * message du même fil (un seul assistant par fil, une seule réponse).
+ */
+export const PREFIXE_ASSISTANT = 'agent/'
 
 export type CodeOuEnEst = 'envoyee' | 'file' | 'recue' | 'prise' | 'repondue' | 'sans_reponse'
 
@@ -80,7 +86,7 @@ export function etatOuEnEst(
   if (perimee(d, now)) return { ...base, code: 'sans_reponse', enAttente: false, etape: 2,
     libelle: `Pas de réponse depuis ${dateRelative(d.created_at, now).replace(/^il y a /, '')} : tu peux redemander` }
   if (d.recu_at) {
-    const assistant = (d.recu_par ?? '').startsWith(PREFIXE_ASSISTANT_POINT)
+    const assistant = (d.recu_par ?? '').startsWith(PREFIXE_ASSISTANT)
     return { ...base, code: assistant ? 'prise' : 'recue', enAttente: true, etape: 2,
       libelle: assistant ? `Un assistant de Claude regarde (${dateRelative(d.recu_at, now)})` : `Reçue par Claude ${dateRelative(d.recu_at, now)} : réponse en préparation` }
   }

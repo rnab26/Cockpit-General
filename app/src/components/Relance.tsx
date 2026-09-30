@@ -8,21 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { consigneClaude } from '../lib/presence.ts'
 import { chantierTenu, etapesOuEnEst, etatOuEnEst, type EtatOuEnEst } from '../lib/ouEnEst.ts'
 import { extrait } from '../lib/texte.ts'
-
-/** Copie un texte. Appelée DANS le gestionnaire du clic (exigence des navigateurs). */
-async function copierTexte(texte: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(texte); return true }
-  } catch { /* refusé (contexte non sécurisé, permission) : repli ci-dessous */ }
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = texte; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.appendChild(ta); ta.select()
-    const ok = document.execCommand('copy')
-    ta.remove()
-    return ok
-  } catch { return false }
-}
+import { copierTexte } from '../lib/copier.ts'
 
 /**
  * Les deux gestes pour un chantier que personne ne tient : copier la consigne
@@ -111,7 +97,7 @@ export function SuiviOuEnEst({ etat, compact = false }: { etat: EtatOuEnEst; com
         </ol>
       )}
       <p className={`${compact ? '' : 'mt-1'} text-xs leading-snug ${teinte}`} data-testid="libelle-ou-en-est">{etat.libelle}</p>
-      {fini && etat.reponse && !compact ? <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="reponse-ou-en-est">« {extrait(etat.reponse.corps, 160)} »</p> : null}
+      {fini && etat.reponse && !compact ? <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="reponse-ou-en-est">« {extrait(etat.reponse.corps, 400)} »</p> : null}
     </div>
   )
 }

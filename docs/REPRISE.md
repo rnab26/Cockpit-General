@@ -227,6 +227,9 @@ avance tout seul » (frise Envoyée → Reçue / En file → Réponse), bouton
 désactivé tant qu'on attend. Reçue : hook de suivi ; personne dessus : la chef
 lance un assistant « Point » qui répond avec `progression.sh --point`. Voir
 CLAUDE.md. Reste : le module embarqué (`embed/`) n'a pas ce bouton.
+30 sept. (correction, migration 0032) : plus de barre grise périmée sous la
+demande, assistant « Point » visible sur le chantier (étape + barre), réponse
+« Fait / Pour finir / Bloque », un seul assistant par fil. Voir CLAUDE.md.
 
 ## 2 undecies. 29 sept. après-midi : les RENFORTS (D-10, chantiers 6a69c7b4 + 5b5900a9)
 

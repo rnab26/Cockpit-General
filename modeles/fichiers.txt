@@ -1,5 +1,6 @@
 scripts/sql.sh
 scripts/demander.sh
+scripts/marche.py
 scripts/progression.sh
 scripts/progression_tableau.py
 scripts/chantier.sh

@@ -136,3 +136,34 @@ export function erreurReglageRenforts(sessions: number, agents: number): string 
 export function blocUtile(e: Pick<EtatRenforts, 'attente' | 'renforts'>): boolean {
   return e.attente.length > 0 || e.renforts.length > 0
 }
+
+/** Économie des modèles (0035) : ce que la base porte (etat_modeles) et les libellés de l'écran. */
+export type ModeleClaude = 'haiku' | 'sonnet' | 'opus'
+export type EffortClaude = 'bas' | 'moyen' | 'eleve'
+export interface EtatModeles {
+  modele_code: ModeleClaude
+  modele_leger: ModeleClaude
+  effort: EffortClaude
+  agents: number
+  revue_h: number
+  frein: { actif: boolean; raison?: string; jusqu_a?: string | null }
+}
+export const MODELES: { valeur: ModeleClaude; nom: string; aide: string }[] = [
+  { valeur: 'haiku', nom: 'Haiku', aide: 'le moins cher' },
+  { valeur: 'sonnet', nom: 'Sonnet', aide: 'équilibré' },
+  { valeur: 'opus', nom: 'Opus', aide: 'le plus cher' },
+]
+export const EFFORTS: { valeur: EffortClaude; nom: string }[] = [
+  { valeur: 'bas', nom: 'Bas' }, { valeur: 'moyen', nom: 'Moyen' }, { valeur: 'eleve', nom: 'Élevé' },
+]
+export const AGENTS_PARALLELE_MAX = 8
+/** Mêmes bornes que regler_modeles (base). */
+export function erreurReglageModeles(agents: number, revueH: number): string | null {
+  if (!Number.isInteger(agents) || agents < 1 || agents > AGENTS_PARALLELE_MAX) return `Agents en parallèle : un nombre de 1 à ${AGENTS_PARALLELE_MAX}.`
+  if (!Number.isInteger(revueH) || revueH < 1 || revueH > 168) return 'Revue « À toi » : de 1 à 168 heures.'
+  return null
+}
+export function libelleFrein(f: EtatModeles['frein']): string {
+  if (!f.actif) return 'Aucun frein : les agents travaillent normalement.'
+  return `Frein actif (${f.raison ?? 'usage proche de la limite'}) : 1 agent à la fois, aucune revue, aucun nouveau renfort.`
+}

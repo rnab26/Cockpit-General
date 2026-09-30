@@ -3,8 +3,10 @@
 // seul. Les tuiles sont les LONGUEURS des listes, rien d'autre : le nombre
 // qu'on touche et la liste qu'on voit ne peuvent pas diverger.
 //   pour toi   = « À toi de jouer »        (entonnoir.aToi)
-//   ça avance  = « Ça avance tout seul »   (entonnoir.caAvanceToutSeul, présence honnête)
-//   en pause   = « Prêt à lancer »         (entonnoir.aLancer : personne dessus, pas commencé)
+//   ça avance  = « Ça avance tout seul »   (entonnoir.caAvanceToutSeul, SEULEMENT ce qui a une
+//                preuve de vie : session ou assistant qui travaille vraiment — Raphaël, 30 sept. :
+//                « sinon c'est de la fausse information »)
+//   en pause   = « Prêt à lancer » + « Sans session dessus » (en cours, mais personne ne travaille)
 //   fini       = certifiés dans la période (ouJenSuis.estFiniDans)
 // Pur, vérifié par scripts/verifier-tableau-de-bord.ts.
 import type { Activite, Chantier, Message, SessionClaude, Tache } from './types.ts'
@@ -24,6 +26,8 @@ export interface Donnees {
 export interface TableauDeBord {
   aToi: ElementAToi[]
   caAvance: LigneCaAvance[]
+  /** En cours (ou réponse à reprendre) mais AUCUNE preuve de vie : jamais compté dans « ça avance », compté « en pause ». */
+  sansSession: LigneCaAvance[]
   horsChantier: LigneHorsChantier[]
   pretALancer: LigneALancer[]
   fini: Chantier[]
@@ -37,18 +41,20 @@ export function tableauDeBord(
   d: Donnees, now: Date, silenceMs: number, fenetre: Fenetre, ordreProjets: readonly string[], projetId: string | null = null,
 ): TableauDeBord {
   const elements = aToi(d.chantiers, d.messages, projetId, d.activites, d.taches)
-  const caAvance = caAvanceToutSeul(d.chantiers, d.activites, d.messages, d.sessions, d.taches, now, silenceMs, projetId)
+  const lignes = caAvanceToutSeul(d.chantiers, d.activites, d.messages, d.sessions, d.taches, now, silenceMs, projetId)
+  const caAvance = lignes.filter((l) => l.vivant)
+  const sansSession = lignes.filter((l) => !l.vivant)
   const travail = quiTravaille(d.sessions, d.taches, d.activites, d.chantiers, now, silenceMs, ordreProjets, projetId)
   const pretALancer = aLancer(d.chantiers, d.activites, d.messages, now, silenceMs, ordreProjets, projetId, d.taches).flatMap((g) => g.lignes)
   const fini = d.chantiers.filter((c) => (!projetId || c.projet_id === projetId) && estFiniDans(c, fenetre, now))
     .sort((a, b) => (b.valide_at ?? '').localeCompare(a.valide_at ?? ''))
   return {
-    aToi: elements, caAvance, horsChantier: horsChantier(travail), pretALancer, fini, travail, resume: resumeTravail(travail),
-    tuiles: { pourToi: elements.length, caAvance: caAvance.length, enPause: pretALancer.length, fini: fini.length },
+    aToi: elements, caAvance, sansSession, horsChantier: horsChantier(travail), pretALancer, fini, travail, resume: resumeTravail(travail),
+    tuiles: { pourToi: elements.length, caAvance: caAvance.length, enPause: pretALancer.length + sansSession.length, fini: fini.length },
   }
 }
 
 /** Ce que le tableau par section doit compter en « ça avance » / « en pause » : les mêmes chantiers que les listes. */
-export function classesDe(t: Pick<TableauDeBord, 'caAvance' | 'pretALancer'>): { bouge: Set<string>; dort: Set<string> } {
-  return { bouge: new Set(t.caAvance.map((l) => l.c.id)), dort: new Set(t.pretALancer.map((l) => l.c.id)) }
+export function classesDe(t: Pick<TableauDeBord, 'caAvance' | 'sansSession' | 'pretALancer'>): { bouge: Set<string>; dort: Set<string> } {
+  return { bouge: new Set(t.caAvance.map((l) => l.c.id)), dort: new Set([...t.pretALancer, ...t.sansSession].map((l) => l.c.id)) }
 }
