@@ -255,7 +255,7 @@ console.log('verifier-entonnoir')
   const act = [A('za', 'ck', 'z-verif', 'en_cours', 100, 'claude/w')]
   const t = aToi(cs, ms, null, act)
   const el = (cle: string) => t.find((e) => e.cle === cle)!
-  verifie('à jour : un bloqué suivi de travail → « avancé depuis »', el('bloque-z-bloque').avanceDepuis === il(200) && /avancé depuis .* peut-être plus à jour/.test(attenteAToi(el('bloque-z-bloque'), now)))
+  verifie('à jour : un bloqué suivi de travail → « avancé depuis »', el('bloque-z-bloque').avanceDepuis === il(200) && /travaillé dessus .* peut-être déjà réglé/.test(attenteAToi(el('bloque-z-bloque'), now)))
   verifie('à jour : un « à vérifier » retravaillé après la livraison → « avancé depuis »', el('a_verifier-z-verif').avanceDepuis === il(100))
   verifie(`à jour : le message de livraison (moins de ${GRACE_AVANCE_MS / 60_000} min après) ne compte pas`, !el('a_verifier-z-verif-grace').avanceDepuis)
   verifie('à jour : revu par une session (a_toi_revu_at) → son âge repart de là', el('a_cadrer-z-cadrer-revu').depuis === il(10) && !el('a_cadrer-z-cadrer-revu').avanceDepuis)

@@ -805,7 +805,7 @@ try {
     const elBD = await elementAToi(BD.id, 'bloque')
     const lignes = await page.locator('[data-testid="element-a-toi"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-depasse') === '1'))
     verifie('un bloqué que Claude a fait avancer depuis : « peut-être plus à jour », en bas de la liste',
-      (await elBD.getAttribute('data-depasse')) === '1' && /Claude a avancé depuis .* peut-être plus à jour/.test(await elBD.getByTestId('attente-a-toi').textContent())
+      (await elBD.getAttribute('data-depasse')) === '1' && /Claude a travaillé dessus .* peut-être déjà réglé/.test(await elBD.getByTestId('attente-a-toi').textContent())
         && lignes.indexOf(true) > lignes.lastIndexOf(false) && /peut-être plus à jour/.test(await page.getByTestId('a-toi-depasses').textContent()), lignes)
     await capture(page, 'a-toi-age-tri')
   }

@@ -302,7 +302,7 @@ export function pastillesProjet(
 /** Ce qu'on attend de toi, en mots simples, sous le titre d'une ligne « À toi de jouer ». */
 export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message' | 'avanceDepuis'>, now: Date = new Date()): string {
   // Claude a travaillé dessus depuis (0015, généralisé 0022) : peut-être déjà réglé, la chef le fait revoir.
-  if (e.avanceDepuis) return `Claude a avancé depuis (${dateRelative(e.avanceDepuis, now)}) : peut-être plus à jour`
+  if (e.avanceDepuis) return `Claude a travaillé dessus ${dateRelative(e.avanceDepuis, now)} : peut-être déjà réglé, il vérifie`
   switch (e.type) {
     case 'question': return e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
     case 'fusion': return 'Claude propose de fusionner deux chantiers'
