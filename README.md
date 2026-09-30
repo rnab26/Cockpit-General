@@ -76,6 +76,10 @@ scripts/demander.sh --chantier … --question … --pourquoi … --option "A|aid
 `progression.sh` imprime dans la session le même tableau de barres que l'app
 dessine en temps réel : c'est le visuel de progression, sans le demander.
 
+## Outils IA hors Claude (MCP)
+
+Codex, ChatGPT, Cursor… : serveur MCP `cockpit-mcp`, guide `docs/mcp.md`.
+
 ## Le module embarqué
 
 ```html
