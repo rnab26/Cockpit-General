@@ -168,7 +168,7 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
         <span />{COLONNES.map((c) => <span key={c.cle} className="text-center leading-tight">{c.libelle}</span>)}
       </div>
       {lignes.map((l) => (
-        <div key={l.cle} data-testid="ligne-ou-jen-suis" className="grid grid-cols-[1fr_repeat(4,3rem)] items-center gap-x-1 border-t border-bord/70">
+        <div key={l.cle} data-testid="ligne-ou-jen-suis" data-cle={l.cle} className="grid grid-cols-[1fr_repeat(4,3rem)] items-center gap-x-1 border-t border-bord/70">
           <span className="flex min-w-0 items-center gap-1.5 py-1 text-sm">{l.couleur ? <PointProjet couleur={l.couleur} /> : null}<span className="truncate">{l.nom}</span></span>
           {COLONNES.map((c) => {
             const n = l.nombres[c.cle]

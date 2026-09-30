@@ -264,6 +264,12 @@ const actualiser = async () => {
     .catch(() => console.log('    (actualiser : pas de rechargement complet en 20 s)'))
   await page.waitForTimeout(150)
 }
+// Une vignette : attend que l'image soit VRAIMENT chargée (ou en erreur), 15 s au plus.
+// Avant (30 sept.) : 800 ms fixes ; le lien signé passant par Node, l'image arrivait
+// parfois après et « la photo s'affiche » rougissait au hasard.
+const imageChargee = (img) => img.evaluate((i) => (i.complete && i.naturalWidth > 0) || new Promise((r) => {
+  i.addEventListener('load', () => r(true), { once: true }); i.addEventListener('error', () => r(false), { once: true }); setTimeout(() => r(false), 15000)
+})).catch(() => false)
 // La conversation ouverte (modèle D) et sa fermeture.
 const conv = () => page.getByTestId('conversation')
 const attendreConv = async (titre) => {
@@ -343,8 +349,11 @@ try {
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
   verifie('tuile « en pause » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
   await page.getByTestId('detail-ou-jen-suis').click()
-  const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
-  const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)
+  // Les projets jetables d'un AUTRE banc (verifier-base, verifier-embed… lancés en même temps) naissent et
+  // meurent pendant la passe, et le compte de test les voit : hors du compte des deux côtés (rouge au hasard, 30 sept.).
+  const autresBancs = new Set(sql(`select id from projets where slug like 'test-%' and slug <> '${SLUG}'`).map((r) => r.id))
+  const lignesEnsemble = (await page.getByTestId('ligne-ou-jen-suis').evaluateAll((els) => els.map((e) => e.getAttribute('data-cle')))).filter((id) => !autresBancs.has(id)).length
+  const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif and (slug not like 'test-%' or slug = '${SLUG}')`)[0].n)
   verifie('« Détail par projet » (replié sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
   const sommeColonne = async (col) => (await page.locator(`[data-testid="ligne-ou-jen-suis"] [data-colonne="${col}"]`).allTextContents()).reduce((n, t) => n + Number(t), 0)
   verifie('le détail compte les mêmes chantiers que les tuiles (pour toi, ça avance, en pause)',
@@ -819,7 +828,7 @@ try {
   verifie('le fichier est bien dans le stockage privé', Number(objQ.n) === 1, objQ)
   const vignetteQ = conv().locator('[data-testid="bulle"] [data-testid="media"] img').first()
   await vignetteQ.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  await imageChargee(vignetteQ)
   verifie('la photo s’affiche dans une bulle de la conversation (lien signé, image chargée)', await vignetteQ.count() === 1 && await vignetteQ.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await fermerConv()
   verifie('la question répondue quitte « À toi de jouer »', await page.locator(elQsel).count() === 0)
@@ -1297,7 +1306,7 @@ try {
   verifie('le message apparaît en bulle à droite (toi)', await bulleR1.count() === 1)
   const vignette = bulleR1.locator('[data-testid="media"] img').first()
   await vignette.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  await imageChargee(vignette)
   verifie('la photo s’affiche dans la bulle (lien signé, image réellement chargée)', await vignette.count() === 1 && await vignette.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   if (await vignette.count()) {
     await vignette.click()
@@ -1568,6 +1577,8 @@ try {
   await conv().getByTestId('archiver').click()
   verifie('« Archiver » : toast visible, en base archivé', await toastAuPremierPlan(/Chantier archivé/) && !!sql(`select archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]?.archived_at)
   await conv().getByTestId('menu-chantier').click()
+  // Le menu ne propose « Désarchiver » qu'une fois l'écran rechargé : sinon le toucher ré-archivait (rouge au hasard, 30 sept.).
+  await conv().getByTestId('archiver').filter({ hasText: 'Désarchiver' }).waitFor({ timeout: 8000 }).catch(() => {})
   await conv().getByTestId('archiver').click()
   verifie('« Désarchiver » : toast visible, en base de nouveau ouvert', await toastAuPremierPlan(/désarchivé/) && !sql(`select archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]?.archived_at)
   // 0028 : Mettre de côté / Reporter / Abandonner, depuis le fil ; chacun se défait.
@@ -1702,7 +1713,7 @@ try {
   await attendreConv(titrePhoto2)
   const vignetteN = conv().locator('[data-testid="media"] img').first()
   await vignetteN.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  await imageChargee(vignetteN)
   verifie('la photo jointe à la création s’affiche dans la conversation du chantier', await vignetteN.count() === 1 && await vignetteN.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await capture(page, 'creation-photo-dans-le-fil')
   await fermerConv()
