@@ -423,9 +423,8 @@ try {
     await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vivant="oui"] [data-vive="oui"]').count())
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
   verifie('FacePro : « Réglages du projet » replié en bas', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
-  const vivantsFp = compterVivants('facepro')
-  if (vivantsFp.barres + vivantsFp.sessions + vivantsFp.verifs === 0)
-    verifie('FacePro sans session → « Personne ne travaille sur ce projet en ce moment »', /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()))
+  // « Personne ne travaille sur ce projet » se vérifie sur le projet de test (plus bas), jamais sur FacePro :
+  // ses vrais chantiers réservés à des agents ou ses « où ça en est » en attente le faisaient rougir (30/09, chantier e0974112).
   verifie('FacePro : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await captureUx(page, 'ux-projet')
 
@@ -435,6 +434,11 @@ try {
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
   await ongletTest().waitFor({ timeout: 15000 })
   verifie('le projet de test a son onglet (le compte de test est admin)', await ongletTest().count() === 1)
+  // Projet sans session : son propre cas, construit ici (aucune session, aucune activité, aucun chantier en cours).
+  await allerCockpit()
+  await page.waitForTimeout(500)
+  verifie('projet sans session → « Personne ne travaille sur ce projet en ce moment »',
+    await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()), await page.getByTestId('en-ce-moment').textContent())
 
   // ===================================================================
   // 2. La présence : une session vivante, une vieille, une silencieuse
@@ -655,6 +659,8 @@ try {
   await actualiser()
   const lP2b = await ligneAvance(P2.id)
   const suivi3 = lP2b.getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  // Même latence que pour « reçue » : attendre que l'écran ait relu la réponse (rouge au hasard, 30 sept., chantier e0974112).
+  await page.locator(`[data-chantier-ligne="${P2.id}"] [data-testid="suivi-ligne"] [data-testid="etat-ou-en-est"][data-code="repondue"]`).first().waitFor({ timeout: 8000 }).catch(() => {})
   verifie('réponse arrivée → la ligne le dit, avec l’extrait de la réponse, frise complète',
     (await suivi3.getAttribute('data-code')) === 'repondue' && /Réponse arrivée/.test(await suivi3.textContent()) && /Reste : les tests/.test(await suivi3.getByTestId('reponse-ou-en-est').textContent())
     && await suivi3.locator('[data-etape="faite"]').count() === 3, await suivi3.textContent().catch(() => null))
@@ -1109,6 +1115,8 @@ try {
   const elK = await elementAToi(K1.id, 'a_cadrer')
   verifie('à cadrer : « ta décision avant de coder », bouton « Décider »', /ta décision avant de coder/.test(await elK.getByTestId('attente-a-toi').textContent()) && (await elK.getByTestId('verbe-a-toi').textContent()).trim() === 'Décider')
   const elB = await elementAToi(B1.id, 'bloque')
+  // Le chantier peut s'afficher avant son message de blocage (relecture en deux temps) : attendre le texte (rouge au hasard, 30 sept.).
+  await elB.getByTestId('attente-a-toi').filter({ hasText: 'Il manque la clé' }).waitFor({ timeout: 8000 }).catch(() => {})
   verifie('bloqué : « bloqué : <ce qui bloque> », bouton « Débloquer »', /bloqué : \[TEST web\] Il manque la clé/.test(await elB.getByTestId('attente-a-toi').textContent()) && (await elB.getByTestId('verbe-a-toi').textContent()).trim() === 'Débloquer')
   await elK.getByTestId('verbe-a-toi').click()
   await attendreConv(K1.titre)
