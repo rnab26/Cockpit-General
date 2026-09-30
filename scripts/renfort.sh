@@ -14,7 +14,7 @@
 set -uo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
-PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
+PRFUS="${COCKPIT_PRFUS_CMD:-scripts/pr-a-fusionner.sh}"; PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
 VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"; RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
 # D-05 : la ligne « scénario capturé chez l'utilisateur » d'une consigne, vide s'il n'y en a pas.
 repro_ligne() { [ -n "${1:-}" ] || return 0; COCKPIT_SQL="$SQL" bash "$(dirname "${BASH_SOURCE[0]}")/reproduction.sh" --ligne "$1" 2>/dev/null || true; }
@@ -82,7 +82,7 @@ COCKPIT_PROJET=\(.slug) \($verdict) --chantier \(.id) --bon \"…\"   ou   --pas
 Rends un rapport de 3 lignes.
 ---"'
       else
-        printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
+        printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg prfus "$PRFUS" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
 "━━ Agent « \(.titre) » [model: \($ENV.MODELE_CODE)] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
@@ -90,7 +90,7 @@ Tu es un agent du cockpit (renfort). Chantier « \(.titre) » (id \(.id)), proje
 Demande :
 \(.demande)\(if $repro != "" then "\n" + $repro else "" end)
 
-Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert (si la plateforme refuse la fusion, « merge without review » : n’insiste pas et ne cherche aucun détour ; pousse ta branche, ouvre la PR, puis pose UNE action à Raphaël : COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://github.com/\(.depot)/pull/<N>|Ouvrir la PR\" --etape \"Touche « Merge pull request »\" --etape \"Touche « Confirm merge »\" ; ne termine jamais en laissant une branche finie sans PR ni action) (fusionne origin/main d’abord ; jamais git add -A), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert (si la plateforme refuse la fusion, « merge without review » : n’insiste pas et ne cherche aucun détour ; pousse ta branche, ouvre la PR, puis IMMÉDIATEMENT COCKPIT_PROJET=\(.slug) \($prfus) <N> (la carte « À toi » avec le lien et les 2 gestes ; sans doublon, retirée seule à la fusion ; ne pose jamais cette action à la main) ; ne termine jamais en laissant une branche finie sans PR ni carte) (fusionne origin/main d’abord ; jamais git add -A), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
       fi
       echo

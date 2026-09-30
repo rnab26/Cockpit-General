@@ -157,6 +157,12 @@ demandes des utilisateurs, progression des autres sessions.
   se colle JAMAIS dans le cockpit (refusé) : dis où le trouver et où le coller.
   Avant de demander, vérifie que le geste est vraiment impossible pour toi
   (API, CLI, script) : ne le demande qu'en dernier recours.
+- **Une PR à fusionner = une carte, posée par le script** (Raphaël, 30 sept. 2026 :
+  « aucune notification pour savoir quand merger »). Dès que tu ouvres une PR
+  que la plateforme ne te laisse pas fusionner, lance IMMÉDIATEMENT
+  `scripts/cockpit-pr-a-fusionner.sh <n>` : une carte « À toi » avec le lien de
+  la PR et les 2 gestes (Merge, Confirm), sans doublon (clé = numéro), retirée
+  seule quand la PR est fusionnée (`--fermee`). Ne pose jamais cette action à la main.
 - **Montre, ne décris pas** (Raphaël, 29 sept. 2026 : « montre-moi des images
   pour que je comprenne mieux, ou ce que je suis censé voir ») : une question
   ou une vérification qui porte sur quelque chose de VISIBLE (un écran, un
