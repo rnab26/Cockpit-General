@@ -278,6 +278,17 @@ file (position) → un assistant regarde (la chef : `prendre_ou_en_est`, branche
 --point`, `repondre_ou_en_est`, `repond_a`). Dans l'app, le chantier passe
 dans « Ça avance tout seul » avec une frise, bouton désactivé tant qu'on
 attend ; la réponse y reste un quart d'heure. `verifier-reponses` §7-8.
+**30 sept. (migration 0032, correction de Raphaël : « la barre ne se réactive
+pas, je ne comprends pas ce qu'il reste à faire »)** : sous une demande en
+attente, plus jamais la vieille barre grise d'une livraison passée (point
+vivant + frise) ; l'assistant « Point » signale d'abord son étape sur le
+chantier (`--agent "Point : …" --chantier`), la ligne redevient VIVANTE avec
+sa barre ; sa réponse dit « Fait / Pour finir (qui fait quoi) / Bloque ». UN
+seul assistant par fil : `prendre_ou_en_est` prend aussi les messages libres
+du chantier, `reprendre_message` la demande en attente (`ou_en_est`) ; l'app
+dit « Un assistant regarde » pour toute branche `agent/…`. Les consignes de
+`chef.sh` commencent par « switch -c <branche> » : une copie isolée signait
+« worktree-agent-… » (`progression.sh` le signale). `verifier-reponses` §8 bis.
 
 ## Chaque fil est une discussion (29 sept. 2026, migration 0025)
 

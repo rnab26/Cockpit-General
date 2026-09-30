@@ -590,6 +590,8 @@ try {
     && await suiviP2.locator('[data-etape="faite"]').count() === 2 && await suiviP2.locator('[data-etape="en-cours"]').count() === 1, await suiviP2.textContent().catch(() => null))
   verifie('…« Tu as demandé où ça en est », et plus de bouton « Relancer » (rien à renvoyer)',
     /Tu as demandé où ça en est/.test(await lP2.textContent()) && await lP2.getByTestId('ouvrir-relance').count() === 0 && await lP2.getByTestId('demander-ou-ca-en-est').count() === 0)
+  // Raphaël, 30 sept. : « la barre de progression ne se réactive pas ». Plus de vieille barre grise (70 %) sous la demande : un point vivant.
+  verifie('…sans la vieille barre grise du dernier avancement, avec un point vivant', await lP2.getByTestId('progression').count() === 0 && await lP2.getByTestId('point-ou-en-est').count() === 1)
   await lP2.evaluate((e) => e.scrollIntoView({ block: 'center' }))
   await page.waitForTimeout(200)
   await captureUx(page, 'ux-ou-en-est-file')
@@ -599,6 +601,8 @@ try {
   const btnOu = conv().getByTestId('demander-ou-ca-en-est')
   verifie('dans la conversation : bouton « Demande en cours » désactivé, et le même état affiché',
     await btnOu.isDisabled() && /Demande en cours/.test(await btnOu.textContent()) && (await conv().getByTestId('etat-ou-en-est').getAttribute('data-code')) === 'file')
+  verifie('…le bloc dit « Tu as demandé où ça en est », sans « Personne n’y travaille » ni barre grise', await conv().getByTestId('titre-ou-en-est').count() === 1
+    && await conv().getByTestId('bulle-relance').getByTestId('progression').count() === 0 && !/Personne n’y travaille/.test(await conv().getByTestId('bulle-relance').textContent()))
   await btnOu.click({ force: true }).catch(() => {})
   await btnOu.dispatchEvent('click').catch(() => {})
   await page.waitForTimeout(800)

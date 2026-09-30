@@ -425,6 +425,7 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
           ) : oe ? (
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
+              {oe.enAttente ? <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-info align-middle" aria-hidden data-testid="point-ou-en-est" /> : null}
               <span className={oe.enAttente ? 'text-info' : 'text-ok'}>{oe.enAttente ? 'Tu as demandé où ça en est' : 'Claude a répondu à « où ça en est ? »'}</span>
             </span>
           ) : l.reprise ? (

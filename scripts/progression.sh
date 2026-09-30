@@ -109,6 +109,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Une copie isolée d'agent s'appelle « worktree-agent-… » tant que l'agent n'a
+# pas pris SA branche : il signerait sous ce nom, que ni la réservation du
+# chantier ni Raphaël ne reconnaissent (constaté le 30 sept., chantier 73fddb87).
+case "$session" in
+  worktree-agent-*) [ -n "${COCKPIT_SESSION:-}" ] || echo "Attention : tu signes « $session » (nom de ta copie). Prends la branche de ta consigne d'abord (git switch -c <branche>) : le cockpit te reconnaît à ce nom." >&2 ;;
+esac
+
 if [ "$statut" = "termine" ] && [ -n "$chantier" ] && [ -z "$agent" ] && [ -z "${verifier//[[:space:]]/}" ]; then
   echo "--verifier manque : dis à Raphaël comment vérifier (où aller, quoi faire, ce qu'il doit voir), en étapes numérotées." >&2
   exit 2
