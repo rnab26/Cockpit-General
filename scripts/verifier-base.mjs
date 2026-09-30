@@ -1933,6 +1933,77 @@ async function controle37_pr_a_fusionner() {
   verifie("--fermee sur une PR sans carte : sans erreur, rien créé ; un numéro invalide est refusé", inconnue.code === 0 && (await cartes(12)).length === 0 && mauvais.code === 2, { inconnue, mauvais });
 }
 
+// 38. PR sans conflit : la carte « À toi » n'arrive que si la PR est propre (script réel, propreté donnée par --merge-state / --ci, sans GitHub).
+async function controle38_pr_propre() {
+  section("38. PR propre seulement : conflit / CI en cours / CI en échec / brouillon = pas de carte ; carte existante devenue en conflit = retirée ; reposée quand la PR redevient propre");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const cartes = async (n) => await sql(`select answered_at, reponse from messages where projet_id = ${q(P10)} and kind = 'action' and left(corps, ${`Fusionne la PR #${n} :`.length}) = ${q(`Fusionne la PR #${n} :`)}`);
+  const ouvertes = async (n) => (await cartes(n)).filter((c) => c.answered_at === null).length;
+
+  const propre = lancer(["201", "--etat", "open", "--merge-state", "clean", "--titre", "PR propre"]);
+  verifie("PR propre (clean) : la carte est posée", propre.code === 0 && (await ouvertes(201)) === 1, propre);
+  const conflit = lancer(["202", "--etat", "open", "--merge-state", "dirty", "--titre", "PR en conflit"]);
+  verifie("PR en conflit (dirty) : AUCUNE carte, et le script dit pourquoi", conflit.code === 0 && (await cartes(202)).length === 0 && /PAS PRÊTE.*conflit/.test(conflit.sortie), conflit);
+  const cours = lancer(["203", "--etat", "open", "--merge-state", "unstable", "--ci", "cours"]);
+  verifie("CI en cours : pas de carte, « CI en cours » dit", cours.code === 0 && (await cartes(203)).length === 0 && /CI en cours/.test(cours.sortie), cours);
+  const echec = lancer(["204", "--etat", "open", "--merge-state", "unstable", "--ci", "echec"]);
+  verifie("CI en échec : pas de carte, « CI en échec » dit", echec.code === 0 && (await cartes(204)).length === 0 && /CI en échec/.test(echec.sortie), echec);
+  const instable = lancer(["205", "--etat", "open", "--merge-state", "unstable", "--ci", "ok"]);
+  verifie("unstable sans échec de CI : la carte est posée", instable.code === 0 && (await ouvertes(205)) === 1, instable);
+  const brouillon = lancer(["206", "--etat", "open", "--merge-state", "draft"]);
+  const calcul = lancer(["207", "--etat", "open", "--merge-state", "unknown"]);
+  const retard = lancer(["208", "--etat", "open", "--merge-state", "behind"]);
+  verifie("brouillon, calcul en cours (unknown), en retard sur main (behind) : pas de carte",
+    [206, 207, 208].every(() => true) && (await cartes(206)).length + (await cartes(207)).length + (await cartes(208)).length === 0 && brouillon.code === 0 && calcul.code === 0 && retard.code === 0, { brouillon, calcul, retard });
+
+  // Carte existante, PR devenue en conflit : retirée (répondue), puis reposée quand la PR redevient propre.
+  const devenue = lancer(["201", "--etat", "open", "--merge-state", "dirty"]);
+  const apres = await cartes(201);
+  verifie("carte existante + PR devenue en conflit : la carte est retirée (répondue « pas prête »)", devenue.code === 0 && (await ouvertes(201)) === 0 && apres.length === 1 && /pas prête/.test(apres[0].reponse ?? ""), { devenue, apres });
+  const propreDeNouveau = lancer(["201", "--etat", "open", "--merge-state", "clean", "--titre", "PR propre"]);
+  const finale = await cartes(201);
+  verifie("la PR redevient propre : UNE nouvelle carte est posée (l'ancienne, retirée par le script, ne bloque pas)", propreDeNouveau.code === 0 && (await ouvertes(201)) === 1 && finale.length === 2, { propreDeNouveau, finale });
+  const deux = lancer(["201", "--etat", "open", "--merge-state", "clean"]);
+  verifie("re-appeler une PR propre ne pose pas de doublon", deux.code === 0 && (await ouvertes(201)) === 1, deux);
+  const ferme = lancer(["201", "--fermee"]);
+  verifie("--fermee retire toujours la carte", ferme.code === 0 && (await ouvertes(201)) === 0, ferme);
+  const mauvaisCi = lancer(["209", "--etat", "open", "--ci", "peut-etre"]);
+  verifie("--ci invalide refusé", mauvaisCi.code === 2, mauvaisCi);
+}
+
+// 38 bis. scripts/prochaine-migration.sh : 1 + le plus grand numéro vu dans la copie ET sur les branches distantes.
+async function controle38_prochaine_migration() {
+  section("38 bis. Prochaine migration : numéro libre = max des fichiers locaux et des branches distantes + 1");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const tmp = mkdtempSync(join(tmpdir(), "prochaine-migration-"));
+  const g = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const origine = join(tmp, "origine.git"), copie = join(tmp, "copie"), autre = join(tmp, "autre");
+    g(tmp, "init", "-q", "--bare", origine);
+    g(tmp, "clone", "-q", origine, copie);
+    execFileSync("mkdir", ["-p", join(copie, "scripts"), join(copie, "supabase/migrations")]);
+    execFileSync("cp", [join(racine, "scripts/prochaine-migration.sh"), join(copie, "scripts/")]);
+    for (const f of ["0001_a.sql", "0007_b.sql", "0012_c.sql"]) writeFileSync(join(copie, "supabase/migrations", f), "-- x\n");
+    g(copie, "add", "-A"); g(copie, "commit", "-q", "-m", "base"); g(copie, "push", "-q", "origin", "HEAD:main");
+    const lancer = (args = []) => execFileSync("bash", [join(copie, "scripts/prochaine-migration.sh"), ...args], { encoding: "utf8", cwd: copie, stdio: ["ignore", "pipe", "pipe"] }).trim();
+    verifie("numéro suivant = 0013 quand les fichiers vont jusqu'à 0012", lancer() === "0013", lancer());
+    verifie("--nom donne le chemin complet", lancer(["--nom", "essai"]) === "supabase/migrations/0013_essai.sql", lancer(["--nom", "essai"]));
+    // Un autre agent pousse une branche avec 0013 et 0014, pas encore fusionnée dans main.
+    g(tmp, "clone", "-q", origine, autre);
+    g(autre, "switch", "-q", "-c", "agent/autre");
+    execFileSync("mkdir", ["-p", join(autre, "supabase/migrations")]);
+    for (const f of ["0013_x.sql", "0014_y.sql"]) writeFileSync(join(autre, "supabase/migrations", f), "-- y\n");
+    g(autre, "add", "-A"); g(autre, "commit", "-q", "-m", "autre"); g(autre, "push", "-q", "origin", "agent/autre");
+    verifie("la migration d'un agent pas encore fusionnée (branche distante 0014) est comptée : suivant = 0015", lancer() === "0015", lancer());
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}
+
 // 36. Déplacer un chantier vers un autre projet (0038).
 async function controle36_deplacer_chantier() {
   section("36. Déplacer un chantier vers un autre projet (0038) : le chantier, son fil, sa section, sa réservation, ses médias");
@@ -2366,6 +2437,59 @@ async function controle34_fermeture_sessions() {
   await sql(`delete from projets where id = ${q(pv)}`);
 }
 
+const P11 = randomUUID(), SLUG_K = `test-verif-${rand}-k`;
+async function controle38_filet_securite() {
+  section("38. Filet de sécurité (0044) : du travail attend + personne de vivant = un réveil journalisé ; sinon rien");
+  await sql(`insert into projets (id, slug, nom) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test filet')`);
+  const passe = async (test = true, simuler = true) => (await une(`select filet_passe(${q(SLUG_K)}, ${simuler}, ${test}) as r`)).r[0]?.resultat;
+  const journal = async () => (await une(`select count(*)::int as n from filet_reveils where projet_id = ${q(P11)}`)).n;
+  const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
+  // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
+  const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
+    has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
+    has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
+    has_function_privilege('service_role', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as srv`);
+  verifie("filet_passe et reveiller_chef : réservés au service (ni anon ni authenticated)", !droits.anon && !droits.auth && !droits.reveil && droits.srv, droits);
+  verifie("rien n'attend : aucun réveil", await passe() === "rien_en_attente" && await journal() === 0);
+  await vieux(1);
+  verifie("travail arrivé il y a 1 min : on laisse la chef et les hooks d'abord (trop_recent)", await passe() === "trop_recent" && await journal() === 0);
+  await sql(`delete from messages where projet_id = ${q(P11)}`);
+  await vieux(30);
+  verifie("projet de test sans p_test : jamais réveillé", await passe(false, true) === "projet_de_test" && await journal() === 0);
+  const sid = `test-filet-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(P11)}, 'claude/vivante-filet', now())`);
+  verifie("travail en attente + session vivante : aucun réveil", await passe() === "session_vivante" && await journal() === 0);
+  await sql(`delete from sessions where id = ${q(sid)}`);
+  await sql(`update projets set filet_actif = false where id = ${q(P11)}`);
+  verifie("interrupteur du projet éteint : aucun réveil", await passe() === "eteint" && await journal() === 0);
+  await sql(`update projets set filet_actif = true where id = ${q(P11)}`);
+  verifie("travail en attente depuis 30 min + personne de vivant : un réveil journalisé", await passe() === "simule" && await journal() === 1);
+  const j = await une(`select pourquoi, resultat from filet_reveils where projet_id = ${q(P11)}`);
+  verifie("… avec son pourquoi", /1 message\(s\) sans réponse/.test(j.pourquoi) && j.resultat === "simule", j);
+  verifie("deux passes rapprochées : un seul réveil (anti-rafale 5 min)", await passe() === "trop_tot" && await journal() === 1);
+  await sql(`update filet_reveils set at = now() - interval '10 minutes' where projet_id = ${q(P11)}`);
+  await sql(`update projets set filet_plafond_jour = 1 where id = ${q(P11)}`);
+  verifie("plafond du jour atteint : aucun réveil de plus", await passe() === "plafond" && await journal() === 1);
+  await sql(`update projets set filet_plafond_jour = 2 where id = ${q(P11)}`);
+  verifie("plafond relevé et 5 min passées : le réveil repart", await passe() === "simule" && await journal() === 2);
+  // Sans jeton : le vrai chemin (sans simulation) n'appelle rien et ne journalise rien.
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  const r = await passe(true, false);
+  verifie("sans jeton : rien n'est appelé, rien n'est journalisé (pas_configure)", r === "pas_configure" && await journal() === 0, r);
+  // Réglages : bornes, et la ligne d'écran.
+  const mauvais = await sql(`select regler_filet(${q(SLUG_K)}, null, 99, null) as r`).then(() => "accepté", (e) => e.message);
+  verifie("plafond hors 0-48 refusé", /48/.test(String(mauvais)), mauvais);
+  const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e;
+  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 2, e);
+  // Le vrai cron ne touche jamais un projet de test.
+  const vraie = await une(`select filet_passe() as r`);
+  verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
+  const reel = await une(`select count(*)::int as n from filet_reveils f join projets p on p.id = f.projet_id where f.simule and p.slug not like 'test-%'`);
+  verifie("aucun réveil simulé sur un vrai projet", reel.n === 0, reel);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2376,12 +2500,47 @@ try {
   if (admin.n !== 0) throw new Error("le compte de test est admin : les contrôles RLS n'auraient aucun sens");
 
   const etapes = [
-    controle1_reservation, controle2_historique, controle3_suppression,
+  // UN contrôle par ligne : en ajouter un = UNE ligne, insérée à côté du contrôle de ton sujet (pas en fin de liste : deux ajouts au même endroit se marchent dessus).
+    controle1_reservation,
+    controle2_historique,
+    controle3_suppression,
     async () => { const c = await controle4_certifier(); await controle5_corriger(c); },
-    controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
+    controle6_repondre,
+    controle7_fusionner,
+    controle8_activite,
+    controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
-    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_pr_a_fusionner, controle37_accuse_action, controle37_fusion_auto, controle37_traite_sans_attendre,
+    controle12_realtime,
+    controle13_exec_sql,
+    controle14_sessions_agents_fusions,
+    controle15_limites_autonome,
+    controle16_medias,
+    controle17_verifie_pour_moi,
+    controle18_reponses_prises,
+    controle19_chef_par_projet,
+    controle20_images_session,
+    controle23_a_toi_a_jour,
+    controle24_ou_en_est,
+    controle21_aucun_reste_de_test,
+    controle22_correctifs,
+    controle25_renforts,
+    controle26_fil_discussion,
+    controle27_question_gardee,
+    controle28_messages_de_session,
+    controle29_synchro,
+    controle30_agents_fantomes,
+    controle32_economie_modeles,
+    controle33_depuis_un_fil,
+    controle34_fermeture_sessions,
+    controle35_renforts_auto,
+    controle36_deplacer_chantier,
+    controle37_pr_a_fusionner,
+    controle37_accuse_action,
+    controle37_fusion_auto,
+    controle37_traite_sans_attendre,
+    controle38_pr_propre,
+    controle38_prochaine_migration,
+    controle38_filet_securite,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2392,7 +2551,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2400,8 +2559,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

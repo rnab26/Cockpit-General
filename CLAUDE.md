@@ -506,6 +506,10 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
 
+## Filet de sécurité : du travail attend, personne ne traite → réveil auto (30 sept. 2026, migration 0044, chantier 42938fc3)
+
+Raphaël : « un chantier ne doit jamais rester mort […] sans que j'aille vérifier dans l'app Claude Code ». Un job **pg_cron** de la base (`cockpit-filet-securite`, toutes les 3 min, visible dans `cron.job`) appelle `filet_passe()` : par projet, si du travail attend (`filet_attente` : messages sans réponse, réponses sans suite, vérifications demandées, renforts demandés, chantiers prenables SEULEMENT si le mode autonome est allumé) depuis plus de `filet_delai_min` (10) et que rien ne vit (`filet_vivant` : session, agent, renfort < 30 min), elle appelle `reveiller_chef` (réveil immédiat 0028, jeton dans le Vault, jamais lu ici). Sûretés : jamais un projet de test, au plus 1 réveil/5 min/projet (table `filet_reveils`), plafond `filet_plafond_jour` (6, réglable 0-48), interrupteur par projet (`regler_filet`, `chef.sh --filet oui|non [plafond] [délai]`) et global (`regler_filet_global`, `chef.sh --filet-global oui|non`, coupe aussi le job). Sans jeton : rien n'est appelé, l'écran dit « colle le jeton dans Réglages ». Écran : `FiletSecurite.tsx` (vue projet, `etat_filet`, `lib/filet.ts`). Non couvert : PR en conflit. `verifier-base` §38, `verifier-filet.ts`.
+
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 
 Raphaël : un chantier écrit dans FacePro devait être un correctif du cockpit.
@@ -630,6 +634,14 @@ page, nouvel onglet, domaine affiché ; étapes numérotées ; « Copier » qui 
 copie commune `lib/copier.ts`. Pas encore dans le module embarqué (`embed/`) :
 une action s'adresse à Raphaël, pas à l'utilisateur final. `verifier-base`
 §31, `verifier-marche.ts`, `verifier-web.mjs` (« action manuelle »).
+
+## PR sans conflit : la carte n'arrive que quand la PR est prête (30 sept. 2026, chantier 6ef35b6e)
+
+Raphaël : « à chaque fois il y a des conflits sur les branches […] envoie-moi les PR une fois les conflits réglés ». Cause : des agents en parallèle partent d'un main ancien (verifier-base, CLAUDE.md, migrations numérotées : trois 0041).
+1. `scripts/pr-a-fusionner.sh` ne pose la carte que si GitHub dit `mergeable_state` = clean (ou unstable/blocked sans CI en échec ni en cours) ; sinon « PAS PRÊTE : <raison> », et une carte existante devenue caduque est retirée (réponse « PR #n pas prête », qui n'empêche pas de la reposer). Tests : `--merge-state`, `--ci`.
+2. Les agents fusionnent `origin/main` dans leur branche JUSTE avant d'ouvrir la PR ; la passe de `chef.sh` lance un agent léger « Résoudre le conflit de la PR n » sur toute PR dirty/behind, puis rappelle le script ; quand une PR est fusionnée, les autres sont mises à jour avant d'être proposées.
+3. À la source : la liste des contrôles de `verifier-base.mjs` est UN contrôle par ligne (en ajouter un = une ligne, à côté de son sujet), et `scripts/prochaine-migration.sh` donne le numéro libre (max des fichiers locaux et des branches distantes + 1 ; la base n'a pas de journal des migrations cockpit) : à appeler au moment d'écrire le fichier.
+4. `verifier-base` §38 (carte selon la propreté) et §38 bis (numéro de migration).
 
 ## Appli installable (30 sept. 2026)
 

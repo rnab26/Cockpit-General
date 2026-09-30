@@ -163,6 +163,12 @@ demandes des utilisateurs, progression des autres sessions.
   `scripts/cockpit-pr-a-fusionner.sh <n>` : une carte « À toi » avec le lien de
   la PR et les 2 gestes (Merge, Confirm), sans doublon (clé = numéro), retirée
   seule quand la PR est fusionnée (`--fermee`). Ne pose jamais cette action à la main.
+  **La carte n'arrive que si la PR est propre** (30 sept., chantier 6ef35b6e) :
+  juste AVANT d'ouvrir la PR, `git fetch origin && git merge origin/main` dans ta
+  branche (garde les deux côtés), relance les tests rapides. Le script répond
+  « PAS PRÊTE : … » (conflit, CI en cours ou en échec) au lieu de poser la carte :
+  la chef envoie un agent qui règle le conflit, puis la carte arrive. Une migration :
+  son numéro vient de `scripts/prochaine-migration.sh`, au moment d'écrire le fichier.
 - **Montre, ne décris pas** (Raphaël, 29 sept. 2026 : « montre-moi des images
   pour que je comprenne mieux, ou ce que je suis censé voir ») : une question
   ou une vérification qui porte sur quelque chose de VISIBLE (un écran, un
