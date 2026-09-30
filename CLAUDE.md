@@ -413,7 +413,7 @@ qui marche », assistants, passes ; section remise (même nom, créée dans le
 projet cible) ; réservation libérée ; lien « doublon de » coupé ; ligne
 « Déplacé de … vers … » dans le fil. Les fichiers restent au même chemin
 (le stockage ne se renomme pas en SQL) : `peut_lire_media` les accepte via le
-message qui les cite. `verifier-base` §34, `verifier-deplacer.ts`.
+message qui les cite. `verifier-base` §36, `verifier-deplacer.ts`.
 
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 

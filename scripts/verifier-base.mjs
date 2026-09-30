@@ -1847,9 +1847,9 @@ async function controle30_agents_fantomes() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
-// 34. Déplacer un chantier vers un autre projet (0036).
-async function controle34_deplacer_chantier() {
-  section("34. Déplacer un chantier vers un autre projet (0036) : le chantier, son fil, sa section, sa réservation, ses médias");
+// 36. Déplacer un chantier vers un autre projet (0037).
+async function controle36_deplacer_chantier() {
+  section("36. Déplacer un chantier vers un autre projet (0037) : le chantier, son fil, sa section, sa réservation, ses médias");
   const c = await creerChantier(P1, { titre: "Écrit par erreur au mauvais endroit", etat: "en_cours" });
   const doublon = await creerChantier(P1, { titre: "Autre chantier resté", etat: "libre" });
   await sql(`update chantiers set pris_par = 'agent/x', pris_jusqu_a = now() + interval '1 hour', doublon_de = ${q(doublon)} where id = ${q(c)}`);
@@ -2004,7 +2004,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_deplacer_chantier,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle36_deplacer_chantier,
   ];
   for (const etape of etapes) {
     try { await etape(); }
