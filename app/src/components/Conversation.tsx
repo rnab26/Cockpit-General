@@ -16,7 +16,7 @@ import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
 import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
-import { situationSilence } from '../lib/silence.ts'
+import { situationSilence, phraseLiberee } from '../lib/silence.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
@@ -629,6 +629,11 @@ function FilChantier({ chantierId }: { chantierId: string }) {
               ) : <BoutonsRelance chantier={c} />}
             </div>
           </AFaire>
+        ) : null}
+
+        {/* 0041 : une réservation sans signe de vie a été libérée : qui, depuis quand, repris seul. */}
+        {!c.archived_at && phraseLiberee(c, { now, prochainPassage }) ? (
+          <p className="rounded-2xl border border-bord bg-carte p-3 text-sm text-texte-2" data-testid="chantier-libere">{phraseLiberee(c, { now, prochainPassage })}</p>
         ) : null}
 
         {/* 3. Ton dernier message attend sa réponse : qui va répondre, et quand. */}

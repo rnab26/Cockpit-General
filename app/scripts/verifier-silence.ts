@@ -1,6 +1,6 @@
 // « Pris, mais silencieux » : l'écran dit qui, depuis quand, et LE geste (src/lib/silence.ts).
 import { verifie, bilan } from './_assert.ts'
-import { situationSilence, passageApres } from '../src/lib/silence.ts'
+import { situationSilence, passageApres, phraseLiberee } from '../src/lib/silence.ts'
 
 const now = new Date('2026-09-30T10:00:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
@@ -31,4 +31,12 @@ console.log('verifier-silence')
   verifie('aucun avancement signalé : depuis la réservation, fiche récente = on attend', s.geste === 'attendre' && /aucun signe/.test(s.depuis), s)
 }
 verifie('passage : saute au premier passage horaire après l’abandon', passageApres(dans(5), now.getTime() + 90 * 60_000, now.getTime()) === now.getTime() + 125 * 60_000)
+{
+  const lib = { pris_jusqu_a: il(1), libere_at: il(1), libere_de: 'agent/message-abc123', libere_apres_min: 45 }
+  const p = phraseLiberee(lib, { now, prochainPassage: dans(20) })
+  verifie('libéré par la base : dit qui, depuis combien, quand il est repris seul', !!p && /45 min/.test(p) && /libéré à/.test(p) && /repris seul vers/.test(p) && /Rien à faire/.test(p), p)
+  verifie('libéré sans passage programmé : dit « à la prochaine passe »', /prochaine passe/.test(phraseLiberee(lib, { now, prochainPassage: null }) ?? ''))
+  verifie('déjà repris (réservation vivante) : plus de phrase', phraseLiberee({ ...lib, pris_jusqu_a: dans(60) }, { now, prochainPassage: null }) === null)
+  verifie('jamais libéré : pas de phrase', phraseLiberee({ pris_jusqu_a: null, libere_at: null, libere_de: null, libere_apres_min: null }, { now, prochainPassage: null }) === null)
+}
 bilan('verifier-silence')

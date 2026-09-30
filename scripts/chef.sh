@@ -193,6 +193,8 @@ if [ "$mode" = "etat" ]; then printf '%s\n' "$etat" | jq .; exit 0; fi
 
 pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
+# 0041 : une réservation sans signe de vie depuis 30 min est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
+un "select liberer_silencieux($P) as n" >/dev/null
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
 # (ouverte par /fire) ne vole jamais une chef vivante : elle sert seulement ce qui

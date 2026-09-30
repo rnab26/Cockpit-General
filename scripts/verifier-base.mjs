@@ -1879,6 +1879,59 @@ async function controle36_deplacer_chantier() {
   verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
 }
 
+// 37. Traité sans attendre (0041) : une réservation sans signe de vie est libérée, une seule règle.
+async function controle37_traite_sans_attendre() {
+  section("37. Traité sans attendre (0041) : réservation sans signe de vie libérée, renfort muet rendu, agent vivant intouché");
+  // Vieillit une fiche de test sans toucher au trigger des autres (session_replication_role local à cet appel).
+  const vieillir = (id, min) => sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '${min} minutes' where id = ${q(id)}`);
+  const reserver = (id, par, min = 60) => sql(`update chantiers set pris_par = ${q(par)}, pris_jusqu_a = now() + interval '${min} minutes' where id = ${q(id)}`);
+  const prenables = async (par = null) => (await sql(`select id from chantiers_prenables(${q(P9)}, ${par ? q(par) : "null"})`)).map((r) => r.id);
+
+  const mort = await creerChantier(P9, { titre: "TRAITÉ Point mort", etat: "libre" });
+  const vivant = await creerChantier(P9, { titre: "TRAITÉ Agent vivant", etat: "libre" });
+  const frais = await creerChantier(P9, { titre: "TRAITÉ Réservation fraîche", etat: "libre" });
+  const codeur = await creerChantier(P9, { titre: "TRAITÉ Code sans étape", etat: "en_cours" });
+  for (const [id, par] of [[mort, "agent/message-mort"], [vivant, "agent/message-vivant"], [frais, "agent/message-frais"], [codeur, "agent/code-mort"]]) await reserver(id, par);
+  const sid = `test-traite-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(P9)}, 'claude/traite', now())`);
+  await sql(`insert into taches (session_id, projet_id, tache_id, type, chantier_id, statut, vu_at) values (${q(sid)}, ${q(P9)}, 't1', 'agent', ${q(vivant)}, 'en_cours', now())`);
+  await vieillir(mort, 45); await vieillir(vivant, 45); await vieillir(codeur, 45);
+  // Une demande de Raphaël sur le chantier au point mort, prise par l'agent mort : elle doit revenir à servir.
+  const m = await creerMessage(P9, mort, { kind: "info", corps: "peux-tu regarder ça ?", auteur_type: "proprietaire" });
+  await sql(`update messages set recu_par = 'agent/message-mort', recu_at = now() - interval '40 minutes' where id = ${q(m)}`);
+
+  const avant = await prenables();
+  verifie("avant balayage : la réservation d'un agent mort (libre, 45 min de silence) bloque encore le chantier", !avant.includes(mort), avant);
+  const n = (await une(`select liberer_silencieux(${q(SLUG_I)}) as n`)).n;
+  const apres = await prenables();
+  verifie("après balayage : le chantier au point mort est prenable ET le chantier en cours sans étape aussi", n >= 1 && apres.includes(mort) && apres.includes(codeur), { n, apres });
+  verifie("un agent qui travaille (tâche vivante) garde son chantier, une réservation fraîche aussi", !apres.includes(vivant) && !apres.includes(frais), apres);
+  const f = await chantier(mort);
+  verifie("la fiche dit qui, depuis combien, quand (libere_de / libere_apres_min / libere_at), sans rien écrire dans le fil",
+    f.libere_de === "agent/message-mort" && f.libere_apres_min >= 44 && !!f.libere_at
+      && (await une(`select count(*)::int as n from messages where chantier_id = ${q(mort)} and auteur_type = 'session'`)).n === 0, f);
+  verifie("le message que l'agent mort avait pris est de nouveau à servir (recu_at remis à zéro)", (await une(`select recu_at from messages where id = ${q(m)}`)).recu_at === null);
+  const n2 = (await une(`select liberer_silencieux(${q(SLUG_I)}) as n`)).n;
+  verifie("repasser ne libère rien de plus (une fois par réservation)", n2 === 0, n2);
+  verifie("liberer_silencieux : refusé à un membre connecté", (await rpcUtilisateur("liberer_silencieux", { p_projet: SLUG_I }, jwt)).status >= 400);
+
+  // Renfort : muet depuis 100 min avec un chantier abandonné → sa section est rendue ; signe de vie récent → elle reste tenue.
+  const S = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'TRAITÉ Section', 9)`);
+  const rc = await creerChantier(P9, { titre: "TRAITÉ Section de renfort", etat: "libre" });
+  const rcode = await creerChantier(P9, { titre: "TRAITÉ Chantier du renfort", etat: "en_cours" });
+  await sql(`update chantiers set section_id = ${q(S)} where id in (${q(rc)}, ${q(rcode)})`);
+  const R = randomUUID();
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/tt0041', 'actif', now() - interval '100 minutes')`);
+  await reserver(rcode, "renfort/tt0041/aaaaaa", 120);
+  await vieillir(rcode, 90);
+  const vRenfort = async () => (await une(`select renfort_vivant(r) as v from renforts r where id = ${q(R)}`)).v;
+  verifie("renfort muet depuis 100 min, son chantier sans signe : plus « vivant », sa section est rendue", (await vRenfort()) === false && (await prenables()).includes(rc));
+  await sql(`update renforts set vu_at = now() where id = ${q(R)}`);
+  verifie("le même renfort avec un signe de vie récent : vivant, sa section reste à lui", (await vRenfort()) === true && !(await prenables()).includes(rc));
+  await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
+}
+
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
 // Un projet NEUF (I) pour l'ouverture automatique des renforts.
 const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
@@ -2157,7 +2210,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_traite_sans_attendre,
   ];
   for (const etape of etapes) {
     try { await etape(); }
