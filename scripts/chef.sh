@@ -25,6 +25,7 @@
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
 #   scripts/chef.sh --usage <status> [pct]   note l'usage (rate_limit_info) : la BASCULE change le modèle, jamais le nombre d'agents (0036)
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
+#   scripts/chef.sh --sans-signe <min>  délai « sans signe de vie » du projet : au-delà, une réservation est libérée (1 à 120, défaut 3 ; 0044)
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
@@ -56,6 +57,7 @@ while [ $# -gt 0 ]; do
     --frein)   mode="frein"; max="${2:-}"; freinraison="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --usage)   mode="usage"; max="${2:-}"; usage_pct="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --bascule) mode="bascule"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
+    --sans-signe) mode="sans_signe"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --renforts) mode="renforts"; max="${2:-}"; shift 2 ;;
     --agents-renfort) mode="agents_renfort"; max="${2:-}"; shift 2 ;;
@@ -167,6 +169,10 @@ case "$mode" in
     [[ "$max" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--frein <heures> \"<raison>\" (0 = lever)." >&2; exit 2; }
     r=$("$SQL" "select freiner($P, $max, '$(q "$freinraison")') as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
       && { [ "$max" = "0" ] && echo "Frein levé pour $projet." || echo "Frein posé sur $projet pour $max h : 1 agent, aucune revue, aucun nouveau renfort."; } || { echo "Frein refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
+  sans_signe)
+    [[ "$max" =~ ^[0-9]+$ ]] && [ "$max" -ge 1 ] && [ "$max" -le 120 ] || { echo "--sans-signe <minutes> : un nombre de 1 à 120." >&2; exit 2; }
+    r=$("$SQL" "select regler_sans_signe($P, $max) as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
+      && echo "Délai sans signe de vie de $projet : $max min (au-delà, une réservation est libérée et la chef la reprend)." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
   max)
     [[ "$max" =~ ^[1-8]$ ]] || { echo "--max : un nombre de 1 à 8." >&2; exit 2; }
     "$SQL" "insert into chefs (projet_id, max_agents) select id, $max from projets where slug = $P on conflict (projet_id) do update set max_agents = excluded.max_agents" >/dev/null \
@@ -193,7 +199,7 @@ if [ "$mode" = "etat" ]; then printf '%s\n' "$etat" | jq .; exit 0; fi
 
 pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
-# 0041 : une réservation sans signe de vie depuis 30 min est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
+# 0041/0044 : une réservation sans signe de vie depuis le délai du projet (projets.delai_sans_signe_min, 3 min par défaut) est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
 un "select liberer_silencieux($P) as n" >/dev/null
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
