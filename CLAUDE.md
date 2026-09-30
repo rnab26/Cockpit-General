@@ -194,6 +194,28 @@ tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
 **Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
 
+## Sessions qui se ferment seules (30 sept. 2026, migration 0038, chantier 27d251f8)
+
+Raphaël : « dès qu'une session a fini son travail elle se ferme directement ; un
+correctif ou une vérification repart ensuite dans une nouvelle session. Éviter la
+pollution. » Avant : seuls les renforts finis étaient archivés (à la passe
+suivante de la chef) ; sessions relais et sessions de réveil /fire restaient
+ouvertes. Maintenant, chaque session ouverte par le cockpit reçoit une consigne de
+fin : renfort FINI, relais (`[cockpit-relais]`) et réveil /fire s'archivent
+eux-mêmes si l'outil `archive_session` existe (`get_session` sans id = son id) ;
+sinon la chef les archive à sa passe (`renforts_a_ouvrir.archiver`,
+`ouvertures_a_fermer` / `relais_a_servir.fermer`, puis `chef.sh
+--ouverture-archive <id>`). Jamais fermée : session avec un chantier en cours,
+une question posée sans réponse, ou un message de Raphaël sans réponse
+(`ouverture_finie`, une seule règle). Réglages par projet (`projets`,
+`regler_fermeture`, écran « Modèles et effort » du cockpit, ou `chef.sh
+--fermeture oui|non [minutes]`) : `fermeture_auto` (oui) et
+`fermeture_delai_min` (10). Ouvrir seulement s'il y a du travail : le relais
+n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
+`rien_a_servir` (aucun /fire) quand rien n'est sans réponse ni sans suite.
+Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
+reste ouverte (non suivie en base). `verifier-base` §34.
+
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
 « Ce sont des correctifs généraux, peu importe le repo ou le projet que je

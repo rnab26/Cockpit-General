@@ -50,7 +50,7 @@ case "${1:-}" in
     [ -n "$r" ] && [ "$r" != "null" ] || { echo "ERREUR — le cockpit ne répond pas (prochain_renfort). Réessaie dans une minute ; si ça persiste, arrête-toi en une ligne."; exit 1; }
     etat=$(printf '%s' "$r" | jq -r '.etat')
     if [ "$etat" = "fini" ]; then
-      echo "FINI — plus aucun chantier dans ta section, et aucun en cours. Arrête-toi en une ligne : la chef archivera cette session."; exit 0
+      echo "FINI — plus aucun chantier dans ta section, et aucun en cours. Arrête-toi en une ligne et FERME-TOI : si l'outil archive_session existe, archive TA session (get_session sans identifiant te donne ton id) ; sinon la chef l'archivera à sa passe suivante. Une session finie ne reste jamais ouverte."; exit 0
     fi
     if [ "$etat" = "attends" ]; then
       echo "ATTENDS — $(printf '%s' "$r" | jq -r '.en_cours') chantier(s) de ta section avancent encore avec tes agents, rien de nouveau à prendre. Ne prends rien d'autre : à la fin de chaque agent, relance $RENF --suivant $2. Termine ta réponse en une ligne."; exit 0

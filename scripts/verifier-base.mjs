@@ -1327,6 +1327,7 @@ async function controle25_renforts() {
   const p4 = (await une(`select prochain_renfort(${q(rE)}) as r`)).r;
   const fini = await une(`select statut, faits, fini_at from renforts where id = ${q(rE)}`);
   verifie("section vide et plus rien en cours → FINI, 3 chantiers faits", p4.etat === "fini" && fini.statut === "fini" && fini.faits === 3 && !!fini.fini_at, { p4, fini });
+  await sql(`update renforts set fini_at = now() - interval '1 hour' where id = ${q(rE)}`); // 0038 : après le délai de grâce du projet
   const arch = (await une(`select renforts_a_ouvrir(${q(SLUG_F)}, true) as r`)).r.archiver;
   verifie("la chef voit le renfort fini à archiver (avec sa session)", arch.some((a) => a.id === rE && a.session === "session_test_e"), arch);
   verifie("renfort_archive : fini → archivé", (await une(`select renfort_archive(${q(rE)}) as ok`)).ok === true
@@ -1958,6 +1959,64 @@ async function controle32_economie_modeles() {
   await sql(`update projets set autonome_toujours = false where id = ${q(P1)}`);
 }
 
+// 34. Sessions qui se ferment seules (0038) : réglage, sessions relais finies, renforts finis après le délai, pas de réveil pour rien.
+async function controle34_fermeture_sessions() {
+  section("34. Sessions qui se ferment seules (0038) : réglage, relais finis, renforts finis après le délai, pas de réveil pour rien");
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const chef = (args) => {
+    try { return execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A }, stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
+  };
+  const d = (await une(`select etat_fermeture(${q(SLUG_A)}) as e`)).e;
+  verifie("défauts : fermeture automatique, 10 minutes de grâce", d.auto === true && d.delai_min === 10, d);
+  const mauvais = await sql(`select regler_fermeture(${q(SLUG_A)}, true, 5000) as r`).then(() => "accepté", (e) => e.message);
+  verifie("un délai hors 0-1440 est refusé", /1440/.test(String(mauvais)), mauvais);
+  const cli = chef(["--fermeture", "oui", "15"]);
+  verifie("chef.sh --fermeture : réglage enregistré", /oui, 15 min/.test(cli) && (await une(`select etat_fermeture(${q(SLUG_A)}) as e`)).e.delai_min === 15, cli);
+  chef(["--fermeture", "oui", "10"]);
+  // Session relais : finie seulement si rien ne l'attend.
+  const oid = randomUUID();
+  await sql(`insert into ouvertures (id, projet_id, session_distante, created_at) values (${q(oid)}, ${q(P1)}, 'session_test_fermeture', now() - interval '1 hour')`);
+  const finie = async () => (await une(`select ouverture_finie(${q(oid)}) as f`)).f;
+  await sql(`delete from messages where projet_id = ${q(P1)} and auteur_type in ('proprietaire', 'utilisateur') and kind in ('info', 'constat', 'reponse')`); // les messages de test des sections précédentes
+  verifie("relais ouvert depuis plus que le délai, rien en attente : à fermer", await finie() === true);
+  verifie("… et listé par ouvertures_a_fermer", JSON.stringify((await une(`select ouvertures_a_fermer(${q(SLUG_A)}) as r`)).r).includes(oid));
+  const qid = randomUUID();
+  await sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps) values (${q(qid)}, ${q(P1)}, 'session', 'session', 'question', 'Test fermeture ?')`);
+  verifie("une question posée depuis son ouverture sans réponse : PAS fermée", await finie() === false);
+  await sql(`delete from messages where id = ${q(qid)}`);
+  const ch = randomUUID();
+  await sql(`insert into chantiers (id, projet_id, titre, demande, etat, pris_par, pris_jusqu_a) values (${q(ch)}, ${q(P1)}, 'Fermeture test', 'x', 'en_cours', 'agent/x', now() + interval '1 hour')`);
+  verifie("un chantier en cours réservé : PAS fermée", await finie() === false);
+  await sql(`delete from chantiers where id = ${q(ch)}`);
+  await sql(`update projets set fermeture_delai_min = 120 where id = ${q(P1)}`);
+  verifie("délai de grâce plus long que l'âge de la session : PAS fermée", await finie() === false);
+  await sql(`update projets set fermeture_delai_min = 10, fermeture_auto = false where id = ${q(P1)}`);
+  verifie("fermeture automatique éteinte : jamais fermée", await finie() === false);
+  await sql(`update projets set fermeture_auto = true where id = ${q(P1)}`);
+  verifie("chef.sh --ouverture-archive la note archivée, puis plus jamais proposée",
+    /archivée/.test(chef(["--ouverture-archive", oid])) && await finie() === false);
+  await sql(`delete from ouvertures where id = ${q(oid)}`);
+  // Renfort fini : archivé seulement après le délai de grâce.
+  const rid = randomUUID();
+  await sql(`insert into renforts (id, projet_id, prefixe, statut, session_distante, fini_at) values (${q(rid)}, ${q(P1)}, 'renfort/tf0', 'fini', 'session_test_renfort', now())`);
+  const dans = async () => JSON.stringify((await une(`select renforts_a_ouvrir(${q(SLUG_A)}, true) as r`)).r.archiver).includes(rid);
+  verifie("renfort fini à l'instant : pas encore archivé (délai de grâce)", await dans() === false);
+  await sql(`update renforts set fini_at = now() - interval '1 hour' where id = ${q(rid)}`);
+  verifie("renfort fini depuis plus que le délai : à archiver", await dans() === true);
+  await sql(`update projets set fermeture_auto = false where id = ${q(P1)}`);
+  verifie("fermeture automatique éteinte : le renfort fini n'est plus proposé", await dans() === false);
+  await sql(`update projets set fermeture_auto = true where id = ${q(P1)}`);
+  await sql(`delete from renforts where id = ${q(rid)}`);
+  // Pas de réveil (session neuve) quand il n'y a rien à servir.
+  const vide = `test-ferm-${rand}`;
+  const pv = randomUUID();
+  await sql(`insert into projets (id, slug, nom) values (${q(pv)}, ${q(vide)}, 'Projet de test fermeture')`);
+  const r1 = (await une(`select reveiller_chef(${q(pv)}, null, 'message') as r`)).r;
+  verifie("réveil immédiat sans message ni réponse à servir : aucune session ouverte (rien_a_servir)", r1 === "rien_a_servir", r1);
+  await sql(`delete from projets where id = ${q(pv)}`);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -1973,7 +2032,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions,
   ];
   for (const etape of etapes) {
     try { await etape(); }

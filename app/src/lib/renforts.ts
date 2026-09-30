@@ -163,6 +163,11 @@ export function erreurReglageModeles(agents: number, revueH: number): string | n
   if (!Number.isInteger(revueH) || revueH < 1 || revueH > 168) return 'Revue « À toi » : de 1 à 168 heures.'
   return null
 }
+/** Même borne que regler_fermeture (0038) : minutes de grâce avant de fermer une session finie. */
+export function erreurReglageFermeture(min: number): string | null {
+  if (!Number.isInteger(min) || min < 0 || min > 1440) return 'Fermeture des sessions : de 0 à 1440 minutes.'
+  return null
+}
 export function libelleFrein(f: EtatModeles['frein']): string {
   if (!f.actif) return 'Aucun frein : les agents travaillent normalement.'
   return `Frein actif (${f.raison ?? 'usage proche de la limite'}) : 1 agent à la fois, aucune revue, aucun nouveau renfort.`
