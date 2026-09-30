@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { SquareCheck, Copy, Download, FolderTree, Layers, Moon, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { SquareCheck, ChevronDown, Copy, Download, FolderTree, Layers, Moon, Plug, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { useMenuQuiSeFerme } from '../ui/Modale.ts'
+import { useGlobal } from '../contexte.ts'
+import { estBranche } from '../lib/branchement.ts'
 
 export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir' | 'installer'
 
@@ -43,9 +45,12 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
 }) {
   const [menu, setMenu] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const onglets = useRef<HTMLDivElement>(null)
-  // L'onglet affiché reste entièrement visible (la rangée défile sur un téléphone).
-  useEffect(() => { onglets.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }, [vueTout, projet?.id])
+  // Liste déroulante des projets (30 sept. : « on ne voit pas tous les projets » avec la rangée qui défile).
+  const liste = useRef<HTMLDivElement>(null)
+  const [ouvert, setOuvert] = useState(false)
+  const { now } = useGlobal()
+  useMenuQuiSeFerme(ouvert, liste, () => setOuvert(false))
+  const choisir = (id: string) => { setOuvert(false); choisirVue(id) }
   useMenuQuiSeFerme(menu, ref, () => setMenu(false))
   const item = (a: ActionMenu, libelle: string, I: LucideIcon) => (
     <button type="button" role="menuitem" onClick={() => { setMenu(false); onMenu(a) }} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[15px] hover:bg-carte-2"><I size={17} className="shrink-0 text-texte-2" aria-hidden />{libelle}</button>
@@ -53,25 +58,39 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
   return (
     <header className="sticky top-0 z-30 border-b border-bord bg-fond/95 backdrop-blur" style={{ borderTopColor: (!vueTout && projet?.couleur) || undefined }}>
       <div className="mx-auto flex max-w-3xl items-center gap-1 px-3 pt-[max(env(safe-area-inset-top),6px)] pb-1.5">
-        <div ref={onglets} className="sans-barre flex min-w-0 flex-1 gap-1.5 overflow-x-auto py-1" role="tablist" aria-label="Projets">
-          {projets.length ? (
-            <button type="button" role="tab" aria-selected={vueTout} onClick={() => choisirVue(VUE_TOUT)} data-testid="onglet-tout"
-              className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-semibold transition ${vueTout ? 'border-texte/70 bg-carte text-texte' : 'border-bord bg-carte text-texte-2'}`}>
-              <span>Tout</span>
-              <PastillesOnglet p={pastilles.get(VUE_TOUT)} actif={vueTout} />
-            </button>
+        <div ref={liste} className="relative min-w-0 flex-1" data-testid="choix-projet" data-vue={vueTout ? 'tout' : projet?.slug ?? ''}>
+          <button type="button" aria-haspopup="listbox" aria-expanded={ouvert} onClick={() => setOuvert(!ouvert)} data-testid="choix-projet-bouton"
+            className="flex h-10 w-full min-w-0 items-center gap-2 rounded-full border border-bord bg-carte px-3 text-left text-sm font-semibold text-texte">
+            {vueTout ? <Layers size={15} className="shrink-0 text-texte-2" aria-hidden /> : <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: projet?.couleur ?? '#888' }} />}
+            <span className="min-w-0 flex-1 truncate">{vueTout ? 'Tout' : projet?.nom ?? 'Projets'}</span>
+            {!vueTout && projet && estBranche(projet, now) ? <Plug size={14} className="shrink-0 text-ok" aria-label="branché" /> : null}
+            <PastillesOnglet p={pastilles.get(vueTout ? VUE_TOUT : projet?.id ?? '')} />
+            <ChevronDown size={16} className={`shrink-0 text-texte-2 transition ${ouvert ? 'rotate-180' : ''}`} aria-hidden />
+          </button>
+          {ouvert ? (
+            <div role="listbox" aria-label="Projets" data-testid="liste-projets" className="absolute left-0 right-0 top-11 z-40 max-h-[70vh] overflow-y-auto rounded-xl border border-bord bg-carte py-1 shadow-xl">
+              {projets.length ? (
+                <button type="button" role="option" aria-selected={vueTout} onClick={() => choisir(VUE_TOUT)} data-testid="onglet-tout"
+                  className={`flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left text-[15px] hover:bg-carte-2 ${vueTout ? 'font-semibold text-texte' : 'text-texte-2'}`}>
+                  <Layers size={15} className="shrink-0 text-texte-2" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">Tout</span>
+                  <PastillesOnglet p={pastilles.get(VUE_TOUT)} />
+                </button>
+              ) : null}
+              {projets.map((p) => {
+                const actif = !vueTout && p.id === projet?.id
+                return (
+                  <button key={p.id} type="button" role="option" aria-selected={actif} onClick={() => choisir(p.id)} data-testid={`onglet-${p.slug}`}
+                    className={`flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left text-[15px] hover:bg-carte-2 ${actif ? 'font-semibold text-texte' : 'text-texte-2'} ${!p.actif ? 'opacity-60' : ''}`}>
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.couleur ?? '#888' }} />
+                    <span className="min-w-0 flex-1 truncate">{p.nom}</span>
+                    {estBranche(p, now) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : null}
+                    <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
+                  </button>
+                )
+              })}
+            </div>
           ) : null}
-          {projets.map((p) => {
-            const actif = !vueTout && p.id === projet?.id
-            return (
-              <button key={p.id} type="button" role="tab" aria-selected={actif} onClick={() => choisirVue(p.id)} data-testid={`onglet-${p.slug}`}
-                className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-sm font-semibold transition ${actif ? 'border-texte/70 bg-carte text-texte' : 'border-bord bg-carte text-texte-2'} ${!p.actif ? 'opacity-60' : ''}`}>
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.couleur ?? '#888' }} />
-                <span>{p.nom}</span>
-                <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
-              </button>
-            )
-          })}
         </div>
         <Button variante="discret" taille="sm" aria-label="Actualiser" title={derniereMaj ? `Mis à jour ${dateRelative(derniereMaj.toISOString())}` : 'Actualiser'} onClick={onActualiser} className="px-2" data-testid="actualiser" data-chargement={chargement ? '1' : '0'} data-recharge-du={rechargeDu ?? 0}>
           <RefreshCw size={18} className={chargement ? 'animate-spin' : ''} />

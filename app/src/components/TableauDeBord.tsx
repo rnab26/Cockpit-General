@@ -22,6 +22,8 @@ import { IconeAToi, PointProjet } from './Icones.tsx'
 import { useFlash } from './Vivant.tsx'
 import { Renforts, RenfortsTout } from './Renforts.tsx'
 import { ReveilImmediat } from './ReveilImmediat.tsx'
+import { PastilleReponse } from './PastilleReponse.tsx'
+import { cleFil } from '../lib/lecture.ts'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -78,6 +80,7 @@ function EcrireAuProjet({ projetId }: { projetId: string }) {
           {dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${dernier.corps}` : 'Plusieurs sujets ? Claude ouvre un fil par sujet et répond dans chacun.'}
         </span>
       </span>
+      <PastilleReponse cle={cleFil(projetId, null)} />
     </button>
   )
 }
@@ -324,6 +327,7 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
               <span className="font-normal text-texte-2" data-testid="heure-a-toi"> · {heureLisible(e.depuis, g.now)}</span>
             </span>
             <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
+            <PastilleReponse cle={cleFil(e.projetId, e.chantier?.id ?? null)} className="mt-0.5" />
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
               <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
@@ -443,6 +447,7 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
       <div className="flex items-start gap-2 px-3 py-2.5">
         <button type="button" onClick={ouvrir} className="min-w-0 flex-1 text-left">
           <span className="line-clamp-2 text-[15px] font-medium leading-snug">{l.c.titre}</span>
+          <PastilleReponse cle={cleFil(l.c.projet_id, l.c.id)} className="mt-0.5" />
           {a ? (
             <span className="mt-1 flex items-center gap-2">
               <Barre pct={a.pourcentage} vive={l.vivant} />
@@ -556,13 +561,37 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
 export function ReglagesProjet({ projetId }: { projetId: string }) {
   const g = useGlobal()
   const p = g.projets.find((x) => x.id === projetId)
+  const toast = useToast()
   if (!p || (!p.depot && !g.admin)) return null
+
+  const clepref = `bulle_flottante_aide_${p.id}`
+  const actif = Boolean(g.prefs[clepref])
+  const basculer = async () => {
+    try {
+      await g.poser(clepref, !actif)
+      toast.succes(actif ? 'Bulle désactivée' : 'Bulle activée')
+    } catch (e) {
+      toast.erreur('Impossible de changer le réglage')
+    }
+  }
+
   return (
     <>
       {/* L'interrupteur du mode autonome reste visible, hors du repli : un toucher (chantier 79ec70d6). */}
       {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
       <Repliable testId="reglages-projet" titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
         <BarreProjet projet={p} nu sansAutonome />
+        <div className="mt-3 space-y-2">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={actif}
+              onChange={basculer}
+              className="h-4 w-4 rounded border border-bord bg-fond accent-lien"
+            />
+            <span className="text-sm text-texte">Bulle d'aide sur ce projet</span>
+          </label>
+        </div>
         {g.admin ? <div className="mt-2"><ReveilImmediat projet={p} /></div> : null}
       </Repliable>
     </>

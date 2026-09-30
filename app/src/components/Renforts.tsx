@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
 } from '../lib/renforts.ts'
 
@@ -257,22 +257,28 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   const [effort, setEffort] = useState<EffortClaude>('moyen')
   const [agents, setAgents] = useState(2)
   const [revueH, setRevueH] = useState(24)
+  const [fermAuto, setFermAuto] = useState(true)
+  const [fermMin, setFermMin] = useState(10)
   const [envoi, setEnvoi] = useState(false)
   const lire = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_modeles', { p_projet: projet.slug })
     if (error) { setErreur(messageErreur(error)); return }
     const e = data as EtatModeles | null
     if (!e) return
+    const f = await supabase.rpc('etat_fermeture', { p_projet: projet.slug })
+    if (!f.error && f.data) { const ff = f.data as { auto: boolean; delai_min: number }; setFermAuto(ff.auto); setFermMin(ff.delai_min) }
     setErreur(null); setEtat(e); setCode(e.modele_code); setLeger(e.modele_leger); setEffort(e.effort); setAgents(e.agents); setRevueH(e.revue_h)
   }, [projet.slug])
   useEffect(() => { void lire() }, [lire])
   const enregistrer = async () => {
-    const pb = erreurReglageModeles(agents, revueH)
+    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin)
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_modeles', { p_projet: projet.slug, p_code: code, p_leger: leger, p_effort: effort, p_agents: agents, p_revue_h: revueH })
+    const rf = error ? null : await supabase.rpc('regler_fermeture', { p_projet: projet.slug, p_auto: fermAuto, p_delai_min: fermMin })
     setEnvoi(false)
     if (error) { toast.erreur(`Modèles non enregistrés : ${messageErreur(error)}`); return }
+    if (rf?.error) { toast.erreur(`Fermeture des sessions non enregistrée : ${messageErreur(rf.error)}`); return }
     toast.succes('Modèles enregistrés : ils servent aux prochains agents lancés.')
     void lire()
   }
@@ -327,6 +333,16 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
         <label className="text-xs text-texte-2">Revue « À toi » toutes les (heures)
           <input type="number" inputMode="numeric" min={1} max={168} value={revueH} onChange={(e) => setRevueH(Number(e.target.value))}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="modele-revue" />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3" data-testid="fermeture-reglages">
+        <label className="flex items-center gap-2 text-xs text-texte-2">
+          <input type="checkbox" checked={fermAuto} onChange={(e) => setFermAuto(e.target.checked)} data-testid="fermeture-auto" />
+          Fermer les sessions ouvertes par le cockpit quand elles ont fini
+        </label>
+        <label className="text-xs text-texte-2">après (minutes)
+          <input type="number" inputMode="numeric" min={0} max={1440} value={fermMin} disabled={!fermAuto} onChange={(e) => setFermMin(Number(e.target.value))}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="fermeture-delai" />
         </label>
       </div>
       <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>

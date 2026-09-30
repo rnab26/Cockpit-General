@@ -242,9 +242,10 @@ const estErreurWsConteneur = (t) => !wsPossible && /WebSocket connection to .* f
 const scrollX = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
 
 // --- navigation
-const allerTout = async () => { await page.getByTestId('onglet-tout').click(); await page.getByTestId('vue-tout').waitFor({ timeout: 10000 }) }
+const ouvrirListe = async () => { if (!(await page.getByTestId('liste-projets').count())) await page.getByTestId('choix-projet-bouton').click(); await page.getByTestId('liste-projets').waitFor({ timeout: 10000 }) }
+const allerTout = async () => { await ouvrirListe(); await page.getByTestId('onglet-tout').click(); await page.getByTestId('vue-tout').waitFor({ timeout: 10000 }) }
 const ongletTest = () => page.getByTestId(`onglet-${SLUG}`)
-const allerCockpit = async () => { await ongletTest().click(); await page.getByTestId('vue-projet').waitFor({ timeout: 10000 }) }
+const allerCockpit = async () => { await ouvrirListe(); await ongletTest().click(); await page.getByTestId('vue-projet').waitFor({ timeout: 10000 }) }
 // Les sections de « Tous les chantiers » sont repliées par défaut : on les ouvre (et on rouvre si une section est apparue).
 const deplierTout = async () => {
   const b = page.getByTestId('tout-deplier')
@@ -339,7 +340,7 @@ try {
   // ===================================================================
   // 1. L'accueil : l'onglet « Tout », modèle A (tuiles puis trois listes)
   console.log('  — accueil « Tout » (tableau de bord)')
-  verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('onglet-tout').getAttribute('aria-selected')) === 'true')
+  verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
   const bTuiles = await page.getByTestId('tuiles').boundingBox()
   verifie('les quatre tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 4, bTuiles)
   const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
@@ -408,13 +409,14 @@ try {
   verifie('aucune ligne vivante sans preuve : chaque barre vive est sur une ligne « vivant »', await page.locator('[data-testid="ligne-en-ce-moment"][data-vivant="non"] [data-vive="oui"]').count() === 0)
   verifie('aucun défilement horizontal après connexion', (await scrollX()) <= 0, await scrollX())
   // Des icônes, pas d'emoji : dans ce que l'ÉCRAN écrit (titres de blocs, tuiles, boutons) — pas dans les textes des sessions.
-  const emojisEcran = await page.evaluate(() => [...document.querySelectorAll('[data-testid="vue-tout"] h2, [data-testid="tuiles"], [data-testid="verbe-a-toi"], [data-testid="ouvrir-relance"], [data-testid="lancer"], [data-testid="detail-sessions"], [data-testid="reglages-projets"] > button, header [role="tab"]')]
+  const emojisEcran = await page.evaluate(() => [...document.querySelectorAll('[data-testid="vue-tout"] h2, [data-testid="tuiles"], [data-testid="verbe-a-toi"], [data-testid="ouvrir-relance"], [data-testid="lancer"], [data-testid="detail-sessions"], [data-testid="reglages-projets"] > button, header [role="option"]')]
     .map((e) => e.textContent).join(' ').match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) ?? [])
   verifie('des icônes, pas d’emoji : aucun dans les titres de blocs, tuiles, boutons et onglets', emojisEcran.length === 0, emojisEcran)
   await captureUx(page, 'ux-tout')
   await capture(page, 'accueil')
 
   // Vue projet FacePro : le même tableau de bord, premier écran.
+  await ouvrirListe()
   await page.getByTestId('onglet-facepro').click()
   await page.getByTestId('vue-projet').waitFor({ timeout: 10000 })
   await page.waitForTimeout(500)
@@ -433,8 +435,15 @@ try {
   creerProjetTest()
   await page.goto(`${BASE}?recharge=${Date.now()}`, { waitUntil: 'networkidle' })  // sans #projet= : l'accueil « Tout »
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
+  await ouvrirListe()
   await ongletTest().waitFor({ timeout: 15000 })
   verifie('le projet de test a son onglet (le compte de test est admin)', await ongletTest().count() === 1)
+  verifie('les projets sont dans une liste déroulante (plus de rangée qui défile)', await page.getByTestId('liste-projets').count() === 1 && await page.locator('header [role="tablist"]').count() === 0)
+  verifie('la liste montre tous les projets actifs, chacun cliquable', (await page.getByTestId('liste-projets').locator('[role="option"]').count()) >= 2)
+  verifie('la liste déroulante tient dans l’écran (pas de défilement horizontal de la page)', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+  await page.keyboard.press('Escape')
+  verifie('Échap referme la liste', await page.getByTestId('liste-projets').count() === 0)
+  await ouvrirListe()
   // Projet sans session : son propre cas, construit ici (aucune session, aucune activité, aucun chantier en cours).
   await allerCockpit()
   await page.waitForTimeout(500)
@@ -500,13 +509,22 @@ try {
   await page.getByTestId('en-ce-moment').evaluate((e) => e.scrollIntoView({ block: 'start' }))
   await page.evaluate(() => window.scrollBy(0, -64))
   await captureUx(page, 'ux-en-ce-moment')
+  await ouvrirListe()
   verifie('l’onglet du projet porte la pastille verte (quelqu’un y travaille)', (await ongletTest().getByTestId('pastille-travaillent').count()) === 1, await ongletTest().textContent())
   // Toucher la ligne : la CONVERSATION du chantier s'ouvre par-dessus, sans changer d'onglet.
   await ligneP1.locator('button').first().click()
   await attendreConv(P1.titre)
-  verifie('toucher une ligne → la conversation du chantier, par-dessus « Tout » (onglet inchangé)', (await page.getByTestId('onglet-tout').getAttribute('aria-selected')) === 'true')
+  verifie('toucher une ligne → la conversation du chantier, par-dessus « Tout » (onglet inchangé)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
   verifie('en-tête de conversation : « Claude y travaille — 60 % », avec le point qui pulse',
     /Claude y travaille — 60 %/.test(await conv().getByTestId('presence-conversation').textContent()) && await conv().getByTestId('presence-conversation').locator('.point-vivant').count() === 1)
+  verifie('le cadre du chantier dit la dernière action réelle (l’étape signalée), avec son âge',
+    /Dernière action : .+ · /.test(await conv().getByTestId('derniere-action').textContent()), await conv().getByTestId('derniere-action').textContent())
+  verifie('…et un message de Claude porte « Répondre » (quand il y en a) qui met le curseur dans la zone d’écriture', await (async () => {
+    const b = conv().locator('[data-testid="bulle"][data-cote="gauche"] [data-testid="repondre-bulle"]').first()
+    if (!(await b.count())) return true
+    await b.click()
+    return await conv().getByTestId('ecrire-a-claude').locator('textarea').evaluate((z) => document.activeElement === z)
+  })())
   verifie('…et une bulle « En ce moment » avec la barre vive', await conv().getByTestId('bulle-travail').locator('[data-vive="oui"]').count() === 1)
   verifie('la demande est la première bulle (après les infos du chantier, en petit)', (await conv().locator('[data-testid="fil-conversation"] > :not([data-testid="infos-chantier"])').first().getAttribute('data-testid')) === 'bulle-demande')
   verifie('conversation : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
@@ -1197,8 +1215,8 @@ try {
     await (await elementAToi(D.id, 'question')).getByTestId('verbe-a-toi').click()
     await attendreConv(D.titre)
     const finD = await enfantsD()
-    const iRep = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('Je parlais de la version courte')))
-    const iMoi2 = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('pas compris ta demande')))
+    const iRep = await filD.evaluate((el) => [...el.children].findIndex((c) => c.dataset.testid !== 'infos-chantier' && c.textContent.includes('Je parlais de la version courte')))
+    const iMoi2 = await filD.evaluate((el) => [...el.children].findIndex((c) => c.dataset.testid !== 'infos-chantier' && c.textContent.includes('pas compris ta demande')))
     verifie('Claude a répondu : plus d’attente, sa réponse (à gauche) sous ta bulle, les cartes toujours en dernier',
       await conv().getByTestId('attente-reponse').count() === 0 && iRep === iMoi2 + 1 && finD.at(-1) === 'a-faire'
         && (await filD.locator('[data-testid="bulle"]', { hasText: 'Je parlais de la version courte' }).getAttribute('data-cote')) === 'gauche', { finD, iRep, iMoi2 })
@@ -1412,7 +1430,7 @@ try {
   const auto = zoneAuto().getByTestId('mode-autonome')
   const inter = () => zoneAuto().getByTestId('autonome-interrupteur')
   const enBase = () => sql(`select autonome_toujours, autonome_jusqu_a, autonome_max, autonome_arret_vide_h from projets where id = '${projet.id}'`)[0]
-  const pastilleAuto = () => page.getByTestId(`onglet-${SLUG}`).getByTestId('pastille-autonome')
+  const pastilleAuto = () => page.getByTestId('choix-projet').getByTestId('pastille-autonome')
   verifie('mode autonome : l’interrupteur est visible sans ouvrir « Réglages du projet », éteint', await inter().isVisible() && (await inter().getAttribute('aria-checked')) === 'false')
   verifie('mode autonome éteint : pas de lune sur l’onglet du projet', await pastilleAuto().count() === 0)
   await inter().click()
@@ -1546,7 +1564,7 @@ try {
   await barreProj.locator('textarea').fill(`${MARQUE2} deux sujets : le logo, et la page contact`)
   await barreProj.getByTestId('envoyer-message').click()
   verifie('message au projet envoyé : toast visible', await toastAuPremierPlan(/Message envoyé/), { auPremierPlan: dernierDessus })
-  const mProj = sql(`select chantier_id, auteur_type from messages where projet_id = '${projet.id}' and corps like '${esc(MARQUE2)} deux sujets%'`)
+  const mProj = sql(`select id, chantier_id, auteur_type from messages where projet_id = '${projet.id}' and corps like '${esc(MARQUE2)} deux sujets%'`)
   verifie('…en base : un message de toi, sans chantier (fil du projet)', mProj.length === 1 && mProj[0].chantier_id === null && mProj[0].auteur_type === 'proprietaire', mProj)
   await conv().getByTestId('attente-reponse').waitFor({ timeout: 10000 }).catch(() => {})
   verifie('…« réponse en attente » dit qui répondra (aucune session sur ce projet de test)', await conv().getByTestId('attente-reponse').count() === 1)
@@ -1555,6 +1573,26 @@ try {
   await fermerConv()
   await actualiser()
   verifie('la case montre maintenant ton dernier message', /Toi : .*deux sujets/.test(await page.getByTestId('ecrire-projet').textContent()))
+
+  // « Claude a répondu » (chantier bff5a8cf, cas signalé : rien ne distinguait la réponse de Claude) :
+  // pastille rouge sur la case tant que la réponse n'est pas lue, disparue à l'ouverture du fil.
+  console.log('  — pastille « Réponse » de Claude')
+  const nbTitre = async () => Number((/^\((\d+)\)/.exec(await page.title()) ?? [])[1] ?? 0)
+  const avantTitre = await nbTitre()
+  verifie('avant toute réponse de Claude : pas de pastille', await page.getByTestId('ecrire-projet').getByTestId('pastille-reponse').count() === 0)
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, repond_a) values ('${projet.id}', null, 'Claude (banc)', 'session', 'info', 'Réponse du banc : c’est noté.', '${mProj[0].id}')`)
+  await actualiser()
+  const pastille = page.getByTestId('ecrire-projet').getByTestId('pastille-reponse')
+  await pastille.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('réponse de Claude : pastille « Réponse » sur la case', await pastille.count() === 1 && /Réponse/.test(await pastille.textContent()))
+  verifie('…et l’onglet du navigateur compte la réponse en plus', await nbTitre() === avantTitre + 1, { avant: avantTitre, apres: await nbTitre() })
+  await capture(page, 'pastille-reponse')
+  await page.getByTestId('ecrire-projet').click()
+  await attendreConv('Discussion du projet')
+  await page.waitForTimeout(800)
+  await fermerConv()
+  verifie('ouvrir le fil = le lire : la pastille disparaît', await page.getByTestId('ecrire-projet').getByTestId('pastille-reponse').count() === 0)
+  verifie('…et le compteur de l’onglet retombe', await nbTitre() === avantTitre, { avant: avantTitre, apres: await nbTitre() })
 
   // ===================================================================
   // 8. La liste complète en lignes, le menu ⋯, créer / supprimer

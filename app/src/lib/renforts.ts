@@ -232,6 +232,11 @@ export function erreurReglageModeles(agents: number, revueH: number): string | n
   if (!Number.isInteger(revueH) || revueH < 1 || revueH > 168) return 'Revue « À toi » : de 1 à 168 heures.'
   return null
 }
+/** Même borne que regler_fermeture (0038) : minutes de grâce avant de fermer une session finie. */
+export function erreurReglageFermeture(min: number): string | null {
+  if (!Number.isInteger(min) || min < 0 || min > 1440) return 'Fermeture des sessions : de 0 à 1440 minutes.'
+  return null
+}
 /** Ce que dit l'écran de la bascule d'usage (0037) : jamais un nombre d'agents, seulement les modèles. */
 export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 'palier_raison' | 'effectifs'>): string {
   if (e.bascule_auto === false) return 'Bascule automatique éteinte : les modèles réglés ci-dessus servent toujours.'

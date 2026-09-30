@@ -111,3 +111,24 @@ export function filLie<C extends { id: string }>(
   if (!m.chantier_lie || m.chantier_lie === m.chantier_id) return null
   return chantiers.find((c) => c.id === m.chantier_lie) ?? null
 }
+
+/**
+ * La dernière action RÉELLE de Claude sur un chantier (jamais devinée) : son dernier
+ * message de session (hors question/fusion, qui attendent Raphaël), sa dernière étape
+ * signalée, la dernière étape d'un de ses agents. La plus récente l'emporte.
+ */
+export function derniereAction(chantierId: string,
+  messages: readonly { chantier_id: string | null; auteur_type: string; kind: string; corps: string | null; created_at: string }[],
+  activites: readonly { chantier_id: string | null; etape: string; updated_at: string }[],
+  taches: readonly { chantier_id: string | null; etape: string | null; progres_at: string | null }[],
+): { texte: string; quand: string } | null {
+  let best: { texte: string; quand: string } | null = null
+  const voir = (texte: string | null, quand: string | null) => {
+    const t = texte?.replace(/^\s*Sujet\s*:\s*/i, '').replace(/\s+/g, ' ').trim()
+    if (t && quand && (!best || quand > best.quand)) best = { texte: t.length > 140 ? `${t.slice(0, 137)}…` : t, quand }
+  }
+  for (const m of messages) if (m.chantier_id === chantierId && m.auteur_type === 'session' && m.kind !== 'question' && m.kind !== 'action' && m.kind !== 'fusion') voir(m.corps, m.created_at)
+  for (const a of activites) if (a.chantier_id === chantierId) voir(a.etape, a.updated_at)
+  for (const t of taches) if (t.chantier_id === chantierId) voir(t.etape, t.progres_at)
+  return best
+}
