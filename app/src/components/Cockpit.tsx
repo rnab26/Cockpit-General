@@ -232,7 +232,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {reglages}
         {aideInstallation}
         {projetsMembres}
-        {d.projet ? <BulleFlottanteAide /> : null}
+        <BulleFlottanteAide />
       </div>
     </GlobalCtx.Provider>
   )
