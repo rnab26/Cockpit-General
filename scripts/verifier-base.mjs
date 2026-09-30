@@ -1186,7 +1186,7 @@ async function controle19_chef_par_projet() {
   verifie("--max règle le projet courant seulement", /pour .*: 8/.test(lancer(SLUG_C, "chef-c", ["--max", "8"]))
     && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 2);
   const sortieC = lancer(SLUG_C, "chef-c");
-  verifie("la consigne de la chef donne le modèle de chaque agent et le frein", /\[model: sonnet\]/.test(sortieC) && /\[model: haiku\]/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
+  verifie("la consigne de la chef donne le modèle de chaque agent (Sonnet, jamais Haiku au plein gaz) et le frein", /\[model: sonnet\]/.test(sortieC) && !/\[model: haiku\]/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
   const idsD = [libre.D, rep.D, verif.D];
   verifie("la passe de C sert SES trois sortes de travail (réponse, chantier libre, vérifie pour moi)",
     sortieC.includes(`SESSION CHEF de ${SLUG_C}`) && sortieC.includes(rep.C) && sortieC.includes(libre.C) && sortieC.includes(verif.C), sortieC.slice(0, 600));
@@ -2339,8 +2339,8 @@ async function controle32_economie_modeles() {
   };
   await sql(`delete from chefs where projet_id = ${q(P1)}`);
   const d = await une(`select etat_modeles(${q(SLUG_A)}) as e`);
-  verifie("défauts : code sonnet, lecture haiku, effort moyen, 2 agents, revue 24 h, pas de frein",
-    d.e.modele_code === "sonnet" && d.e.modele_leger === "haiku" && d.e.effort === "moyen" && d.e.agents === 2 && d.e.revue_h === 24 && d.e.frein.actif === false, d.e);
+  verifie("défauts : code sonnet, lecture sonnet (Haiku en dernier), effort moyen, 2 agents, revue 24 h, pas de frein",
+    d.e.modele_code === "sonnet" && d.e.modele_leger === "sonnet" && d.e.effort === "moyen" && d.e.agents === 2 && d.e.revue_h === 24 && d.e.frein.actif === false, d.e);
   const mauvais = await sql(`select regler_modeles(${q(SLUG_A)}, 'gpt', 'haiku', 'moyen') as r`).then(() => "accepté", (e) => e.message);
   verifie("un modèle inconnu est refusé", /Modèle de code/.test(String(mauvais)), mauvais);
   const cli = chef({ ARGS: ["--modeles", "opus", "haiku", "eleve", "4"] });
@@ -2366,21 +2366,51 @@ async function controle32_economie_modeles() {
   verifie("chef.sh --frein 2 : frein posé à la main, puis levé par --frein 0",
     (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === true && (chef({ ARGS: ["--frein", "0"] }), (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === false));
   // Bascule par mesure d'usage : monte tout de suite, plafonne à haiku, interrupteur.
-  const pal = async (st, pct) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}) as e`)).e;
+  // Échelle 0045 : effort d'abord, modèle ensuite, Haiku en dernier ; rythme = temps écoulé de la fenêtre (rate_limit_info n'a AUCUN %).
+  const pal = async (st, pct, type = null, resetsDans = null) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}, null, ${type ? q(type) : "null"}, ${resetsDans == null ? "null" : `extract(epoch from now() + interval '${resetsDans} minutes')::bigint`}) as e`)).e;
+  const raz = () => sql(`update chefs set palier = 0, palier_at = null, palier_reset_at = null where projet_id = ${q(P1)}`);
   chef({ ARGS: ["--modeles", "opus", "sonnet", "eleve", "2"] });
-  let e = await pal("allowed", 10);
-  verifie("palier 0 : les modèles réglés (opus/sonnet, effort élevé)", e.palier === 0 && e.effectifs.modele_code === "opus" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "eleve", e.effectifs);
-  e = await pal("allowed_warning", null);
-  verifie("palier 1 (avertissement) : code opus → sonnet, lecture inchangée", e.palier === 1 && e.effectifs.modele_code === "sonnet" && e.effectifs.modele_leger === "sonnet", e.effectifs);
-  e = await pal("allowed", 85);
-  verifie("palier 2 (85 %) : code haiku, lecture haiku, effort bas", e.palier === 2 && e.effectifs.modele_code === "haiku" && e.effectifs.modele_leger === "haiku" && e.effectifs.effort === "bas", e.effectifs);
+  let e = await pal("allowed", null, "five_hour", 200);
+  verifie("palier 0 : plein gaz, les modèles et l'effort réglés (opus/sonnet, élevé)", e.palier === 0 && e.effectifs.modele_code === "opus" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "eleve", e.effectifs);
+  await raz();
+  // Fenêtre de 5 h écoulée à 20 % (reset dans 240 min) : avertissement = on brûle trop vite → palier 2 ; effort bas, opus → sonnet, jamais sous sonnet.
+  e = await pal("allowed_warning", null, "five_hour", 240);
+  verifie("avertissement tôt dans la fenêtre : palier 2, effort bas, code opus → sonnet, lecture sonnet (jamais Haiku)", e.palier === 2 && e.effectifs.modele_code === "sonnet" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "bas" && e.fenetre?.type === "five_hour", e);
+  await raz();
+  e = await pal("allowed_warning", null, "five_hour", 100);
+  verifie("avertissement après 50 % de la fenêtre : palier 1 = effort d'un cran plus bas, modèles inchangés", e.palier === 1 && e.effectifs.effort === "moyen" && e.effectifs.modele_code === "opus", e.effectifs);
+  await raz();
+  e = await pal("allowed_warning", null, "five_hour", 20);
+  verifie("avertissement dans les 10 % finaux : palier 0, on consomme le crédit avant la remise à zéro", e.palier === 0 && e.effectifs.effort === "eleve", e);
+  await raz();
+  e = await pal("allowed", 40, "seven_day", 60 * 24 * 3);
+  verifie("pourcentage sous le seuil (40 < 50) : palier 0", e.palier === 0, e);
+  await raz();
+  e = await pal("allowed", 90, "seven_day", 60 * 24 * 3);
+  verifie("90 % à 57 % de la fenêtre de 7 jours (avance > 15 pts) : palier 2, pas Haiku", e.palier === 2 && e.effectifs.modele_code === "sonnet" && e.effectifs.effort === "bas", e);
+  await raz();
+  e = await pal("rejected", null, "five_hour", 120);
+  verifie("limite atteinte (rejected) : palier 3, Haiku, effort bas", e.palier === 3 && e.effectifs.modele_code === "haiku" && e.effectifs.modele_leger === "haiku" && e.effectifs.effort === "bas", e);
+  await sql(`update chefs set bascule_haiku = false where projet_id = ${q(P1)}`);
+  verifie("Haiku non autorisé pour le projet : palier 3 reste sur Sonnet", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.effectifs.modele_code === "sonnet");
+  const rs = await une(`select regler_bascule_seuils(${q(SLUG_A)}, 70, true) as e`);
+  verifie("réglage par projet : seuil 70 % enregistré, Haiku de nouveau autorisé", rs.e.bascule_seuil_pct === 70 && rs.e.bascule_haiku === true && rs.e.effectifs.modele_code === "haiku", rs.e);
+  const seuilMauvais = await sql(`select regler_bascule_seuils(${q(SLUG_A)}, 5, true) as r`).then(() => "accepté", (er) => er.message);
+  verifie("un seuil hors 10 à 90 est refusé", /Seuil du plein gaz/.test(String(seuilMauvais)), seuilMauvais);
+  await sql(`update chefs set bascule_seuil_pct = 50, bascule_haiku = true where projet_id = ${q(P1)}`);
+  await raz();
+  e = await pal("allowed_warning", null, "five_hour", 240);
+  await sql(`update chefs set palier_reset_at = now() - interval '1 minute' where projet_id = ${q(P1)}`);
+  verifie("nouvelle fenêtre (resetsAt passé) : retour au plein gaz", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.palier === 0);
+  await raz();
+  e = await pal("allowed", 90, "seven_day", 60 * 24 * 3);
   e = await pal("allowed", 5);
   verifie("pas de yo-yo : une mesure calme juste après ne redescend pas le palier", e.palier === 2, e);
   await sql(`update chefs set palier_at = now() - interval '31 minutes' where projet_id = ${q(P1)}`);
   e = await pal("allowed", 5);
   verifie("après 30 min de calme le palier redescend à 0", e.palier === 0, e);
-  const ligne = chef({ ARGS: ["--usage", "allowed", "95"] });
-  verifie("chef.sh --usage : dit le palier et les modèles à utiliser", /palier 3 sur 3/.test(ligne) && /code = haiku/.test(ligne) && /nombre d’agents ne change pas/.test(ligne), ligne);
+  const ligne = chef({ ARGS: ["--usage", "rejected", "--fenetre", "five_hour", "--reset", String(Math.floor(Date.now() / 1000) + 7200)] });
+  verifie("chef.sh --usage <status> --fenetre --reset : dit le palier, les modèles et l'effort à utiliser", /palier 3 sur 3/.test(ligne) && /code = haiku/.test(ligne) && /effort = bas/.test(ligne) && /nombre d’agents ne change pas/.test(ligne), ligne);
   chef({ ARGS: ["--bascule", "off"] });
   verifie("bascule off : retour aux modèles réglés malgré la mesure", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.effectifs.modele_code === "opus");
   chef({ ARGS: ["--bascule", "on"] });
