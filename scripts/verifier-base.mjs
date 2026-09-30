@@ -1933,6 +1933,77 @@ async function controle37_pr_a_fusionner() {
   verifie("--fermee sur une PR sans carte : sans erreur, rien créé ; un numéro invalide est refusé", inconnue.code === 0 && (await cartes(12)).length === 0 && mauvais.code === 2, { inconnue, mauvais });
 }
 
+// 38. PR sans conflit : la carte « À toi » n'arrive que si la PR est propre (script réel, propreté donnée par --merge-state / --ci, sans GitHub).
+async function controle38_pr_propre() {
+  section("38. PR propre seulement : conflit / CI en cours / CI en échec / brouillon = pas de carte ; carte existante devenue en conflit = retirée ; reposée quand la PR redevient propre");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const cartes = async (n) => await sql(`select answered_at, reponse from messages where projet_id = ${q(P10)} and kind = 'action' and left(corps, ${`Fusionne la PR #${n} :`.length}) = ${q(`Fusionne la PR #${n} :`)}`);
+  const ouvertes = async (n) => (await cartes(n)).filter((c) => c.answered_at === null).length;
+
+  const propre = lancer(["201", "--etat", "open", "--merge-state", "clean", "--titre", "PR propre"]);
+  verifie("PR propre (clean) : la carte est posée", propre.code === 0 && (await ouvertes(201)) === 1, propre);
+  const conflit = lancer(["202", "--etat", "open", "--merge-state", "dirty", "--titre", "PR en conflit"]);
+  verifie("PR en conflit (dirty) : AUCUNE carte, et le script dit pourquoi", conflit.code === 0 && (await cartes(202)).length === 0 && /PAS PRÊTE.*conflit/.test(conflit.sortie), conflit);
+  const cours = lancer(["203", "--etat", "open", "--merge-state", "unstable", "--ci", "cours"]);
+  verifie("CI en cours : pas de carte, « CI en cours » dit", cours.code === 0 && (await cartes(203)).length === 0 && /CI en cours/.test(cours.sortie), cours);
+  const echec = lancer(["204", "--etat", "open", "--merge-state", "unstable", "--ci", "echec"]);
+  verifie("CI en échec : pas de carte, « CI en échec » dit", echec.code === 0 && (await cartes(204)).length === 0 && /CI en échec/.test(echec.sortie), echec);
+  const instable = lancer(["205", "--etat", "open", "--merge-state", "unstable", "--ci", "ok"]);
+  verifie("unstable sans échec de CI : la carte est posée", instable.code === 0 && (await ouvertes(205)) === 1, instable);
+  const brouillon = lancer(["206", "--etat", "open", "--merge-state", "draft"]);
+  const calcul = lancer(["207", "--etat", "open", "--merge-state", "unknown"]);
+  const retard = lancer(["208", "--etat", "open", "--merge-state", "behind"]);
+  verifie("brouillon, calcul en cours (unknown), en retard sur main (behind) : pas de carte",
+    [206, 207, 208].every(() => true) && (await cartes(206)).length + (await cartes(207)).length + (await cartes(208)).length === 0 && brouillon.code === 0 && calcul.code === 0 && retard.code === 0, { brouillon, calcul, retard });
+
+  // Carte existante, PR devenue en conflit : retirée (répondue), puis reposée quand la PR redevient propre.
+  const devenue = lancer(["201", "--etat", "open", "--merge-state", "dirty"]);
+  const apres = await cartes(201);
+  verifie("carte existante + PR devenue en conflit : la carte est retirée (répondue « pas prête »)", devenue.code === 0 && (await ouvertes(201)) === 0 && apres.length === 1 && /pas prête/.test(apres[0].reponse ?? ""), { devenue, apres });
+  const propreDeNouveau = lancer(["201", "--etat", "open", "--merge-state", "clean", "--titre", "PR propre"]);
+  const finale = await cartes(201);
+  verifie("la PR redevient propre : UNE nouvelle carte est posée (l'ancienne, retirée par le script, ne bloque pas)", propreDeNouveau.code === 0 && (await ouvertes(201)) === 1 && finale.length === 2, { propreDeNouveau, finale });
+  const deux = lancer(["201", "--etat", "open", "--merge-state", "clean"]);
+  verifie("re-appeler une PR propre ne pose pas de doublon", deux.code === 0 && (await ouvertes(201)) === 1, deux);
+  const ferme = lancer(["201", "--fermee"]);
+  verifie("--fermee retire toujours la carte", ferme.code === 0 && (await ouvertes(201)) === 0, ferme);
+  const mauvaisCi = lancer(["209", "--etat", "open", "--ci", "peut-etre"]);
+  verifie("--ci invalide refusé", mauvaisCi.code === 2, mauvaisCi);
+}
+
+// 38 bis. scripts/prochaine-migration.sh : 1 + le plus grand numéro vu dans la copie ET sur les branches distantes.
+async function controle38_prochaine_migration() {
+  section("38 bis. Prochaine migration : numéro libre = max des fichiers locaux et des branches distantes + 1");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const tmp = mkdtempSync(join(tmpdir(), "prochaine-migration-"));
+  const g = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const origine = join(tmp, "origine.git"), copie = join(tmp, "copie"), autre = join(tmp, "autre");
+    g(tmp, "init", "-q", "--bare", origine);
+    g(tmp, "clone", "-q", origine, copie);
+    execFileSync("mkdir", ["-p", join(copie, "scripts"), join(copie, "supabase/migrations")]);
+    execFileSync("cp", [join(racine, "scripts/prochaine-migration.sh"), join(copie, "scripts/")]);
+    for (const f of ["0001_a.sql", "0007_b.sql", "0012_c.sql"]) writeFileSync(join(copie, "supabase/migrations", f), "-- x\n");
+    g(copie, "add", "-A"); g(copie, "commit", "-q", "-m", "base"); g(copie, "push", "-q", "origin", "HEAD:main");
+    const lancer = (args = []) => execFileSync("bash", [join(copie, "scripts/prochaine-migration.sh"), ...args], { encoding: "utf8", cwd: copie, stdio: ["ignore", "pipe", "pipe"] }).trim();
+    verifie("numéro suivant = 0013 quand les fichiers vont jusqu'à 0012", lancer() === "0013", lancer());
+    verifie("--nom donne le chemin complet", lancer(["--nom", "essai"]) === "supabase/migrations/0013_essai.sql", lancer(["--nom", "essai"]));
+    // Un autre agent pousse une branche avec 0013 et 0014, pas encore fusionnée dans main.
+    g(tmp, "clone", "-q", origine, autre);
+    g(autre, "switch", "-q", "-c", "agent/autre");
+    execFileSync("mkdir", ["-p", join(autre, "supabase/migrations")]);
+    for (const f of ["0013_x.sql", "0014_y.sql"]) writeFileSync(join(autre, "supabase/migrations", f), "-- y\n");
+    g(autre, "add", "-A"); g(autre, "commit", "-q", "-m", "autre"); g(autre, "push", "-q", "origin", "agent/autre");
+    verifie("la migration d'un agent pas encore fusionnée (branche distante 0014) est comptée : suivant = 0015", lancer() === "0015", lancer());
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}
+
 // 36. Déplacer un chantier vers un autre projet (0038).
 async function controle36_deplacer_chantier() {
   section("36. Déplacer un chantier vers un autre projet (0038) : le chantier, son fil, sa section, sa réservation, ses médias");
@@ -2399,12 +2470,47 @@ try {
   if (admin.n !== 0) throw new Error("le compte de test est admin : les contrôles RLS n'auraient aucun sens");
 
   const etapes = [
-    controle1_reservation, controle2_historique, controle3_suppression,
+  // UN contrôle par ligne : en ajouter un = UNE ligne, insérée à côté du contrôle de ton sujet (pas en fin de liste : deux ajouts au même endroit se marchent dessus).
+    controle1_reservation,
+    controle2_historique,
+    controle3_suppression,
     async () => { const c = await controle4_certifier(); await controle5_corriger(c); },
-    controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
+    controle6_repondre,
+    controle7_fusionner,
+    controle8_activite,
+    controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
-    controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_pr_a_fusionner, controle37_accuse_action, controle37_fusion_auto, controle37_traite_sans_attendre, controle38_filet_securite,
+    controle12_realtime,
+    controle13_exec_sql,
+    controle14_sessions_agents_fusions,
+    controle15_limites_autonome,
+    controle16_medias,
+    controle17_verifie_pour_moi,
+    controle18_reponses_prises,
+    controle19_chef_par_projet,
+    controle20_images_session,
+    controle23_a_toi_a_jour,
+    controle24_ou_en_est,
+    controle21_aucun_reste_de_test,
+    controle22_correctifs,
+    controle25_renforts,
+    controle26_fil_discussion,
+    controle27_question_gardee,
+    controle28_messages_de_session,
+    controle29_synchro,
+    controle30_agents_fantomes,
+    controle32_economie_modeles,
+    controle33_depuis_un_fil,
+    controle34_fermeture_sessions,
+    controle35_renforts_auto,
+    controle36_deplacer_chantier,
+    controle37_pr_a_fusionner,
+    controle37_accuse_action,
+    controle37_fusion_auto,
+    controle37_traite_sans_attendre,
+    controle38_pr_propre,
+    controle38_prochaine_migration,
+    controle38_filet_securite,
   ];
   for (const etape of etapes) {
     try { await etape(); }

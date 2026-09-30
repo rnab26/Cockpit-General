@@ -635,6 +635,14 @@ copie commune `lib/copier.ts`. Pas encore dans le module embarqué (`embed/`) :
 une action s'adresse à Raphaël, pas à l'utilisateur final. `verifier-base`
 §31, `verifier-marche.ts`, `verifier-web.mjs` (« action manuelle »).
 
+## PR sans conflit : la carte n'arrive que quand la PR est prête (30 sept. 2026, chantier 6ef35b6e)
+
+Raphaël : « à chaque fois il y a des conflits sur les branches […] envoie-moi les PR une fois les conflits réglés ». Cause : des agents en parallèle partent d'un main ancien (verifier-base, CLAUDE.md, migrations numérotées : trois 0041).
+1. `scripts/pr-a-fusionner.sh` ne pose la carte que si GitHub dit `mergeable_state` = clean (ou unstable/blocked sans CI en échec ni en cours) ; sinon « PAS PRÊTE : <raison> », et une carte existante devenue caduque est retirée (réponse « PR #n pas prête », qui n'empêche pas de la reposer). Tests : `--merge-state`, `--ci`.
+2. Les agents fusionnent `origin/main` dans leur branche JUSTE avant d'ouvrir la PR ; la passe de `chef.sh` lance un agent léger « Résoudre le conflit de la PR n » sur toute PR dirty/behind, puis rappelle le script ; quand une PR est fusionnée, les autres sont mises à jour avant d'être proposées.
+3. À la source : la liste des contrôles de `verifier-base.mjs` est UN contrôle par ligne (en ajouter un = une ligne, à côté de son sujet), et `scripts/prochaine-migration.sh` donne le numéro libre (max des fichiers locaux et des branches distantes + 1 ; la base n'a pas de journal des migrations cockpit) : à appeler au moment d'écrire le fichier.
+4. `verifier-base` §38 (carte selon la propreté) et §38 bis (numéro de migration).
+
 ## Appli installable (30 sept. 2026)
 
 Raphaël : « installer l'appli depuis la page internet du cockpit, plutôt qu'un
