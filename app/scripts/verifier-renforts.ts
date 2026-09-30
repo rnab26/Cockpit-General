@@ -1,7 +1,7 @@
 // Les renforts (src/lib/renforts.ts, 0024) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
-import { boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurReglageModeles, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
+import { boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-renforts')
 const now = new Date('2026-09-29T12:00:00Z')
@@ -43,6 +43,7 @@ verifie('bloc utile seulement si quelque chose attend ou un renfort est à suivr
 // Économie des modèles (0034)
 verifie('modèles : 1 à 8 agents, revue de 1 à 168 h', erreurReglageModeles(2, 24) === null && erreurReglageModeles(8, 168) === null
   && !!erreurReglageModeles(0, 24) && !!erreurReglageModeles(9, 24) && !!erreurReglageModeles(2, 0) && !!erreurReglageModeles(2, 169))
+verifie('fermeture des sessions : 0 à 1440 minutes', erreurReglageFermeture(0) === null && erreurReglageFermeture(1440) === null && !!erreurReglageFermeture(-1) && !!erreurReglageFermeture(1441) && !!erreurReglageFermeture(1.5))
 verifie('frein : dit qu’il est levé, ou pourquoi il est actif', /Aucun frein/.test(libelleFrein({ actif: false }))
   && /1 agent à la fois/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })) && /limite d’usage/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })))
 verifie('bascule : usage normal, palier montant sans toucher au nombre d’agents, interrupteur éteint', /usage normal/.test(libelleBascule({ bascule_auto: true, palier: 0 }))
