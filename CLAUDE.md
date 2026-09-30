@@ -506,6 +506,27 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
 
+## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0046)
+
+Raphaël : « Pourquoi attendre 30 minutes ? […] zéro chantier tenu pour rien. »
+UN réglage, `projets.delai_sans_signe_min` (1 à 120, défaut 3), lu par UNE
+fonction `cockpit.delai_signe(projet)` que lisent `sans_signe_de_vie`,
+`renfort_vivant` et les autres règles « session/agent vivant » (messages sans
+réponse, réponses sans suite, « où ça en est », mode autonome, réveil, relais,
+filet) : plus aucun « 30 minutes » en dur (`verifier-base` §39 le vérifie sur
+les fonctions en vigueur ; toute nouvelle règle « vivant » lit `delai_signe`).
+Réglage : app (Renforts › Réglages › « Libérer un chantier réservé sans signe
+de vie depuis… », message succès/échec) ou `chef.sh --sans-signe <min>` ;
+l'écran (`lib/silence.ts`) reçoit la valeur du projet, son défaut 3 est comparé
+à celui de la colonne. **Mesuré** : le signe de vie d'une session ne part qu'au
+RETOUR d'un outil (PostToolUse, ≤ 1/min) et les tâches d'agent (`taches.vu_at`)
+le suivent ; un outil long (jusqu'à 10 min, plafond du Bash) ne disait rien.
+D'où le hook **PreToolUse** de `hooks/suivi.sh` : un battement détaché toutes
+les 45 s tant que l'outil tourne (déclaré par `brancher.sh`, propagé par le
+hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outil
+(> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
+dans la même transaction que le choix ; la fiche est touchée, début du délai).
+
 ## Filet de sécurité : du travail attend, personne ne traite → réveil auto (30 sept. 2026, migration 0044, chantier 42938fc3)
 
 Raphaël : « un chantier ne doit jamais rester mort […] sans que j'aille vérifier dans l'app Claude Code ». Un job **pg_cron** de la base (`cockpit-filet-securite`, toutes les 3 min, visible dans `cron.job`) appelle `filet_passe()` : par projet, si du travail attend (`filet_attente` : messages sans réponse, réponses sans suite, vérifications demandées, renforts demandés, chantiers prenables SEULEMENT si le mode autonome est allumé) depuis plus de `filet_delai_min` (10) et que rien ne vit (`filet_vivant` : session, agent, renfort < 30 min), elle appelle `reveiller_chef` (réveil immédiat 0028, jeton dans le Vault, jamais lu ici). Sûretés : jamais un projet de test, au plus 1 réveil/5 min/projet (table `filet_reveils`), plafond `filet_plafond_jour` (6, réglable 0-48), interrupteur par projet (`regler_filet`, `chef.sh --filet oui|non [plafond] [délai]`) et global (`regler_filet_global`, `chef.sh --filet-global oui|non`, coupe aussi le job). Sans jeton : rien n'est appelé, l'écran dit « colle le jeton dans Réglages ». Écran : `FiletSecurite.tsx` (vue projet, `etat_filet`, `lib/filet.ts`). Non couvert : PR en conflit. `verifier-base` §38, `verifier-filet.ts`.
