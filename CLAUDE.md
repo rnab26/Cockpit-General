@@ -247,6 +247,17 @@ n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
 Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
 reste ouverte (non suivie en base). `verifier-base` §34.
 
+## PR à fusionner : une carte « À toi » par PR (30 sept. 2026, chantier dbae6397)
+
+Raphaël : « je n'ai aucune notification dans le cockpit pour savoir quand merger ».
+`scripts/pr-a-fusionner.sh <n>` (commande `cockpit-pr-a-fusionner.sh` dans les projets branchés) pose UNE action
+« Fusionne la PR #n : <titre> » (lien exact + « Merge pull request » + « Confirm merge » ; question ≤ 140 car.).
+Clé = numéro de PR : 2 appels = 1 carte, une carte déjà répondue n'est pas reposée. `--fermee` (ou `--etat
+merged|closed`) la retire ; `--etat open|…` évite GitHub (sinon un GET léger, `GITHUB_TOKEN` si dépôt privé). Tout
+agent qui ouvre une PR l'appelle juste après (consignes de `chef.sh` / `renfort.sh`, une seule règle). La passe de
+`chef.sh` réconcilie (au plus 30 min par projet, jamais un projet de test) : la chef liste les PR ouvertes (un appel
+GitHub) et appelle le script pour chacune ; les cartes dont la PR n'est plus ouverte : `--fermee`. `verifier-base` §37.
+
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
 « Ce sont des correctifs généraux, peu importe le repo ou le projet que je

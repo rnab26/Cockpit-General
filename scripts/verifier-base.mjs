@@ -1848,6 +1848,46 @@ async function controle30_agents_fantomes() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+// 37. PR à fusionner : une carte « À toi » par PR, sans doublon, retirée à la fusion (script réel, état donné par --etat, sans GitHub).
+const P10 = randomUUID(), SLUG_J = `test-verif-${rand}-j`;
+async function controle37_pr_a_fusionner() {
+  section("37. PR à fusionner : une carte par numéro de PR (lien + 2 gestes), sans doublon, retirée quand la PR est fusionnée, gardée si elle reste ouverte");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant')`);
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const cartes = async (n) => await sql(`select corps, marche, answered_at from messages where projet_id = ${q(P10)} and kind = 'action' and left(corps, ${`Fusionne la PR #${n} :`.length}) = ${q(`Fusionne la PR #${n} :`)}`);
+  const a1 = lancer(["7", "--etat", "open", "--titre", "Ajoute le tri des clients"]);
+  const a2 = lancer(["7", "--etat", "open", "--titre", "Ajoute le tri des clients"]);
+  const c7 = await cartes(7);
+  verifie("poser 2 fois la PR #7 = UNE seule carte « À toi »", a1.code === 0 && a2.code === 0 && c7.length === 1 && c7[0].answered_at === null, { a1, a2, c7 });
+  const m = c7[0]?.marche;
+  verifie("la carte porte le lien exact de la PR et les 2 gestes (Merge, Confirm)",
+    m?.liens?.[0]?.url === "https://github.com/rnab26/test-inexistant/pull/7" && m.etapes?.length === 2 && /Merge pull request/.test(m.etapes[0]) && /Confirm merge/.test(m.etapes[1]), m);
+  verifie("règle de clarté : question de 140 caractères au plus, avec le titre de la PR", c7[0]?.corps.length <= 140 && contient(c7[0]?.corps, "tri des clients"), c7[0]?.corps);
+  const longue = lancer(["9", "--etat", "open", "--titre", "x".repeat(300)]);
+  const c9 = await cartes(9);
+  verifie("un titre de PR très long est raccourci à 140 caractères au lieu d'être refusé", longue.code === 0 && c9.length === 1 && c9[0].corps.length <= 140, { longue, n: c9[0]?.corps.length });
+  lancer(["70", "--etat", "open"]);
+  verifie("la PR #70 ne se confond pas avec la #7 (clé = numéro exact)", (await cartes(70)).length === 1 && (await cartes(7)).length === 1);
+  const enCours = lancer(["9", "--etat", "open"]);
+  verifie("une PR restée ouverte garde sa carte à la réconciliation", enCours.code === 0 && (await cartes(9)).filter((c) => c.answered_at === null).length === 1, enCours);
+  const f = lancer(["7", "--fermee"]);
+  const apres = await cartes(7);
+  verifie("--fermee retire la carte de la PR #7 (répondue, plus dans « À toi »)", f.code === 0 && apres.length === 1 && apres[0].answered_at !== null, { f, apres });
+  const mrg = lancer(["70", "--etat", "merged"]);
+  const restantes = await sql(`select corps from messages where projet_id = ${q(P10)} and kind = 'action' and answered_at is null order by corps`);
+  verifie("--etat merged retire la #70 ; seule la #9 (ouverte) reste à Raphaël", mrg.code === 0 && restantes.length === 1 && contient(restantes[0].corps, "#9 :"), { mrg, restantes });
+  const re = lancer(["7", "--etat", "open"]);
+  verifie("une carte déjà retirée n'est pas reposée", re.code === 0 && (await cartes(7)).length === 1, re);
+  const inconnue = lancer(["12", "--fermee"]);
+  const mauvais = lancer(["abc"]);
+  verifie("--fermee sur une PR sans carte : sans erreur, rien créé ; un numéro invalide est refusé", inconnue.code === 0 && (await cartes(12)).length === 0 && mauvais.code === 2, { inconnue, mauvais });
+}
+
 // 36. Déplacer un chantier vers un autre projet (0038).
 async function controle36_deplacer_chantier() {
   section("36. Déplacer un chantier vers un autre projet (0038) : le chantier, son fil, sa section, sa réservation, ses médias");
@@ -2157,7 +2197,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_pr_a_fusionner,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2168,7 +2208,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2176,8 +2216,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

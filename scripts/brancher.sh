@@ -133,7 +133,7 @@ if [ "$voie" = invisible ]; then
   [ "$maj" = 1 ] || "$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', '$(q "$depot")', $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
   echo "2. Commandes et hooks dans $H/bin (hors du dépôt)"
   mkdir -p "$H/bin" "$(dirname "$RU")"
-  for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction greffe greffe-hook; do
+  for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction pr-a-fusionner greffe greffe-hook; do
     cmp -s "$ICI/modeles/cockpit-$n.sh" "$H/bin/cockpit-$n.sh" || { cp "$ICI/modeles/cockpit-$n.sh" "$H/bin/cockpit-$n.sh"; echo "   ok : $H/bin/cockpit-$n.sh"; }
     chmod +x "$H/bin/cockpit-$n.sh"
   done
@@ -215,7 +215,7 @@ poser() { # modèle, destination
   else echo "   EXISTE, n'est pas au cockpit, conservé (relance avec --forcer pour remplacer) : ${2#$dossier/}"; fi
 }
 mkdir -p "$dossier/scripts" "$dossier/.claude/hooks"
-for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction greffe; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
+for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction pr-a-fusionner greffe; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
 # Ancienne aide de l'installation par copie : plus utilisée.
 if [ -f "$dossier/scripts/cockpit-progression_tableau.py" ]; then rm -f "$dossier/scripts/cockpit-progression_tableau.py"; echo "   retiré (ancienne copie) : scripts/cockpit-progression_tableau.py"; fi
 # Ancien mode : un projet SANS sql.sh recevait notre sql.sh sous son nom. Il est à nous : on le laisse
