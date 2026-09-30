@@ -270,6 +270,8 @@ const elementAToi = async (chantierId, type) => {
 const ligneAvance = async (chantierId) => {
   const l = page.locator(`[data-testid="en-ce-moment"] [data-testid="ligne-en-ce-moment"][data-chantier-ligne="${chantierId}"]`)
   if (!(await l.count())) { const plus = page.getByTestId('voir-ca-avance'); if (await plus.count()) await plus.click() }
+  // 30/09 (chantier 3f879a19) : « en cours sans session dessus » est replié sous « Ça avance », hors du compte.
+  if (!(await l.count())) { const sans = page.getByTestId('voir-sans-session'); if (await sans.count() && (await sans.getAttribute('aria-expanded')) !== 'true') await sans.click() }
   await l.waitFor({ timeout: 15000 }).catch(() => {})
   return l
 }
@@ -324,7 +326,9 @@ try {
   const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
   verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
-  verifie('tuile « en pause » = le nombre de « Prêt à lancer »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()))
+  // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
+  const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
+  verifie('tuile « en pause » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
   await page.getByTestId('detail-ou-jen-suis').click()
   const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
   const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)

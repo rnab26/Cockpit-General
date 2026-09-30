@@ -87,8 +87,8 @@ function EcrireAuProjet({ projetId }: { projetId: string }) {
 type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
-  { cle: 'caAvance', libelle: 'ça avance', aide: 'Claude y travaille, vérifie pour toi, ou l’avait pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
-  { cle: 'enPause', libelle: 'en pause', aide: 'personne dessus : prêt à lancer', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'caAvance', libelle: 'ça avance', aide: 'une session ou un assistant y travaille vraiment (barre de progression)', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'enPause', libelle: 'en pause', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
 interface Liste { titre: string; ids: string[]; n: number }
@@ -96,7 +96,7 @@ interface Liste { titre: string; ids: string[]; n: number }
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
   if (cle === 'caAvance') return t.caAvance.map((l) => l.c.id)
-  if (cle === 'enPause') return t.pretALancer.map((l) => l.c.id)
+  if (cle === 'enPause') return [...t.pretALancer, ...t.sansSession].map((l) => l.c.id)
   return t.fini.map((c) => c.id)
 }
 
@@ -338,6 +338,8 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
   const lignes = t.caAvance
   const visibles = tout ? lignes : lignes.slice(0, CA_AVANCE_VISIBLES)
   const rien = !lignes.length && !t.horsChantier.length
+  const [voirSans, setVoirSans] = useState(false)
+  const sans = t.sansSession
   const nSessions = t.travail.reduce((n, gr) => n + gr.sessions.length, 0)
   return (
     <section aria-label="Ça avance tout seul" data-testid="en-ce-moment">
@@ -360,6 +362,15 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
           ))}
         </Liste>
       )}
+      {sans.length ? (
+        <div className="mt-1.5 px-1" data-testid="sans-session">
+          <button type="button" onClick={() => setVoirSans(!voirSans)} aria-expanded={voirSans} data-testid="voir-sans-session"
+            className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
+            {sans.length} en cours sans session dessus (comptés « en pause »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
+          </button>
+          {voirSans ? <div className="mt-1.5"><Liste>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</Liste></div> : null}
+        </div>
+      ) : null}
       {nSessions ? (
         <div className="mt-1.5 px-1">
           <div className="flex items-center justify-between gap-2 text-xs text-texte-2">
