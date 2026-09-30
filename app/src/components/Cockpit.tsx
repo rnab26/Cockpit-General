@@ -147,7 +147,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const entete = (
     <EnTete projets={d.projets} projet={d.projet} vueTout={vueTout} choisirVue={changerVue} pastilles={pastilles} admin={admin} chargement={d.chargement} direct={d.direct}
-      derniereMaj={d.derniereMaj} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'} />
+      derniereMaj={d.derniereMaj} rechargeDu={d.rechargeDu} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'} />
   )
   const reglages = <Reglages ouvert={dialogue === 'reglages'} onFermer={() => setDialogue(null)} theme={theme} changerTheme={changerTheme} onProjets={() => setDialogue('projets')} seDeconnecter={seDeconnecter} onAideInstallation={() => setDialogue('installer')} />
   const aideInstallation = <AideInstallation ouvert={dialogue === 'installer'} onFermer={() => setDialogue(null)} />
