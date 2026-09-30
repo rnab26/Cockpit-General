@@ -347,7 +347,7 @@ try {
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
   // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
-  verifie('tuile « en pause » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
+  verifie('tuile « en attente » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
   // Le détail est ouvert d'emblée (30 sept.) : pas de toucher pour l'ouvrir.
   verifie('« Détail par projet » ouvert d\'emblée', await page.getByTestId('detail-ou-jen-suis').getAttribute('aria-expanded') === 'true')
   // Les projets jetables d'un AUTRE banc (verifier-base, verifier-embed… lancés en même temps) naissent et
