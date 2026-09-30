@@ -43,3 +43,13 @@ export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: numb
     : { texte: `Module du site : vu ${dateRelative(p.embed_vu_at!, now) || 'à l’instant'}`, teinte: 'ok' })
   return lignes
 }
+
+/**
+ * Icône « branché » de la liste des projets : vrai seulement sur une PREUVE
+ * récente (une session a démarré avec le hook dans les 24 h), jamais supposé.
+ * Même seuil que la ligne « Sessions branchées » d'etatBranchement.
+ */
+export function estBranche(p: PreuvesBranchement, now: Date = new Date()): boolean {
+  const vu = p.branchement_vu_at ? new Date(p.branchement_vu_at).getTime() : NaN
+  return !Number.isNaN(vu) && now.getTime() - vu < JOUR
+}
