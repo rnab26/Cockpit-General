@@ -28,7 +28,7 @@ import { ReveilImmediat } from './ReveilImmediat.tsx'
  * fais A + D », « des modèles plus compacts, plus ergonomiques, moins casse-tête
  * visuellement, des logiques plus ordonnées »), pour l'onglet « Tout » ET la
  * vue d'un projet :
- *   quatre tuiles (pour toi · ça avance · en pause · fini) — chacune ouvre sa liste ;
+ *   quatre tuiles (pour toi · ça avance · en attente · fini) — chacune ouvre sa liste ;
  *   « À toi de jouer »       — une ligne par chose à faire, UN verbe ;
  *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée ;
  *   « Prêt à lancer »        — ce que personne ne tient, « Lancer ».
@@ -88,7 +88,7 @@ type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
   { cle: 'caAvance', libelle: 'ça avance', aide: 'une session ou un assistant y travaille vraiment (barre de progression)', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
-  { cle: 'enPause', libelle: 'en pause', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'enPause', libelle: 'en attente', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
 interface Liste { titre: string; ids: string[]; n: number }
@@ -137,7 +137,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
 }
 
 const COLONNES: { cle: keyof QuatreNombres; libelle: string }[] = [
-  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en pause' }, { cle: 'livre', libelle: 'fini' },
+  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en attente' }, { cle: 'livre', libelle: 'fini' },
 ]
 const TEINTE: Record<keyof QuatreNombres, string> = { pourToi: 'text-alerte', bouge: 'text-texte', dort: 'text-texte-2', livre: 'text-ok', expirees: 'text-attention' }
 interface LigneDetail { cle: string; nom: string; couleur: string | null; nombres: QuatreNombres; ids: LigneOuJenSuis['ids'] }
@@ -366,7 +366,7 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
         <div className="mt-1.5 px-1" data-testid="sans-session">
           <button type="button" onClick={() => setVoirSans(!voirSans)} aria-expanded={voirSans} data-testid="voir-sans-session"
             className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
-            {sans.length} en cours sans session dessus (comptés « en pause »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
+            {sans.length} en cours sans session dessus (comptés « en attente »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
           </button>
           {voirSans ? <div className="mt-1.5"><Liste>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</Liste></div> : null}
         </div>

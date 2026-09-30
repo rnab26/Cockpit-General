@@ -328,7 +328,7 @@ try {
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
   // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
-  verifie('tuile « en pause » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
+  verifie('tuile « en attente » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
   await page.getByTestId('detail-ou-jen-suis').click()
   const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
   const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)
