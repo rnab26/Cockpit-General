@@ -1880,6 +1880,76 @@ async function controle36_deplacer_chantier() {
 }
 
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
+// Un projet NEUF (I) pour l'ouverture automatique des renforts.
+const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
+async function controle35_renforts_auto() {
+  section("35. Renforts ouverts tout seuls (0040) : une seule règle, seuil réglable, interrupteur, frein, maximum, jamais un projet de test, origine visible");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P9)}, ${q(SLUG_I)}, 'Projet de test I', 'rnab26/test-inexistant')`);
+  const S1 = randomUUID(), S2 = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P9)}, 'Écran', 1), (${q(S2)}, ${q(P9)}, 'Base', 2)`);
+  const enSection = async (sec, titre, etat = "libre") => { const id = await creerChantier(P9, { titre, etat, demande: `travail ${titre}` }); await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
+  const ids = [await enSection(S1, "AUTO Écran 1"), await enSection(S1, "AUTO Écran 2"), await enSection(S1, "AUTO Écran 3"), await enSection(S2, "AUTO Base 1"), await enSection(S2, "AUTO Base 2")];
+  const cadrer = await enSection(S1, "AUTO à cadrer", "a_cadrer");
+  const etat = async () => (await une(`select etat_renforts(${q(SLUG_I)}) as e`)).e;
+  const vivants = async () => (await une(`select count(*)::int as n from renforts where projet_id = ${q(P9)} and statut in ('demande', 'actif')`)).n;
+
+  await sql(`select regler_renforts(${q(SLUG_I)}, 2, 3)`);
+  let e = await etat();
+  verifie("la règle est en base : file 5 (jamais « à cadrer »), seuil 3 = agents par session (défaut), niveau « proche », rien ne bloque",
+    e.auto?.file === 5 && e.auto.seuil === 3 && e.auto.seuil_defaut === true && e.auto.niveau === "proche" && e.auto.bloque === null && e.auto.actif === true
+      && !e.attente.flatMap((a) => a.ids).includes(cadrer), e.auto);
+  verifie("regler_renforts_auto refuse un seuil de 0 ou 21", !!(await erreurDe(`select regler_renforts_auto(${q(SLUG_I)}, true, 0)`)) && !!(await erreurDe(`select regler_renforts_auto(${q(SLUG_I)}, true, 21)`)));
+
+  // Un projet de test n'est jamais servi (aucune vraie session) : rien n'est posé.
+  const sansTest = (await une(`select renforts_a_ouvrir(${q(SLUG_I)}) as r`)).r;
+  verifie("projet de test : renforts_a_ouvrir ne pose ni n'ouvre RIEN", sansTest.ouvrir.length === 0 && (await vivants()) === 0, sansTest);
+
+  // Mode test : la file (5) atteint le seuil (3) → UN renfort, sur la section la plus chargée ; ce qui reste (2) < 3 : rien de plus.
+  const a1 = (await une(`select renforts_a_ouvrir(${q(SLUG_I)}, true) as r`)).r;
+  const r1 = await sql(`select id, origine, file_declenchement, seuil_declenchement, section_id, max_agents, statut from renforts where projet_id = ${q(P9)}`);
+  verifie("la file atteint le seuil : UN renfort automatique, sur Écran (la plus chargée), avec la file (5) et le seuil (3) du moment, 3 agents",
+    r1.length === 1 && r1[0].origine === "auto" && r1[0].file_declenchement === 5 && r1[0].seuil_declenchement === 3 && r1[0].section_id === S1 && r1[0].max_agents === 3 && a1.ouvrir.length === 1, { r1, a1 });
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("repasser ne double rien (une section = un renfort, le reste de la file est sous le seuil)", (await vivants()) === 1);
+  e = await etat();
+  const ligne = e.renforts.find((r) => r.id === r1[0].id);
+  verifie("etat_renforts dit l'origine : « auto », file 5, seuil 3 (l'écran écrit « ouvert automatiquement à HH h MM parce que… »)", ligne?.origine === "auto" && ligne.file === 5 && ligne.seuil === 3, ligne);
+  const noMan = (await une(`select demander_renforts(${q(SLUG_I)}) as d`)).d;
+  const manuels = await sql(`select origine from renforts where projet_id = ${q(P9)} and origine = 'manuel'`);
+  verifie("le bouton manuel reste manuel (origine « manuel »)", noMan.demandes.length === 1 && manuels.length === 1, noMan);
+
+  // Interrupteur, frein, réglage à 0, maximum : chacun bloque, et l'écran le sait (bloque).
+  await sql(`update renforts set statut = 'erreur' where projet_id = ${q(P9)} and statut in ('demande', 'actif')`);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, false, null)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("interrupteur éteint : rien ne s'ouvre seul, bloque = eteint", (await vivants()) === 0 && (await etat()).auto.bloque === "eteint");
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, null)`);
+  await sql(`select freiner(${q(SLUG_I)}, 2, 'verifier-base')`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("frein actif : rien ne s'ouvre seul, bloque = frein", (await vivants()) === 0 && (await etat()).auto.bloque === "frein");
+  await sql(`select freiner(${q(SLUG_I)}, 0)`);
+  await sql(`select regler_renforts(${q(SLUG_I)}, 0, 3)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("renforts réglés à 0 : rien ne s'ouvre seul, bloque = reglage_zero", (await vivants()) === 0 && (await etat()).auto.bloque === "reglage_zero");
+
+  // Seuil réglé haut : la file (5) ne l'atteint pas → rien. Seuil 1 + maximum 1 : un seul renfort, jamais plus que le maximum.
+  await sql(`select regler_renforts(${q(SLUG_I)}, 1, 3)`);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, 6)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  const haut = (await etat()).auto;
+  verifie("seuil 6 > file 5 : rien ne s'ouvre, seuil_defaut = false, niveau nul", (await vivants()) === 0 && haut.seuil === 6 && haut.seuil_defaut === false && haut.niveau === null, haut);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, 1)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("seuil 1, maximum 1 : un seul renfort (le maximum jamais dépassé), ensuite bloque = plein", (await vivants()) === 1 && (await etat()).auto.bloque === "plein");
+
+  // Droits : un membre non admin ne règle ni ne lit la règle.
+  await sql(`insert into membres (projet_id, user_id) values (${q(P9)}, ${q(userId)}) on conflict do nothing`);
+  const mReg = await rpcUtilisateur("regler_renforts_auto", { p_projet: SLUG_I, p_actif: false, p_seuil: null }, jwt);
+  const mFile = await rpcUtilisateur("file_renforts", { p_projet_id: P9 }, jwt);
+  const mAuto = await rpcUtilisateur("renforts_auto", { p_projet_id: P9 }, CLE_PUBLIQUE);
+  verifie("un membre / anon : regler_renforts_auto refusé, file_renforts et renforts_auto fermés", mReg.status >= 400 && mFile.status >= 400 && mAuto.status >= 400, { mReg, mFile, mAuto });
+}
+
 async function controle33_depuis_un_fil() {
   section("33. « Il faudrait aussi X » dans un fil (0033) : chantier créé prêt à lancer, rangé, fils reliés, rien d'arraché — vrai chantier.sh");
   const sess = `agent/test-depuis-${rand}`;
@@ -2087,7 +2157,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle36_deplacer_chantier,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2098,7 +2168,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2106,8 +2176,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

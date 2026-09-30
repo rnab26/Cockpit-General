@@ -177,6 +177,21 @@ vie < 3 h), personne d'autre ne prend dans sa section (`chantiers_prenables`,
 `verifs_prenables`). Un renfort ne devient JAMAIS chef : consigne préfixée
 « [cockpit-renfort] » et marque `cockpit-renfort` dans le `.git` de sa copie
 (lue par `prompt-rappel.sh` et `autonome.sh`). `verifier-base.mjs` §20.
+**Ouverts TOUT SEULS** (30 sept., migration 0040, chantier 6faa9e7b : « la chef a
+9 tâches et n'a pas ouvert seule de renforts ») : la passe de la chef
+(`renforts_a_ouvrir` → `renforts_auto`) en pose quand la file (chantiers qui
+attendent sans personne, jamais ce qui attend Raphaël) atteint le seuil
+(`chefs.renforts_auto_seuil`, défaut = `agents_par_renfort`) : un renfort par
+section, la plus chargée d'abord, tant que ce qui reste atteint le seuil, dans
+la limite `max_renforts`. Rien si l'interrupteur `chefs.renforts_auto` est
+éteint (Réglages des renforts, allumé par défaut), si un frein est actif, si le
+maximum est atteint, ni jamais pour un projet de test. UNE règle :
+`cockpit.file_renforts` (file, seuil, niveau « proche/saturée », `bloque`),
+lue par l'alerte de l'écran (`etat_renforts.auto`, `alerteSaturation` ne
+recalcule rien) ; chaque renfort garde son `origine` (auto/manuel) + la file et
+le seuil du moment (« ouvert automatiquement à HH h MM parce que… »). Limite :
+l'ouverture a lieu au passage de la chef (fin d'agent, réveil, message), pas
+à la seconde où la file grossit. `verifier-base` §34, `verifier-renforts.ts`.
 
 **« Traiter ce projet »** (29 sept., Raphaël : « j'appuie sur un bouton, ça lance une
 session […] plus d'heures à ouvrir des sessions et à configurer »). Bloc au-dessus des
