@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, ligneRenfort, messageDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
 } from '../lib/renforts.ts'
 
@@ -268,6 +268,14 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
     toast.succes(heures ? `Frein posé pour ${heures} h.` : 'Frein levé.')
     void lire()
   }
+  const basculer = async (actif: boolean) => {
+    setEnvoi(true)
+    const { error } = await supabase.rpc('regler_bascule', { p_projet: projet.slug, p_actif: actif })
+    setEnvoi(false)
+    if (error) { toast.erreur(`Bascule non modifiée : ${messageErreur(error)}`); return }
+    toast.succes(actif ? 'Bascule automatique allumée.' : 'Bascule automatique éteinte.')
+    void lire()
+  }
   const choix = <T extends string>(valeurs: { valeur: T; nom: string; aide?: string }[], courant: T, poser: (v: T) => void, nom: string, testId: string) => (
     <div className="flex flex-wrap items-center gap-1" role="radiogroup" aria-label={nom} data-testid={testId}>
       {valeurs.map((v) => (
@@ -306,7 +314,11 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
         </label>
       </div>
       <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>
+      <p className={`text-xs leading-snug ${(etat.palier ?? 0) > 0 && etat.bascule_auto !== false ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-bascule">{libelleBascule(etat)}</p>
       <div className="flex flex-wrap justify-end gap-2">
+        <Button taille="sm" chargement={envoi} onClick={() => void basculer(etat.bascule_auto === false)} data-testid="bascule-interrupteur">
+          {etat.bascule_auto === false ? 'Allumer la bascule' : 'Éteindre la bascule'}
+        </Button>
         {etat.frein.actif
           ? <Button taille="sm" chargement={envoi} onClick={() => void frein(0)} data-testid="frein-lever">Lever le frein</Button>
           : <Button taille="sm" chargement={envoi} onClick={() => void frein(3)} data-testid="frein-poser">Freiner 3 h</Button>}

@@ -1,7 +1,7 @@
 // Le fil = une discussion (0025) : ordre, carte à choisir en dernier, réponse attendue.
 // node --experimental-strip-types app/scripts/verifier-discussion.ts
 import { verifie, bilan } from './_assert.ts'
-import { attenteReponse, estMessageLibre, filLie, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
+import { attenteReponse, derniereAction, estMessageLibre, filLie, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
 import type { Message } from '../src/lib/types.ts'
 
 const T0 = Date.parse('2026-09-29T14:00:00Z')
@@ -68,5 +68,11 @@ verifie('un message relié à un autre chantier → ce chantier', filLie({ chant
 verifie('sans lien → rien', filLie({ chantier_id: 'C', chantier_lie: null }, liste) === null && filLie({ chantier_id: 'C' }, liste) === null)
 verifie('un lien vers le fil lui-même → rien (pas de bouton inutile)', filLie({ chantier_id: 'C', chantier_lie: 'C' }, liste) === null)
 verifie('un chantier supprimé ou hors de vue → rien (pas de bouton mort)', filLie({ chantier_id: 'C', chantier_lie: 'X' }, liste) === null)
+
+console.log('dernière action réelle')
+const da = derniereAction('C', [claude(3, 'Sujet : tri. Fait.'), moi(9, 'Et moi'), msg({ auteur_type: 'session', kind: 'question', created_at: t(20), corps: 'Question ?' })],
+  [{ chantier_id: 'C', etape: 'Tests en cours', updated_at: t(7) }, { chantier_id: 'X', etape: 'Autre', updated_at: t(30) }], [{ chantier_id: 'C', etape: null, progres_at: t(40) }])
+verifie('la plus récente action de Claude sur CE chantier (étape > message ancien ; ni ma parole, ni une question, ni un autre chantier)', da?.texte === 'Tests en cours' && da.quand === t(7), da)
+verifie('sans rien de réel : null, jamais inventé', derniereAction('C', [moi(1)], [], []) === null)
 
 bilan('verifier-discussion')
