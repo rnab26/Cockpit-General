@@ -23,7 +23,8 @@
 #   scripts/chef.sh --fermeture <oui|non> [min]   fermer (ou non) les sessions finies ouvertes par le cockpit, minutes de grâce (0038)
 #   scripts/chef.sh --ouverture-archive <id>      note l'archivage d'une session relais finie
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
-#   scripts/chef.sh --usage <status> [pct]   note l'usage (rate_limit_info) : la BASCULE change le modèle, jamais le nombre d'agents (0036)
+#   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
+#                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0044), jamais le nombre d'agents
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
@@ -42,7 +43,7 @@ PRFUS="${COCKPIT_PRFUS_CMD:-scripts/pr-a-fusionner.sh}"; PROG="${COCKPIT_PROG_CM
 CHEF_CMD="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 cible=""; ouv_session=""; ouv_erreur=""
-sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max=""; minute=""; projet="${COCKPIT_PROJET:-}"; mcode=""; mleger=""; meffort=""; magents=""; freinraison=""; usage_pct=""
+sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max=""; minute=""; projet="${COCKPIT_PROJET:-}"; mcode=""; mleger=""; meffort=""; magents=""; freinraison=""; usage_pct=""; usage_type=""; usage_reset=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --prendre) mode="prendre"; shift ;;
@@ -54,7 +55,10 @@ while [ $# -gt 0 ]; do
     --minute)  minute="${2:-}"; shift 2 ;;
     --modeles) mode="modeles"; mcode="${2:-}"; mleger="${3:-}"; meffort="${4:-}"; magents="${5:-}"; shift $(( $# < 5 ? $# : 5 )) ;;
     --frein)   mode="frein"; max="${2:-}"; freinraison="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
-    --usage)   mode="usage"; max="${2:-}"; usage_pct="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
+    --usage)   mode="usage"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 ))
+               if [ $# -gt 0 ] && [[ "$1" != -* ]]; then usage_pct="$1"; shift; fi ;;
+    --fenetre) usage_type="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
+    --reset)   usage_reset="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --bascule) mode="bascule"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --renforts) mode="renforts"; max="${2:-}"; shift 2 ;;
@@ -156,7 +160,9 @@ case "$mode" in
   usage)
     [ -n "$max" ] || { echo "--usage <status> [pct] : status = celui de get_session → rate_limit_info (allowed, allowed_warning…), pct = utilisation en % si connue." >&2; exit 2; }
     [ -z "$usage_pct" ] || [[ "$usage_pct" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "pct : un nombre (0 à 100)." >&2; exit 2; }
-    r=$(un "select bascule_usage($P, '$(q "$max")', ${usage_pct:-null}) as r" | jq -c '.r // empty')
+    [ -z "$usage_reset" ] || [[ "$usage_reset" =~ ^[0-9]+$ ]] || { echo "--reset : resetsAt de rate_limit_info (secondes epoch)." >&2; exit 2; }
+    tsql="null"; [ -z "$usage_type" ] || tsql="'$(q "$usage_type")'"
+    r=$(un "select bascule_usage($P, '$(q "$max")', ${usage_pct:-null}, null, $tsql, ${usage_reset:-null}) as r" | jq -c '.r // empty')
     [ -n "$r" ] || { echo "Usage non noté (le cockpit ne répond pas). Continue avec les modèles des lignes [model: X]." >&2; exit 1; }
     printf '%s' "$r" | jq -r '.effectifs as $e | "USAGE noté : palier \(.palier) sur 3\(if .palier > 0 then " (" + (.palier_raison // "") + ")" else "" end). Modèles À UTILISER (ils remplacent ceux des lignes « [model: X] ») : code = \($e.modele_code), lecture = \($e.modele_leger), effort = \($e.effort). Le nombre d’agents ne change pas."'
     exit 0 ;;
@@ -226,11 +232,11 @@ maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 2')
 # Exportés : les consignes ci-dessous (jq) les lisent par $ENV, une seule source.
 # BASCULE (0036) : les modèles EFFECTIFS = réglages de Raphaël descendus selon le palier d'usage ; jamais le nombre d'agents.
 export MODELE_CODE=$(printf '%s' "$etat" | jq -r '.eff.modele_code // .modele_code // "sonnet"')
-export MODELE_LEGER=$(printf '%s' "$etat" | jq -r '.eff.modele_leger // .modele_leger // "haiku"')
+export MODELE_LEGER=$(printf '%s' "$etat" | jq -r '.eff.modele_leger // .modele_leger // "sonnet"')
 palier=$(printf '%s' "$etat" | jq -r '.eff.palier // 0')
 export EFFORT_TXT=$(printf '%s' "$etat" | jq -r '(.eff.effort // .effort // "moyen") | if . == "bas" then "bas : va droit au but, pas de longue réflexion" elif . == "eleve" then "élevé : réfléchis à fond si le sujet le demande" else "moyen : réfléchis juste ce qu’il faut, sans détour" end')
 note_frein=""; export FREIN_ON=0
-note_palier=""; [ "$palier" -gt 0 ] && note_palier="BASCULE d’usage : palier $palier sur 3, modèles descendus automatiquement (code $MODELE_CODE, lecture $MODELE_LEGER) pour ne pas atteindre la limite ; le nombre d’agents ne change pas. "
+note_palier=""; [ "$palier" -gt 0 ] && note_palier="BASCULE d’usage : palier $palier sur 3, effort et modèles ajustés automatiquement (code $MODELE_CODE, lecture $MODELE_LEGER, effort $EFFORT_TXT) pour ne pas atteindre la limite ; le nombre d’agents ne change pas. "
 frein=$(printf '%s' "$etat" | jq -r 'if .frein.actif then (.frein.raison // "frein actif") else "" end')
 if [ -n "$frein" ]; then
   # Usage proche de la limite : UN agent, aucune revue, aucun nouveau renfort (le travail qui attend reste en file).
@@ -348,10 +354,10 @@ if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $pro
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
 
 if [ -n "$attente" ]; then
-  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → rate_limit_info (status et, si présent, le pourcentage d’utilisation) et note-le : $CHEF_CMD --usage <status> [pct]. Il répond les modèles à utiliser (ils remplacent ceux des lignes [model: X]) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
+  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
   echo "Quand un agent a fini : relis son rapport, puis relance $CHEF_CMD --releve ; quand il répond RIEN, termine en une ligne. Ne fais PAS le travail toi-même."
 else
-echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » (jamais plus lourd : Raphaël règle ça dans le cockpit) ; effort de raisonnement — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → rate_limit_info (status et, si présent, le pourcentage d’utilisation) et note-le : $CHEF_CMD --usage <status> [pct]. Il répond les modèles à utiliser (ils remplacent ceux des lignes [model: X]) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
+echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » (jamais plus lourd : Raphaël règle ça dans le cockpit) ; effort de raisonnement — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
 echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance $CHEF_CMD pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 fi
 echo

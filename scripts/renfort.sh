@@ -58,7 +58,7 @@ case "${1:-}" in
     # ÉCONOMIE DES MODÈLES (0035) : les modèles et l'effort du projet, réglés dans le cockpit (chefs), et le frein.
     slug=$(printf '%s' "$r" | jq -r '.slug')
     cfg=$("$SQL" "select modele_code, modele_leger, effort, frein, palier from (select p.id, modeles_effectifs(p.id) ->> 'modele_code' as modele_code, modeles_effectifs(p.id) ->> 'modele_leger' as modele_leger, modeles_effectifs(p.id) ->> 'effort' as effort, palier_actif(p.id) as palier, frein_actif(p.id) as frein from projets p left join chefs c on c.projet_id = p.id where p.slug = '$(q "$slug")') x" 2>/dev/null | jq -c '.rows[0] // {}')
-    export MODELE_CODE=$(printf '%s' "$cfg" | jq -r '.modele_code // "sonnet"') MODELE_LEGER=$(printf '%s' "$cfg" | jq -r '.modele_leger // "haiku"')
+    export MODELE_CODE=$(printf '%s' "$cfg" | jq -r '.modele_code // "sonnet"') MODELE_LEGER=$(printf '%s' "$cfg" | jq -r '.modele_leger // "sonnet"')
     export EFFORT_TXT=$(printf '%s' "$cfg" | jq -r '(.effort // "moyen") | if . == "bas" then "bas : va droit au but" elif . == "eleve" then "élevé : réfléchis à fond si le sujet le demande" else "moyen : réfléchis juste ce qu’il faut" end')
     if [ "$(printf '%s' "$cfg" | jq -r '.frein.actif // false')" = "true" ]; then
       echo "FREIN d'usage ($(printf '%s' "$cfg" | jq -r '.frein.raison')) : ne lance qu'UN seul agent à la fois, quel que soit le maximum ci-dessous."
