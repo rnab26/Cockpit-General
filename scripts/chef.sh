@@ -26,7 +26,7 @@
 #   scripts/chef.sh --ouverture-archive <id>      note l'archivage d'une session relais finie
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
 #   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
-#                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0044), jamais le nombre d'agents
+#                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0045), jamais le nombre d'agents
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)

@@ -2320,7 +2320,7 @@ async function controle32_economie_modeles() {
   verifie("chef.sh --frein 2 : frein posé à la main, puis levé par --frein 0",
     (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === true && (chef({ ARGS: ["--frein", "0"] }), (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === false));
   // Bascule par mesure d'usage : monte tout de suite, plafonne à haiku, interrupteur.
-  // Échelle 0044 : effort d'abord, modèle ensuite, Haiku en dernier ; rythme = temps écoulé de la fenêtre (rate_limit_info n'a AUCUN %).
+  // Échelle 0045 : effort d'abord, modèle ensuite, Haiku en dernier ; rythme = temps écoulé de la fenêtre (rate_limit_info n'a AUCUN %).
   const pal = async (st, pct, type = null, resetsDans = null) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}, null, ${type ? q(type) : "null"}, ${resetsDans == null ? "null" : `extract(epoch from now() + interval '${resetsDans} minutes')::bigint`}) as e`)).e;
   const raz = () => sql(`update chefs set palier = 0, palier_at = null, palier_reset_at = null where projet_id = ${q(P1)}`);
   chef({ ARGS: ["--modeles", "opus", "sonnet", "eleve", "2"] });

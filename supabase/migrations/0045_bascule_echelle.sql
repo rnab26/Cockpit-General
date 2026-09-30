@@ -1,4 +1,4 @@
--- 0044 — Bascule : plein gaz d'abord, effort avant modèle, Haiku en dernier (chantier a1a67b3d).
+-- 0045 — Bascule : plein gaz d'abord, effort avant modèle, Haiku en dernier (chantier a1a67b3d).
 --
 -- Raphaël (30/09) : « Sonnet ou Opus font très bien le travail, Haiku n'est pas assez puissant :
 -- dernière option. Tant qu'il y a du crédit : plein gaz jusqu'à 50 % de la session, puis répartir pour

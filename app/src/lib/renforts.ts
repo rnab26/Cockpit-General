@@ -215,7 +215,7 @@ export interface EtatModeles {
   bascule_auto?: boolean
   palier?: number
   palier_raison?: string | null
-  /** Réglages de la bascule (0044) : seuil du plein gaz en %, Haiku autorisé en dernier recours. */
+  /** Réglages de la bascule (0045) : seuil du plein gaz en %, Haiku autorisé en dernier recours. */
   bascule_seuil_pct?: number
   bascule_haiku?: boolean
   /** Fenêtre d'usage mesurée (rate_limit_info) : type, remise à zéro, part écoulée. Jamais un % d'usage : il n'existe pas. */
@@ -248,7 +248,7 @@ export function erreurSeuilBascule(seuil: number): string | null {
   return null
 }
 const NOM_FENETRE: Record<string, string> = { five_hour: 'fenêtre de 5 h', seven_day: 'fenêtre de 7 jours', seven_day_opus: 'fenêtre de 7 jours (Opus)', seven_day_sonnet: 'fenêtre de 7 jours (Sonnet)' }
-/** Ce que dit l'écran de la bascule (0044) : l'effort d'abord, le modèle ensuite, Haiku en dernier ; jamais un nombre d'agents. */
+/** Ce que dit l'écran de la bascule (0045) : l'effort d'abord, le modèle ensuite, Haiku en dernier ; jamais un nombre d'agents. */
 export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 'palier_raison' | 'effectifs' | 'bascule_seuil_pct' | 'fenetre'>): string {
   if (e.bascule_auto === false) return 'Bascule automatique éteinte : les modèles réglés ci-dessus servent toujours.'
   const p = e.palier ?? 0
