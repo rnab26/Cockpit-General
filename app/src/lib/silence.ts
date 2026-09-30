@@ -1,0 +1,80 @@
+// « Pris, mais silencieux » : qui le tient, depuis quand, ce qui se passe, et
+// LE geste à faire — ou « rien, ça se relance seul à HH:MM ».
+//
+// Raphaël (30 sept. 2026, chantier fb19d6a8) : « je n'arrive pas à comprendre
+// ce qui se passe réellement […] relancer encore alors que c'est déjà
+// relancé ? Attente pour rien. » Une seule règle, pure, lue par l'écran et le
+// test. La base (0036) reprend un chantier réservé mais abandonné : plus aucun
+// signe de vie depuis DELAI_ABANDON_MIN, la passe de la chef le reprend seule.
+import type { Activite, Chantier } from './types.ts'
+import { heureLisible, dateRelative } from './dates.ts'
+import { nomCourtSession } from './texte.ts'
+
+/** Sans signe de vie depuis ce délai, un chantier réservé est « abandonné » : la chef le reprend (même valeur que 0036). */
+export const DELAI_ABANDON_MIN = 30
+
+export type GesteSilence = 'rien' | 'attendre' | 'relancer'
+
+export interface SituationSilence {
+  /** Qui le tient (nom court de la session, ou « une session »). */
+  qui: string
+  /** Dernier signe de vie : « il y a 40 min », ou « aucun signe depuis la réservation ». */
+  depuis: string
+  /** Ce qui se passe réellement, une phrase. */
+  ceQuiSePasse: string
+  /** Le geste : rien (déjà pris en charge), attendre (pas encore abandonné), relancer (rien ne le fera). */
+  geste: GesteSilence
+  /** La phrase du geste, en une ligne. */
+  consigne: string
+  /** Heure de la reprise automatique, si connue. */
+  repriseA: string | null
+}
+
+type C = Pick<Chantier, 'pris_par' | 'pris_jusqu_a'> & { updated_at?: string | null }
+type A = Pick<Activite, 'updated_at' | 'pourcentage' | 'etape'>
+
+const t = (iso: string | null | undefined) => { const n = iso ? new Date(iso).getTime() : NaN; return Number.isNaN(n) ? null : n }
+
+/** Premier passage horaire (même minute que `passage`) qui tombe à `apres` ou plus tard. */
+export function passageApres(passage: string | null, apres: number, now: number): number | null {
+  const p = t(passage)
+  if (p === null) return null
+  let x = p
+  while (x < Math.max(apres, now)) x += 3_600_000
+  return x
+}
+
+export function situationSilence(
+  c: C,
+  activite: A | null,
+  ctx: { now: Date; prochainPassage: string | null; demandeEnCours: boolean; abandonMin?: number },
+): SituationSilence {
+  const now = ctx.now.getTime()
+  const abandonMs = (ctx.abandonMin ?? DELAI_ABANDON_MIN) * 60_000
+  const dernier = t(activite?.updated_at)
+  const qui = c.pris_par ? nomCourtSession(c.pris_par) : 'une session'
+  const depuis = dernier !== null ? (dateRelative(activite!.updated_at, ctx.now) || 'à l’instant') : 'aucun signe depuis la réservation'
+  // Sans étape signalée, on compte depuis la dernière modification de la fiche.
+  const reference = dernier ?? t(c.updated_at)
+  const abandonneA = reference !== null ? reference + abandonMs : null
+  const abandonne = abandonneA !== null && abandonneA <= now
+  const repriseMs = passageApres(ctx.prochainPassage, abandonneA ?? now, now)
+  const repriseA = repriseMs !== null ? heureLisible(new Date(repriseMs).toISOString(), ctx.now) : null
+  const base = { qui, depuis, repriseA }
+
+  if (ctx.demandeEnCours) return { ...base, geste: 'rien',
+    ceQuiSePasse: 'Tu as déjà demandé où ça en est : un assistant regarde.',
+    consigne: 'Rien à faire : la réponse arrive ici toute seule. Ne relance pas encore.' }
+  if (abandonne && repriseA) return { ...base, geste: 'rien',
+    ceQuiSePasse: `${qui} n’a plus donné signe de vie (${depuis}) : le chantier est considéré comme abandonné.`,
+    consigne: `Rien à faire : la chef du projet le reprend seule vers ${repriseA}.` }
+  if (abandonne) return { ...base, geste: 'relancer',
+    ceQuiSePasse: `${qui} n’a plus donné signe de vie (${depuis}) et aucune chef n’est programmée pour le reprendre.`,
+    consigne: 'À faire : copie la consigne et colle-la dans une session Claude du projet, ou demande où ça en est.' }
+  const finAttente = abandonneA !== null ? heureLisible(new Date(abandonneA).toISOString(), ctx.now) : null
+  return { ...base, geste: 'attendre',
+    ceQuiSePasse: `${qui} a réservé le chantier, mais rien de nouveau (${depuis}) : elle réfléchit peut-être encore.`,
+    consigne: repriseA && finAttente
+      ? `Rien à faire pour l’instant : sans nouvelle d’ici ${finAttente}, il est repris seul vers ${repriseA}.`
+      : `Rien à faire avant ${finAttente ?? `${DELAI_ABANDON_MIN} min sans nouvelle`} : passé ce délai, relance-le (aucune reprise seule programmée).` }
+}

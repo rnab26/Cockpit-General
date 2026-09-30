@@ -111,7 +111,7 @@ verifie('« vérifie pour moi » en cours : dans « ça avance », vivant, sous 
 verifie('0015 : un agent sans étape depuis 40 min mais listé en cours par une session vivante reste « en cours »', ca.get('agent-sans-etape')?.vivant === true, ca.get('agent-sans-etape'))
 const qDepassee = t.aToi.find((e) => e.cle === 'q-q2'), qNeuve = t.aToi.find((e) => e.cle === 'q-q')
 verifie('0015 : une question que du travail a suivie est marquée « Claude a avancé depuis », pas une question sans suite',
-  !!qDepassee?.avanceDepuis && /avancé depuis/.test(attenteAToi(qDepassee!, now)) && !qNeuve?.avanceDepuis, [qDepassee?.avanceDepuis, qNeuve?.avanceDepuis])
+  !!qDepassee?.avanceDepuis && /travaillé dessus/.test(attenteAToi(qDepassee!, now)) && !qNeuve?.avanceDepuis, [qDepassee?.avanceDepuis, qNeuve?.avanceDepuis])
 verifie('un agent vivant sur un chantier qui attend ta réponse (ou bloqué) est dans « ça avance » ET dans « à toi »',
   ca.get('agent-question')?.vivant && ca.get('agent-bloque')?.vivant && ca.get('agent-question')?.activite?.pourcentage === 35
   && t.aToi.some((e) => e.chantier?.id === 'agent-question') && t.aToi.some((e) => e.chantier?.id === 'agent-bloque'), [ca.get('agent-question'), ca.get('agent-bloque')])

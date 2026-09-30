@@ -14,6 +14,7 @@ import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
 import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
+import { situationSilence } from '../lib/silence.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { attenteReponse, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
@@ -515,6 +516,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   // « Où ça en est ? » en attente : le bloc suit la DEMANDE, pas la barre grise d'une livraison passée.
   const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
   const demandeEnCours = !!etatOuEnEst(c, messages, tenus(c.id), now, tenus)?.enAttente
+  const silence = presence.code === 'silencieux' && c.etat !== 'a_cadrer' ? situationSilence(c, activite, { now, prochainPassage, demandeEnCours }) : null
   const { historique, aChoisir } = ordreDuFil(fil)
   const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })
@@ -591,9 +593,17 @@ function FilChantier({ chantierId }: { chantierId: string }) {
                 <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
                 {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
                 {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
-                <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>
+                {silence ? null : <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>}
               </>)}
-              <BoutonsRelance chantier={c} />
+              {silence ? (
+                <div data-testid="situation-silence" data-geste={silence.geste} className="space-y-1 text-sm">
+                  {demandeEnCours ? null : <p className="text-texte-2" data-testid="silence-quoi">{silence.ceQuiSePasse}</p>}
+                  <p className={`font-medium ${silence.geste === 'relancer' ? 'text-attention' : 'text-ok'}`} data-testid="silence-geste">{silence.consigne}</p>
+                </div>
+              ) : null}
+              {silence && silence.geste !== 'relancer' ? (
+                <Repliable titre={<span className="text-sm text-texte-2">Relancer quand même</span>}><BoutonsRelance chantier={c} /></Repliable>
+              ) : <BoutonsRelance chantier={c} />}
             </div>
           </AFaire>
         ) : null}

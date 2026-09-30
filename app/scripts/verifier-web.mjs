@@ -389,7 +389,8 @@ try {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
       (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
       && ['Répondre', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
-    verifie('une ligne « À toi » dit aussi l’heure (« (12:17) », « (hier 23:53) »)', /\(.*\d\d:\d\d\)/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
+    verifie('une ligne « À toi » dit aussi l’heure (« · 12:17 », « · hier 23:53 »)', /^ · .*\d\d:\d\d$/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
+    verifie('une ligne « À toi » COMMENCE par son âge (« il y a … » / « à l’instant »)', /^(il y a|à l’instant|hier|\d)/.test((await ligne1.getByTestId('titre-a-toi').evaluate((el) => el.parentElement.innerText)).trim()))
   }
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
@@ -591,6 +592,11 @@ try {
   await (await ligneAvance(P3.id)).locator('button').first().click()
   await attendreConv(P3.titre)
   verifie('réservée mais muette depuis 2 h → « pris, silencieux »', /pris, silencieux/.test(await conv().getByTestId('presence-conversation').textContent()))
+  // Cas signalé le 30 sept. (chantier fb19d6a8) : « relancer encore alors que c'est déjà relancé ? » — l'écran dit le geste.
+  const sit = conv().getByTestId('situation-silence')
+  verifie('silencieux : dit qui le tient, depuis quand, et LE geste (abandonné, sans chef programmée → « À faire »)',
+    await sit.count() === 1 && /signe de vie/.test(await sit.getByTestId('silence-quoi').textContent()) && /^À faire/.test(await sit.getByTestId('silence-geste').textContent()) && await sit.getAttribute('data-geste') === 'relancer', await sit.textContent())
+  verifie('…les boutons de relance restent visibles quand c’est le geste', await conv().getByTestId('bulle-relance').getByTestId('copier-consigne').isVisible())
   await fermerConv()
 
   // ===================================================================
@@ -810,7 +816,7 @@ try {
     const elBD = await elementAToi(BD.id, 'bloque')
     const lignes = await page.locator('[data-testid="element-a-toi"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-depasse') === '1'))
     verifie('un bloqué que Claude a fait avancer depuis : « peut-être plus à jour », en bas de la liste',
-      (await elBD.getAttribute('data-depasse')) === '1' && /Claude a avancé depuis .* peut-être plus à jour/.test(await elBD.getByTestId('attente-a-toi').textContent())
+      (await elBD.getAttribute('data-depasse')) === '1' && /Claude a travaillé dessus .* peut-être déjà réglé/.test(await elBD.getByTestId('attente-a-toi').textContent())
         && lignes.indexOf(true) > lignes.lastIndexOf(false) && /peut-être plus à jour/.test(await page.getByTestId('a-toi-depasses').textContent()), lignes)
     await capture(page, 'a-toi-age-tri')
   }
