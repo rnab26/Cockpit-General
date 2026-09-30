@@ -78,3 +78,22 @@ export function situationSilence(
       ? `Rien à faire pour l’instant : sans nouvelle d’ici ${finAttente}, il est repris seul vers ${repriseA}.`
       : `Rien à faire avant ${finAttente ?? `${DELAI_ABANDON_MIN} min sans nouvelle`} : passé ce délai, relance-le (aucune reprise seule programmée).` }
 }
+
+/**
+ * 0041 : la base a libéré une réservation sans signe de vie (`liberer_silencieux`).
+ * Une phrase tant que personne ne l'a reprise : qui, depuis quand, quand il est
+ * repris seul. Null si rien n'a été libéré ou si une réservation vit de nouveau.
+ */
+export function phraseLiberee(
+  c: Pick<Chantier, 'pris_jusqu_a' | 'libere_at' | 'libere_de' | 'libere_apres_min'>,
+  ctx: { now: Date; prochainPassage: string | null },
+): string | null {
+  if (t(c.libere_at) === null) return null
+  const now = ctx.now.getTime()
+  const jusqua = t(c.pris_jusqu_a)
+  if (jusqua !== null && jusqua > now) return null
+  const qui = c.libere_de ? nomCourtSession(c.libere_de) : 'une session'
+  const passage = passageApres(ctx.prochainPassage, now, now)
+  const reprise = passage !== null ? `repris seul vers ${heureLisible(new Date(passage).toISOString(), ctx.now)}` : 'repris seul à la prochaine passe de la chef'
+  return `Pris par ${qui}, sans signe de vie depuis ${c.libere_apres_min ?? DELAI_ABANDON_MIN} min : libéré à ${heureLisible(c.libere_at!, ctx.now)}, ${reprise}. Rien à faire de ton côté.`
+}

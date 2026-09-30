@@ -248,6 +248,23 @@ n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
 Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
 reste ouverte (non suivie en base). `verifier-base` §34.
 
+## Traité sans attendre : aucun chantier « tenu » pour rien (30 sept. 2026, migration 0043, chantier fb19d6a8)
+
+Raphaël : « je ne veux pas que les chantiers soient tenus, je veux qu'ils soient
+traités quand ils peuvent l'être. » Mesuré sur la base : 0036 ne libérait que les
+`en_cours` ; restaient tenus pour rien un chantier libre réservé 60 min par un agent
+« Répondre/Point » mort (ses réponses attendaient), la section d'un renfort muet
+depuis 100 min (« vivant » 3 h), un message pris par un agent mort (2 h). UNE règle,
+`sans_signe_de_vie(c)` (fiche, activité, agent, session : 30 min de silence), lue par
+`chantier_abandonne`, `renfort_vivant` (signe de vie du renfort OU d'un de ses chantiers)
+et `liberer_silencieux(slug)` : libère la réservation (`libere_at/de/apres_min` sur la
+fiche, JAMAIS un message de session dans le fil : il compterait comme réponse) et remet
+à servir le message que l'agent mort avait pris. Appelée en tête de `chef.sh`, `passe.sh`,
+`hooks/autonome.sh`. L'écran (`phraseLiberee`) : « Pris par X, sans signe de vie depuis N
+min : libéré à HH:MM, repris seul vers HH:MM ». `verifier-base` §37, `verifier-silence.ts`.
+Limite : un agent qui code plus de 30 min sans aucune étape signalée est libéré (même
+seuil qu'en 0036).
+
 ## PR à fusionner : une carte « À toi » par PR (30 sept. 2026, chantier dbae6397)
 
 Raphaël : « je n'ai aucune notification dans le cockpit pour savoir quand merger ».

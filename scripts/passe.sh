@@ -28,6 +28,7 @@ if [ "$actif" != "true" ]; then echo "RIEN — le mode autonome du projet $PROJE
 # enchaîne les chantiers (hook Stop) ; ce réveil ne fait rien.
 autre=$("$SQL" "select count(*) as n from sessions s join projets p on p.id = s.projet_id where p.slug = '$(q "$PROJET")' and s.fin_at is null and s.vu_at > now() - interval '10 minutes' and s.id <> '$(q "${CLAUDE_CODE_SESSION_ID:-}")'" | jq -r '.rows[0].n // 0')
 if [ "${autre:-0}" -gt 0 ]; then echo "RIEN — une autre session travaille déjà sur $PROJET (elle enchaîne elle-même les chantiers). Termine ta réponse en une ligne, sans rien faire d'autre."; exit 0; fi
+"$SQL" "select liberer_silencieux('$(q "$PROJET")')" >/dev/null 2>&1 || true   # 0041 : plus de chantier tenu pour rien
 r=$("$SQL" "select prochain_chantier_autonome('$(q "$PROJET")', $( [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "'$(q "$CLAUDE_CODE_SESSION_ID")'" || echo null ), '$(q "$branche")') as c" | jq -c '.rows[0].c // empty')
 # Sans crédit perdu (0031) : chaque passage le constate ; rien à faire depuis le délai réglé → éteint tout seul.
 constat=$("$SQL" "select constater_autonome('$(q "$PROJET")') as r" 2>/dev/null | jq -r '.rows[0].r // empty')

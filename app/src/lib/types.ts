@@ -81,6 +81,10 @@ export interface Chantier {
   doublon_de: string | null
   pris_par: string | null
   pris_jusqu_a: string | null
+  /** 0041 : réservation sans signe de vie libérée (quand, de qui, après combien de minutes). */
+  libere_at?: string | null
+  libere_de?: string | null
+  libere_apres_min?: number | null
   created_by: string | null
   created_at: string
   updated_at: string
