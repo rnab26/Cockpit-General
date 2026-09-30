@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
+import { useMarquerLu } from './PastilleReponse.tsx'
+import { cleFil } from '../lib/lecture.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
@@ -450,7 +452,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
 }
 
 function FilChantier({ chantierId }: { chantierId: string }) {
-  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger } = useCockpit()
+  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser } = useCockpit()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
   // « Ça marche » avec une question ouverte : ses cartes s'affichent dans le bloc de validation, pas deux fois.
@@ -459,6 +461,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const fil = useMemo(() => messages.filter((m) => m.chantier_id === chantierId).sort((a, b) => a.created_at.localeCompare(b.created_at)), [messages, chantierId])
   const pd = useMemo(() => (c ? presenceDe(c, activites, enAttente, now, silenceMs, taches) : null), [c, activites, taches, enAttente, now, silenceMs])
   const cle = `${fil.length}:${fil.at(-1)?.id ?? ''}:${fil.at(-1)?.answered_at ?? ''}:${fil.at(-1)?.recu_at ?? ''}`
+  useMarquerLu(chantierId, fil, prefs, poser)
   const prochainPassage = useProchainPassage(c?.projet_id ?? '', cle)
 
   if (!c || !pd) {
@@ -574,9 +577,10 @@ function FilChantier({ chantierId }: { chantierId: string }) {
 
 /** Les questions du projet qui ne portent sur aucun chantier. */
 function FilProjet() {
-  const { messages, projet, now } = useCockpit()
+  const { messages, projet, now, prefs, poser } = useCockpit()
   const fil = useMemo(() => messages.filter((m) => !m.chantier_id).sort((a, b) => a.created_at.localeCompare(b.created_at)), [messages])
   const cle = `${fil.length}:${fil.at(-1)?.id ?? ''}:${fil.at(-1)?.answered_at ?? ''}:${fil.at(-1)?.recu_at ?? ''}`
+  useMarquerLu(cleFil(projet.id, null), fil, prefs, poser)
   const prochainPassage = useProchainPassage(projet.id, cle)
   const { historique, aChoisir } = ordreDuFil(fil)
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient: false, prochainPassage })

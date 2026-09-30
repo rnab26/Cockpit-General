@@ -58,6 +58,7 @@ node scripts/verifier-embed.mjs                            # fonction serveur d�
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
+node scripts/verifier-push.mjs                            # notifications push : fonction déployée (401 sans secret, chiffrement, abonnement mort retiré), coffre, trigger, droits
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -589,6 +590,34 @@ moteur, migration…) dans le TITRE ; pour un utilisateur final (`origine =
 corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
 `ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
 `scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
+
+## « Claude a répondu » : pastille + notification du téléphone (30 sept. 2026, migration 0037, chantier bff5a8cf)
+
+Raphaël : « quand j'envoie un message […] je ne vois aucune notification comme
+quoi il m'a répondu […] il faudrait une notification pour pouvoir répondre le
+plus rapidement possible » (capture : la case « Écrire à Claude sur ce projet »)
+« […] et une notification push du téléphone, à régler dans les paramètres ».
+- **Dans l'app** : une RÉPONSE = message de session avec `repond_a` (posé par
+  `repondre_dans_fil`, donc pas les lignes automatiques). Non lue tant qu'elle
+  est plus récente que le « lu jusqu'à » du fil (préférences `lu_fils`, par
+  personne ; `lu_depuis` posé au premier chargement pour ne pas allumer
+  l'historique). Pastille rouge « Réponse » sur la case du projet et sur les
+  lignes « À toi » / « Ça avance » (`PastilleReponse.tsx`), compteur dans le
+  titre de l'onglet et sur l'icône de l'appli ; ouvrir le fil = le lire.
+  Règle unique : `lib/lecture.ts`, `verifier-lecture.ts`, `verifier-web.mjs`
+  (« pastille Réponse »).
+- **Push** : Réglages › « Notifications de réponses » › « Activer sur cet
+  appareil » (par appareil ; `usePush.ts`, règle des états `lib/push.ts`,
+  iPhone : seulement dans l'appli installée). Un trigger sur la réponse
+  (`push_sur_reponse`, pg_net, jamais pour un projet `test-…`) appelle la
+  fonction `cockpit-push` (web-push ; `x-push-secret` du coffre) qui envoie
+  aux appareils des admins et membres du projet et retire les abonnements
+  morts. `sw.js` affiche la bannière (sauf appli déjà à l'écran). Mise en
+  place UNE fois : `node scripts/installer-push.mjs` (clés VAPID, secrets de
+  la fonction, coffre, `push_config` ; idempotent, `--regenerer` désabonne
+  tout) puis `VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-push`.
+  Preuve : `node scripts/verifier-push.mjs`. **Non prouvé ici** : la
+  livraison sur un vrai téléphone (aucun navigateur abonné dans le conteneur).
 
 ## Économie des modèles (30 sept. 2026, migration 0035, chantier 7a52df8f)
 

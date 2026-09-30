@@ -6,6 +6,7 @@ import { usePreferences } from '../hooks/usePreferences.ts'
 import type { Theme } from '../hooks/useTheme.ts'
 import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
+import { PREF_LU_DEPUIS, PREF_LU_FILS, lireLus, reponsesNonLues, totalNonLus } from '../lib/lecture.ts'
 import { pastillesProjet } from '../lib/entonnoir.ts'
 import { autonomeActif, chantiersPrenables, etatAutonome, travailEnCours } from '../lib/autonome.ts'
 import { Layers, Lock } from 'lucide-react'
@@ -41,7 +42,7 @@ export const TIC_PRESENCE_MS = 30_000
  */
 export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi; theme: Theme; changerTheme: (t: Theme) => void; seDeconnecter: () => Promise<void> }) {
   const d = useDonnees(true, moi.email)
-  const { prefs, poser } = usePreferences(moi.user_id)
+  const { prefs, poser, chargees } = usePreferences(moi.user_id)
   const [sectionsOuvertes, setSectionsOuvertes] = useState<Set<string>>(new Set())
   const [conversation, setConversation] = useState<CibleConversation | null>(null)
   const [dialogue, setDialogue] = useState<Dialogue>(null)
@@ -64,6 +65,18 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   }, [admin, charge]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const silenceMs = silenceMsDe(prefs[CLE_PREF_SILENCE])
+  // « Claude a répondu » : le plancher (`lu_depuis`) est posé une fois, au premier chargement, pour ne pas allumer tout l'historique.
+  useEffect(() => { if (chargees && typeof prefs[PREF_LU_DEPUIS] !== 'string') void poser(PREF_LU_DEPUIS, new Date().toISOString()).catch(() => {}) }, [chargees, prefs, poser])
+  const nonLus = useMemo(
+    () => (typeof prefs[PREF_LU_DEPUIS] === 'string' ? reponsesNonLues(d.messages, lireLus(prefs[PREF_LU_FILS]), prefs[PREF_LU_DEPUIS] as string) : new Map()),
+    [d.messages, prefs],
+  )
+  // Onglet du navigateur et icône de l'appli : le nombre de réponses à lire.
+  const nbNonLus = totalNonLus(nonLus)
+  useEffect(() => {
+    document.title = nbNonLus ? `(${nbNonLus}) Cockpit` : 'Cockpit'
+    try { const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }; void (nbNonLus ? nav.setAppBadge?.(nbNonLus) : nav.clearAppBadge?.())?.catch(() => {}) } catch { /* non supporté */ }
+  }, [nbNonLus])
   const enAttente = useMemo(() => chantiersEnAttente(d.messages), [d.messages])
   const parProjet = useMemo(() => new Map(d.projets.map((p) => [p.id, {
     sections: d.sections.filter((s) => s.projet_id === p.id),
@@ -120,7 +133,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const global: Global = {
     moi, admin, par: moi.email, projets: d.projets, sections: d.sections, chantiers: d.chantiers, messages: d.messages, activites: d.activites,
-    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, vue, ouvrirChantier, contexteDe,
+    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, nonLus, vue, ouvrirChantier, contexteDe,
   }
 
   const pastilles = useMemo(() => {
