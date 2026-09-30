@@ -28,6 +28,7 @@
 #   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
 #                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0045), jamais le nombre d'agents
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
+#   scripts/chef.sh --sans-signe <min>  délai « sans signe de vie » du projet : au-delà, une réservation est libérée (1 à 120, défaut 3 ; 0046)
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
@@ -62,11 +63,13 @@ while [ $# -gt 0 ]; do
     --fenetre) usage_type="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --reset)   usage_reset="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --bascule) mode="bascule"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
+    --sans-signe) mode="sans_signe"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --renforts) mode="renforts"; max="${2:-}"; shift 2 ;;
     --agents-renfort) mode="agents_renfort"; max="${2:-}"; shift 2 ;;
     --ouverture) mode="ouverture"; cible="${2:-}"; ouv_session="${3:-}"; if [ "$ouv_session" = "--erreur" ]; then ouv_session=""; ouv_erreur="${4:-}"; shift 4; else shift 3; fi ;;
     --relais-texte) mode="relais_texte"; shift ;;
+    --verifs)  mode="verifs"; shift ;;
     --ouverture-archive) mode="ouverture_archive"; cible="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --fermeture) mode="fermeture"; cible="${2:-}"; max="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --filet) mode="filet"; cible="${2:-}"; max="${3:-}"; ouv_session="${4:-}"; shift $(( $# < 4 ? $# : 4 )) ;;
@@ -84,7 +87,7 @@ relais_texte() { jq -r --arg r "$RENF" --arg chef "$CHEF_CMD" --arg moi "$projet
     ((.fermer // []) | map("- [\($p.slug)] Session relais finie (rien ne l’attend) : archive_session(\"\(.session)\"), puis \($chef) --ouverture-archive \(.id)")) +
     ((.renforts.archiver // []) | map("- [\($p.slug)] Renfort « \(.section) » \(if .statut == "fini" then "fini" else "muet depuis 3 h" end) : archive_session(\"\(.session)\"), puis \($r) --archive \(.id)")) +
     ((.renforts.ouvrir // []) | map("- [\($p.slug)] Nouveau renfort « \(.section) » (\(.chantiers) chantier(s), \(.agents) agent(s) au plus) : create_session(title: \"Renfort · \(.slug) · \(.section) — ne pas toucher\", model: \"\(({sonnet: "claude-sonnet-5-5"}[$ENV.MODELE_CODE // "sonnet"]) // $ENV.MODELE_CODE // "claude-sonnet-5-5")\", tags: [\"cockpit-renfort\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-renfort] Tu es un RENFORT du cockpit (projet \(.slug), section « \(.section) »). Lance scripts/cockpit-renfort.sh --suivant \(.id) (s’il n’existe pas : ~/.cockpit/bin/renfort.sh, sinon télécharge le cockpit avec `mkdir -p ~/.cache/cockpit-general && curl -fsSL https://codeload.github.com/rnab26/Cockpit-General/tar.gz/main | tar xz --strip-components=1 -C ~/.cache/cockpit-general` puis lance `bash ~/.cache/cockpit-general/scripts/renfort.sh --suivant` avec le même identifiant ; « cockpit injoignable » = réessaie 3 fois à 30 s d’intervalle avant d’abandonner, et ne pars JAMAIS sans avoir tenté ce téléchargement) et suis sa consigne : elle te donne jusqu’à \(.agents) chantier(s) de ta section, un agent chacun. À la fin de CHAQUE agent, relance-le. Quand elle dit FINI, arrête-toi en une ligne. Ne prends rien d’autre, ne parle pas à Raphaël ici : il répond dans le cockpit. FINI = fermeture : si l’outil archive_session existe, archive TA session (get_session sans identifiant te donne ton id) ; sinon la chef l’archivera.\"), puis \($r) --session \(.id) <session_… rendu>. Échec : \($r) --erreur \(.id) \"<raison courte>\".")) +
-    (if .ouvrir_session then ["- [\(.slug)] Raphaël a écrit dans le cockpit de \(.nom) (\(.messages) fil(s) sans réponse) et aucune session \(.nom) ne vit : create_session(title: \"\(.nom) · répondre au cockpit\", model: \"\(({sonnet: "claude-sonnet-5-5"}[$ENV.MODELE_CODE // "sonnet"]) // $ENV.MODELE_CODE // "claude-sonnet-5-5")\", tags: [\"cockpit-relais\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-relais] Raphaël a écrit dans le cockpit du projet \(.slug) et attend une réponse dans chaque fil. Le hook de démarrage te montre ses messages sans réponse : réponds dans CHAQUE fil (scripts/cockpit-progression.sh --chantier <id> --point \\\"…\\\", ou sans --chantier pour le fil du projet) ; un NOUVEAU sujet (« il faudrait aussi… ») ou plusieurs sujets : un chantier par sujet, créé et rangé par toi (scripts/cockpit-chantier.sh --ouvrir \\\"<titre>\\\" --demande \\\"<ses mots>\\\" --depuis <id du fil | projet> --reponse \\\"…\\\" : ta réponse part dans son fil avec un bouton vers le nouveau). Un travail court et sans risque : fais-le sur une branche ; sinon ouvre le chantier et dis-le-lui. Aucune dépense, suppression ni envoi en son nom. QUAND TU AS FINI (chaque fil a sa réponse, aucun chantier en cours, aucune question en attente) : arrête-toi en une ligne et, si l’outil archive_session existe, archive TA session (get_session sans identifiant te donne ton id) ; sinon la chef l’archivera. Ne te ferme JAMAIS avec un chantier en cours ou une question sans réponse.\"), puis \($chef) --ouverture \(.slug) <session_… rendu> (échec : \($chef) --ouverture \(.slug) --erreur \"<raison>\"). Ne lui réponds PAS d’ici : chaque projet dans sa session."] else [] end)
+    (if .ouvrir_session then ["- [\(.slug)] Raphaël a écrit dans le cockpit de \(.nom) (\(.messages) fil(s) sans réponse\(if (.verifs // 0) > 0 then ", \(.verifs) vérification(s) « vérifie pour moi » en attente" else "" end)) et aucune session \(.nom) ne vit : create_session(title: \"\(.nom) · répondre au cockpit\", model: \"\(({sonnet: "claude-sonnet-5-5"}[$ENV.MODELE_CODE // "sonnet"]) // $ENV.MODELE_CODE // "claude-sonnet-5-5")\", tags: [\"cockpit-relais\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-relais] Raphaël a écrit dans le cockpit du projet \(.slug) et attend une réponse dans chaque fil\(if (.verifs // 0) > 0 then " et \(.verifs) vérification(s) « Je ne sais pas : vérifie pour moi »" else "" end). \(if (.verifs // 0) > 0 then "VÉRIFICATIONS D’ABORD : lance \($chef) --verifs, il te donne la consigne d’un agent par vérification (outil Agent, run_in_background: true) ; relance-le à la fin de chacun jusqu’à ce qu’il réponde RIEN. " else "" end)Le hook de démarrage te montre ses messages sans réponse : réponds dans CHAQUE fil (scripts/cockpit-progression.sh --chantier <id> --point \\\"…\\\", ou sans --chantier pour le fil du projet) ; un NOUVEAU sujet (« il faudrait aussi… ») ou plusieurs sujets : un chantier par sujet, créé et rangé par toi (scripts/cockpit-chantier.sh --ouvrir \\\"<titre>\\\" --demande \\\"<ses mots>\\\" --depuis <id du fil | projet> --reponse \\\"…\\\" : ta réponse part dans son fil avec un bouton vers le nouveau). Un travail court et sans risque : fais-le sur une branche ; sinon ouvre le chantier et dis-le-lui. Aucune dépense, suppression ni envoi en son nom. QUAND TU AS FINI (chaque fil a sa réponse, aucun chantier en cours, aucune question en attente) : arrête-toi en une ligne et, si l’outil archive_session existe, archive TA session (get_session sans identifiant te donne ton id) ; sinon la chef l’archivera. Ne te ferme JAMAIS avec un chantier en cours ou une question sans réponse.\"), puis \($chef) --ouverture \(.slug) <session_… rendu> (échec : \($chef) --ouverture \(.slug) --erreur \"<raison>\"). Ne lui réponds PAS d’ici : chaque projet dans sa session."] else [] end)
   ) | flatten | join("\n")'; }
 if [ "$mode" = "relais_texte" ]; then relais_texte; exit 0; fi
 dossier="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -125,6 +128,46 @@ Réveil du chef de $projet (routine du cockpit : passage horaire, ou réveil imm
 4. À la fin de CHAQUE agent, relance la même commande ; quand elle répond RIEN, termine en une ligne.
 5. FERMETURE : quand tu as fini (RIEN ou ta passe terminée, aucun agent en cours, aucune question posée sans réponse), si l’outil archive_session existe, archive TA session (get_session sans identifiant te donne ton id) : une session finie ne doit pas rester ouverte. Ne le fais JAMAIS si tu es la session chef qui porte le passage horaire de la routine (la routine te reprend) : seulement si tu as été ouverte par un réveil immédiat.
 TXT
+  exit 0
+fi
+
+VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
+# La consigne d'un agent « Vérifier » (0016) : une seule source, pour la passe et pour --verifs (session relais).
+verif_bloc() {
+    jq -r --arg prog "$PROG" --arg verdict "$VERDICT" '
+"━━ Agent « Vérifier : \(.titre) » [model: \($ENV.MODELE_LEGER)] (projet \(.slug), dépôt \(.depot), chantier \(.id))
+Consigne à lui donner, telle quelle :
+---
+Tu es un agent du cockpit. Raphaël a testé le chantier « \(.titre) » (projet \(.slug)) mais ne sait pas dire si le résultat est le bon : c’est TOI qui juges.
+Ce qu’on lui a demandé de vérifier :
+\(.comment // "(rien d’écrit)")
+Ce qu’il a vu et collé :
+\(.apporte // "(rien)")
+
+Compare ce qu’il a vu au résultat attendu, en vérifiant toi-même à la source (base du cockpit, code du dépôt, site en ligne). Photos jointes : COCKPIT_PROJET=\(.slug) scripts/media.sh --chantier \(.id), puis regarde-les. Ne modifie rien. Puis rends ton verdict en mots simples, preuve à l’appui (400 caractères au plus) :
+COCKPIT_PROJET=\(.slug) \($verdict) --chantier \(.id) --bon \"…\"   ou   --pas-bon \"…\"
+Rends un rapport de 3 lignes.
+---"'
+}
+# --verifs (0046) : une session RELAIS (jamais chef) sert les « vérifie pour moi » de SON projet : une consigne d'agent
+# par vérification prenable, chacune réservée à sa branche, ou RIEN.
+if [ "$mode" = "verifs" ]; then
+  pid=$(un "select id from projets where slug = $P and actif" | jq -r '.id // empty')
+  [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu ou inactif. Termine ta réponse en une ligne."; exit 0; }
+  un "select liberer_silencieux($P) as n" >/dev/null
+  export MODELE_LEGER=$(un "select modeles_effectifs('$pid') as e" | jq -r '.e.modele_leger // "haiku"')
+  n=0
+  while [ "$n" -lt 3 ]; do
+    v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and not m.via_session and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
+      from verifs_prenables('$pid', null) c join projets p on p.id = c.projet_id where p.actif order by c.verif_demandee_at limit 1")
+    vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break
+    br="agent/verif-$(date +%s%N | tail -c 7)"
+    [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
+    [ "$n" -eq 0 ] && echo "VÉRIFICATIONS de $projet : lance un agent par bloc ci-dessous (outil Agent, run_in_background: true, model = celui de la ligne). Chacune est déjà réservée. Rends la main quand tous ont rendu leur verdict ; relance $CHEF_CMD --verifs à la fin de chacun."
+    printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br}' | verif_bloc; echo
+    n=$((n+1))
+  done
+  [ "$n" -eq 0 ] && echo "RIEN — aucune vérification à servir dans $projet. Termine ta réponse en une ligne."
   exit 0
 fi
 
@@ -186,6 +229,10 @@ case "$mode" in
     [[ "$max" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--frein <heures> \"<raison>\" (0 = lever)." >&2; exit 2; }
     r=$("$SQL" "select freiner($P, $max, '$(q "$freinraison")') as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
       && { [ "$max" = "0" ] && echo "Frein levé pour $projet." || echo "Frein posé sur $projet pour $max h : 1 agent, aucune revue, aucun nouveau renfort."; } || { echo "Frein refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
+  sans_signe)
+    [[ "$max" =~ ^[0-9]+$ ]] && [ "$max" -ge 1 ] && [ "$max" -le 120 ] || { echo "--sans-signe <minutes> : un nombre de 1 à 120." >&2; exit 2; }
+    r=$("$SQL" "select regler_sans_signe($P, $max) as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
+      && echo "Délai sans signe de vie de $projet : $max min (au-delà, une réservation est libérée et la chef la reprend)." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
   max)
     [[ "$max" =~ ^[1-8]$ ]] || { echo "--max : un nombre de 1 à 8." >&2; exit 2; }
     "$SQL" "insert into chefs (projet_id, max_agents) select id, $max from projets where slug = $P on conflict (projet_id) do update set max_agents = excluded.max_agents" >/dev/null \
@@ -212,7 +259,7 @@ if [ "$mode" = "etat" ]; then printf '%s\n' "$etat" | jq .; exit 0; fi
 
 pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
-# 0041 : une réservation sans signe de vie depuis 30 min est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
+# 0041/0046 : une réservation sans signe de vie depuis le délai du projet (projets.delai_sans_signe_min, 3 min par défaut) est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
 un "select liberer_silencieux($P) as n" >/dev/null
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
@@ -334,6 +381,16 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   [ -n "$rm_" ] && [ "$rm_" != "null" ] || break
   donnes+=("$(printf '%s' "$rm_" | jq -c --arg br "$br" '. + {branche: $br, message_pris: true}')")
 done
+# « Je ne sais pas : vérifie pour moi » (0016) : PRIORITÉ (0046, avant le code : elle est courte et Raphaël l'attend) ; un agent juge à sa place, dans CE projet.
+while [ ${#donnes[@]} -lt "$libres" ]; do
+  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and not m.via_session and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
+    from verifs_prenables('$pid', null) c join projets p on p.id = c.projet_id
+    where c.verif_demandee_at is not null and p.actif order by c.verif_demandee_at limit 1")
+  vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break
+  br="agent/verif-$(date +%s%N | tail -c 7)"
+  [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
+  donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
+done
 # Un chantier par place libre si le mode autonome du projet est allumé, le plus ancien d'abord.
 if [ -z "$attente" ] && [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
   while [ ${#donnes[@]} -lt "$libres" ]; do
@@ -345,16 +402,6 @@ if [ -z "$attente" ] && [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" 
   # Sans crédit perdu (0031) : rien à faire depuis le délai réglé → le mode s'éteint tout seul.
   [ "$(un "select constater_autonome($P) as r" | jq -r '.r // empty')" = "eteint_auto" ] && note_auto="Mode autonome de $projet éteint tout seul (plus rien à prendre). "
 fi
-# « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, dans CE projet.
-while [ -z "$attente" ] && [ ${#donnes[@]} -lt "$libres" ]; do
-  v=$(un "select c.id, c.titre, p.slug, p.depot, c.comment_verifier as comment, (select string_agg(m.corps, chr(10) || '---' || chr(10) order by m.created_at) from messages m where m.chantier_id = c.id and m.auteur_type in ('proprietaire','utilisateur') and not m.via_session and m.created_at >= c.verif_demandee_at - interval '1 minute') as apporte
-    from verifs_prenables('$pid', null) c join projets p on p.id = c.projet_id
-    where c.verif_demandee_at is not null and p.actif order by c.verif_demandee_at limit 1")
-  vid=$(printf '%s' "$v" | jq -r '.id // empty'); [ -n "$vid" ] || break
-  br="agent/verif-$(date +%s%N | tail -c 7)"
-  [ "$(un "select reserver_chantier('$vid', '$br', 60) as ok" | jq -r '.ok')" = "true" ] || break
-  donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
-done
 # « À toi » à jour (0022) : une place libre de plus → un agent revoit ce qui attend Raphaël depuis trop
 # longtemps ou que du travail a suivi (retirer, confirmer, proposer une fusion). Au plus une revue par jour et par projet (projets.revue_a_toi_delai_h, 0035), jamais sous frein.
 revue=""
@@ -436,20 +483,7 @@ Ne réserve pas le chantier, ne code rien. Rends un rapport de 2 lignes.
     echo; continue
   fi
   if [ "$(printf '%s' "$c" | jq -r '.verif // false')" = "true" ]; then
-    printf '%s' "$c" | jq -r --arg prog "$PROG" --arg verdict "$VERDICT" '
-"━━ Agent « Vérifier : \(.titre) » [model: \($ENV.MODELE_LEGER)] (projet \(.slug), dépôt \(.depot), chantier \(.id))
-Consigne à lui donner, telle quelle :
----
-Tu es un agent du cockpit. Raphaël a testé le chantier « \(.titre) » (projet \(.slug)) mais ne sait pas dire si le résultat est le bon : c’est TOI qui juges.
-Ce qu’on lui a demandé de vérifier :
-\(.comment // "(rien d’écrit)")
-Ce qu’il a vu et collé :
-\(.apporte // "(rien)")
-
-Compare ce qu’il a vu au résultat attendu, en vérifiant toi-même à la source (base du cockpit, code du dépôt, site en ligne). Photos jointes : COCKPIT_PROJET=\(.slug) scripts/media.sh --chantier \(.id), puis regarde-les. Ne modifie rien. Puis rends ton verdict en mots simples, preuve à l’appui (400 caractères au plus) :
-COCKPIT_PROJET=\(.slug) \($verdict) --chantier \(.id) --bon \"…\"   ou   --pas-bon \"…\"
-Rends un rapport de 3 lignes.
----"'
+    printf '%s' "$c" | verif_bloc
     echo; continue
   fi
   printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg prfus "$PRFUS" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '

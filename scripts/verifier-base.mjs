@@ -1198,7 +1198,7 @@ async function controle19_chef_par_projet() {
     { encoding: "utf8", input: JSON.stringify({ hook_event_name: "Stop", session_id: session }), env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_PROJECT_DIR: racine } });
   verifie("hook Stop : la chef de C, dans une session de D, n'est ni bloquée ni pilotée", stop(SLUG_D, "chef-c").trim() === "");
   const sortieD = lancer(SLUG_D, "chef-d");
-  verifie("la passe de D sert D, et rien de C", sortieD.includes(libre.D) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
+  verifie("la passe de D sert D (2 places : réponse + vérification, prioritaire depuis 0046, avant le code libre), et rien de C", (sortieD.includes(libre.D) || sortieD.includes(verif.D)) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
   // Le hook de message : Raphaël écrit dans une session de D → elle devient chef de D, C garde la sienne.
   execFileSync("bash", [join(racine, "hooks/prompt-rappel.sh")],
     { encoding: "utf8", input: JSON.stringify({ session_id: "nouvelle-d", prompt: "fais ceci" }), env: { ...process.env, COCKPIT_PROJET: SLUG_D, CLAUDE_PROJECT_DIR: racine } });
@@ -2035,6 +2035,44 @@ async function controle36_deplacer_chantier() {
   verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
 }
 
+// 38. « Vérifie pour moi » sans retour (0046) : priorité sur le code, la section d'un renfort ne la garde que 10 min, jamais un certifié/archivé, le relais ouvre une session, --verifs la sert.
+async function controle38_verif_sans_retour() {
+  section("38. Vérifie pour moi servi (0046) : priorité, renfort de section limité à 10 min, certifié/archivé jamais, relais, --verifs");
+  const S = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'VERIF Section', 8)`);
+  const v = await creerChantier(P9, { titre: "VERIF à juger", etat: "a_verifier" });
+  const code = await creerChantier(P9, { titre: "VERIF du code libre", etat: "libre" });
+  await sql(`update chantiers set section_id = ${q(S)} where id in (${q(v)}, ${q(code)})`);
+  const R = randomUUID();
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/vv0046', 'actif', now())`);
+  const verifs = async (par = null) => (await sql(`select id from verifs_prenables(${q(P9)}, ${par ? q(par) : "null"})`)).map((r) => r.id);
+  await sql(`update chantiers set verif_demandee_at = now() where id = ${q(v)}`);
+  verifie("demande fraîche, renfort vivant sur sa section : le renfort la prend, pas la chef", (await verifs("renfort/vv0046/")).includes(v) && !(await verifs()).includes(v));
+  await sql(`update chantiers set verif_demandee_at = now() - interval '11 minutes' where id = ${q(v)}`);
+  verifie("au-delà de 10 min : n'importe qui la prend (le renfort muet ne la garde plus)", (await verifs()).includes(v));
+  const rf = (await une(`select prochain_renfort(${q(R)}) as r`)).r;
+  verifie("prochain_renfort sert la vérification AVANT le chantier de code libre", rf.chantiers?.[0]?.id === v && rf.chantiers[0].verif === true, rf);
+  verifie("la vérification est réservée : plus prenable par la passe", !(await verifs()).includes(v));
+  await sql(`update chantiers set pris_par = null, pris_jusqu_a = null, etat = 'valide' where id = ${q(v)}`);
+  verifie("un chantier certifié n'est jamais servi", !(await verifs()).includes(v));
+  await sql(`update chantiers set etat = 'a_verifier', archived_at = now() where id = ${q(v)}`);
+  verifie("un chantier archivé n'est jamais servi", !(await verifs()).includes(v));
+  await sql(`update chantiers set archived_at = null where id = ${q(v)}`);
+  await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
+  // Relais : projet sans chef vivante + vérification en attente → ouvrir une session.
+  const rel = (await une(`select relais_a_servir('cockpit', ${q(SLUG_I)}) as r`)).r.find((x) => x.slug === SLUG_I);
+  verifie("relais_a_servir : projet sans chef vivante + vérification en attente → une session à ouvrir (verifs ≥ 1)", rel?.ouvrir_session === true && rel.verifs >= 1, rel);
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const chefSh = (args) => execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_I, CLAUDE_CODE_SESSION_ID: "relais-test" } });
+  const o1 = chefSh(["--verifs"]);
+  const res = await une(`select pris_par from chantiers where id = ${q(v)}`);
+  verifie("chef.sh --verifs : consigne « Vérifier » avec le verdict, chantier réservé à agent/verif-…", /Vérifier : VERIF à juger/.test(o1) && /--pas-bon/.test(o1) && /^agent\/verif-/.test(res.pris_par ?? ""), o1.slice(0, 300));
+  const o2 = chefSh(["--verifs"]);
+  verifie("--verifs relancé : RIEN (déjà réservée), pas de doublon", /^RIEN/.test(o2.trim()), o2.slice(0, 200));
+  await sql(`update chantiers set verif_demandee_at = null, verdict_ok = true, verdict_at = now(), pris_par = null, pris_jusqu_a = null where id = ${q(v)}`);
+  verifie("verdict rendu : plus servie", !(await verifs()).includes(v));
+}
+
 // 37. Traité sans attendre (0043) : une réservation sans signe de vie est libérée, une seule règle.
 async function controle37_traite_sans_attendre() {
   section("37. Traité sans attendre (0043) : réservation sans signe de vie libérée, renfort muet rendu, agent vivant intouché");
@@ -2085,6 +2123,73 @@ async function controle37_traite_sans_attendre() {
   verifie("renfort muet depuis 100 min, son chantier sans signe : plus « vivant », sa section est rendue", (await vRenfort()) === false && (await prenables()).includes(rc));
   await sql(`update renforts set vu_at = now() where id = ${q(R)}`);
   verifie("le même renfort avec un signe de vie récent : vivant, sa section reste à lui", (await vRenfort()) === true && !(await prenables()).includes(rc));
+  await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
+}
+
+// 39. Délai « sans signe de vie » réglable (0046) : une source, défaut 3 min, agent vivant intouché, mort repris.
+async function controle39_delai_sans_signe() {
+  section("39. Délai sans signe de vie réglable (0046) : défaut 3 min, une source, borné 1-120, agent vivant intouché, agent mort repris");
+  const vieillir = (id, min) => sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '${min} minutes' where id = ${q(id)}`);
+  const reserver = (id, par) => sql(`update chantiers set pris_par = ${q(par)}, pris_jusqu_a = now() + interval '60 minutes' where id = ${q(id)}`);
+  const sans = async (id) => (await une(`select sans_signe_de_vie(c) as v from chantiers c where id = ${q(id)}`)).v;
+  const regler = (min) => sql(`select regler_sans_signe(${q(SLUG_I)}, ${min})`);
+
+  // Une seule source : défaut de la colonne = défaut de l'écran (silence.ts), plus aucune constante « 30 minutes » dans les règles.
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const ts = (await import("node:fs")).readFileSync(join(racine, "app/src/lib/silence.ts"), "utf8");
+  const mts = ts.match(/DELAI_ABANDON_MIN = (\d+)/);
+  const col = await une(`select column_default as d from information_schema.columns where table_schema = 'cockpit' and table_name = 'projets' and column_name = 'delai_sans_signe_min'`);
+  verifie("défaut de l'écran (DELAI_ABANDON_MIN) = défaut de la colonne (3)", !!mts && String(col?.d) === mts[1] && mts[1] === "3", { app: mts?.[1], base: col?.d });
+  const inconnu = await une(`select extract(epoch from cockpit.delai_signe(null))::int as s`);
+  verifie("projet inconnu : le repli est le même défaut (3 min)", inconnu.s === 180, inconnu);
+  const restes = await sql(`select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'cockpit' and p.proname in ('sans_signe_de_vie','renfort_vivant','messages_sans_reponse','reponses_sans_suite','ou_en_est_sans_suite','prendre_ou_en_est','constater_autonome','reveiller_chef','relais_a_servir','filet_vivant') and pg_get_functiondef(p.oid) ilike '%30 minutes%'`);
+  verifie("aucune de ces règles n'écrit encore « 30 minutes » en dur", restes.length === 0, restes);
+
+  // Bornes et droits.
+  verifie("regler_sans_signe refuse 0 et 121, accepte 1 et 120",
+    !!(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 0)`)) && !!(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 121)`))
+      && !(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 1)`)) && !(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 120)`)));
+  await regler(3);
+  verifie("le projet garde son défaut (3) une fois remis", (await une(`select delai_sans_signe_min as m from projets where id = ${q(P9)}`)).m === 3);
+  verifie("delai_signe : refusé à un membre connecté (règle interne)", (await rpcUtilisateur("delai_signe", { p_projet: P9 }, jwt)).status >= 400);
+
+  // La règle avec 3 puis 10 min. Vivant = la session (branche du chantier) a un signe récent ; mort = rien depuis le délai.
+  const sid = `test-delai-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(P9)}, 'agent/delai-vivant', now() - interval '1 minute')`);
+  const vivant = await creerChantier(P9, { titre: "DÉLAI Agent vivant qui code en silence", etat: "en_cours" });
+  const mort = await creerChantier(P9, { titre: "DÉLAI Agent mort", etat: "en_cours" });
+  const frais = await creerChantier(P9, { titre: "DÉLAI Attribué à l'instant", etat: "libre" });
+  await reserver(vivant, "agent/delai-vivant"); await reserver(mort, "agent/delai-mort");
+  await vieillir(vivant, 20); await vieillir(mort, 20); await vieillir(frais, 500);
+  verifie("délai 3 min : agent dont la session a battu il y a 1 min = intouché ; agent muet depuis 20 min = sans signe", (await sans(vivant)) === false && (await sans(mort)) === true);
+  await reserver(frais, "agent/delai-frais");
+  verifie("le CADENAS compte dès l'attribution : un vieux chantier attribué à l'instant n'est pas « sans signe » (fiche touchée par la réservation)", (await sans(frais)) === false);
+  await vieillir(frais, 4);
+  verifie("délai 3 min : sans aucun signe depuis 4 min, il l'est", (await sans(frais)) === true);
+  await regler(10);
+  verifie("délai 10 min : 4 min de silence ne libère plus, 20 min si", (await sans(frais)) === false && (await sans(mort)) === true);
+  await sql(`update sessions set vu_at = now() - interval '5 minutes' where id = ${q(sid)}`);
+  const a10 = await sans(vivant);
+  await regler(3);
+  const a3 = await sans(vivant);
+  verifie("un signe de session vieux de 5 min garde l'agent vivant à 10 min de délai, plus à 3 min (le réglage est bien lu)", a10 === false && a3 === true, { a10, a3 });
+
+  // Le balayage lit la même règle : à 3 min, le mort est libéré, le vivant (signe de 1 min) non.
+  await sql(`update sessions set vu_at = now() - interval '1 minute' where id = ${q(sid)}`);
+  await sql(`select liberer_silencieux(${q(SLUG_I)})`);
+  const fin = async (id) => new Date((await chantier(id)).pris_jusqu_a).getTime();
+  verifie("liberer_silencieux (délai 3 min) : le mort est libéré, l'agent vivant garde sa réservation", (await fin(mort)) <= Date.now() && (await fin(vivant)) > Date.now());
+
+  // Un renfort vu il y a 5 min : muet à 3 min de délai, vivant à 10 (même règle que le chantier).
+  const S = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'DÉLAI Section', 10)`);
+  const R = randomUUID();
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/tt0046', 'actif', now() - interval '5 minutes')`);
+  const vR = async () => (await une(`select renfort_vivant(r) as v from renforts r where id = ${q(R)}`)).v;
+  verifie("renfort vu il y a 5 min : muet à 3 min de délai", (await vR()) === false);
+  await regler(10);
+  verifie("…vivant à 10 min de délai (renfort_vivant lit le réglage du projet)", (await vR()) === true);
+  await regler(3);
   await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
 }
 
@@ -2586,8 +2691,10 @@ try {
     controle37_traite_sans_attendre,
     controle38_pr_propre,
     controle38_prochaine_migration,
+    controle38_verif_sans_retour,
     controle38_filet_securite,
     controle38_renforts_echecs,
+    controle39_delai_sans_signe,
   ];
   for (const etape of etapes) {
     try { await etape(); }

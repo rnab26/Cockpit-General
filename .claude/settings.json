@@ -74,6 +74,18 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/hooks/suivi.sh",
+            "timeout": 10
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
     "PostToolUse": [
       {
         "hooks": [
