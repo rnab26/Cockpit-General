@@ -39,6 +39,8 @@ e = etatOuEnEst(ch, [M('d', 'c1', 3, { recu_at: il(2), recu_par: 'claude/s' })],
 verifie('le hook l’a remise à la session : « Reçue par Claude »', e.code === 'recue' && e.enAttente && /^Reçue par Claude/.test(e.libelle), e)
 e = etatOuEnEst(ch, [M('d', 'c1', 30, { recu_at: il(20), recu_par: `${PREFIXE_ASSISTANT_POINT}123` })], false, now)!
 verifie('la chef a lancé un assistant : « Un assistant de Claude regarde »', e.code === 'prise' && e.enAttente && /assistant/.test(e.libelle), e)
+e = etatOuEnEst(ch, [M('d', 'c1', 30, { recu_at: il(20), recu_par: 'agent/message-456' })], false, now)!
+verifie('prise avec son message par l’assistant « Répondre » (0032) : « Un assistant de Claude regarde » aussi', e.code === 'prise', e)
 e = etatOuEnEst(ch, [M('d', 'c1', 30, { recu_at: il(20) }), S('r', 'c1', 2, { repond_a: 'd' })], false, now)!
 verifie('une session répond : « Réponse arrivée », plus en attente, étape 3', e.code === 'repondue' && !e.enAttente && e.etape === 3 && e.reponse?.id === 'r', e)
 e = etatOuEnEst(ch, [M('d', 'c1', 30), S('autre', 'c1', 5)], false, now)!
@@ -93,5 +95,24 @@ const ca2 = caAvanceToutSeul(chantiers, act, apres, [], [], now, SILENCE)
 verifie('réponse arrivée : la ligne dit « Réponse arrivée »', ca2.find((l) => l.c.id === 'libre')?.ouEnEst?.code === 'repondue')
 const tard = new Date(now.getTime() + REMANENCE_FIN_MS + 60_000)
 verifie('un quart d’heure après la réponse : retour dans « Prêt à lancer »', aLancer(chantiers, [], apres, tard, SILENCE, ['p']).flatMap((g) => g.lignes).some((l) => l.c.id === 'libre'))
+
+console.log('\nPas de vieille barre sous la demande (Raphaël, 30 sept. : « la barre ne se réactive pas »)')
+const livre = { ...(A('muet', 600) as object), statut: 'termine', pourcentage: 100 } as never
+const ca3 = caAvanceToutSeul([C('muet', 'en_cours')], [livre], [M('d', 'muet', 2)], [], [], now, SILENCE)
+verifie('demande en attente : la ligne suit la demande, sans la barre grise à 100 % de la livraison', ca3[0]?.ouEnEst?.enAttente === true && ca3[0]?.activite === null, ca3[0])
+const agentPoint = { id: 't1', projet_id: 'p', session_id: 's', chantier_id: 'muet', type: 'agent', description: 'Point : muet', statut: 'en_cours',
+  etape: 'Je regarde où en est le chantier', pourcentage: 20, eta_secondes: 300, demarre_at: il(1), progres_at: il(0.5), vu_at: il(0.5), fini_at: null } as never
+const ca4 = caAvanceToutSeul([C('muet', 'en_cours')], [livre], [M('d', 'muet', 2, { recu_at: il(1), recu_par: 'agent/point-1' })], [], [agentPoint], now, SILENCE)
+verifie('l’assistant signale son étape : ligne VIVANTE, barre à 20 %, frise « Assistant »', ca4[0]?.vivant === true && ca4[0]?.activite?.pourcentage === 20 && ca4[0]?.ouEnEst?.code === 'prise', ca4[0])
+
+console.log('\nUn chantier FINI quitte « Ça avance » (Raphaël, 30 sept. : « ça reste dans ce qui avance, ça pollue »)')
+// Cas réel acd4dde5 : demande 00:19, réponse 00:34:31, livré « à vérifier » 00:34:43.
+const fini = [C('fini', 'a_verifier', { livre_at: il(2) })]
+const repFini = [M('d', 'fini', 15), S('r', 'fini', 2)]
+verifie('livré « à vérifier » juste après la réponse : pas dans « Ça avance »', !caAvanceToutSeul(fini, [], repFini, [], [], now, SILENCE).some((l) => l.c.id === 'fini'))
+verifie('demande encore en attente sur un chantier livré : pas dans « Ça avance » non plus', !caAvanceToutSeul(fini, [], [M('d', 'fini', 3)], [], [], now, SILENCE).some((l) => l.c.id === 'fini'))
+for (const etat of ['bloque', 'a_cadrer', 'reporte'])
+  verifie(`« ${etat} » avec une réponse récente : pas dans « Ça avance »`, !caAvanceToutSeul([C('x', etat)], [], [M('d', 'x', 15), S('r', 'x', 2)], [], [], now, SILENCE).some((l) => l.c.id === 'x'))
+verifie('en cours, réponse récente : reste dans « Ça avance » (inchangé)', caAvanceToutSeul([C('y', 'en_cours')], [], [M('d', 'y', 15), S('r', 'y', 2)], [], [], now, SILENCE).some((l) => l.c.id === 'y' && l.ouEnEst?.code === 'repondue'))
 
 bilan('verifier-ou-en-est')

@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
@@ -192,6 +192,8 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 0019 la passe ne sert que son projet ; `projet_de_test` exclut encore les
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
+
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
 « Ce sont des correctifs généraux, peu importe le repo ou le projet que je
@@ -278,6 +280,17 @@ file (position) → un assistant regarde (la chef : `prendre_ou_en_est`, branche
 --point`, `repondre_ou_en_est`, `repond_a`). Dans l'app, le chantier passe
 dans « Ça avance tout seul » avec une frise, bouton désactivé tant qu'on
 attend ; la réponse y reste un quart d'heure. `verifier-reponses` §7-8.
+**30 sept. (migration 0032, correction de Raphaël : « la barre ne se réactive
+pas, je ne comprends pas ce qu'il reste à faire »)** : sous une demande en
+attente, plus jamais la vieille barre grise d'une livraison passée (point
+vivant + frise) ; l'assistant « Point » signale d'abord son étape sur le
+chantier (`--agent "Point : …" --chantier`), la ligne redevient VIVANTE avec
+sa barre ; sa réponse dit « Fait / Pour finir (qui fait quoi) / Bloque ». UN
+seul assistant par fil : `prendre_ou_en_est` prend aussi les messages libres
+du chantier, `reprendre_message` la demande en attente (`ou_en_est`) ; l'app
+dit « Un assistant regarde » pour toute branche `agent/…`. Les consignes de
+`chef.sh` commencent par « switch -c <branche> » : une copie isolée signait
+« worktree-agent-… » (`progression.sh` le signale). `verifier-reponses` §8 bis.
 
 ## Chaque fil est une discussion (29 sept. 2026, migration 0025)
 
@@ -361,8 +374,9 @@ recopiés dans le fil).
   les dépôts de la ROUTINE : sans le dépôt, elle répondait « Cockpit-General
   n'est pas cloné ici ». Il faut donc (1) le dépôt du projet dans les dépôts de
   la routine (claude.ai/code/routines › la routine › menu › Edit ; action de
-  Raphaël, aucun outil ne le fait), la routine sur l'environnement qui porte
-  les clés Supabase ; (2) son prompt = `chef.sh --texte-routine` (un seul texte
+  Raphaël, aucun outil ne le fait ; fait le 30 sept., vérifié : son message
+  de 00:23:11 → session ouverte par /fire → réponse dans le fil à 00:24:08),
+  la routine sur l'environnement qui porte les clés Supabase ; (2) son prompt = `chef.sh --texte-routine` (un seul texte
   pour les deux cas ; commence par « Réveil du chef », donc le hook de message
   ne fait pas d'elle la chef), qui lance `chef.sh --releve` : la chef → la
   passe ; une autre session → si la chef vit (`chef_vivante`), elle sert
@@ -462,6 +476,29 @@ lecture suivent donc ceux du chantier). Écran du cockpit : `node
 app/scripts/capture-ecran.mjs <url> <dossier>`. Pas encore affiché par le
 module embarqué (`embed/`) : seulement l'app.
 
+## Une action manuelle = lien exact + étapes + texte à coller (30 sept. 2026, migration 0033)
+
+Raphaël (chantier e9a7c360) : « à chaque fois il faut que j'aille chercher et
+ce n'est pas assez précis. Il faut que Claude renvoie les liens précis et les
+démarches précises pour faire simplement des copier-coller […] peu importe le
+type de chantier et dans toutes les discussions. Et un visuel si ça peut
+aider. » Règle GÉNÉRALE, pour toutes les sessions de tous les projets
+branchés (bloc `docs/bloc-CLAUDE.md`, consignes d'agents de `chef.sh` et
+`renfort.sh`) : tout geste demandé à Raphaël donne la page EXACTE, un geste
+numéroté par étape (nom exact du bouton), chaque chose à taper prête à coller,
+une capture quand ça aide — dans le cockpit ET dans la session. Outil :
+`demander.sh --action --lien "https://…|libellé" --etape "…" --copier
+"libellé|texte" [--image f.png]` → `messages.marche` (jsonb). Le script
+refuse AVANT d'écrire (`scripts/marche.py`) : action sans lien (sauf
+`--sans-lien "pourquoi"`) ou sans étape, lien http/page d'accueil, plus de
+3 liens / 8 étapes / 4 textes, un texte sans libellé, un SECRET (motifs de
+jetons connus). App : `MarcheASuivre.tsx` sous la question (bouton vers la
+page, nouvel onglet, domaine affiché ; étapes numérotées ; « Copier » qui dit
+« Copié » ou l'échec), lecture défensive `lib/marche.ts` (https seulement),
+copie commune `lib/copier.ts`. Pas encore dans le module embarqué (`embed/`) :
+une action s'adresse à Raphaël, pas à l'utilisateur final. `verifier-base`
+§31, `verifier-marche.ts`, `verifier-web.mjs` (« action manuelle »).
+
 ## Appli installable (30 sept. 2026)
 
 Raphaël : « installer l'appli depuis la page internet du cockpit, plutôt qu'un
@@ -474,6 +511,17 @@ Réglages) : l'invite de Chrome (`beforeinstallprompt`, captée avant React dans
 `hooks/useInstallation.ts`), sinon la marche à suivre (iPhone : Partager › Sur
 l'écran d'accueil). Règle : `lib/installation.ts`. `verifier-installation.ts`,
 contrôles « appli installable » de `verifier-web.mjs`.
+
+**Nouvelle version en ligne** (30 sept. 2026, chantier 3cea6ae9, Raphaël :
+« que les correctifs prennent sans recharger »). Les données arrivent en direct,
+mais le CODE reste celui du chargement. `vite.config.ts` grave le commit
+(`GITHUB_SHA`) dans l'app ET dans `version.json` (une source) ; l'app le relit
+au retour sur l'app et toutes les 5 min (`lib/version.ts`,
+`hooks/useNouvelleVersion.ts`) et affiche « Nouvelle version du cockpit ·
+Mettre à jour » (`NouvelleVersion.tsx`, un toucher recharge). Même jour : la
+liste « fini » est triée par heure de certification et chaque ligne dit
+« Certifié par toi à HH:MM · livré … » (`quandFini`, `ordreListe`) ; « À toi »
+montre l'heure à côté de l'âge. `verifier-fini.ts`.
 
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 
@@ -525,6 +573,28 @@ corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
 `ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
 `scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
 
+## Économie des modèles (30 sept. 2026, migration 0035, chantier 7a52df8f)
+
+Raphaël : « le cockpit consomme beaucoup trop de tokens […] les sessions vont
+planter trop vite […] pouvoir choisir le modèle (Sonnet ou Opus) et l'effort » ;
+« ne jamais atteindre la limite des modèles ». Par projet (table `chefs`,
+réglé dans l'app : Renforts › Réglages › « Modèles et effort des agents », ou
+`chef.sh --modeles <code> <léger> <effort> [agents]`) : `modele_code` (agents qui
+codent, sessions relais/renfort ; **sonnet** par défaut), `modele_leger` (Répondre,
+Point, Vérifier, Revoir « À toi » ; **haiku**), `effort` (bas/moyen/eleve : une
+CONSIGNE écrite dans la consigne des agents, pas un réglage forcé de Claude Code),
+agents en parallèle **2 par défaut** (avant 3). `chef.sh` et `renfort.sh` écrivent
+`[model: X]` sur la ligne de chaque agent et `model:` dans chaque `create_session` ;
+la chef passe ce paramètre à l'outil Agent. **Frein** (`frein_actif`, une seule
+règle) : actif si `chef.sh --frein <h> "raison"` / le bouton « Freiner 3 h », ou si une
+session du projet est en pause `rate_limit` depuis moins de 3 h → 1 agent, aucune
+revue « À toi », aucun nouveau renfort (le travail reste en file). **Revue « À toi »
+une fois par jour** et par projet (`projets.revue_a_toi_delai_h`, 24, réglable).
+Limite connue : le signal `rate_limit_info allowed_warning` de Claude Code n'est pas
+exposé aux hooks (non vérifié) ; le frein automatique repose sur la pause
+`rate_limit` déjà remontée par `StopFailure`. `passe.sh` (projet sans chef) ne lit pas
+encore le frein. `verifier-base` §32, `verifier-renforts.ts`.
+
 ## Limites d'usage et mode autonome (29 sept. 2026, migration 0010)
 
 - Reprise de la tâche en cours après une limite : native, réglage
@@ -547,3 +617,15 @@ corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
   en dernier) — `chantiers_prenables`, réservée aux sessions. Quand aucune
   session ne vit, un réveil (Routine Claude horaire) lance `scripts/passe.sh`
   dans la session autonome du projet : un chantier, ou « RIEN » en une ligne.
+- **Interrupteur, sans crédit perdu** (30 sept. 2026, migration 0031, chantier
+  79ec70d6) : dans la vue projet, hors du repli, un interrupteur (un toucher
+  allume « tout le temps » ou éteint ; « Régler… » : heure, plafond,
+  extinction automatique) ; une lune sur l'onglet de chaque projet allumé
+  (ambre = allumé sans rien à prendre). `constater_autonome(slug)` (service),
+  appelé à chaque passage par `passe.sh`, `chef.sh` et `hooks/autonome.sh` :
+  du travail (prenable, réservé en cours, agent vivant) → compteur à zéro ;
+  rien depuis `projets.autonome_arret_vide_h` h (0 = jamais, 3 par défaut) →
+  éteint (`autonome_eteint_auto_at`) + message dans le fil du projet. Même
+  règle côté écran : `etatAutonome`, `travailEnCours` (`lib/autonome.ts`).
+  Limite : éteint, un réveil horaire (routine) tourne encore et répond RIEN ;
+  seule la désactivation de la routine l'arrête (non automatisée).

@@ -186,6 +186,29 @@ try {
   verifie("le chantier n'est pas réservé à l'assistant (répondre ne bloque personne)", sql(`select pris_par from chantiers where id = ${q(C3)}`)[0].pris_par === "agent/autre");
   verifie("une deuxième passe ne la redonne pas", sql(`select prendre_ou_en_est('agent/point-x', ${q(P)}) as r`)[0].r === null);
 
+  // 0032 (30 sept., chantier 73fddb87) : « Corriger » puis « Où ça en est ? » sur le
+  // même fil donnaient DEUX assistants (Point + Répondre). Un seul prend tout.
+  console.log("\n8 bis. « Où ça en est ? » + son message dans le même fil : UN seul assistant");
+  const C5 = randomUUID(), C6 = randomUUID(), M5 = randomUUID(), M6 = randomUUID();
+  for (const [c, m] of [[C5, M5], [C6, M6]]) {
+    sql(`insert into chantiers (id, projet_id, titre, etat, demande) values (${q(c)}, ${q(P)}, 'Fil double ${c.slice(0, 4)}', 'en_cours', 'Barre')`);
+    sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(m)}, ${q(P)}, ${q(c)}, 'Raphaël', 'proprietaire', 'constat', 'Ça ne marche pas : la barre ne bouge pas')`);
+    await attendre(50);
+    sql(`select demander_ou_en_est(${q(c)}, 'Raphaël')`);
+  }
+  let pto = null;
+  for (let i = 0; i < 6 && pto?.id !== C5; i++) pto = sql(`select prendre_ou_en_est('agent/point-t${i}', ${q(P)}) as r`)[0].r;
+  verifie("l'assistant « Point » reçoit aussi son message du fil (à couvrir par la même réponse)", pto?.id === C5 && pto.messages?.length === 1 && /barre ne bouge pas/.test(pto.messages[0].texte), pto);
+  verifie("… et ce message n'est plus donné à un assistant « Répondre »", !sql(`select chantier_id from messages_sans_reponse(${q(P)}, null)`).some((x) => x.chantier_id === C5)
+    && /^agent\/point-/.test(sql(`select recu_par from messages where id = ${q(M5)}`)[0].recu_par ?? ""));
+  let rmsg = null;
+  // L'autre sens : « Répondre » d'abord (on retire C6 de la file des « Point » le temps du test).
+  sql(`update messages set recu_at = null, recu_par = null where chantier_id = ${q(C6)}`);
+  for (let i = 0; i < 6 && rmsg?.id !== C6 && rmsg !== undefined; i++) rmsg = sql(`select reprendre_message('agent/message-t${i}', ${q(P)}) as r`)[0].r ?? undefined;
+  verifie("l'assistant « Répondre » prend aussi sa demande « où ça en est » (ou_en_est: true)", rmsg?.id === C6 && rmsg.ou_en_est === true, rmsg);
+  verifie("… qui n'est plus donnée à un assistant « Point »", !sql(`select chantier_id from ou_en_est_sans_suite(${q(P)})`).some((x) => x.chantier_id === C6)
+    && /^agent\/message-/.test(sql(`select recu_par from messages where chantier_id = ${q(C6)} and ou_en_est`)[0].recu_par ?? ""));
+
   // 0025 : un message LIBRE de Raphaël dans un fil = une réponse écrite de Claude dans ce fil.
   console.log("\n9. message libre : la session qui tient le chantier doit RÉPONDRE dans le fil");
   suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} }); // curseur à jour
