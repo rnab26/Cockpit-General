@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { HelpCircle, Send, X } from 'lucide-react'
+import { HelpCircle, Send, X, Plus } from 'lucide-react'
 import type { Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase } from '../lib/supabase.ts'
@@ -10,16 +10,21 @@ import { useToast } from '../ui/Toast.tsx'
  * contrôle sur téléphone). Ouvre un panneau où l'utilisateur pose des questions
  * sur le fonctionnement du cockpit. Les messages partent dans le fil du projet.
  */
-export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
-  const { projet } = useCockpit()
+export function BulleFlottanteAide() {
+  const { projet, prefs } = useCockpit()
   const [ouvert, setOuvert] = useState(false)
   const [messages, setMessages] = useState<Array<Message & { de: 'claude' | 'user' }>>([])
   const [charge, setCharge] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
   const [envoi, setEnvoi] = useState(false)
+  const [creationChantier, setCreationChantier] = useState(false)
   const [texte, setTexte] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const toast = useToast()
+
+  // Lire la préférence d'activation
+  const actif = Boolean(prefs[`bulle_flottante_aide_${projet.id}`])
 
   // Ne rien afficher si pas activé
   if (!actif) return null
@@ -30,6 +35,7 @@ export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
     const charger = async () => {
       try {
         setCharge(true)
+        setErreur(null)
         const { data, error } = await supabase
           .from('messages')
           .select('*')
@@ -48,13 +54,13 @@ export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
         )
       } catch (e) {
         console.error(e)
-        toast.erreur('Impossible de charger l\'historique')
+        setErreur('Impossible de charger l\'historique')
       } finally {
         setCharge(false)
       }
     }
     charger()
-  }, [ouvert, projet.id, toast])
+  }, [ouvert, projet.id])
 
   // Scroller en bas
   useEffect(() => {
@@ -69,6 +75,7 @@ export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
 
     try {
       setEnvoi(true)
+      setErreur(null)
       const { error } = await supabase.from('messages').insert({
         projet_id: projet.id,
         chantier_id: null,
@@ -100,9 +107,36 @@ export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
       )
     } catch (e) {
       console.error(e)
-      toast.erreur('Impossible d\'envoyer le message')
+      setErreur('Impossible d\'envoyer le message')
     } finally {
       setEnvoi(false)
+    }
+  }
+
+  const creerChantierDuMessage = async (messageId: string) => {
+    try {
+      setCreationChantier(true)
+      setErreur(null)
+      const message = messages.find((m) => m.id === messageId)
+      if (!message) throw new Error('Message non trouvé')
+
+      // Créer un chantier avec le titre du message
+      const titre = message.corps.substring(0, 80)
+      const { error } = await supabase.rpc('ouvrir_depuis_fil', {
+        p_projet_id: projet.id,
+        p_titre: titre,
+        p_demande: message.corps,
+        p_depuis: messageId,
+        p_section: null,
+      })
+
+      if (error) throw error
+      toast.succes('Chantier créé')
+    } catch (e) {
+      console.error(e)
+      setErreur('Impossible de créer le chantier')
+    } finally {
+      setCreationChantier(false)
     }
   }
 
@@ -153,6 +187,11 @@ export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
             <div
               ref={scrollRef}
               className="flex-1 overflow-y-auto space-y-2 px-3 py-2">
+              {erreur && (
+                <div className="rounded-lg bg-orange-100 px-3 py-2 text-sm text-orange-900 dark:bg-orange-900/20 dark:text-orange-200">
+                  {erreur}
+                </div>
+              )}
               {charge ? (
                 <p className="text-center text-texte-2 py-4 text-sm">Chargement…</p>
               ) : messages.length === 0 ? (
@@ -161,10 +200,25 @@ export function BulleFlottanteAide({ actif }: { actif?: boolean }) {
                 </p>
               ) : (
                 messages.map((m) => (
-                  <div key={m.id} className={`flex ${m.de === 'claude' ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-xs rounded-lg px-3 py-2 text-sm ${m.de === 'claude' ? 'bg-carte text-texte' : 'bg-lien text-fond'}`}>
-                      {m.corps}
+                  <div key={m.id}>
+                    <div className={`flex ${m.de === 'claude' ? 'justify-start' : 'justify-end'}`}>
+                      <div className={`max-w-xs rounded-lg px-3 py-2 text-sm ${m.de === 'claude' ? 'bg-carte text-texte' : 'bg-lien text-fond'}`}>
+                        {m.corps}
+                      </div>
                     </div>
+                    {m.de === 'user' && (
+                      <div className="flex justify-end mt-1 px-3">
+                        <button
+                          type="button"
+                          onClick={() => creerChantierDuMessage(m.id)}
+                          disabled={creationChantier}
+                          className="flex items-center gap-1 text-xs text-texte-2 hover:text-lien disabled:opacity-50"
+                          title="Créer un chantier à partir de ce message">
+                          <Plus size={14} />
+                          <span>Chantier</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
