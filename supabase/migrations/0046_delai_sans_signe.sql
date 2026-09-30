@@ -1,4 +1,4 @@
--- 0045 (30 sept. 2026, chantier 0f905af0). Raphaël : « Pourquoi attendre 30
+-- 0046 (30 sept. 2026, chantier 0f905af0). Raphaël : « Pourquoi attendre 30
 -- minutes ? […] un cadenas de réservation automatique, posé tout de suite quand
 -- la chef attribue, et repris vite si l'agent est mort. » Puis : « ZÉRO chantier
 -- tenu pour rien » → défaut 3 min, borne basse 1 min.
@@ -39,10 +39,10 @@
 -- COMMENT c'est posé : un bloc DO relit la définition EN VIGUEUR de chaque règle
 -- (pg_get_functiondef) et y remplace « now() - interval '30 minutes' » par
 -- « now() - cockpit.delai_signe(<projet>) » : il s'applique à la version actuelle,
--- même si d'autres migrations (0044_*, en cours ailleurs) ont retouché ces
+-- même si d'autres migrations (0044, 0045) ont retouché ces
 -- fonctions ; rejouable (rien à faire s'il ne reste aucun « 30 minutes »). Numéro
--- 0045 : il doit passer APRÈS toute migration qui redéfinirait l'une d'elles. Une
--- future migration qui les redéfinit doit lire delai_signe (verifier-base §38
+-- 0046 : il doit passer APRÈS toute migration qui redéfinirait l'une d'elles. Une
+-- future migration qui les redéfinit doit lire delai_signe (verifier-base §39
 -- rougit sinon).
 --
 -- Idempotente, sans drop.

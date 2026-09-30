@@ -12,12 +12,12 @@ import { nomCourtSession } from './texte.ts'
 
 /**
  * Délai « sans signe de vie » PAR DÉFAUT (min) : au-delà, un chantier réservé est « abandonné » et la chef le
- * reprend. La vraie valeur est réglable par projet (`projets.delai_sans_signe_min`, 1 à 120, 0045) et lue par
+ * reprend. La vraie valeur est réglable par projet (`projets.delai_sans_signe_min`, 1 à 120, 0046) et lue par
  * UNE règle en base (`delai_signe`) ; l'écran la reçoit en `abandonMin`. Ce défaut n'est que le repli quand la
  * ligne du projet ne la porte pas ; `verifier-base` le compare au défaut de la colonne.
  */
 export const DELAI_ABANDON_MIN = 3
-/** Mêmes bornes que `regler_sans_signe` (0045). */
+/** Mêmes bornes que `regler_sans_signe` (0046). */
 export const DELAI_ABANDON_MIN_BORNES = { min: 1, max: 120 } as const
 
 /** Message d'erreur du réglage du délai, ou null s'il est valable (même règle que la base). */

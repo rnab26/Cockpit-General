@@ -224,7 +224,7 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 0019 la passe ne sert que son projet ; `projet_de_test` exclut encore les
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
-**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> [pct]` (depuis `get_session` → `rate_limit_info`) pose un palier 0 à 3 (`bascule_usage`) : 0 les modèles réglés, 1 code d'un cran plus bas (opus>sonnet>haiku), 2 code -2 crans, lecture -1, effort bas, 3 tout en haiku. Monte tout de suite, redescend après 30 min de calme, expire seul après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> --fenetre <rateLimitType> --reset <resetsAt>` (depuis `get_session` → `external_metadata.rate_limit_info`, qui n'a AUCUN pourcentage : seulement status, type de fenêtre, resetsAt) pose un palier 0 à 3 (`bascule_usage`, règle `palier_cible`, **migration 0045**, chantier a1a67b3d : « Haiku n'est pas assez puissant : dernière option ; plein gaz jusqu'à 50 %, puis répartir jusqu'à la fin de la fenêtre ») : 0 plein gaz (modèles et effort réglés), 1 effort d'un cran plus bas, 2 effort bas + modèle d'un cran plus léger sans passer sous Sonnet, 3 Haiku seulement (si autorisé) quand la limite est atteinte. Rythme = part écoulée de la fenêtre (5 h ou 7 j) + statut : avertissement tôt = palier 2, après le seuil = 1, dans les 10 % finaux = 0 (le crédit va être remis à zéro). Réglages par projet : `chefs.bascule_seuil_pct` (50) et `bascule_haiku` (oui), écran « Modèles et effort ». Monte tout de suite, redescend après 30 min de calme, expire à resetsAt ou après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
 
 ## Sessions qui se ferment seules (30 sept. 2026, migration 0038, chantier 27d251f8)
 
@@ -506,14 +506,14 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
 
-## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0045)
+## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0046)
 
 Raphaël : « Pourquoi attendre 30 minutes ? […] zéro chantier tenu pour rien. »
 UN réglage, `projets.delai_sans_signe_min` (1 à 120, défaut 3), lu par UNE
 fonction `cockpit.delai_signe(projet)` que lisent `sans_signe_de_vie`,
 `renfort_vivant` et les autres règles « session/agent vivant » (messages sans
 réponse, réponses sans suite, « où ça en est », mode autonome, réveil, relais,
-filet) : plus aucun « 30 minutes » en dur (`verifier-base` §38 le vérifie sur
+filet) : plus aucun « 30 minutes » en dur (`verifier-base` §39 le vérifie sur
 les fonctions en vigueur ; toute nouvelle règle « vivant » lit `delai_signe`).
 Réglage : app (Renforts › Réglages › « Libérer un chantier réservé sans signe
 de vie depuis… », message succès/échec) ou `chef.sh --sans-signe <min>` ;
@@ -526,6 +526,10 @@ les 45 s tant que l'outil tourne (déclaré par `brancher.sh`, propagé par le
 hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outil
 (> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
 dans la même transaction que le choix ; la fiche est touchée, début du délai).
+
+## Filet de sécurité : du travail attend, personne ne traite → réveil auto (30 sept. 2026, migration 0044, chantier 42938fc3)
+
+Raphaël : « un chantier ne doit jamais rester mort […] sans que j'aille vérifier dans l'app Claude Code ». Un job **pg_cron** de la base (`cockpit-filet-securite`, toutes les 3 min, visible dans `cron.job`) appelle `filet_passe()` : par projet, si du travail attend (`filet_attente` : messages sans réponse, réponses sans suite, vérifications demandées, renforts demandés, chantiers prenables SEULEMENT si le mode autonome est allumé) depuis plus de `filet_delai_min` (10) et que rien ne vit (`filet_vivant` : session, agent, renfort < 30 min), elle appelle `reveiller_chef` (réveil immédiat 0028, jeton dans le Vault, jamais lu ici). Sûretés : jamais un projet de test, au plus 1 réveil/5 min/projet (table `filet_reveils`), plafond `filet_plafond_jour` (6, réglable 0-48), interrupteur par projet (`regler_filet`, `chef.sh --filet oui|non [plafond] [délai]`) et global (`regler_filet_global`, `chef.sh --filet-global oui|non`, coupe aussi le job). Sans jeton : rien n'est appelé, l'écran dit « colle le jeton dans Réglages ». Écran : `FiletSecurite.tsx` (vue projet, `etat_filet`, `lib/filet.ts`). Non couvert : PR en conflit. `verifier-base` §38, `verifier-filet.ts`.
 
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 
@@ -651,6 +655,14 @@ page, nouvel onglet, domaine affiché ; étapes numérotées ; « Copier » qui 
 copie commune `lib/copier.ts`. Pas encore dans le module embarqué (`embed/`) :
 une action s'adresse à Raphaël, pas à l'utilisateur final. `verifier-base`
 §31, `verifier-marche.ts`, `verifier-web.mjs` (« action manuelle »).
+
+## PR sans conflit : la carte n'arrive que quand la PR est prête (30 sept. 2026, chantier 6ef35b6e)
+
+Raphaël : « à chaque fois il y a des conflits sur les branches […] envoie-moi les PR une fois les conflits réglés ». Cause : des agents en parallèle partent d'un main ancien (verifier-base, CLAUDE.md, migrations numérotées : trois 0041).
+1. `scripts/pr-a-fusionner.sh` ne pose la carte que si GitHub dit `mergeable_state` = clean (ou unstable/blocked sans CI en échec ni en cours) ; sinon « PAS PRÊTE : <raison> », et une carte existante devenue caduque est retirée (réponse « PR #n pas prête », qui n'empêche pas de la reposer). Tests : `--merge-state`, `--ci`.
+2. Les agents fusionnent `origin/main` dans leur branche JUSTE avant d'ouvrir la PR ; la passe de `chef.sh` lance un agent léger « Résoudre le conflit de la PR n » sur toute PR dirty/behind, puis rappelle le script ; quand une PR est fusionnée, les autres sont mises à jour avant d'être proposées.
+3. À la source : la liste des contrôles de `verifier-base.mjs` est UN contrôle par ligne (en ajouter un = une ligne, à côté de son sujet), et `scripts/prochaine-migration.sh` donne le numéro libre (max des fichiers locaux et des branches distantes + 1 ; la base n'a pas de journal des migrations cockpit) : à appeler au moment d'écrire le fichier.
+4. `verifier-base` §38 (carte selon la propreté) et §38 bis (numéro de migration).
 
 ## Appli installable (30 sept. 2026)
 

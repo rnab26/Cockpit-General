@@ -135,7 +135,7 @@ consigner_message() {
   ( setsid "$SQL" "select consigner_message_session('$qp', '$qs', '$qb', '$qt')" >/dev/null 2>&1 & ) >/dev/null 2>&1
 }
 
-# BATTEMENT d'un outil long (0045, Raphaël 30 sept. : « ZÉRO chantier tenu pour
+# BATTEMENT d'un outil long (0046, Raphaël 30 sept. : « ZÉRO chantier tenu pour
 # rien », délai « sans signe de vie » de 3 min). Mesuré : le signe de vie d'une
 # session ne part qu'AU RETOUR d'un outil (PostToolUse, au plus 1 fois/minute) ; or
 # un outil peut durer jusqu'à 10 min (plafond de l'outil Bash) sans qu'aucun hook
