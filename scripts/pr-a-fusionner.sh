@@ -68,7 +68,7 @@ if [ -z "$etat" ] || { [ -z "$mstate" ] && [ "$fermee" != "1" ] && [ "$etat" = "
 fi
 
 cle="Fusionne la PR #$n :"; pre="PR #$n pas prête"
-existe=$("$SQL" "select count(*) filter (where answered_at is null) as ouvertes, count(*) filter (where reponse is null or left(reponse, ${#pre}) <> '$(q "$pre")') as toutes from messages where projet_id = '$pid' and kind = 'action' and left(corps, ${#cle}) = '$(q "$cle")'" | jq -c '.rows[0]')
+existe=$("$SQL" "select count(*) filter (where answered_at is null) as ouvertes, count(*) filter (where reponse is null or reponse not like '$(q "$pre")%') as toutes from messages where projet_id = '$pid' and kind = 'action' and left(corps, ${#cle}) = '$(q "$cle")'" | jq -c '.rows[0]')
 ouvertes=$(printf '%s' "$existe" | jq -r '.ouvertes'); toutes=$(printf '%s' "$existe" | jq -r '.toutes')
 
 if [ "$etat" = "closed" ] || [ "$etat" = "merged" ]; then

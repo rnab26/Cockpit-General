@@ -1997,6 +1997,7 @@ async function controle38_prochaine_migration() {
     // Un autre agent pousse une branche avec 0013 et 0014, pas encore fusionnée dans main.
     g(tmp, "clone", "-q", origine, autre);
     g(autre, "switch", "-q", "-c", "agent/autre");
+    execFileSync("mkdir", ["-p", join(autre, "supabase/migrations")]);
     for (const f of ["0013_x.sql", "0014_y.sql"]) writeFileSync(join(autre, "supabase/migrations", f), "-- y\n");
     g(autre, "add", "-A"); g(autre, "commit", "-q", "-m", "autre"); g(autre, "push", "-q", "origin", "agent/autre");
     verifie("la migration d'un agent pas encore fusionnée (branche distante 0014) est comptée : suivant = 0015", lancer() === "0015", lancer());
