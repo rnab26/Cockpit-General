@@ -1,4 +1,4 @@
--- 0036 — Bascule automatique des modèles selon la consommation (chantier 29fac2e1).
+-- 0037 — Bascule automatique des modèles selon la consommation (chantier 29fac2e1).
 --
 -- Raphaël : « bascule automatique des modèles selon l'usage pour ne jamais être à court de
 -- crédit, sans manipulation manuelle : meilleurs modèles au début, ralentir la cadence au fur

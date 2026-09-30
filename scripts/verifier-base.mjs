@@ -1941,7 +1941,7 @@ async function controle32_economie_modeles() {
   const normal = chef();
   verifie("chef.sh : chaque agent porte son modèle (code = sonnet) et l'effort est dit", /━━ Agent « [^»]+ » \[model: sonnet\]/.test(normal) && /effort de raisonnement — moyen/.test(normal), normal.slice(0, 1200));
   await sql(`update chantiers set etat = 'libre', pris_par = null, pris_jusqu_a = null where projet_id = ${q(P1)} and titre like 'Eco %'`);
-  // Bascule (0036) : une session arrêtée sur la limite d'usage -> palier 3 : modèles descendus, MAIS le nombre d'agents ne bouge pas.
+  // Bascule (0037) : une session arrêtée sur la limite d'usage -> palier 3 : modèles descendus, MAIS le nombre d'agents ne bouge pas.
   await sql(`insert into sessions (id, projet_id, sujet, vu_at, pause_raison, pause_at) values (${q("pause-" + sid)}, ${q(P1)}, 'pause test', now(), 'rate_limit', now()) on conflict (id) do update set pause_raison = 'rate_limit', pause_at = now()`);
   const f = (await une(`select frein_actif(${q(P1)}) as f, palier_actif(${q(P1)}) as p`));
   verifie("une session en pause « rate_limit » = palier 3, sans frein d'agents", f.p === 3 && f.f.actif === false, f);

@@ -114,6 +114,28 @@ export function boutonRenforts(e: EtatRenforts): { actif: boolean; aide: string;
   }
 }
 
+export type NiveauSaturation = 'proche' | 'sature'
+
+/**
+ * Alerte « une session approche la saturation » : la file (chantiers qui attendent sans personne) est
+ * comparée à ce qu'une session absorbe (agents_par_session, réglage existant : aucune valeur en dur).
+ * proche : la file remplit une session ; sature : elle en remplit deux. Le texte dit quoi faire
+ * selon ce que le bouton permet (renfort possible, maximum atteint, renforts éteints).
+ */
+export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; titre: string; conseil: string } | null {
+  const file = e.attente.reduce((n, a) => n + a.n, 0)
+  const cap = Math.max(1, e.agents_par_session)
+  if (file < cap) return null
+  const niveau: NiveauSaturation = file >= 2 * cap ? 'sature' : 'proche'
+  const enRoute = renfortsEnRoute(e).length
+  const titre = `${niveau === 'sature' ? 'Session saturée' : 'Session bientôt saturée'} : ${file} chantier${file > 1 ? 's' : ''} en file pour ${cap} agent${cap > 1 ? 's' : ''} par session.`
+  let conseil: string
+  if (e.sessions_max === 0) conseil = 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour en ouvrir.'
+  else if (enRoute >= e.sessions_max) conseil = `Déjà ${enRoute} renfort${enRoute > 1 ? 's' : ''} en route (maximum) : patiente, ou monte le maximum (Réglages).`
+  else conseil = 'Ouvre un renfort : touche « Lancer des renforts » ci-dessous.'
+  return { niveau, titre, conseil }
+}
+
 /** Le message après le clic : réussite (ce qui a été demandé) ou pourquoi rien. */
 export function messageDemande(r: ResultatDemande): { ok: boolean; texte: string } {
   if (r.demandes.length) {
@@ -147,7 +169,7 @@ export interface EtatModeles {
   agents: number
   revue_h: number
   frein: { actif: boolean; raison?: string; jusqu_a?: string | null }
-  /** Bascule automatique selon l'usage (0036) : palier 0 à 3, modèles réellement utilisés maintenant. */
+  /** Bascule automatique selon l'usage (0037) : palier 0 à 3, modèles réellement utilisés maintenant. */
   bascule_auto?: boolean
   palier?: number
   palier_raison?: string | null
@@ -168,7 +190,7 @@ export function erreurReglageModeles(agents: number, revueH: number): string | n
   if (!Number.isInteger(revueH) || revueH < 1 || revueH > 168) return 'Revue « À toi » : de 1 à 168 heures.'
   return null
 }
-/** Ce que dit l'écran de la bascule d'usage (0036) : jamais un nombre d'agents, seulement les modèles. */
+/** Ce que dit l'écran de la bascule d'usage (0037) : jamais un nombre d'agents, seulement les modèles. */
 export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 'palier_raison' | 'effectifs'>): string {
   if (e.bascule_auto === false) return 'Bascule automatique éteinte : les modèles réglés ci-dessus servent toujours.'
   const p = e.palier ?? 0

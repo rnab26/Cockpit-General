@@ -592,6 +592,11 @@ try {
   await (await ligneAvance(P3.id)).locator('button').first().click()
   await attendreConv(P3.titre)
   verifie('réservée mais muette depuis 2 h → « pris, silencieux »', /pris, silencieux/.test(await conv().getByTestId('presence-conversation').textContent()))
+  // Cas signalé le 30 sept. (chantier fb19d6a8) : « relancer encore alors que c'est déjà relancé ? » — l'écran dit le geste.
+  const sit = conv().getByTestId('situation-silence')
+  verifie('silencieux : dit qui le tient, depuis quand, et LE geste (abandonné, sans chef programmée → « À faire »)',
+    await sit.count() === 1 && /signe de vie/.test(await sit.getByTestId('silence-quoi').textContent()) && /^À faire/.test(await sit.getByTestId('silence-geste').textContent()) && await sit.getAttribute('data-geste') === 'relancer', await sit.textContent())
+  verifie('…les boutons de relance restent visibles quand c’est le geste', await conv().getByTestId('bulle-relance').getByTestId('copier-consigne').isVisible())
   await fermerConv()
 
   // ===================================================================

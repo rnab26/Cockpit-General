@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, libelleBascule, blocUtile, boutonRenforts, erreurReglageRenforts, ligneRenfort, messageDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
 } from '../lib/renforts.ts'
 
@@ -93,6 +93,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
   }
   if (!toujours && !blocUtile(etat)) return null
   const b = boutonRenforts(etat)
+  const alerte = alerteSaturation(etat)
   const nAttente = etat.attente.reduce((n, a) => n + a.n, 0)
   return (
     <>
@@ -112,6 +113,13 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
           </p>
         </div>
       </div>
+      {alerte ? (
+        <div role="alert" data-testid="renforts-alerte" data-niveau={alerte.niveau}
+          className={`mt-2.5 rounded-xl border border-l-4 px-2.5 py-2 text-xs leading-snug ${alerte.niveau === 'sature' ? 'border-alerte' : 'border-accent'}`}>
+          <p className="font-medium">{alerte.titre}</p>
+          <p className="text-texte-2">{alerte.conseil}</p>
+        </div>
+      ) : null}
       <Button variante="primaire" pleine className="mt-2.5" chargement={envoi} disabled={!b.actif} onClick={() => void lancer()} data-testid="lancer-renforts">
         <UsersRound size={16} aria-hidden />Lancer des renforts
       </Button>
