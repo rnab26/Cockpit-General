@@ -510,6 +510,17 @@ Réglages) : l'invite de Chrome (`beforeinstallprompt`, captée avant React dans
 l'écran d'accueil). Règle : `lib/installation.ts`. `verifier-installation.ts`,
 contrôles « appli installable » de `verifier-web.mjs`.
 
+**Nouvelle version en ligne** (30 sept. 2026, chantier 3cea6ae9, Raphaël :
+« que les correctifs prennent sans recharger »). Les données arrivent en direct,
+mais le CODE reste celui du chargement. `vite.config.ts` grave le commit
+(`GITHUB_SHA`) dans l'app ET dans `version.json` (une source) ; l'app le relit
+au retour sur l'app et toutes les 5 min (`lib/version.ts`,
+`hooks/useNouvelleVersion.ts`) et affiche « Nouvelle version du cockpit ·
+Mettre à jour » (`NouvelleVersion.tsx`, un toucher recharge). Même jour : la
+liste « fini » est triée par heure de certification et chaque ligne dit
+« Certifié par toi à HH:MM · livré … » (`quandFini`, `ordreListe`) ; « À toi »
+montre l'heure à côté de l'âge. `verifier-fini.ts`.
+
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 
 Raphaël : « quitter en appuyant sur les zones extérieures de la carte ».

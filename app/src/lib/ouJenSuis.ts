@@ -7,7 +7,7 @@
 // Reporté ne compte nulle part, et une réservation expirée non plus — elle
 // ressort à part, pour être libérée.
 import type { Chantier, Message, Section } from './types.ts'
-import { reservationValide } from './dates.ts'
+import { heureLisible, reservationValide } from './dates.ts'
 import { dansFenetre, type Fenetre } from './fenetre.ts'
 import { aToi } from './entonnoir.ts'
 
@@ -43,6 +43,26 @@ export function questionsSansChantier(messages: readonly Pick<Message, 'chantier
 /** « Fini » : certifié dans la fenêtre choisie, archivé ou non. La règle unique des tuiles et du tableau. */
 export function estFiniDans(c: Pick<Chantier, 'etat' | 'valide_at'>, fenetre: Fenetre, now: Date = new Date()): boolean {
   return c.etat === 'valide' && dansFenetre(c.valide_at, fenetre, now)
+}
+
+/**
+ * La liste derrière « fini » (30 sept. 2026, Raphaël : « je ne vois pas à
+ * quelle heure ils ont fini […] dans l'ordre chronologique […] certifiés
+ * automatiquement ? ») : le plus récemment certifié en haut, et chaque ligne
+ * dit QUAND et PAR QUI, et quand Claude l'avait livré. Les autres listes
+ * gardent leur ordre (dernière modification d'abord).
+ */
+export function ordreListe<C extends Pick<Chantier, 'etat' | 'valide_at' | 'updated_at'>>(chantiers: readonly C[], fini: boolean): C[] {
+  const cle = (c: C) => (fini && c.etat === 'valide' ? c.valide_at : null) ?? c.updated_at ?? ''
+  return [...chantiers].sort((a, b) => cle(b).localeCompare(cle(a)))
+}
+
+/** « Certifié par toi à 12:17 · livré hier 23:53 » ; null si le chantier n'est pas certifié. */
+export function quandFini(c: Pick<Chantier, 'etat' | 'valide_at' | 'valide_par' | 'livre_at'>, moi: string, now: Date = new Date()): string | null {
+  if (c.etat !== 'valide' || !c.valide_at) return null
+  const qui = !c.valide_par ? '' : c.valide_par.toLowerCase() === moi.toLowerCase() ? ' par toi' : ` par ${c.valide_par.split('@')[0]}`
+  const livre = c.livre_at ? ` · livré ${heureLisible(c.livre_at, now)}` : ''
+  return `Certifié${qui} ${/^\d/.test(heureLisible(c.valide_at, now)) ? 'à ' : ''}${heureLisible(c.valide_at, now)}${livre}`
 }
 
 /**

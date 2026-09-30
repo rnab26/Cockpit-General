@@ -4,10 +4,10 @@ import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
 import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
-import { ouJenSuis, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
+import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
-import { etaLisible, dateRelative, dateLongue } from '../lib/dates.ts'
+import { etaLisible, dateRelative, dateLongue, heureLisible } from '../lib/dates.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -91,7 +91,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'enPause', libelle: 'en pause', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number }
+interface Liste { titre: string; ids: string[]; n: number; fini?: boolean }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
@@ -116,7 +116,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini' })}
               className="rounded-2xl border border-bord bg-carte px-1 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-xs text-texte-2">{x.libelle}</span>
@@ -174,7 +174,7 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
             const n = l.nombres[c.cle]
             return n ? (
               <button key={c.cle} type="button" data-colonne={c.cle} aria-label={`${l.nom} : ${n} ${c.libelle}`}
-                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n })}
+                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n, fini: c.cle === 'livre' })}
                 className={`h-8 rounded-lg text-center text-[15px] font-medium tabular-nums hover:bg-carte-2 ${TEINTE[c.cle]}`}>{n}</button>
             ) : <span key={c.cle} className="h-8 text-center leading-8 text-texte-2/40">·</span>
           })}
@@ -197,7 +197,7 @@ function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: ()
   const chantiers = useMemo(() => {
     if (!liste) return []
     const ids = new Set(liste.ids)
-    return g.chantiers.filter((c) => ids.has(c.id)).sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+    return ordreListe(g.chantiers.filter((c) => ids.has(c.id)), !!liste.fini)
   }, [liste, g.chantiers])
   return (
     <Dialog ouvert={!!liste} onFermer={onFermer} titre={`${liste?.titre ?? ''} (${liste?.n ?? 0})`}>
@@ -215,7 +215,9 @@ function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: ()
                   <span className="block truncate text-[15px]">{c.titre}</span>
                   <span className="flex items-center gap-1.5 text-xs text-texte-2">
                     {g.projets.length > 1 ? <><PointProjet couleur={projet?.couleur} /><span className="truncate">{projet?.nom}</span><span>·</span></> : null}
-                    <span>{infoEtat(c.etat).court}</span>
+                    {liste?.fini && quandFini(c, g.moi.email, g.now)
+                      ? <span className="truncate tabular-nums" data-testid="quand-fini" title={dateLongue(c.valide_at)}>{quandFini(c, g.moi.email, g.now)}</span>
+                      : <span>{infoEtat(c.etat).court}</span>}
                   </span>
                 </span>
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
@@ -316,7 +318,8 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
             <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
-              <span className="whitespace-nowrap tabular-nums" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span><span aria-hidden> · </span>
+              <span className="whitespace-nowrap tabular-nums" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span>
+              <span className="whitespace-nowrap tabular-nums" data-testid="heure-a-toi"> ({heureLisible(e.depuis, g.now)})</span><span aria-hidden> · </span>
               <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
             </span>
           </span>

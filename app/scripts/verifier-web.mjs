@@ -348,6 +348,16 @@ try {
     await page.keyboard.press('Escape')
     await dlgT.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
+  // « Fini » (chantier 3cea6ae9) : chaque ligne dit quand et par qui, le plus récemment certifié en haut.
+  if (await nTuile('fini')) {
+    await page.getByTestId('tuile-fini').click()
+    const dlgF = page.getByRole('dialog').filter({ hasText: 'Fini' })
+    await dlgF.waitFor({ timeout: 5000 })
+    const quand = await dlgF.getByTestId('quand-fini').allTextContents()
+    verifie('tuile « fini » : chaque ligne dit « Certifié … à HH:MM »', quand.length >= 1 && quand.every((t) => /^Certifié.*\d\d:\d\d/.test(t)), quand)
+    await page.keyboard.press('Escape')
+    await dlgF.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
   const bToi = await page.getByTestId('a-toi').boundingBox()
   verifie('« À toi de jouer » commence dans le premier écran (844 px)', bToi && bToi.y + 60 <= 844, bToi)
   const bOrdre = [await page.getByTestId('a-toi').boundingBox(), await page.getByTestId('en-ce-moment').boundingBox(), await page.getByTestId('a-lancer').boundingBox()]
@@ -358,6 +368,7 @@ try {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
       (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
       && ['Répondre', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
+    verifie('une ligne « À toi » dit aussi l’heure (« (12:17) », « (hier 23:53) »)', /\(.*\d\d:\d\d\)/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
   }
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
