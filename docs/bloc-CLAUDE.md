@@ -128,6 +128,25 @@ demandes des utilisateurs, progression des autres sessions.
   Son écran passe alors à « Réponse arrivée ».
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.
+- **UNE ACTION MANUELLE = LIEN EXACT + ÉTAPES NUMÉROTÉES + TEXTE PRÊT À
+  COLLER** (Raphaël, 30 sept. : « à chaque fois il faut que j'aille chercher
+  et ce n'est pas assez précis ; des liens précis, des démarches précises pour
+  faire simplement des copier-coller, et un visuel si ça peut aider »). Vaut
+  pour TOUT geste demandé à Raphaël, quel que soit le chantier, dans le
+  cockpit ET dans la conversation de la session : (1) l'adresse EXACTE de la
+  page où agir (réglages, formulaire : jamais la page d'accueil du service,
+  jamais « va dans les paramètres ») ; (2) un geste par étape, numérotée, avec
+  le nom exact du bouton ou du champ ; (3) chaque chose à taper, prête à coller
+  (nom de variable, valeur, commande, texte) ; (4) une capture de la page quand
+  ça aide à s'y retrouver. Dans le cockpit :
+  `scripts/cockpit-demander.sh --action --chantier <id> --question "…" --pourquoi "…"
+  --lien "https://…|Ouvrir …" --etape "Dans « Name », colle le nom ci-dessous"
+  --etape "Touche « Add secret »" --copier "Nom du secret|RUNPOD_API_KEY" --image capture.png`
+  (le script REFUSE une action sans lien ni étape ; `--sans-lien "pourquoi"`
+  si aucune page n'existe, geste sur le téléphone par exemple). Un secret ne
+  se colle JAMAIS dans le cockpit (refusé) : dis où le trouver et où le coller.
+  Avant de demander, vérifie que le geste est vraiment impossible pour toi
+  (API, CLI, script) : ne le demande qu'en dernier recours.
 - **Montre, ne décris pas** (Raphaël, 29 sept. 2026 : « montre-moi des images
   pour que je comprenne mieux, ou ce que je suis censé voir ») : une question
   ou une vérification qui porte sur quelque chose de VISIBLE (un écran, un
@@ -157,4 +176,6 @@ demandes des utilisateurs, progression des autres sessions.
   Cockpit-General et arrive dans tous les projets branchés en 10 minutes.
 - `{{SQL}}` vise le schéma `cockpit` sans préfixe, une instruction par appel ;
   demande à Raphaël avant tout drop / delete massif / truncate.
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
+
 <!-- fin du bloc cockpit : brancher.sh remplace tout ce qui précède jusqu'au titre -->

@@ -975,6 +975,30 @@ async function controle20_images_session() {
     const fm = await une(`select corps, auteur_type, kind, medias from messages where chantier_id = ${q(c)} and kind = 'info' and auteur_type = 'session' order by created_at desc limit 1`);
     verifie("media.sh --envoyer : un message de Claude dans le fil, avec ses 2 images",
       rE.code === 0 && fm?.corps === "Voici l'écran actuel." && fm.medias?.length === 2, { rE, fm });
+
+    // §31 (0033, chantier e9a7c360) : une ACTION porte sa marche à suivre — lien exact, étapes, texte à copier.
+    section("31. Une action manuelle porte sa marche à suivre (0033) : lien exact, étapes numérotées, texte à copier, jamais un secret");
+    const act = ["--action", "--chantier", c, "--question", "Ajoute la clé dans les réglages", "--pourquoi", "Test."];
+    const avantA = await nMessages();
+    const rSans = lancer("demander.sh", [...act, "--etape", "Touche « New »"]);
+    const rSansEt = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/tokens|Jetons"]);
+    const rAccueil = lancer("demander.sh", [...act, "--lien", "https://github.com/|GitHub", "--etape", "a"]);
+    const rSecret = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/tokens|Jetons", "--etape", "a", "--copier", "Clé|sk-ant-api03-abcdefghijklmnopqrstuvwxyz"]);
+    const rBarre = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/tokens|Jetons", "--etape", "a", "--copier", "texte sans libellé"]);
+    verifie("demander.sh --action REFUSE sans lien, sans étape, un lien vers la page d'accueil, un secret à copier, un texte sans libellé — sans rien écrire",
+      [rSans, rSansEt, rAccueil, rSecret, rBarre].every((r) => r.code === 2) && /--lien/.test(rSans.sortie) && (await nMessages()) === avantA,
+      { rSans, rSansEt, rAccueil, rSecret, rBarre });
+    const rA = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/secrets/actions/new|Ouvrir les secrets", "--etape", "1. Dans « Name », colle le nom ci-dessous",
+      "--etape", "Touche « Add secret »", "--copier", "Nom du secret|RUNPOD_API_KEY", "--image", png]);
+    const am = await une(`select marche, medias from messages where chantier_id = ${q(c)} and kind = 'action' order by created_at desc limit 1`);
+    verifie("demander.sh --action : messages.marche porte le lien, les étapes (sans numéro recopié) et le texte à copier, plus la capture",
+      rA.code === 0 && am?.marche?.liens?.[0]?.url === "https://github.com/settings/secrets/actions/new" && am.marche.liens[0].libelle === "Ouvrir les secrets"
+        && am.marche.etapes?.length === 2 && am.marche.etapes[0] === "Dans « Name », colle le nom ci-dessous"
+        && am.marche.copier?.[0]?.texte === "RUNPOD_API_KEY" && am.medias?.length === 1, { rA, am });
+    const rTel = lancer("demander.sh", [...act, "--sans-lien", "Geste sur le téléphone", "--etape", "Ouvre l'APK reçue"]);
+    verifie("demander.sh --action --sans-lien \"pourquoi\" : accepté quand aucune page n'existe", rTel.code === 0, rTel);
+    const lu = await rest(`messages?chantier_id=eq.${c}&kind=eq.action&select=marche&order=created_at.desc&limit=1`, { jwt });
+    verifie("le membre lit messages.marche par l'API (ce que l'app affiche)", lu.status === 200 && Array.isArray(lu.json?.[0]?.marche?.etapes), lu);
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
@@ -1159,8 +1183,9 @@ async function controle19_chef_par_projet() {
     { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_CODE_SESSION_ID: session } });
   verifie("la chef de C lancée sur D : RIEN (elle ne dirige pas D)", /^RIEN — cette session n'est pas la session chef de /.test(lancer(SLUG_D, "chef-c")));
   verifie("--max règle le projet courant seulement", /pour .*: 8/.test(lancer(SLUG_C, "chef-c", ["--max", "8"]))
-    && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 3);
+    && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 2);
   const sortieC = lancer(SLUG_C, "chef-c");
+  verifie("la consigne de la chef donne le modèle de chaque agent et le frein", /\[model: sonnet\]/.test(sortieC) && /\[model: haiku\]/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
   const idsD = [libre.D, rep.D, verif.D];
   verifie("la passe de C sert SES trois sortes de travail (réponse, chantier libre, vérifie pour moi)",
     sortieC.includes(`SESSION CHEF de ${SLUG_C}`) && sortieC.includes(rep.C) && sortieC.includes(libre.C) && sortieC.includes(verif.C), sortieC.slice(0, 600));
@@ -1460,6 +1485,11 @@ async function controle23_a_toi_a_jour() {
   const vu = await chantier(cD1);
   l = await revoir();
   verifie("demander.sh --confirmer <chantier> : a_toi_revu_at posé, il quitte la revue", rC.code === 0 && !!vu.a_toi_revu_at && !par(cD1), { rC, a: vu.a_toi_revu_at });
+  const cR13 = randomUUID(), cR25 = randomUUID();
+  for (const [id, h] of [[cR13, 13], [cR25, 25]])
+    await sql(`insert into chantiers (id, projet_id, titre, etat, created_at, updated_at, a_toi_revu_at) values (${q(id)}, ${q(P5)}, 'Confirmé il y a ${h} h', 'a_cadrer', ${ilYa(30)}, ${ilYa(30)}, ${ilYa(h)})`);
+  l = await revoir();
+  verifie("revue : un élément confirmé il y a 13 h ne revient pas (24 h, 0034) ; confirmé il y a 25 h, si", !par(cR13) && !!par(cR25), l.map((e) => e.titre));
   const rD = lancer("demander.sh", ["--debloquer", cB, "Clé trouvée"]);
   const db = await chantier(cB);
   const dm = await une(`select corps from messages where chantier_id = ${q(cB)} order by created_at desc limit 1`);
@@ -1474,7 +1504,7 @@ async function controle23_a_toi_a_jour() {
     ap.code === 0 && ap.sortie.includes(qNeuve) && ap.sortie.includes("--retirer") && ap.sortie.includes("--suggerer-fusion")
       && (await une(`select revue_a_toi_at from projets where id = ${q(P5)}`)).revue_a_toi_at === null, ap.sortie.slice(0, 300));
   const r1 = lancer("revue-a-toi.sh", []), r2 = lancer("revue-a-toi.sh", []);
-  verifie("revue-a-toi.sh : une revue, puis « déjà revu » pendant une heure", r1.code === 0 && !r1.sortie.startsWith("RIEN") && r2.sortie.startsWith("RIEN") && /moins d'une heure/.test(r2.sortie), { r1: r1.sortie.slice(0, 120), r2: r2.sortie });
+  verifie("revue-a-toi.sh : une revue, puis « déjà revu » pendant 24 h (0035)", r1.code === 0 && !r1.sortie.startsWith("RIEN") && r2.sortie.startsWith("RIEN") && /moins de 24 h/.test(r2.sortie), { r1: r1.sortie.slice(0, 120), r2: r2.sortie });
 }
 
 async function controle21_aucun_reste_de_test() {
@@ -1816,6 +1846,48 @@ async function controle30_agents_fantomes() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+async function controle32_economie_modeles() {
+  section("32. Économie des modèles (0035) : modèle de code / de lecture, effort, frein d'usage, revue « À toi » une fois par jour");
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const sid = `test-eco-${rand}`;
+  const chef = (env = {}) => {
+    try { return execFileSync("bash", [join(racine, "scripts/chef.sh"), ...(env.ARGS ?? [])], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A, CLAUDE_CODE_SESSION_ID: sid, ...env }, stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
+  };
+  await sql(`delete from chefs where projet_id = ${q(P1)}`);
+  const d = await une(`select etat_modeles(${q(SLUG_A)}) as e`);
+  verifie("défauts : code sonnet, lecture haiku, effort moyen, 2 agents, revue 24 h, pas de frein",
+    d.e.modele_code === "sonnet" && d.e.modele_leger === "haiku" && d.e.effort === "moyen" && d.e.agents === 2 && d.e.revue_h === 24 && d.e.frein.actif === false, d.e);
+  const mauvais = await sql(`select regler_modeles(${q(SLUG_A)}, 'gpt', 'haiku', 'moyen') as r`).then(() => "accepté", (e) => e.message);
+  verifie("un modèle inconnu est refusé", /Modèle de code/.test(String(mauvais)), mauvais);
+  const cli = chef({ ARGS: ["--modeles", "opus", "haiku", "eleve", "4"] });
+  const e2 = (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e;
+  verifie("chef.sh --modeles : réglages enregistrés", /Modèles de/.test(cli) && e2.modele_code === "opus" && e2.effort === "eleve" && e2.agents === 4, { cli, e2 });
+  chef({ ARGS: ["--modeles", "sonnet", "haiku", "moyen", "2"] });
+  // La chef donne le modèle de chaque agent et l'effort.
+  await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
+  await sql(`update projets set autonome_toujours = true where id = ${q(P1)}`);
+  for (const t of ["Eco un", "Eco deux"]) await creerChantier(P1, { titre: t, etat: "libre", demande: "test" });
+  const normal = chef();
+  verifie("chef.sh : chaque agent porte son modèle (code = sonnet) et l'effort est dit", /━━ Agent « [^»]+ » \[model: sonnet\]/.test(normal) && /effort de raisonnement — moyen/.test(normal), normal.slice(0, 1200));
+  await sql(`update chantiers set etat = 'libre', pris_par = null, pris_jusqu_a = null where projet_id = ${q(P1)} and titre like 'Eco %'`);
+  // Frein : une session du projet arrêtée sur la limite d'usage → 1 agent, dit.
+  await sql(`insert into sessions (id, projet_id, sujet, vu_at, pause_raison, pause_at) values (${q("pause-" + sid)}, ${q(P1)}, 'pause test', now(), 'rate_limit', now()) on conflict (id) do update set pause_raison = 'rate_limit', pause_at = now()`);
+  const f = (await une(`select frein_actif(${q(P1)}) as f`)).f;
+  verifie("frein_actif : une session en pause « rate_limit » freine le projet", f.actif === true && /limite d'usage/.test(f.raison), f);
+  const freine = chef();
+  verifie("sous frein : un seul agent lancé et le frein est dit", /FREIN d’usage/.test(freine) && (freine.match(/━━ Agent « /g) ?? []).length === 1 && /lance 1 agent/.test(freine), freine.slice(0, 1200));
+  await sql(`delete from sessions where id = ${q("pause-" + sid)}`);
+  chef({ ARGS: ["--frein", "2", "test du frein"] });
+  verifie("chef.sh --frein 2 : frein posé à la main, puis levé par --frein 0",
+    (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === true && (chef({ ARGS: ["--frein", "0"] }), (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === false));
+  const fh = (await sql(`select column_default from information_schema.columns where table_schema = 'cockpit' and table_name = 'projets' and column_name = 'revue_a_toi_delai_h'`))[0];
+  verifie("revue « À toi » : une fois par jour par défaut (revue_a_toi_delai_h = 24)", /24/.test(fh?.column_default ?? ""), fh);
+  const pirate = await rpcUtilisateur("freiner", { p_projet: SLUG_A, p_heures: 1, p_raison: "x" }, jwt);
+  verifie("freiner / regler_modeles refusés à un membre non admin", pirate.status >= 400, pirate);
+  await sql(`update projets set autonome_toujours = false where id = ${q(P1)}`);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -1831,7 +1903,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles,
   ];
   for (const etape of etapes) {
     try { await etape(); }
