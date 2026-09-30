@@ -533,6 +533,14 @@ ligne provisoire `prov:…` (migration 0030, 30 sept.) : elle ne vit que par
 ses étapes, passe « arrêtée » après `delai_tache_prov()` (45 min) sans étape,
 et `progression.sh --chantier X --termine|--echec` ferme celles de sa session
 sur X. `chef.sh` compte ses agents par `agents_actifs(session, projet)`.
+**Un agent = une seule ligne comptée (30 sept. 2026, migration 0046, chantier dd84764f)** :
+Raphaël voyait la chef répondre RIEN (« 8 agents ») avec 6 chantiers en attente. Mesuré : les
+commandes de fond (`wait`, `until`, tests ; type `commande`/`autre`) n'ont jamais été comptées ;
+c'est un DOUBLON : un agent = sa vraie ligne (hook, description de l'outil Agent) + sa ligne
+`prov:` (`progression.sh --agent`, sa propre description), jamais réunies quand les deux textes
+diffèrent (9 lignes pour 6 agents). `agents_actifs` = vraies lignes vivantes + provisoires en
+surplus des vraies lignes muettes (sans étape ni chantier). Plafond `chefs.max_agents` : 1 à 8
+(check en base), inchangé. `verifier-base` §30.
 Incident : 5 agents fantômes bloquaient la chef parce que
 `.claude/settings.json` était du JSON invalide (deux objets collés, commit
 f2b6c98) : Claude Code ignore alors TOUS les hooks du projet, sans erreur
