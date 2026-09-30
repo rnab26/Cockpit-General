@@ -425,8 +425,12 @@ export function caAvanceToutSeul(
     if (presence.code === 'claude_verifie') {
       // « Vérifie pour moi » : sorti de « À toi », il avance ici, sous le même nom partout.
       const barre = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : parSession
-      lignes.push({ c, presence, activite: barre, vivant: true, qui: presence.libelle,
-        etape: barre?.etape || agentVivant?.etape || null, pourquoi: null, demandeLe: null, ouEnEst: etatOuEnEst(c, messages, true, now, tenus) })
+      // Retour de Raphaël, 30 sept. : sans session ni assistant vivant il n'y a ni barre ni travail :
+      // la ligne passe dans « en cours sans session dessus », pas dans « ça avance ».
+      const vivant = !!(parSession || agentVivant)
+      lignes.push({ c, presence, activite: vivant ? barre : null, vivant, qui: vivant ? presence.libelle : '',
+        etape: vivant ? (barre?.etape || agentVivant?.etape || null) : null, pourquoi: vivant ? null : 'Vérification demandée : en attente d’un assistant',
+        demandeLe: null, ouEnEst: etatOuEnEst(c, messages, vivant, now, tenus) })
     } else if (presence.code === 'travaille') {
       const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
       const morceaux: string[] = []
