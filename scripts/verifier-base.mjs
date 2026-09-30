@@ -1863,7 +1863,18 @@ async function controle30_agents_fantomes() {
   const v = await sql(`select tache_id, statut, vu_at > now() - interval '1 minute' as frais from taches where session_id = ${q(sid)} and tache_id in ('aVrai', 'prov:Vivant') order by tache_id`);
   verifie("session vivante : la vraie tâche est rafraîchie, la provisoire non (mais reste en cours : étape récente)",
     v.length === 2 && v[0].tache_id === "aVrai" && v[0].frais === true && v[1].frais === false && v[1].statut === "en_cours", v);
-  verifie("agents_actifs = 2 (la vraie + la provisoire récente)", (await actifs()) === 2);
+  // 0048 : une vraie ligne MUETTE (ni étape ni chantier) et une provisoire sont le même agent (descriptions différentes).
+  verifie("0048 : la vraie ligne muette + la provisoire récente = UN seul agent (doublon)", (await actifs()) === 1);
+  await sql(`update taches set progres_at = now() where session_id = ${q(sid)} and tache_id = 'aVrai'`);
+  verifie("agents_actifs = 2 quand la vraie ligne a signalé elle-même (deux agents distincts)", (await actifs()) === 2);
+  await sql(`update taches set progres_at = null where session_id = ${q(sid)} and tache_id = 'aVrai'`);
+  await execSql(`select suivre(${q(SLUG_A)}, ${q(JSON.stringify({ session_id: sid, hook_event_name: "SubagentStart", agent_id: "aVrai2", agent_type: "general-purpose" }))}::jsonb)`);
+  verifie("0048 : deux vraies lignes muettes + une provisoire = 2 agents (pas 3)", (await actifs()) === 2);
+  // Commandes de fond (wait, until, tests) : jamais comptées comme des agents.
+  for (const [id, type] of [["bcmd1", "commande"], ["bcmd2", "autre"]])
+    await sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut) values (${q(sid)}, ${q(P1)}, ${q(id)}, ${q(type)}, 'wait tests', 'en_cours')`);
+  verifie("0048 : les commandes de fond (commande / autre) ne comptent pas comme agents", (await actifs()) === 2);
+  await sql(`update taches set statut = 'termine', fini_at = now() where session_id = ${q(sid)} and tache_id in ('aVrai2', 'bcmd1', 'bcmd2')`);
   await vieillir("Vivant", 46);
   verifie("au-delà de delai_tache_prov() (45 min) sans étape, agents_actifs la ferme et ne la compte plus",
     (await actifs()) === 1 && (await statut("Vivant")) === "arrete");
