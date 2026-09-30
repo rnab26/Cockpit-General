@@ -150,6 +150,7 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
             <Select value={etat} onChange={(e) => setEtat(e.target.value as Etat)}>
               {ETATS.filter((e) => e.etat !== 'valide').map((e) => <option key={e.etat} value={e.etat}>{e.libelle}</option>)}
             </Select>
+            <p className="mt-1 text-xs text-texte-2">{infoEtat(etat).aide}{etat === 'a_trier' ? ' Choix par défaut : Claude la lit et la range.' : ''}</p>
           </Champ>
         ) : <p className="text-xs text-texte-2">Ta demande arrive « Pas encore examinée » ; Claude la range, une session la prend, et tu certifies quand c’est livré.</p>}
       </div>

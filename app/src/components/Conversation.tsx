@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -14,7 +14,7 @@ import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
-import { attenteReponse, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
+import { attenteReponse, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
@@ -150,8 +150,8 @@ function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: Reac
 }
 
 /** Une bulle du fil : Claude à gauche (fond carte), toi à droite (fond neutre plus soutenu). Jamais de pavé teinté. */
-function Bulle({ cote, auteur, quand, children, testId, aFaire = false }: {
-  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean
+function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet }: {
+  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null
 }) {
   const { now } = useCockpit()
   return (
@@ -159,7 +159,10 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false }: {
       <div className={`max-w-[88%] rounded-2xl border border-bord px-3 py-2 ${cote === 'droite' ? 'rounded-br-md bg-carte-2' : 'rounded-bl-md bg-carte'}`}>
         {auteur || quand ? (
           <p className="mb-0.5 flex items-baseline justify-between gap-3 text-[11px] text-texte-2">
-            <span className="truncate">{auteur}</span>{quand ? <span className="shrink-0" title={dateLongue(quand)}>{dateRelative(quand, now)}</span> : null}
+            <span className="truncate">
+              <span className={`font-semibold ${cote === 'droite' ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'}`}>{auteur}</span>
+              {sujet ? <strong className="text-texte"> · {sujet}</strong> : null}
+            </span>{quand ? <span className="shrink-0" title={dateLongue(quand)}>{dateRelative(quand, now)}</span> : null}
           </p>
         ) : null}
         {children}
@@ -175,13 +178,19 @@ function AFaire({ children, testId }: { children: ReactNode; testId?: string }) 
 
 const auteurDe = (m: Pick<Message, 'auteur_type' | 'auteur'>, admin: boolean) =>
   m.auteur_type === 'session' ? 'Claude' : m.auteur_type === 'proprietaire' ? (admin ? 'Toi' : 'Raphaël') : m.auteur
+/** « Sujet : … » en tête d'un message : extrait pour l'afficher en gras sur la ligne de l'expéditeur. */
+const sujetDe = (corps: string | null) => {
+  const r = corps?.match(/^\s*Sujet\s*:\s*([^\n.]{1,80}?)\s*(?:\.\s*|\n|$)/i)
+  return r ? { sujet: r[1], reste: corps!.slice(r[0].length) } : { sujet: null, reste: corps }
+}
 const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session' ? 'gauche' : 'droite') as 'gauche' | 'droite'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */
 function BulleMessage({ m }: { m: Message }) {
-  const { admin, par, projet, recharger } = useCockpit()
+  const { admin, par, projet, recharger, chantiers, ouvrirChantier } = useCockpit()
   const toast = useToast()
   const medias = mediasDe(m)
+  const lie = filLie(m, chantiers)
   // Le crayon sur une image que Raphaël a déjà envoyée : l'image annotée part dans le même fil, comme une nouvelle pièce.
   const annoter = async (f: File) => {
     const r = await deposerMedia(projet.id, m.chantier_id, crypto.randomUUID(), f)
@@ -192,10 +201,11 @@ function BulleMessage({ m }: { m: Message }) {
     await recharger()
     return null
   }
+  const { sujet, reste } = sujetDe(m.corps)
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
-    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle">
-      {m.corps ? <TexteLong texte={m.corps} /> : null}
+    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet}>
+      {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {m.reponse ? (
         <p className="mt-1 border-t border-bord pt-1 text-sm" data-testid="reponse-donnee">
@@ -204,6 +214,16 @@ function BulleMessage({ m }: { m: Message }) {
       ) : null}
       {m.kind === 'action' && m.etat && !m.reponse ? <p className="mt-1 text-sm text-texte-2">État : {m.etat === 'pas_encore' ? 'pas encore' : m.etat}</p> : null}
       {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} onAnnote={m.auteur_type === 'session' ? undefined : annoter} /></div> : null}
+      {lie ? (
+        <button type="button" onClick={() => ouvrirChantier(lie.id)} data-testid="ouvrir-fil-lie"
+          className="mt-1.5 flex min-h-10 w-full items-center gap-2 rounded-xl border border-bord bg-carte-2 px-3 py-2 text-left text-sm hover:border-texte-2">
+          <MessageSquare size={16} className="shrink-0 text-texte-2" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{lie.titre}</span>
+            <span className="block text-xs text-texte-2">Ouvrir ce fil · {infoEtat(lie.etat).court}</span>
+          </span>
+        </button>
+      ) : null}
     </Bulle>
   )
 }

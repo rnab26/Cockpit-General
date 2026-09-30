@@ -28,9 +28,9 @@ import { ReveilImmediat } from './ReveilImmediat.tsx'
  * fais A + D », « des modèles plus compacts, plus ergonomiques, moins casse-tête
  * visuellement, des logiques plus ordonnées »), pour l'onglet « Tout » ET la
  * vue d'un projet :
- *   quatre tuiles (pour toi · ça avance · en pause · fini) — chacune ouvre sa liste ;
- *   « À toi de jouer »       — une ligne par chose à faire, UN verbe ;
- *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée ;
+ *   quatre tuiles (pour toi · ça avance · en attente · fini) — chacune ouvre sa liste ;
+ *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée (en premier) ;
+ *   « À toi de jouer »       — une ligne par chose à faire, UN verbe (en second) ;
  *   « Prêt à lancer »        — ce que personne ne tient, « Lancer ».
  * Toucher une ligne ouvre la conversation du chantier (modèle D). Les nombres
  * viennent de lib/tableauDeBord.ts : une seule règle, testée.
@@ -47,8 +47,8 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
     <div className="space-y-5">
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
-      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
+      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
@@ -88,7 +88,7 @@ type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
   { cle: 'caAvance', libelle: 'ça avance', aide: 'une session ou un assistant y travaille vraiment (barre de progression)', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
-  { cle: 'enPause', libelle: 'en pause', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'enPause', libelle: 'en attente', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
 interface Liste { titre: string; ids: string[]; n: number; fini?: boolean }
@@ -103,7 +103,8 @@ function idsDe(t: Tableau, cle: CleTuile): string[] {
 function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
   const g = useGlobal()
   const [liste, setListe] = useState<Liste | null>(null)
-  const [detail, setDetail] = useState(false)
+  // Détail par projet/section : ouvert d'emblée (Raphaël, 30 sept. : « pas replié automatiquement »).
+  const [detail, setDetail] = useState(true)
   const libelleFenetre = FENETRES.find((f) => f.valeur === fenetre)?.libelle.toLowerCase() ?? ''
   const changerFenetre = () => {
     const i = FENETRES.findIndex((f) => f.valeur === fenetre)
@@ -137,7 +138,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
 }
 
 const COLONNES: { cle: keyof QuatreNombres; libelle: string }[] = [
-  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en pause' }, { cle: 'livre', libelle: 'fini' },
+  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en attente' }, { cle: 'livre', libelle: 'fini' },
 ]
 const TEINTE: Record<keyof QuatreNombres, string> = { pourToi: 'text-alerte', bouge: 'text-texte', dort: 'text-texte-2', livre: 'text-ok', expirees: 'text-attention' }
 interface LigneDetail { cle: string; nom: string; couleur: string | null; nombres: QuatreNombres; ids: LigneOuJenSuis['ids'] }
@@ -286,7 +287,7 @@ function SectionAToi({ elements, avecProjet }: { elements: ElementAToi[]; avecPr
   }
   return (
     <section aria-label="À toi de jouer" data-testid="a-toi">
-      <TitreSection numero={1} titre="À toi de jouer" n={elements.length} testId="a-toi-total" />
+      <TitreSection numero={2} titre="À toi de jouer" n={elements.length} testId="a-toi-total" />
       {elements.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
@@ -351,7 +352,7 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
   const nSessions = t.travail.reduce((n, gr) => n + gr.sessions.length, 0)
   return (
     <section aria-label="Ça avance tout seul" data-testid="en-ce-moment">
-      <TitreSection numero={2} titre="Ça avance tout seul" n={lignes.length} testId="ca-avance-total" />
+      <TitreSection numero={1} titre="Ça avance tout seul" n={lignes.length} testId="ca-avance-total" />
       {rien ? (
         <div className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center" data-testid="personne-ne-travaille">
           <p className="text-[15px] text-texte-2">Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.</p>
@@ -374,7 +375,7 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
         <div className="mt-1.5 px-1" data-testid="sans-session">
           <button type="button" onClick={() => setVoirSans(!voirSans)} aria-expanded={voirSans} data-testid="voir-sans-session"
             className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
-            {sans.length} en cours sans session dessus (comptés « en pause »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
+            {sans.length} en cours sans session dessus (comptés « en attente »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
           </button>
           {voirSans ? <div className="mt-1.5"><Liste>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</Liste></div> : null}
         </div>

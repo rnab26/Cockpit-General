@@ -347,14 +347,15 @@ try {
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
   // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
-  verifie('tuile « en pause » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
-  await page.getByTestId('detail-ou-jen-suis').click()
+  verifie('tuile « en attente » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
+  // Le détail est ouvert d'emblée (30 sept.) : pas de toucher pour l'ouvrir.
+  verifie('« Détail par projet » ouvert d\'emblée', await page.getByTestId('detail-ou-jen-suis').getAttribute('aria-expanded') === 'true')
   // Les projets jetables d'un AUTRE banc (verifier-base, verifier-embed… lancés en même temps) naissent et
   // meurent pendant la passe, et le compte de test les voit : hors du compte des deux côtés (rouge au hasard, 30 sept.).
   const autresBancs = new Set(sql(`select id from projets where slug like 'test-%' and slug <> '${SLUG}'`).map((r) => r.id))
   const lignesEnsemble = (await page.getByTestId('ligne-ou-jen-suis').evaluateAll((els) => els.map((e) => e.getAttribute('data-cle')))).filter((id) => !autresBancs.has(id)).length
   const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif and (slug not like 'test-%' or slug = '${SLUG}')`)[0].n)
-  verifie('« Détail par projet » (replié sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
+  verifie('« Détail par projet » (ouvert sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
   const sommeColonne = async (col) => (await page.locator(`[data-testid="ligne-ou-jen-suis"] [data-colonne="${col}"]`).allTextContents()).reduce((n, t) => n + Number(t), 0)
   verifie('le détail compte les mêmes chantiers que les tuiles (pour toi, ça avance, en pause)',
     await sommeColonne('pourToi') === await nTuile('pourToi') && await sommeColonne('bouge') === await nTuile('caAvance') && await sommeColonne('dort') === await nTuile('enPause'),
@@ -380,10 +381,8 @@ try {
     await page.keyboard.press('Escape')
     await dlgF.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
-  const bToi = await page.getByTestId('a-toi').boundingBox()
-  verifie('« À toi de jouer » commence dans le premier écran (844 px)', bToi && bToi.y + 60 <= 844, bToi)
   const bOrdre = [await page.getByTestId('a-toi').boundingBox(), await page.getByTestId('en-ce-moment').boundingBox(), await page.getByTestId('a-lancer').boundingBox()]
-  verifie('ordre : À toi de jouer, puis Ça avance tout seul, puis Prêt à lancer', bOrdre.every(Boolean) && bOrdre[0].y < bOrdre[1].y && bOrdre[1].y < bOrdre[2].y)
+  verifie('ordre : Ça avance tout seul, puis À toi de jouer, puis Prêt à lancer', bOrdre.every(Boolean) && bOrdre[1].y < bOrdre[0].y && bOrdre[0].y < bOrdre[2].y)
   verifie('« À toi de jouer » : 4 lignes au plus avant « Voir les N autres »', await page.getByTestId('element-a-toi').count() <= 4)
   const ligne1 = page.getByTestId('element-a-toi').first()
   if (await ligne1.count()) {
@@ -425,9 +424,8 @@ try {
     await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vivant="oui"] [data-vive="oui"]').count())
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
   verifie('FacePro : « Réglages du projet » replié en bas', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
-  const vivantsFp = compterVivants('facepro')
-  if (vivantsFp.barres + vivantsFp.sessions + vivantsFp.verifs === 0)
-    verifie('FacePro sans session → « Personne ne travaille sur ce projet en ce moment »', /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()))
+  // « Personne ne travaille sur ce projet » se vérifie sur le projet de test (plus bas), jamais sur FacePro :
+  // ses vrais chantiers réservés à des agents ou ses « où ça en est » en attente le faisaient rougir (30/09, chantier e0974112).
   verifie('FacePro : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await captureUx(page, 'ux-projet')
 
@@ -437,6 +435,11 @@ try {
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
   await ongletTest().waitFor({ timeout: 15000 })
   verifie('le projet de test a son onglet (le compte de test est admin)', await ongletTest().count() === 1)
+  // Projet sans session : son propre cas, construit ici (aucune session, aucune activité, aucun chantier en cours).
+  await allerCockpit()
+  await page.waitForTimeout(500)
+  verifie('projet sans session → « Personne ne travaille sur ce projet en ce moment »',
+    await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()), await page.getByTestId('en-ce-moment').textContent())
 
   // ===================================================================
   // 2. La présence : une session vivante, une vieille, une silencieuse
@@ -657,6 +660,8 @@ try {
   await actualiser()
   const lP2b = await ligneAvance(P2.id)
   const suivi3 = lP2b.getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  // Même latence que pour « reçue » : attendre que l'écran ait relu la réponse (rouge au hasard, 30 sept., chantier e0974112).
+  await page.locator(`[data-chantier-ligne="${P2.id}"] [data-testid="suivi-ligne"] [data-testid="etat-ou-en-est"][data-code="repondue"]`).first().waitFor({ timeout: 8000 }).catch(() => {})
   verifie('réponse arrivée → la ligne le dit, avec l’extrait de la réponse, frise complète',
     (await suivi3.getAttribute('data-code')) === 'repondue' && /Réponse arrivée/.test(await suivi3.textContent()) && /Reste : les tests/.test(await suivi3.getByTestId('reponse-ou-en-est').textContent())
     && await suivi3.locator('[data-etape="faite"]').count() === 3, await suivi3.textContent().catch(() => null))
@@ -1111,6 +1116,8 @@ try {
   const elK = await elementAToi(K1.id, 'a_cadrer')
   verifie('à cadrer : « ta décision avant de coder », bouton « Décider »', /ta décision avant de coder/.test(await elK.getByTestId('attente-a-toi').textContent()) && (await elK.getByTestId('verbe-a-toi').textContent()).trim() === 'Décider')
   const elB = await elementAToi(B1.id, 'bloque')
+  // Le chantier peut s'afficher avant son message de blocage (relecture en deux temps) : attendre le texte (rouge au hasard, 30 sept.).
+  await elB.getByTestId('attente-a-toi').filter({ hasText: 'Il manque la clé' }).waitFor({ timeout: 8000 }).catch(() => {})
   verifie('bloqué : « bloqué : <ce qui bloque> », bouton « Débloquer »', /bloqué : \[TEST web\] Il manque la clé/.test(await elB.getByTestId('attente-a-toi').textContent()) && (await elB.getByTestId('verbe-a-toi').textContent()).trim() === 'Débloquer')
   await elK.getByTestId('verbe-a-toi').click()
   await attendreConv(K1.titre)
@@ -1244,6 +1251,32 @@ try {
   await ongletRejeu.waitForLoadState('domcontentloaded').catch(() => {})
   verifie('« Rejouer » ouvre la page d’origine dans un nouvel onglet', ongletRejeu.url() === 'https://site.exemple/export?format=pdf', ongletRejeu.url())
   await ongletRejeu.close()
+  await fermerConv()
+
+  // ===================================================================
+  // 6d. « Il faudrait aussi X » (0033) : la réponse de Claude porte un bouton vers le nouveau fil, et retour.
+  console.log('  — fil lié (chantier né dans un fil)')
+  const L1 = creerTest('fil d’origine', { etat: 'en_cours' })
+  const L2 = creerTest('export pdf né du fil', { etat: 'libre' })
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values ('${projet.id}', '${L1.id}', 'verifier-web', 'proprietaire', 'info', '${esc(`${MARQUE2} il faudrait aussi un export pdf`)}', now() - interval '2 minutes')`)
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, chantier_lie, created_at) values ('${projet.id}', '${L1.id}', 'verifier-web', 'session', 'info', '${esc(`${MARQUE2} C’est noté : nouveau chantier, prêt à lancer.`)}', '${L2.id}', now() - interval '1 minute'), ('${projet.id}', '${L2.id}', 'verifier-web', 'session', 'info', '${esc(`${MARQUE2} Chantier ouvert depuis le fil`)}', '${L1.id}', now())`)
+  await actualiser()
+  await deplierTout()
+  await ligneId(L1.id).waitFor({ timeout: 15000 })
+  await ligneId(L1.id).getByTestId('ouvrir-chantier').click()
+  await attendreConv(L1.titre)
+  const lien1 = conv().getByTestId('ouvrir-fil-lie')
+  const bLien = await lien1.boundingBox()
+  verifie('la réponse de Claude porte « Ouvrir ce fil » : titre du nouveau chantier et son état, entier sur le téléphone',
+    await lien1.count() === 1 && /export pdf né du fil/.test(await lien1.textContent()) && /Ouvrir ce fil · \S/.test(await lien1.textContent())
+      && bLien && bLien.x >= 0 && bLien.x + bLien.width <= 390 && bLien.height >= 40, { texte: await lien1.textContent().catch(() => null), bLien })
+  await lien1.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await capture(page, 'fil-lie')
+  await lien1.click()
+  await attendreConv(L2.titre)
+  verifie('toucher le bouton → le fil du nouveau chantier s’ouvre à sa place', /export pdf né du fil/.test(await conv().getByTestId('titre-conversation').textContent()))
+  const lien2 = conv().getByTestId('ouvrir-fil-lie')
+  verifie('…et son fil renvoie au fil d’origine', await lien2.count() === 1 && /fil d’origine/.test(await lien2.textContent()), await lien2.textContent().catch(() => null))
   await fermerConv()
 
   // ===================================================================
