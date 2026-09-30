@@ -45,6 +45,16 @@ demandes des utilisateurs, progression des autres sessions.
   tour n'a pas sa réponse dans son fil. Il demande de mettre de côté, reporter
   ou abandonner : `scripts/cockpit-chantier.sh --de-cote <id> [--jusqu-au
   AAAA-MM-JJ]` ou `--abandonner <id>` (mêmes gestes que les boutons du fil).
+- **UN AUTRE SUJET ÉCRIT DANS UN FIL (« il faudrait aussi X ») → C'EST TOI
+  QUI CRÉES LE CHANTIER** (30 sept. : « plutôt que de quitter ce chat et de
+  créer un nouveau chantier manuellement […] que la session Claude comprenne
+  qu'il faut créer le chantier et l'attribuer là où c'est nécessaire ») :
+  `scripts/cockpit-chantier.sh --ouvrir "<titre>" --demande "<ses mots>"
+  --depuis <id du fil | projet> --reponse "<ta réponse, 400 car.>"`. Créé
+  « Prêt à lancer » (non réservé), rangé (Correctifs, sinon la section du
+  fil, ou `--section`), ou ajouté au chantier vivant qui existe déjà ; ta
+  réponse arrive dans son fil avec un bouton vers le nouveau. Ne le code pas
+  dans la foulée sauf s'il le demande.
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh
@@ -176,4 +186,6 @@ demandes des utilisateurs, progression des autres sessions.
   Cockpit-General et arrive dans tous les projets branchés en 10 minutes.
 - `{{SQL}}` vise le schéma `cockpit` sans préfixe, une instruction par appel ;
   demande à Raphaël avant tout drop / delete massif / truncate.
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
+
 <!-- fin du bloc cockpit : brancher.sh remplace tout ce qui précède jusqu'au titre -->

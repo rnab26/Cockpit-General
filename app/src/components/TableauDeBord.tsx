@@ -4,10 +4,10 @@ import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
 import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
-import { ouJenSuis, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
+import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
-import { etaLisible, dateRelative, dateLongue } from '../lib/dates.ts'
+import { etaLisible, dateRelative, dateLongue, heureLisible } from '../lib/dates.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -29,8 +29,8 @@ import { ReveilImmediat } from './ReveilImmediat.tsx'
  * visuellement, des logiques plus ordonnées »), pour l'onglet « Tout » ET la
  * vue d'un projet :
  *   quatre tuiles (pour toi · ça avance · en attente · fini) — chacune ouvre sa liste ;
- *   « À toi de jouer »       — une ligne par chose à faire, UN verbe ;
- *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée ;
+ *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée (en premier) ;
+ *   « À toi de jouer »       — une ligne par chose à faire, UN verbe (en second) ;
  *   « Prêt à lancer »        — ce que personne ne tient, « Lancer ».
  * Toucher une ligne ouvre la conversation du chantier (modèle D). Les nombres
  * viennent de lib/tableauDeBord.ts : une seule règle, testée.
@@ -47,8 +47,8 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
     <div className="space-y-5">
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
-      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
+      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
@@ -91,7 +91,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'enPause', libelle: 'en attente', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number }
+interface Liste { titre: string; ids: string[]; n: number; fini?: boolean }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
@@ -103,7 +103,8 @@ function idsDe(t: Tableau, cle: CleTuile): string[] {
 function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
   const g = useGlobal()
   const [liste, setListe] = useState<Liste | null>(null)
-  const [detail, setDetail] = useState(false)
+  // Détail par projet/section : ouvert d'emblée (Raphaël, 30 sept. : « pas replié automatiquement »).
+  const [detail, setDetail] = useState(true)
   const libelleFenetre = FENETRES.find((f) => f.valeur === fenetre)?.libelle.toLowerCase() ?? ''
   const changerFenetre = () => {
     const i = FENETRES.findIndex((f) => f.valeur === fenetre)
@@ -116,7 +117,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini' })}
               className="rounded-2xl border border-bord bg-carte px-1 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-xs text-texte-2">{x.libelle}</span>
@@ -131,7 +132,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
         </button>
       </div>
       {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
-      <ListeChantiers liste={liste} onFermer={() => setListe(null)} />
+      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} />
     </section>
   )
 }
@@ -168,13 +169,13 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
         <span />{COLONNES.map((c) => <span key={c.cle} className="text-center leading-tight">{c.libelle}</span>)}
       </div>
       {lignes.map((l) => (
-        <div key={l.cle} data-testid="ligne-ou-jen-suis" className="grid grid-cols-[1fr_repeat(4,3rem)] items-center gap-x-1 border-t border-bord/70">
+        <div key={l.cle} data-testid="ligne-ou-jen-suis" data-cle={l.cle} className="grid grid-cols-[1fr_repeat(4,3rem)] items-center gap-x-1 border-t border-bord/70">
           <span className="flex min-w-0 items-center gap-1.5 py-1 text-sm">{l.couleur ? <PointProjet couleur={l.couleur} /> : null}<span className="truncate">{l.nom}</span></span>
           {COLONNES.map((c) => {
             const n = l.nombres[c.cle]
             return n ? (
               <button key={c.cle} type="button" data-colonne={c.cle} aria-label={`${l.nom} : ${n} ${c.libelle}`}
-                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n })}
+                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n, fini: c.cle === 'livre' })}
                 className={`h-8 rounded-lg text-center text-[15px] font-medium tabular-nums hover:bg-carte-2 ${TEINTE[c.cle]}`}>{n}</button>
             ) : <span key={c.cle} className="h-8 text-center leading-8 text-texte-2/40">·</span>
           })}
@@ -192,12 +193,14 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
 }
 
 /** La liste des chantiers derrière un nombre ; chacun ouvre sa conversation. */
-function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: () => void }) {
+function ListeChantiers({ liste, onFermer, avance }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[] }) {
   const g = useGlobal()
+  // La MÊME ligne que « Ça avance tout seul » (une seule source) : barre et % du dépliage = ceux de la ligne.
+  const ligneDe = useMemo(() => new Map(avance.map((l) => [l.c.id, l])), [avance])
   const chantiers = useMemo(() => {
     if (!liste) return []
     const ids = new Set(liste.ids)
-    return g.chantiers.filter((c) => ids.has(c.id)).sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+    return ordreListe(g.chantiers.filter((c) => ids.has(c.id)), !!liste.fini)
   }, [liste, g.chantiers])
   return (
     <Dialog ouvert={!!liste} onFermer={onFermer} titre={`${liste?.titre ?? ''} (${liste?.n ?? 0})`}>
@@ -215,8 +218,11 @@ function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: ()
                   <span className="block truncate text-[15px]">{c.titre}</span>
                   <span className="flex items-center gap-1.5 text-xs text-texte-2">
                     {g.projets.length > 1 ? <><PointProjet couleur={projet?.couleur} /><span className="truncate">{projet?.nom}</span><span>·</span></> : null}
-                    <span>{infoEtat(c.etat).court}</span>
+                    {liste?.fini && quandFini(c, g.moi.email, g.now)
+                      ? <span className="truncate tabular-nums" data-testid="quand-fini" title={dateLongue(c.valide_at)}>{quandFini(c, g.moi.email, g.now)}</span>
+                      : <span>{infoEtat(c.etat).court}</span>}
                   </span>
+                  {ligneDe.get(c.id) ? <BarreDeLigne l={ligneDe.get(c.id)!} /> : null}
                 </span>
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
               </button>
@@ -281,7 +287,7 @@ function SectionAToi({ elements, avecProjet }: { elements: ElementAToi[]; avecPr
   }
   return (
     <section aria-label="À toi de jouer" data-testid="a-toi">
-      <TitreSection numero={1} titre="À toi de jouer" n={elements.length} testId="a-toi-total" />
+      <TitreSection numero={2} titre="À toi de jouer" n={elements.length} testId="a-toi-total" />
       {elements.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
@@ -315,8 +321,9 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
           <span className="min-w-0 flex-1">
             <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              <span className="whitespace-nowrap font-medium tabular-nums text-texte" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span>
+              <span className="whitespace-nowrap tabular-nums" data-testid="heure-a-toi"> ({heureLisible(e.depuis, g.now)})</span><span aria-hidden> · </span>
               {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
-              <span className="whitespace-nowrap tabular-nums" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span><span aria-hidden> · </span>
               <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
             </span>
           </span>
@@ -343,7 +350,7 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
   const nSessions = t.travail.reduce((n, gr) => n + gr.sessions.length, 0)
   return (
     <section aria-label="Ça avance tout seul" data-testid="en-ce-moment">
-      <TitreSection numero={2} titre="Ça avance tout seul" n={lignes.length} testId="ca-avance-total" />
+      <TitreSection numero={1} titre="Ça avance tout seul" n={lignes.length} testId="ca-avance-total" />
       {rien ? (
         <div className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center" data-testid="personne-ne-travaille">
           <p className="text-[15px] text-texte-2">Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.</p>
@@ -401,6 +408,19 @@ function Barre({ pct, vive }: { pct: number; vive: boolean }) {
       data-testid="progression" data-vive={vive ? 'oui' : 'non'}>
       <div className={`h-full rounded-full ${vive ? 'barre-vive bg-ok transition-[width] duration-700' : 'bg-texte-2/35'}`} style={{ width: `${Math.max(vive ? 3 : 2, p)}%` }} />
     </div>
+  )
+}
+
+/** Barre + % + temps restant d'une ligne qui avance (dépliage des tuiles et « Ça avance tout seul » : même rendu). */
+function BarreDeLigne({ l }: { l: LigneCaAvance }) {
+  const a = l.activite
+  if (!a) return <span className="mt-1 block text-xs text-texte-2" data-testid="avancement-non-signale">Claude y travaille · avancement pas encore signalé</span>
+  const reste = l.vivant ? etaLisible(a.eta_secondes) : null
+  return (
+    <span className="mt-1 flex items-center gap-2" data-testid="barre-liste">
+      <Barre pct={a.pourcentage} vive={l.vivant} />
+      <span className={`shrink-0 text-xs tabular-nums ${l.vivant ? 'text-texte' : 'text-texte-2'}`}>{a.pourcentage} %{reste ? ` · reste ${reste}` : ''}</span>
+    </span>
   )
 }
 

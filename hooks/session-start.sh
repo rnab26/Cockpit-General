@@ -191,7 +191,7 @@ $non_prises
 ## Dernières réponses humaines (à appliquer avec jugement)
 $reponses
 
-## Ce que Raphaël (ou un utilisateur) a écrit SANS RÉPONSE — réponds-lui DANS le fil, court, avant de continuer : \`$PROG_CMD --chantier <id> --point "…"\` (fil du projet : sans --chantier)
+## Ce que Raphaël (ou un utilisateur) a écrit SANS RÉPONSE — réponds-lui DANS le fil, court, avant de continuer : \`$PROG_CMD --chantier <id> --point "…"\` (fil du projet : sans --chantier). Un AUTRE sujet (« il faudrait aussi… ») : crée-le et range-le toi-même, ta réponse porte le lien : \`$CHANTIER_CMD --ouvrir "<titre>" --demande "<ses mots>" --depuis <id du fil | projet> --reponse "…"\`
 $sans_suite
 
 ## Demandes des UTILISATEURS pas encore prises

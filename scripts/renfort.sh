@@ -55,12 +55,20 @@ case "${1:-}" in
     if [ "$etat" = "attends" ]; then
       echo "ATTENDS — $(printf '%s' "$r" | jq -r '.en_cours') chantier(s) de ta section avancent encore avec tes agents, rien de nouveau à prendre. Ne prends rien d'autre : à la fin de chaque agent, relance $RENF --suivant $2. Termine ta réponse en une ligne."; exit 0
     fi
-    printf '%s' "$r" | jq -r --arg rid "$2" --arg r "$RENF" '"RENFORT : lance \(.chantiers | length) agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chacun est déjà réservé à SA branche : aucun autre agent ni aucune session ne le touche. Ne fais pas le travail toi-même. Au plus \(.max_agents) à la fois ; à la fin de CHAQUE agent : relis son rapport en une ligne, puis relance \($r) --suivant \($rid)."'
+    # ÉCONOMIE DES MODÈLES (0035) : les modèles et l'effort du projet, réglés dans le cockpit (chefs), et le frein.
+    slug=$(printf '%s' "$r" | jq -r '.slug')
+    cfg=$("$SQL" "select modele_code, modele_leger, effort, frein from (select p.id, coalesce(c.modele_code, 'sonnet') as modele_code, coalesce(c.modele_leger, 'haiku') as modele_leger, coalesce(c.effort, 'moyen') as effort, frein_actif(p.id) as frein from projets p left join chefs c on c.projet_id = p.id where p.slug = '$(q "$slug")') x" 2>/dev/null | jq -c '.rows[0] // {}')
+    export MODELE_CODE=$(printf '%s' "$cfg" | jq -r '.modele_code // "sonnet"') MODELE_LEGER=$(printf '%s' "$cfg" | jq -r '.modele_leger // "haiku"')
+    export EFFORT_TXT=$(printf '%s' "$cfg" | jq -r '(.effort // "moyen") | if . == "bas" then "bas : va droit au but" elif . == "eleve" then "élevé : réfléchis à fond si le sujet le demande" else "moyen : réfléchis juste ce qu’il faut" end')
+    if [ "$(printf '%s' "$cfg" | jq -r '.frein.actif // false')" = "true" ]; then
+      echo "FREIN d'usage ($(printf '%s' "$cfg" | jq -r '.frein.raison')) : ne lance qu'UN seul agent à la fois, quel que soit le maximum ci-dessous."
+    fi
+    printf '%s' "$r" | jq -r --arg rid "$2" --arg r "$RENF" '"RENFORT : lance \(.chantiers | length) agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chacun est déjà réservé à SA branche : aucun autre agent ni aucune session ne le touche. Ne fais pas le travail toi-même. Économie des modèles : lance CHAQUE agent avec le paramètre model indiqué sur sa ligne « [model: X] » ; effort de raisonnement — \($ENV.EFFORT_TXT). Si get_session → rate_limit_info.status n’est pas « allowed » : au plus 1 agent. Au plus \(.max_agents) à la fois ; à la fin de CHAQUE agent : relis son rapport en une ligne, puis relance \($r) --suivant \($rid)."'
     echo
     printf '%s' "$r" | jq -c '.slug as $s | .depot as $d | .chantiers[] | . + {slug: $s, depot: $d}' | while IFS= read -r c; do
       if [ "$(printf '%s' "$c" | jq -r '.verif')" = "true" ]; then
         printf '%s' "$c" | jq -r --arg verdict "$VERDICT" '
-"━━ Agent « Vérifier : \(.titre) » (projet \(.slug), chantier \(.id))
+"━━ Agent « Vérifier : \(.titre) » [model: \($ENV.MODELE_LEGER)] (projet \(.slug), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit (renfort). Raphaël a testé le chantier « \(.titre) » (projet \(.slug)) mais ne sait pas dire si le résultat est le bon : c’est TOI qui juges.
@@ -75,14 +83,14 @@ Rends un rapport de 3 lignes.
 ---"'
       else
         printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
-"━━ Agent « \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
+"━━ Agent « \(.titre) » [model: \($ENV.MODELE_CODE)] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit (renfort). Chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot).\(if .etat_avant == "en_cours" then " Il était en cours puis abandonné : lis son fil et reprends où il en était." elif .etat_avant == "a_trier" then " Pas encore trié : décide s’il faut le faire ; doublon → scripts/chantier.sh --suggerer-fusion ; décision de Raphaël nécessaire → question avec \($dem), puis arrête-toi." else "" end)
 Demande :
 \(.demande)\(if $repro != "" then "\n" + $repro else "" end)
 
-Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert (fusionne origin/main d’abord ; jamais git add -A), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert (si la plateforme refuse la fusion, « merge without review » : n’insiste pas et ne cherche aucun détour ; pousse ta branche, ouvre la PR, puis pose UNE action à Raphaël : COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://github.com/\(.depot)/pull/<N>|Ouvrir la PR\" --etape \"Touche « Merge pull request »\" --etape \"Touche « Confirm merge »\" ; ne termine jamais en laissant une branche finie sans PR ni action) (fusionne origin/main d’abord ; jamais git add -A), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
       fi
       echo

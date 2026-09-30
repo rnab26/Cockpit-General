@@ -187,6 +187,8 @@ const compterVivants = (slug = null) => {
   const f = slug ? ` and projet_id = (select id from projets where slug = '${slug}')` : ''
   return {
     barres: Number(sql(`select count(*) as n from (select distinct projet_id, session from activite where statut = 'en_cours' and updated_at > now() - interval '${silenceMin} minutes'${f}) x`)[0].n),
+    // « Vérifie pour moi » en cours : l'app le montre dans « Ça avance » (« Claude vérifie pour toi », vivant), agent lancé ou pas.
+    verifs: Number(sql(`select count(*) as n from chantiers where etat = 'a_verifier' and verif_demandee_at is not null and archived_at is null${f}`)[0].n),
     sessions: Number(sql(`select count(*) as n from sessions s where s.fin_at is null and ((s.tour_en_cours and s.vu_at > now() - interval '30 minutes') or s.vu_at > now() - interval '${silenceMin} minutes' or exists (select 1 from taches t where t.session_id = s.id and t.statut = 'en_cours' and t.vu_at > now() - interval '2 hours'))${f.replace('projet_id', 's.projet_id')}`)[0].n),
   }
 }
@@ -250,7 +252,24 @@ const deplierTout = async () => {
 }
 const ligneId = (id) => page.locator(`[data-testid="tous-les-chantiers"] [data-testid="ligne-chantier"][data-chantier="${id}"]`)
 const ligneDe = (titre) => page.locator('[data-testid="tous-les-chantiers"] [data-testid="ligne-chantier"]', { hasText: titre })
-const actualiser = async () => { await page.getByTestId('actualiser').click(); await page.waitForTimeout(700) }
+// « Actualiser » attend la FIN d'un rechargement complet commencé après le toucher
+// (data-recharge-du de l'en-tête). Avant (30 sept.) : 700 ms fixes ; sous latence,
+// les tables arrivaient une à une après (chantier sans son message de blocage,
+// réponse pas encore là) et 4 à 8 contrôles rougissaient au hasard.
+const actualiser = async () => {
+  const bouton = page.getByTestId('actualiser')
+  const t0 = await page.evaluate(() => Date.now())
+  await bouton.click()
+  await page.waitForFunction((t) => { const b = document.querySelector('[data-testid="actualiser"]'); return !!b && Number(b.getAttribute('data-recharge-du')) >= t && b.getAttribute('data-chargement') === '0' }, t0, { timeout: 20000 })
+    .catch(() => console.log('    (actualiser : pas de rechargement complet en 20 s)'))
+  await page.waitForTimeout(150)
+}
+// Une vignette : attend que l'image soit VRAIMENT chargée (ou en erreur), 15 s au plus.
+// Avant (30 sept.) : 800 ms fixes ; le lien signé passant par Node, l'image arrivait
+// parfois après et « la photo s'affiche » rougissait au hasard.
+const imageChargee = (img) => img.evaluate((i) => (i.complete && i.naturalWidth > 0) || new Promise((r) => {
+  i.addEventListener('load', () => r(true), { once: true }); i.addEventListener('error', () => r(false), { once: true }); setTimeout(() => r(false), 15000)
+})).catch(() => false)
 // La conversation ouverte (modèle D) et sa fermeture.
 const conv = () => page.getByTestId('conversation')
 const attendreConv = async (titre) => {
@@ -329,10 +348,14 @@ try {
   // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
   verifie('tuile « en attente » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
-  await page.getByTestId('detail-ou-jen-suis').click()
-  const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
-  const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)
-  verifie('« Détail par projet » (replié sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
+  // Le détail est ouvert d'emblée (30 sept.) : pas de toucher pour l'ouvrir.
+  verifie('« Détail par projet » ouvert d\'emblée', await page.getByTestId('detail-ou-jen-suis').getAttribute('aria-expanded') === 'true')
+  // Les projets jetables d'un AUTRE banc (verifier-base, verifier-embed… lancés en même temps) naissent et
+  // meurent pendant la passe, et le compte de test les voit : hors du compte des deux côtés (rouge au hasard, 30 sept.).
+  const autresBancs = new Set(sql(`select id from projets where slug like 'test-%' and slug <> '${SLUG}'`).map((r) => r.id))
+  const lignesEnsemble = (await page.getByTestId('ligne-ou-jen-suis').evaluateAll((els) => els.map((e) => e.getAttribute('data-cle')))).filter((id) => !autresBancs.has(id)).length
+  const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif and (slug not like 'test-%' or slug = '${SLUG}')`)[0].n)
+  verifie('« Détail par projet » (ouvert sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
   const sommeColonne = async (col) => (await page.locator(`[data-testid="ligne-ou-jen-suis"] [data-colonne="${col}"]`).allTextContents()).reduce((n, t) => n + Number(t), 0)
   verifie('le détail compte les mêmes chantiers que les tuiles (pour toi, ça avance, en pause)',
     await sommeColonne('pourToi') === await nTuile('pourToi') && await sommeColonne('bouge') === await nTuile('caAvance') && await sommeColonne('dort') === await nTuile('enPause'),
@@ -348,21 +371,30 @@ try {
     await page.keyboard.press('Escape')
     await dlgT.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
-  const bToi = await page.getByTestId('a-toi').boundingBox()
-  verifie('« À toi de jouer » commence dans le premier écran (844 px)', bToi && bToi.y + 60 <= 844, bToi)
+  // « Fini » (chantier 3cea6ae9) : chaque ligne dit quand et par qui, le plus récemment certifié en haut.
+  if (await nTuile('fini')) {
+    await page.getByTestId('tuile-fini').click()
+    const dlgF = page.getByRole('dialog').filter({ hasText: 'Fini' })
+    await dlgF.waitFor({ timeout: 5000 })
+    const quand = await dlgF.getByTestId('quand-fini').allTextContents()
+    verifie('tuile « fini » : chaque ligne dit « Certifié … à HH:MM »', quand.length >= 1 && quand.every((t) => /^Certifié.*\d\d:\d\d/.test(t)), quand)
+    await page.keyboard.press('Escape')
+    await dlgF.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
   const bOrdre = [await page.getByTestId('a-toi').boundingBox(), await page.getByTestId('en-ce-moment').boundingBox(), await page.getByTestId('a-lancer').boundingBox()]
-  verifie('ordre : À toi de jouer, puis Ça avance tout seul, puis Prêt à lancer', bOrdre.every(Boolean) && bOrdre[0].y < bOrdre[1].y && bOrdre[1].y < bOrdre[2].y)
+  verifie('ordre : Ça avance tout seul, puis À toi de jouer, puis Prêt à lancer', bOrdre.every(Boolean) && bOrdre[1].y < bOrdre[0].y && bOrdre[0].y < bOrdre[2].y)
   verifie('« À toi de jouer » : 4 lignes au plus avant « Voir les N autres »', await page.getByTestId('element-a-toi').count() <= 4)
   const ligne1 = page.getByTestId('element-a-toi').first()
   if (await ligne1.count()) {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
       (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
       && ['Répondre', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
+    verifie('une ligne « À toi » dit aussi l’heure (« (12:17) », « (hier 23:53) »)', /\(.*\d\d:\d\d\)/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
   }
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
   const vivants = compterVivants()
-  if (vivants.barres + vivants.sessions === 0) {
+  if (vivants.barres + vivants.sessions + vivants.verifs === 0) {
     verifie('aucune preuve de vie → « Personne ne travaille en ce moment » + comment lancer',
       await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille/.test(await page.getByTestId('personne-ne-travaille').textContent()) && /Lancer/.test(await page.getByTestId('personne-ne-travaille').textContent()))
   } else {
@@ -391,9 +423,8 @@ try {
     await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vivant="oui"] [data-vive="oui"]').count())
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
   verifie('FacePro : « Réglages du projet » replié en bas', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
-  const vivantsFp = compterVivants('facepro')
-  if (vivantsFp.barres + vivantsFp.sessions === 0)
-    verifie('FacePro sans session → « Personne ne travaille sur ce projet en ce moment »', /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()))
+  // « Personne ne travaille sur ce projet » se vérifie sur le projet de test (plus bas), jamais sur FacePro :
+  // ses vrais chantiers réservés à des agents ou ses « où ça en est » en attente le faisaient rougir (30/09, chantier e0974112).
   verifie('FacePro : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await captureUx(page, 'ux-projet')
 
@@ -403,6 +434,11 @@ try {
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
   await ongletTest().waitFor({ timeout: 15000 })
   verifie('le projet de test a son onglet (le compte de test est admin)', await ongletTest().count() === 1)
+  // Projet sans session : son propre cas, construit ici (aucune session, aucune activité, aucun chantier en cours).
+  await allerCockpit()
+  await page.waitForTimeout(500)
+  verifie('projet sans session → « Personne ne travaille sur ce projet en ce moment »',
+    await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()), await page.getByTestId('en-ce-moment').textContent())
 
   // ===================================================================
   // 2. La présence : une session vivante, une vieille, une silencieuse
@@ -623,6 +659,8 @@ try {
   await actualiser()
   const lP2b = await ligneAvance(P2.id)
   const suivi3 = lP2b.getByTestId('suivi-ligne').getByTestId('etat-ou-en-est')
+  // Même latence que pour « reçue » : attendre que l'écran ait relu la réponse (rouge au hasard, 30 sept., chantier e0974112).
+  await page.locator(`[data-chantier-ligne="${P2.id}"] [data-testid="suivi-ligne"] [data-testid="etat-ou-en-est"][data-code="repondue"]`).first().waitFor({ timeout: 8000 }).catch(() => {})
   verifie('réponse arrivée → la ligne le dit, avec l’extrait de la réponse, frise complète',
     (await suivi3.getAttribute('data-code')) === 'repondue' && /Réponse arrivée/.test(await suivi3.textContent()) && /Reste : les tests/.test(await suivi3.getByTestId('reponse-ou-en-est').textContent())
     && await suivi3.locator('[data-etape="faite"]').count() === 3, await suivi3.textContent().catch(() => null))
@@ -806,7 +844,7 @@ try {
   verifie('le fichier est bien dans le stockage privé', Number(objQ.n) === 1, objQ)
   const vignetteQ = conv().locator('[data-testid="bulle"] [data-testid="media"] img').first()
   await vignetteQ.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  await imageChargee(vignetteQ)
   verifie('la photo s’affiche dans une bulle de la conversation (lien signé, image chargée)', await vignetteQ.count() === 1 && await vignetteQ.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await fermerConv()
   verifie('la question répondue quitte « À toi de jouer »', await page.locator(elQsel).count() === 0)
@@ -1077,6 +1115,8 @@ try {
   const elK = await elementAToi(K1.id, 'a_cadrer')
   verifie('à cadrer : « ta décision avant de coder », bouton « Décider »', /ta décision avant de coder/.test(await elK.getByTestId('attente-a-toi').textContent()) && (await elK.getByTestId('verbe-a-toi').textContent()).trim() === 'Décider')
   const elB = await elementAToi(B1.id, 'bloque')
+  // Le chantier peut s'afficher avant son message de blocage (relecture en deux temps) : attendre le texte (rouge au hasard, 30 sept.).
+  await elB.getByTestId('attente-a-toi').filter({ hasText: 'Il manque la clé' }).waitFor({ timeout: 8000 }).catch(() => {})
   verifie('bloqué : « bloqué : <ce qui bloque> », bouton « Débloquer »', /bloqué : \[TEST web\] Il manque la clé/.test(await elB.getByTestId('attente-a-toi').textContent()) && (await elB.getByTestId('verbe-a-toi').textContent()).trim() === 'Débloquer')
   await elK.getByTestId('verbe-a-toi').click()
   await attendreConv(K1.titre)
@@ -1213,6 +1253,32 @@ try {
   await fermerConv()
 
   // ===================================================================
+  // 6d. « Il faudrait aussi X » (0033) : la réponse de Claude porte un bouton vers le nouveau fil, et retour.
+  console.log('  — fil lié (chantier né dans un fil)')
+  const L1 = creerTest('fil d’origine', { etat: 'en_cours' })
+  const L2 = creerTest('export pdf né du fil', { etat: 'libre' })
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values ('${projet.id}', '${L1.id}', 'verifier-web', 'proprietaire', 'info', '${esc(`${MARQUE2} il faudrait aussi un export pdf`)}', now() - interval '2 minutes')`)
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, chantier_lie, created_at) values ('${projet.id}', '${L1.id}', 'verifier-web', 'session', 'info', '${esc(`${MARQUE2} C’est noté : nouveau chantier, prêt à lancer.`)}', '${L2.id}', now() - interval '1 minute'), ('${projet.id}', '${L2.id}', 'verifier-web', 'session', 'info', '${esc(`${MARQUE2} Chantier ouvert depuis le fil`)}', '${L1.id}', now())`)
+  await actualiser()
+  await deplierTout()
+  await ligneId(L1.id).waitFor({ timeout: 15000 })
+  await ligneId(L1.id).getByTestId('ouvrir-chantier').click()
+  await attendreConv(L1.titre)
+  const lien1 = conv().getByTestId('ouvrir-fil-lie')
+  const bLien = await lien1.boundingBox()
+  verifie('la réponse de Claude porte « Ouvrir ce fil » : titre du nouveau chantier et son état, entier sur le téléphone',
+    await lien1.count() === 1 && /export pdf né du fil/.test(await lien1.textContent()) && /Ouvrir ce fil · \S/.test(await lien1.textContent())
+      && bLien && bLien.x >= 0 && bLien.x + bLien.width <= 390 && bLien.height >= 40, { texte: await lien1.textContent().catch(() => null), bLien })
+  await lien1.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await capture(page, 'fil-lie')
+  await lien1.click()
+  await attendreConv(L2.titre)
+  verifie('toucher le bouton → le fil du nouveau chantier s’ouvre à sa place', /export pdf né du fil/.test(await conv().getByTestId('titre-conversation').textContent()))
+  const lien2 = conv().getByTestId('ouvrir-fil-lie')
+  verifie('…et son fil renvoie au fil d’origine', await lien2.count() === 1 && /fil d’origine/.test(await lien2.textContent()), await lien2.textContent().catch(() => null))
+  await fermerConv()
+
+  // ===================================================================
   // 7. Un chantier reporté : « Écrire à Claude » avec une photo, « Relancer maintenant »
   console.log('  — reporté, écrire à Claude')
   const R1 = creerTest('reporte', { etat: 'reporte', demande: 'Mis de côté pour la v2.' })
@@ -1284,7 +1350,7 @@ try {
   verifie('le message apparaît en bulle à droite (toi)', await bulleR1.count() === 1)
   const vignette = bulleR1.locator('[data-testid="media"] img').first()
   await vignette.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  await imageChargee(vignette)
   verifie('la photo s’affiche dans la bulle (lien signé, image réellement chargée)', await vignette.count() === 1 && await vignette.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   if (await vignette.count()) {
     await vignette.click()
@@ -1555,6 +1621,8 @@ try {
   await conv().getByTestId('archiver').click()
   verifie('« Archiver » : toast visible, en base archivé', await toastAuPremierPlan(/Chantier archivé/) && !!sql(`select archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]?.archived_at)
   await conv().getByTestId('menu-chantier').click()
+  // Le menu ne propose « Désarchiver » qu'une fois l'écran rechargé : sinon le toucher ré-archivait (rouge au hasard, 30 sept.).
+  await conv().getByTestId('archiver').filter({ hasText: 'Désarchiver' }).waitFor({ timeout: 8000 }).catch(() => {})
   await conv().getByTestId('archiver').click()
   verifie('« Désarchiver » : toast visible, en base de nouveau ouvert', await toastAuPremierPlan(/désarchivé/) && !sql(`select archived_at from chantiers where titre = '${esc(titreTest)}'`)[0]?.archived_at)
   // 0028 : Mettre de côté / Reporter / Abandonner, depuis le fil ; chacun se défait.
@@ -1689,7 +1757,7 @@ try {
   await attendreConv(titrePhoto2)
   const vignetteN = conv().locator('[data-testid="media"] img').first()
   await vignetteN.waitFor({ timeout: 15000 }).catch(() => {})
-  await page.waitForTimeout(800)
+  await imageChargee(vignetteN)
   verifie('la photo jointe à la création s’affiche dans la conversation du chantier', await vignetteN.count() === 1 && await vignetteN.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await capture(page, 'creation-photo-dans-le-fil')
   await fermerConv()

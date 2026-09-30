@@ -1,7 +1,7 @@
 // Le fil = une discussion (0025) : ordre, carte à choisir en dernier, réponse attendue.
 // node --experimental-strip-types app/scripts/verifier-discussion.ts
 import { verifie, bilan } from './_assert.ts'
-import { attenteReponse, estMessageLibre, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
+import { attenteReponse, estMessageLibre, filLie, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
 import type { Message } from '../src/lib/types.ts'
 
 const T0 = Date.parse('2026-09-29T14:00:00Z')
@@ -61,5 +61,12 @@ verifie('pris par un assistant → « Un assistant prépare la réponse »', pri
 const vieille = attenteReponse([moi(1, 'x', { recu_at: t(2), recu_par: 'agent/message-1' })], { ...base, maintenant: T0 + DELAI_PRISE_MS + 3 * 60_000 })
 verifie('assistant sans réponse depuis 2 h → plus « prise » (redonné, comme en base)', vieille?.etat === 'personne', vieille)
 verifie('« Ça fonctionne » seul n’attend rien', attenteReponse([moi(1, 'Ça fonctionne, je certifie.', { kind: 'constat' })], base) === null)
+
+console.log('fil lié (0033 : « il faudrait aussi X » → nouveau chantier, bouton « Ouvrir le fil »)')
+const liste = [{ id: 'C', titre: 'Origine' }, { id: 'N', titre: 'Export PDF' }]
+verifie('un message relié à un autre chantier → ce chantier', filLie({ chantier_id: 'C', chantier_lie: 'N' }, liste)?.titre === 'Export PDF')
+verifie('sans lien → rien', filLie({ chantier_id: 'C', chantier_lie: null }, liste) === null && filLie({ chantier_id: 'C' }, liste) === null)
+verifie('un lien vers le fil lui-même → rien (pas de bouton inutile)', filLie({ chantier_id: 'C', chantier_lie: 'C' }, liste) === null)
+verifie('un chantier supprimé ou hors de vue → rien (pas de bouton mort)', filLie({ chantier_id: 'C', chantier_lie: 'X' }, liste) === null)
 
 bilan('verifier-discussion')
