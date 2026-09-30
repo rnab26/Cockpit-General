@@ -1,7 +1,7 @@
 // Les renforts (src/lib/renforts.ts, 0024) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
-import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
+import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-renforts')
 const now = new Date('2026-09-29T12:00:00Z')
@@ -46,7 +46,10 @@ verifie('modèles : 1 à 8 agents, revue de 1 à 168 h', erreurReglageModeles(2,
 verifie('fermeture des sessions : 0 à 1440 minutes', erreurReglageFermeture(0) === null && erreurReglageFermeture(1440) === null && !!erreurReglageFermeture(-1) && !!erreurReglageFermeture(1441) && !!erreurReglageFermeture(1.5))
 verifie('frein : dit qu’il est levé, ou pourquoi il est actif', /Aucun frein/.test(libelleFrein({ actif: false }))
   && /1 agent à la fois/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })) && /limite d’usage/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })))
-verifie('bascule : usage normal, palier montant sans toucher au nombre d’agents, interrupteur éteint', /usage normal/.test(libelleBascule({ bascule_auto: true, palier: 0 }))
+verifie('bascule : plein gaz, palier montant (effort puis modèle, Haiku en dernier) sans toucher au nombre d’agents, interrupteur éteint', /plein gaz.*70 %.*fenêtre de 5 h écoulée à 20 %/.test(libelleBascule({ bascule_auto: true, palier: 0, bascule_seuil_pct: 70, fenetre: { type: 'five_hour', reset_at: null, ecoule_pct: 20 } }))
+  && /palier 1 sur 3, effort réduit d’abord.*effort moyen/.test(libelleBascule({ bascule_auto: true, palier: 1, palier_raison: 'usage', effectifs: { modele_code: 'opus', modele_leger: 'sonnet', effort: 'moyen', palier: 1 } }))
+  && /Haiku en dernier recours/.test(libelleBascule({ bascule_auto: true, palier: 3, effectifs: { modele_code: 'haiku', modele_leger: 'haiku', effort: 'bas', palier: 3 } }))
+  && erreurSeuilBascule(50) === null && !!erreurSeuilBascule(5) && !!erreurSeuilBascule(95)
   && /palier 2 sur 3.*code Haiku.*nombre d’agents ne change pas/.test(libelleBascule({ bascule_auto: true, palier: 2, palier_raison: 'usage 85 %', effectifs: { modele_code: 'haiku', modele_leger: 'haiku', effort: 'bas', palier: 2 } }))
   && /éteinte/.test(libelleBascule({ bascule_auto: false, palier: 3 })))
 // Alerte de saturation + ouverture automatique (0040) : le niveau, la file et le seuil viennent de la base (etat.auto).

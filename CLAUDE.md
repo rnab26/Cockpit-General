@@ -224,7 +224,7 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 0019 la passe ne sert que son projet ; `projet_de_test` exclut encore les
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
-**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> [pct]` (depuis `get_session` → `rate_limit_info`) pose un palier 0 à 3 (`bascule_usage`) : 0 les modèles réglés, 1 code d'un cran plus bas (opus>sonnet>haiku), 2 code -2 crans, lecture -1, effort bas, 3 tout en haiku. Monte tout de suite, redescend après 30 min de calme, expire seul après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> --fenetre <rateLimitType> --reset <resetsAt>` (depuis `get_session` → `external_metadata.rate_limit_info`, qui n'a AUCUN pourcentage : seulement status, type de fenêtre, resetsAt) pose un palier 0 à 3 (`bascule_usage`, règle `palier_cible`, **migration 0045**, chantier a1a67b3d : « Haiku n'est pas assez puissant : dernière option ; plein gaz jusqu'à 50 %, puis répartir jusqu'à la fin de la fenêtre ») : 0 plein gaz (modèles et effort réglés), 1 effort d'un cran plus bas, 2 effort bas + modèle d'un cran plus léger sans passer sous Sonnet, 3 Haiku seulement (si autorisé) quand la limite est atteinte. Rythme = part écoulée de la fenêtre (5 h ou 7 j) + statut : avertissement tôt = palier 2, après le seuil = 1, dans les 10 % finaux = 0 (le crédit va être remis à zéro). Réglages par projet : `chefs.bascule_seuil_pct` (50) et `bascule_haiku` (oui), écran « Modèles et effort ». Monte tout de suite, redescend après 30 min de calme, expire à resetsAt ou après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
 
 ## Sessions qui se ferment seules (30 sept. 2026, migration 0038, chantier 27d251f8)
 
@@ -505,6 +505,27 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 (pas encore d'écran : SQL ou `scripts/sql.sh`). Un faux doublon constaté → un cas
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
+
+## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0046)
+
+Raphaël : « Pourquoi attendre 30 minutes ? […] zéro chantier tenu pour rien. »
+UN réglage, `projets.delai_sans_signe_min` (1 à 120, défaut 3), lu par UNE
+fonction `cockpit.delai_signe(projet)` que lisent `sans_signe_de_vie`,
+`renfort_vivant` et les autres règles « session/agent vivant » (messages sans
+réponse, réponses sans suite, « où ça en est », mode autonome, réveil, relais,
+filet) : plus aucun « 30 minutes » en dur (`verifier-base` §39 le vérifie sur
+les fonctions en vigueur ; toute nouvelle règle « vivant » lit `delai_signe`).
+Réglage : app (Renforts › Réglages › « Libérer un chantier réservé sans signe
+de vie depuis… », message succès/échec) ou `chef.sh --sans-signe <min>` ;
+l'écran (`lib/silence.ts`) reçoit la valeur du projet, son défaut 3 est comparé
+à celui de la colonne. **Mesuré** : le signe de vie d'une session ne part qu'au
+RETOUR d'un outil (PostToolUse, ≤ 1/min) et les tâches d'agent (`taches.vu_at`)
+le suivent ; un outil long (jusqu'à 10 min, plafond du Bash) ne disait rien.
+D'où le hook **PreToolUse** de `hooks/suivi.sh` : un battement détaché toutes
+les 45 s tant que l'outil tourne (déclaré par `brancher.sh`, propagé par le
+hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outil
+(> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
+dans la même transaction que le choix ; la fiche est touchée, début du délai).
 
 ## Filet de sécurité : du travail attend, personne ne traite → réveil auto (30 sept. 2026, migration 0044, chantier 42938fc3)
 

@@ -215,10 +215,15 @@ export interface EtatModeles {
   bascule_auto?: boolean
   palier?: number
   palier_raison?: string | null
+  /** Réglages de la bascule (0045) : seuil du plein gaz en %, Haiku autorisé en dernier recours. */
+  bascule_seuil_pct?: number
+  bascule_haiku?: boolean
+  /** Fenêtre d'usage mesurée (rate_limit_info) : type, remise à zéro, part écoulée. Jamais un % d'usage : il n'existe pas. */
+  fenetre?: { type: string; reset_at: string | null; ecoule_pct: number | null } | null
   effectifs?: { modele_code: ModeleClaude; modele_leger: ModeleClaude; effort: EffortClaude; palier: number }
 }
 export const MODELES: { valeur: ModeleClaude; nom: string; aide: string }[] = [
-  { valeur: 'haiku', nom: 'Haiku', aide: 'le moins cher' },
+  { valeur: 'haiku', nom: 'Haiku', aide: 'dernier recours' },
   { valeur: 'sonnet', nom: 'Sonnet', aide: 'équilibré' },
   { valeur: 'opus', nom: 'Opus', aide: 'le plus cher' },
 ]
@@ -237,13 +242,24 @@ export function erreurReglageFermeture(min: number): string | null {
   if (!Number.isInteger(min) || min < 0 || min > 1440) return 'Fermeture des sessions : de 0 à 1440 minutes.'
   return null
 }
-/** Ce que dit l'écran de la bascule d'usage (0037) : jamais un nombre d'agents, seulement les modèles. */
-export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 'palier_raison' | 'effectifs'>): string {
+/** Mêmes bornes que regler_bascule_seuils (base). */
+export function erreurSeuilBascule(seuil: number): string | null {
+  if (!Number.isInteger(seuil) || seuil < 10 || seuil > 90) return 'Seuil du plein gaz : de 10 à 90 %.'
+  return null
+}
+const NOM_FENETRE: Record<string, string> = { five_hour: 'fenêtre de 5 h', seven_day: 'fenêtre de 7 jours', seven_day_opus: 'fenêtre de 7 jours (Opus)', seven_day_sonnet: 'fenêtre de 7 jours (Sonnet)' }
+/** Ce que dit l'écran de la bascule (0045) : l'effort d'abord, le modèle ensuite, Haiku en dernier ; jamais un nombre d'agents. */
+export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 'palier_raison' | 'effectifs' | 'bascule_seuil_pct' | 'fenetre'>): string {
   if (e.bascule_auto === false) return 'Bascule automatique éteinte : les modèles réglés ci-dessus servent toujours.'
   const p = e.palier ?? 0
-  if (p === 0 || !e.effectifs) return 'Bascule automatique : usage normal, les meilleurs modèles réglés servent.'
+  const seuil = e.bascule_seuil_pct ?? 50
+  const f = e.fenetre
+  const fen = f ? ` ${NOM_FENETRE[f.type] ?? f.type}${f.ecoule_pct != null ? ` écoulée à ${Math.round(f.ecoule_pct)} %` : ''}.` : ''
+  if (p === 0 || !e.effectifs) return `Bascule automatique : plein gaz, les modèles et l’effort réglés servent (rythme surveillé à partir de ${seuil} % de la fenêtre d’usage).${fen}`
   const nom = (m: ModeleClaude) => MODELES.find((x) => x.valeur === m)?.nom ?? m
-  return `Bascule automatique, palier ${p} sur 3 (${e.palier_raison ?? 'usage élevé'}) : code ${nom(e.effectifs.modele_code)}, lecture ${nom(e.effectifs.modele_leger)}. Le nombre d’agents ne change pas ; retour aux modèles réglés dès que l’usage se calme.`
+  const effort = EFFORTS.find((x) => x.valeur === e.effectifs?.effort)?.nom.toLowerCase() ?? e.effectifs.effort
+  const etape = p === 1 ? 'effort réduit d’abord' : p === 2 ? 'effort bas et modèle plus léger' : 'limite proche : Haiku en dernier recours'
+  return `Bascule automatique, palier ${p} sur 3, ${etape} (${e.palier_raison ?? 'usage élevé'}) : code ${nom(e.effectifs.modele_code)}, lecture ${nom(e.effectifs.modele_leger)}, effort ${effort}. Le nombre d’agents ne change pas ; retour au plein gaz à la remise à zéro de la fenêtre ou dès que l’usage se calme.`
 }
 export function libelleFrein(f: EtatModeles['frein']): string {
   if (!f.actif) return 'Aucun frein : les agents travaillent normalement.'

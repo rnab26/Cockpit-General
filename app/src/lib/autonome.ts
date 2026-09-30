@@ -65,7 +65,7 @@ const MIN = 60_000
  * Ce qu'une session peut prendre seule (copie de cockpit.chantiers_prenables,
  * migration 0011, que l'app n'a pas le droit d'appeler) : libre ou pas encore
  * trié, ou EN COURS mais ABANDONNÉ (fiche immobile depuis 1 h, aucun signe de
- * vie depuis 30 min, aucune session vivante qui le tient). Jamais « à cadrer »,
+ * vie depuis le délai du projet, aucune session vivante qui le tient). Jamais « à cadrer »,
  * « bloqué », « reporté », « à vérifier ». Ouvert, pas un doublon, pas réservé
  * par une autre (réservation expirée comprise).
  */
