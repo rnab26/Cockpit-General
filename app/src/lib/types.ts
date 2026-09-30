@@ -32,6 +32,12 @@ export interface Projet {
   autonome_max: number
   /** Mode autonome « tout le temps », sans heure de fin (0011). */
   autonome_toujours: boolean
+  /** S'éteint tout seul après N heures sans rien à prendre (0031 ; 0 = jamais, 3 par défaut). */
+  autonome_arret_vide_h?: number
+  /** Premier passage qui n'a rien trouvé à prendre (0031), null dès qu'il y a du travail. */
+  autonome_vide_depuis?: string | null
+  /** Quand il s'est éteint tout seul (0031), null s'il a été réglé à la main depuis. */
+  autonome_eteint_auto_at?: string | null
 }
 
 export interface Section {

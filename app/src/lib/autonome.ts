@@ -97,3 +97,66 @@ export function erreurReglage(fin: Date, max: number, now: Date = new Date()): s
   if (fin.getTime() - now.getTime() > DUREE_MAX_MS) return 'Pas plus de 24 h d’affilée.'
   return null
 }
+
+// ------------------------------------------------ interrupteur et veille (0031)
+// Chantier 79ec70d6 : « éteindre et allumer le travail autonome d'un projet,
+// pour éviter les crédits inutiles ». Le serveur éteint seul le mode quand
+// rien n'est à prendre depuis `autonome_arret_vide_h` heures
+// (cockpit.constater_autonome) ; l'écran le dit, et alerte avant.
+
+/** Choix proposés pour l'extinction automatique (0 = jamais). */
+export const ARRET_VIDE_CHOIX = [0, 1, 3, 6] as const
+export const ARRET_VIDE_DEFAUT = 3
+
+export type EtatAutonome = {
+  actif: boolean
+  /** « Autonome tout le temps », « Autonome jusqu'à 09:00 », « Autonome éteint ». */
+  libelle: string
+  /** Allumé sans rien à prendre ni personne au travail : il réveille des sessions pour rien. */
+  alerte: string | null
+  /** Éteint tout seul : quand et pourquoi. */
+  note: string | null
+}
+
+/** « s'éteint seul après 3 h sans rien à prendre » / « ne s'éteint jamais seul ». */
+export function texteArretVide(h: number): string {
+  return h > 0 ? `s’éteint seul après ${h} h sans rien à prendre` : 'ne s’éteint jamais seul'
+}
+
+/**
+ * Ce que l'écran dit du mode autonome d'un projet. `prets` = chantiers
+ * prenables (chantiersPrenables), `travail` = un chantier réservé en cours ou
+ * un agent qui avance dans le projet (travailEnCours, même règle que
+ * cockpit.constater_autonome).
+ */
+export function etatAutonome(
+  p: { autonome_jusqu_a: string | null; autonome_toujours?: boolean; autonome_arret_vide_h?: number; autonome_vide_depuis?: string | null; autonome_eteint_auto_at?: string | null },
+  prets: number, travail: boolean, now: Date = new Date(),
+): EtatAutonome {
+  const actif = autonomeActif(p, now)
+  if (!actif) {
+    const note = p.autonome_eteint_auto_at ? `Éteint tout seul à ${heureIsrael(p.autonome_eteint_auto_at)} : plus rien à prendre.` : null
+    return { actif, libelle: 'Autonome éteint', alerte: null, note }
+  }
+  const libelle = p.autonome_toujours ? 'Autonome tout le temps' : `Autonome jusqu’à ${heureIsrael(p.autonome_jusqu_a!)}`
+  if (prets > 0 || travail) return { actif, libelle, alerte: null, note: null }
+  const h = p.autonome_arret_vide_h ?? ARRET_VIDE_DEFAUT
+  let alerte: string
+  if (h <= 0) alerte = 'Rien à prendre : il réveille quand même une session à chaque passage. Éteins-le si tu n’ajoutes rien.'
+  else if (p.autonome_vide_depuis) {
+    const fin = new Date(Date.parse(p.autonome_vide_depuis) + h * 3600_000)
+    alerte = fin.getTime() > now.getTime() ? `Rien à prendre : il s’éteindra seul vers ${heureIsrael(fin)}.` : 'Rien à prendre : il s’éteindra seul au prochain passage.'
+  } else alerte = `Rien à prendre : il s’éteindra seul après ${h} h sans travail.`
+  return { actif, libelle, alerte, note: null }
+}
+
+/** Du travail en cours dans le projet (même règle que cockpit.constater_autonome, 0031). */
+export function travailEnCours(
+  chantiers: readonly Pick<Chantier, 'projet_id' | 'etat' | 'archived_at' | 'pris_par' | 'pris_jusqu_a'>[],
+  taches: readonly Pick<Tache, 'projet_id' | 'statut' | 'vu_at'>[],
+  projetId: string, now: Date = new Date(),
+): boolean {
+  const t = now.getTime()
+  return chantiers.some((c) => c.projet_id === projetId && !c.archived_at && c.etat === 'en_cours' && !!c.pris_par && ms(c.pris_jusqu_a) > t)
+    || taches.some((x) => x.projet_id === projetId && x.statut === 'en_cours' && ms(x.vu_at) > t - 30 * MIN)
+}

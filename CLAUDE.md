@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), mode autonome qui s’éteint seul (§15)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
@@ -548,3 +548,15 @@ corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
   en dernier) — `chantiers_prenables`, réservée aux sessions. Quand aucune
   session ne vit, un réveil (Routine Claude horaire) lance `scripts/passe.sh`
   dans la session autonome du projet : un chantier, ou « RIEN » en une ligne.
+- **Interrupteur, sans crédit perdu** (30 sept. 2026, migration 0031, chantier
+  79ec70d6) : dans la vue projet, hors du repli, un interrupteur (un toucher
+  allume « tout le temps » ou éteint ; « Régler… » : heure, plafond,
+  extinction automatique) ; une lune sur l'onglet de chaque projet allumé
+  (ambre = allumé sans rien à prendre). `constater_autonome(slug)` (service),
+  appelé à chaque passage par `passe.sh`, `chef.sh` et `hooks/autonome.sh` :
+  du travail (prenable, réservé en cours, agent vivant) → compteur à zéro ;
+  rien depuis `projets.autonome_arret_vide_h` h (0 = jamais, 3 par défaut) →
+  éteint (`autonome_eteint_auto_at`) + message dans le fil du projet. Même
+  règle côté écran : `etatAutonome`, `travailEnCours` (`lib/autonome.ts`).
+  Limite : éteint, un réveil horaire (routine) tourne encore et répond RIEN ;
+  seule la désactivation de la routine l'arrête (non automatisée).

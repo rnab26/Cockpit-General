@@ -245,6 +245,8 @@ if [ -z "$attente" ] && [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" 
     [ -n "$c" ] && [ "$c" != "null" ] || break
     donnes+=("$(printf '%s' "$c" | jq -c --arg slug "$projet" --arg depot "$depot" --arg br "$br" '. + {slug: $slug, depot: $depot, branche: $br}')")
   done
+  # Sans crédit perdu (0031) : rien à faire depuis le délai réglé → le mode s'éteint tout seul.
+  [ "$(un "select constater_autonome($P) as r" | jq -r '.r // empty')" = "eteint_auto" ] && note_auto="Mode autonome de $projet éteint tout seul (plus rien à prendre). "
 fi
 # « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, dans CE projet.
 while [ -z "$attente" ] && [ ${#donnes[@]} -lt "$libres" ]; do
@@ -264,7 +266,7 @@ if [ -z "$attente" ] && [ ${#donnes[@]} -lt "$libres" ]; then
   case "$revue" in RIEN*|"") revue="" ;; esac
 fi
 nb=$(( ${#donnes[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
-if [ "$nb" -eq 0 ]; then rien "aucun chantier à prendre dans $projet ($agents agent(s) au travail)."; fi
+if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $projet ($agents agent(s) au travail)."; fi
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
 
 if [ -n "$attente" ]; then

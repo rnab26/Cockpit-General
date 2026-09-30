@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { SquareCheck, Copy, Download, FolderTree, Layers, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
+import { SquareCheck, Copy, Download, FolderTree, Layers, Moon, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
@@ -8,7 +8,11 @@ import { useMenuQuiSeFerme } from '../ui/Modale.ts'
 
 export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir' | 'installer'
 
-export interface Pastilles { travaillent: number; aToi: number }
+export interface Pastilles {
+  travaillent: number; aToi: number
+  /** Mode autonome allumé (0031) : « alerte » = allumé sans rien à prendre ni personne au travail. */
+  autonome?: 'actif' | 'alerte' | null
+}
 
 /**
  * Les petites pastilles d'un onglet : n sessions au travail (point vert), n
@@ -16,9 +20,11 @@ export interface Pastilles { travaillent: number; aToi: number }
  * emoji (29 sept. : « très coloré, ça fait mal aux yeux »).
  */
 function PastillesOnglet({ p }: { p: Pastilles | undefined; actif?: boolean }) {
-  if (!p || (!p.travaillent && !p.aToi)) return null
+  if (!p || (!p.travaillent && !p.aToi && !p.autonome)) return null
   return (
     <span className="flex items-center gap-1.5 text-[11px] font-semibold tabular-nums leading-5" data-testid="pastilles-onglet">
+      {p.autonome ? <span data-testid="pastille-autonome" data-alerte={p.autonome === 'alerte' ? 'oui' : 'non'} title={p.autonome === 'alerte' ? 'Autonome allumé, rien à prendre' : 'Mode autonome allumé'}
+        className={p.autonome === 'alerte' ? 'text-attention' : 'text-info'}><Moon size={12} aria-label={p.autonome === 'alerte' ? 'autonome, rien à prendre' : 'autonome'} /></span> : null}
       {p.travaillent ? <span className="flex items-center gap-0.5 text-ok" data-testid="pastille-travaillent" title={`${p.travaillent} session(s) au travail`}><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" />{p.travaillent}</span> : null}
       {p.aToi ? <span className="text-alerte" data-testid="pastille-a-toi" title={`${p.aToi} chose(s) t’attendent`}>{p.aToi}</span> : null}
     </span>

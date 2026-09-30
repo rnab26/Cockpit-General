@@ -80,6 +80,8 @@ if [ "$(printf '%s' "$chef" | jq -r '.e // false')" = "true" ]; then
   jq -n --arg r "$passe" '{decision: "block", reason: $r}'; exit 0
 fi
 r=$(timeout 8 "$SQL" "select prochain_chantier_autonome('$(q "$PROJET")', '$(q "$sid")', '$(q "$branche")') as c" 2>/dev/null | jq -c '.rows[0].c // empty' 2>/dev/null)
+# Sans crédit perdu (0031) : le constat du passage (rien à faire depuis le délai réglé → éteint tout seul).
+timeout 5 "$SQL" "select constater_autonome('$(q "$PROJET")') as r" >/dev/null 2>&1 || true
 [ -n "$r" ] && [ "$r" != "null" ] || exit 0
 raison=$(consigne "$r")
 jq -n --arg r "$raison" '{decision: "block", reason: $r}'

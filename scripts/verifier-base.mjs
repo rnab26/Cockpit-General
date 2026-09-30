@@ -782,6 +782,35 @@ async function controle15_limites_autonome() {
   verifie("le plafond par session (1 ici) arrête l'enchaînement", r.ok && r.rows?.[0]?.c === null, r);
   await execSql(`select regler_autonome(${q(SLUG_A)}, null) as r`);
   verifie("éteindre = null", (await une(`select autonome_jusqu_a from projets where id = ${q(P1)}`)).autonome_jusqu_a === null);
+
+  // 0031 : sans crédit perdu — le passage constate, et s'éteint seul après le délai réglé sans rien à prendre.
+  const constat = async () => (await une(`select constater_autonome(${q(SLUG_A)}) as r`)).r;
+  const proj = () => une(`select autonome_toujours, autonome_jusqu_a, autonome_vide_depuis, autonome_eteint_auto_at, autonome_arret_vide_h from projets where id = ${q(P1)}`);
+  verifie("constat, mode éteint → « eteint », rien ne bouge", (await constat()) === "eteint");
+  await sql(`update chantiers set archived_at = now() where projet_id = ${q(P1)} and archived_at is null and etat in ('libre','a_trier','en_cours')`);
+  const trop24 = await execSql(`select regler_autonome(${q(SLUG_A)}, null, null, true, 30) as r`);
+  verifie("extinction automatique hors 0-24 h refusée", trop24.ok === false, trop24);
+  await execSql(`select regler_autonome(${q(SLUG_A)}, null, null, true, 2) as r`);
+  verifie("allumé « tout le temps » avec extinction à 2 h : réglage gardé", (await proj()).autonome_arret_vide_h === 2);
+  verifie("rien à prendre → « vide », l'heure du premier constat est notée", (await constat()) === "vide" && !!(await proj()).autonome_vide_depuis);
+  const cTravail = await creerChantier(P1, { titre: "Test constat : travail prêt", etat: "libre" });
+  verifie("un chantier prêt → « travail », le compteur repart à zéro", (await constat()) === "travail" && (await proj()).autonome_vide_depuis === null);
+  await sql(`update chantiers set archived_at = now() where id = ${q(cTravail)}`);
+  await constat();
+  await sql(`update projets set autonome_vide_depuis = now() - interval '3 hours' where id = ${q(P1)}`);
+  verifie("rien depuis plus que le délai → « eteint_auto »", (await constat()) === "eteint_auto");
+  const pe = await proj();
+  verifie("éteint tout seul : plus « tout le temps », heure d'extinction notée", pe.autonome_toujours === false && pe.autonome_jusqu_a === null && !!pe.autonome_eteint_auto_at, pe);
+  const msgAuto = await une(`select corps, chantier_id from messages where projet_id = ${q(P1)} and auteur = 'cockpit' and corps like 'Mode autonome éteint tout seul%' order by created_at desc limit 1`);
+  verifie("le fil du projet le dit (message sans chantier)", !!msgAuto && msgAuto.chantier_id === null && /depuis 2 h/.test(msgAuto.corps), msgAuto);
+  await execSql(`select regler_autonome(${q(SLUG_A)}, null, null, true, 0) as r`);
+  verifie("rallumé à la main : l'extinction automatique est effacée", (await proj()).autonome_eteint_auto_at === null);
+  await constat();
+  await sql(`update projets set autonome_vide_depuis = now() - interval '30 hours' where id = ${q(P1)}`);
+  verifie("extinction « jamais » (0) : reste allumé même vide depuis 30 h", (await constat()) === "vide" && (await proj()).autonome_toujours === true);
+  const pirateConstat = await rpcUtilisateur("constater_autonome", { p_projet: SLUG_A }, jwt);
+  verifie("constater_autonome : réservé aux sessions (un membre est refusé)", pirateConstat.status >= 400, pirateConstat);
+  await execSql(`select regler_autonome(${q(SLUG_A)}, null) as r`);
 }
 
 async function controle18_reponses_prises() {
