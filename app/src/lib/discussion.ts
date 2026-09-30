@@ -97,3 +97,17 @@ export function attenteReponse(fil: readonly M[], o: { maintenant: number; sessi
   }
   return { ...base, etat: 'personne', titre: 'Message envoyé : réponse en attente', detail: 'Aucune session ne tourne sur ce projet : ouvre Claude Code sur ce projet pour qu’il te réponde.' }
 }
+
+/**
+ * Un message qui renvoie à un AUTRE fil (0033, `messages.chantier_lie`) :
+ * « il faudrait aussi X » dans un fil → Claude ouvre le chantier X et sa
+ * réponse porte le lien ; le nouveau fil renvoie au fil d'origine. Rend le
+ * chantier à ouvrir, ou null (pas de lien, le fil lui-même, ou un chantier
+ * supprimé / hors de vue).
+ */
+export function filLie<C extends { id: string }>(
+  m: { chantier_id: string | null; chantier_lie?: string | null }, chantiers: readonly C[],
+): C | null {
+  if (!m.chantier_lie || m.chantier_lie === m.chantier_id) return null
+  return chantiers.find((c) => c.id === m.chantier_lie) ?? null
+}

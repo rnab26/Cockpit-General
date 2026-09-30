@@ -127,6 +127,8 @@ export interface Message {
   recu_par?: string | null
   /** 0027 : écrit par Raphaël dans une SESSION Claude (hook de suivi), recopié dans le fil. Déjà lu et répondu là-bas. */
   via_session?: boolean | null
+  /** 0033 : le fil vers lequel ce message renvoie (chantier ouvert depuis ce fil, ou fil d'origine). */
+  chantier_lie?: string | null
 }
 
 export interface Media {

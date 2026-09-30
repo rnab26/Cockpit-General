@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -14,7 +14,7 @@ import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
-import { attenteReponse, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
+import { attenteReponse, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
@@ -179,9 +179,10 @@ const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */
 function BulleMessage({ m }: { m: Message }) {
-  const { admin, par, projet, recharger } = useCockpit()
+  const { admin, par, projet, recharger, chantiers, ouvrirChantier } = useCockpit()
   const toast = useToast()
   const medias = mediasDe(m)
+  const lie = filLie(m, chantiers)
   // Le crayon sur une image que Raphaël a déjà envoyée : l'image annotée part dans le même fil, comme une nouvelle pièce.
   const annoter = async (f: File) => {
     const r = await deposerMedia(projet.id, m.chantier_id, crypto.randomUUID(), f)
@@ -204,6 +205,16 @@ function BulleMessage({ m }: { m: Message }) {
       ) : null}
       {m.kind === 'action' && m.etat && !m.reponse ? <p className="mt-1 text-sm text-texte-2">État : {m.etat === 'pas_encore' ? 'pas encore' : m.etat}</p> : null}
       {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} onAnnote={m.auteur_type === 'session' ? undefined : annoter} /></div> : null}
+      {lie ? (
+        <button type="button" onClick={() => ouvrirChantier(lie.id)} data-testid="ouvrir-fil-lie"
+          className="mt-1.5 flex min-h-10 w-full items-center gap-2 rounded-xl border border-bord bg-carte-2 px-3 py-2 text-left text-sm hover:border-texte-2">
+          <MessageSquare size={16} className="shrink-0 text-texte-2" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{lie.titre}</span>
+            <span className="block text-xs text-texte-2">Ouvrir ce fil · {infoEtat(lie.etat).court}</span>
+          </span>
+        </button>
+      ) : null}
     </Bulle>
   )
 }

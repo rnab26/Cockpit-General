@@ -1184,6 +1184,32 @@ try {
   await fermerConv()
 
   // ===================================================================
+  // 6d. « Il faudrait aussi X » (0033) : la réponse de Claude porte un bouton vers le nouveau fil, et retour.
+  console.log('  — fil lié (chantier né dans un fil)')
+  const L1 = creerTest('fil d’origine', { etat: 'en_cours' })
+  const L2 = creerTest('export pdf né du fil', { etat: 'libre' })
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values ('${projet.id}', '${L1.id}', 'verifier-web', 'proprietaire', 'info', '${esc(`${MARQUE2} il faudrait aussi un export pdf`)}', now() - interval '2 minutes')`)
+  sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, chantier_lie, created_at) values ('${projet.id}', '${L1.id}', 'verifier-web', 'session', 'info', '${esc(`${MARQUE2} C’est noté : nouveau chantier, prêt à lancer.`)}', '${L2.id}', now() - interval '1 minute'), ('${projet.id}', '${L2.id}', 'verifier-web', 'session', 'info', '${esc(`${MARQUE2} Chantier ouvert depuis le fil`)}', '${L1.id}', now())`)
+  await actualiser()
+  await deplierTout()
+  await ligneId(L1.id).waitFor({ timeout: 15000 })
+  await ligneId(L1.id).getByTestId('ouvrir-chantier').click()
+  await attendreConv(L1.titre)
+  const lien1 = conv().getByTestId('ouvrir-fil-lie')
+  const bLien = await lien1.boundingBox()
+  verifie('la réponse de Claude porte « Ouvrir ce fil » : titre du nouveau chantier et son état, entier sur le téléphone',
+    await lien1.count() === 1 && /export pdf né du fil/.test(await lien1.textContent()) && /Ouvrir ce fil · \S/.test(await lien1.textContent())
+      && bLien && bLien.x >= 0 && bLien.x + bLien.width <= 390 && bLien.height >= 40, { texte: await lien1.textContent().catch(() => null), bLien })
+  await lien1.evaluate((e) => e.scrollIntoView({ block: 'center' }))
+  await capture(page, 'fil-lie')
+  await lien1.click()
+  await attendreConv(L2.titre)
+  verifie('toucher le bouton → le fil du nouveau chantier s’ouvre à sa place', /export pdf né du fil/.test(await conv().getByTestId('titre-conversation').textContent()))
+  const lien2 = conv().getByTestId('ouvrir-fil-lie')
+  verifie('…et son fil renvoie au fil d’origine', await lien2.count() === 1 && /fil d’origine/.test(await lien2.textContent()), await lien2.textContent().catch(() => null))
+  await fermerConv()
+
+  // ===================================================================
   // 7. Un chantier reporté : « Écrire à Claude » avec une photo, « Relancer maintenant »
   console.log('  — reporté, écrire à Claude')
   const R1 = creerTest('reporte', { etat: 'reporte', demande: 'Mis de côté pour la v2.' })
