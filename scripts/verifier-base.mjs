@@ -2001,6 +2001,8 @@ async function controle34_fermeture_sessions() {
   await sql(`insert into ouvertures (id, projet_id, session_distante, created_at) values (${q(oid)}, ${q(P1)}, 'session_test_fermeture', now() - interval '1 hour')`);
   const finie = async () => (await une(`select ouverture_finie(${q(oid)}) as f`)).f;
   await sql(`delete from messages where projet_id = ${q(P1)} and auteur_type in ('proprietaire', 'utilisateur') and kind in ('info', 'constat', 'reponse')`); // les messages de test des sections précédentes
+  await sql(`delete from messages where projet_id = ${q(P1)} and kind in ('question', 'action') and answered_at is null`);
+  await sql(`update chantiers set etat = 'libre', pris_par = null, pris_jusqu_a = null where projet_id = ${q(P1)} and etat = 'en_cours'`);
   verifie("relais ouvert depuis plus que le délai, rien en attente : à fermer", await finie() === true);
   verifie("… et listé par ouvertures_a_fermer", JSON.stringify((await une(`select ouvertures_a_fermer(${q(SLUG_A)}) as r`)).r).includes(oid));
   const qid = randomUUID();
