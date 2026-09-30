@@ -15,7 +15,7 @@
  * `estMessageLibre` est la MÊME règle que `cockpit.est_message_libre` (0025) ;
  * verifier-base.mjs §25 compare les deux sur les mêmes lignes.
  */
-import type { Message } from './types.ts'
+import type { Chantier, Message } from './types.ts'
 
 type M = Pick<Message, 'id' | 'auteur_type' | 'kind' | 'corps' | 'created_at' | 'answered_at' | 'chantier_id'> &
   Partial<Pick<Message, 'medias' | 'ou_en_est' | 'recu_at' | 'recu_par' | 'via_session'>>
@@ -89,4 +89,13 @@ export function attenteReponse(fil: readonly M[], o: { maintenant: number; sessi
     return { ...base, etat: 'attente', titre: 'Message envoyé : réponse en attente', detail: `Aucune session n’est dessus. Prochain passage de Claude ${quand} : il te répondra ici.` }
   }
   return { ...base, etat: 'personne', titre: 'Message envoyé : réponse en attente', detail: 'Aucune session ne tourne sur ce projet : ouvre Claude Code sur ce projet pour qu’il te réponde.' }
+}
+
+/**
+ * Chantier lié à un message (0033 : ouverture d'un chantier depuis un fil).
+ * Stub : la base n'expose pas encore messages.chantier_lie.
+ * TODO : implémenter une fois que la migration 0033 est complète.
+ */
+export function filLie(_m: M, _chantiers: readonly Chantier[]): Chantier | null {
+  return null
 }
