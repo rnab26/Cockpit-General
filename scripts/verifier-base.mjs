@@ -1327,6 +1327,8 @@ async function controle25_renforts() {
   const p4 = (await une(`select prochain_renfort(${q(rE)}) as r`)).r;
   const fini = await une(`select statut, faits, fini_at from renforts where id = ${q(rE)}`);
   verifie("section vide et plus rien en cours → FINI, 3 chantiers faits", p4.etat === "fini" && fini.statut === "fini" && fini.faits === 3 && !!fini.fini_at, { p4, fini });
+  // Depuis 0038 la chef n'archive un renfort fini qu'après un délai (fermeture_delai_min) : on vieillit sa fin, comme s'il avait fini il y a un jour.
+  await sql(`update renforts set fini_at = now() - interval '1 day' where id = ${q(rE)}`);
   const arch = (await une(`select renforts_a_ouvrir(${q(SLUG_F)}, true) as r`)).r.archiver;
   verifie("la chef voit le renfort fini à archiver (avec sa session)", arch.some((a) => a.id === rE && a.session === "session_test_e"), arch);
   verifie("renfort_archive : fini → archivé", (await une(`select renfort_archive(${q(rE)}) as ok`)).ok === true
