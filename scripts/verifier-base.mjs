@@ -2252,6 +2252,52 @@ async function controle37_fusion_auto() {
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
 // Un projet NEUF (I) pour l'ouverture automatique des renforts.
 const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
+// 38. Renforts en échec (0044) : pause 30 min, puis 3 h après 2 échecs de suite ; statut d'usage inconnu = aucun changement.
+const P11E = randomUUID(), SLUG_KE = `test-verif-${rand}-ke`;
+async function controle38_renforts_echecs() {
+  section("38. Renforts en échec (0044) : pause 30 min, 3 h après 2 échecs de suite, une seule ligne claire ; usage inconnu sans effet sur les modèles");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P11E)}, ${q(SLUG_KE)}, 'Projet de test K', 'rnab26/test-inexistant')`);
+  const S1 = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P11E)}, 'Objets', 1)`);
+  for (const t of ["PAUSE 1", "PAUSE 2", "PAUSE 3"]) { const id = await creerChantier(P11E, { titre: t, etat: "libre", demande: `travail ${t}` }); await sql(`update chantiers set section_id = ${q(S1)} where id = ${q(id)}`); }
+  await sql(`select regler_renforts(${q(SLUG_KE)}, 2, 3)`);
+  const pause = async () => (await une(`select renforts_pause(${q(P11E)}, ${q(S1)}) as p`)).p;
+  const nb = async () => (await une(`select count(*)::int as n from renforts where projet_id = ${q(P11E)}`)).n;
+  verifie("sans historique : pas de pause", (await pause()).pause === false);
+  const echec = (min, erreur = "scripts/cockpit-renfort.sh not found") => sql(`insert into renforts (projet_id, section_id, prefixe, statut, erreur, faits, created_at, vu_at) values (${q(P11E)}, ${q(S1)}, 'renfort/${randomUUID().slice(0, 6)}', 'erreur', ${q(erreur)}, 0, now() - interval '${min} minutes', now() - interval '${min - 2} minutes')`);
+  await echec(10);
+  let p = await pause();
+  verifie("un échec en 2 min il y a 10 min : pause, 1 échec, cause reprise", p.pause === true && p.echecs === 1 && /not found/.test(p.cause), p);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_KE)}, true)`);
+  verifie("pendant la pause, l'ouverture automatique ne recrée RIEN pour cette section", (await nb()) === 1);
+  const msgs = async () => await sql(`select corps from messages where projet_id = ${q(P11E)} and corps like 'Renfort %en pause%'`);
+  const m = await msgs();
+  verifie("UNE ligne claire dans le fil : « Renfort … Objets : 1 échec, en pause jusqu'à HHhMM ; cause : … »", m.length === 1 && /Objets : 1 échec, en pause jusqu’à \d\dh\d\d ; cause : scripts/.test(m[0].corps), m);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_KE)}, true)`);
+  verifie("repasser n'empile pas la ligne", (await msgs()).length === 1);
+  await sql(`delete from renforts where projet_id = ${q(P11E)}`);
+  await echec(40);
+  verifie("échec vieux de 40 min : la pause de 30 min est finie", (await pause()).pause === false);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_KE)}, true)`);
+  verifie("pause finie : un nouveau renfort peut s'ouvrir", (await nb()) === 2);
+  await sql(`update renforts set statut = 'erreur', erreur = 'cockpit central unreachable', faits = 0, created_at = now() - interval '35 minutes', vu_at = now() - interval '33 minutes' where projet_id = ${q(P11E)} and statut = 'demande'`);
+  p = await pause();
+  verifie("2 échecs de suite : pause de 3 h (pas 30 min), 2 échecs", p.pause === true && p.echecs === 2 && new Date(p.jusqu_a) - Date.now() > 2 * 3600e3, p);
+  const avant = await nb();
+  await sql(`select renforts_a_ouvrir(${q(SLUG_KE)}, true)`);
+  verifie("après 2 échecs de suite : rien de recréé", (await nb()) === avant);
+  await sql(`insert into renforts (projet_id, section_id, prefixe, statut, faits, created_at, vu_at, fini_at) values (${q(P11E)}, ${q(S1)}, 'renfort/${randomUUID().slice(0, 6)}', 'fini', 2, now() - interval '20 minutes', now() - interval '5 minutes', now() - interval '5 minutes')`);
+  verifie("un renfort qui a travaillé (faits > 0) remet le compteur à zéro", (await pause()).pause === false);
+
+  // Usage : « status » (l’aide prise à la lettre) est refusé par le script avant toute écriture (sinon palier 3 = tout en Haiku).
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const avantP = (await une(`select palier from chefs where projet_id = ${q(P11E)}`))?.palier ?? null;
+  const cli = spawnSync("bash", [join(racine, "scripts/chef.sh"), "--usage", "status"], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_KE } });
+  const apresP = (await une(`select palier from chefs where projet_id = ${q(P11E)}`))?.palier ?? null;
+  verifie("… et le palier du projet n’a pas bougé", apresP === avantP, { avantP, apresP });
+  verifie("chef.sh --usage status : refusé côté script, avant toute écriture", cli.status === 2 && /inconnu/.test(cli.stderr), { status: cli.status, se: cli.stderr });
+}
+
 async function controle35_renforts_auto() {
   section("35. Renforts ouverts tout seuls (0040) : une seule règle, seuil réglable, interrupteur, frein, maximum, jamais un projet de test, origine visible");
   await sql(`insert into projets (id, slug, nom, depot) values (${q(P9)}, ${q(SLUG_I)}, 'Projet de test I', 'rnab26/test-inexistant')`);
@@ -2289,7 +2335,7 @@ async function controle35_renforts_auto() {
   verifie("le bouton manuel reste manuel (origine « manuel »)", noMan.demandes.length === 1 && manuels.length === 1, noMan);
 
   // Interrupteur, frein, réglage à 0, maximum : chacun bloque, et l'écran le sait (bloque).
-  await sql(`update renforts set statut = 'erreur' where projet_id = ${q(P9)} and statut in ('demande', 'actif')`);
+  await sql(`update renforts set statut = 'erreur', faits = 1 where projet_id = ${q(P9)} and statut in ('demande', 'actif')`);
   await sql(`select regler_renforts_auto(${q(SLUG_I)}, false, null)`);
   await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
   verifie("interrupteur éteint : rien ne s'ouvre seul, bloque = eteint", (await vivants()) === 0 && (await etat()).auto.bloque === "eteint");
@@ -2647,6 +2693,7 @@ try {
     controle38_prochaine_migration,
     controle38_verif_sans_retour,
     controle38_filet_securite,
+    controle38_renforts_echecs,
     controle39_delai_sans_signe,
   ];
   for (const etape of etapes) {
