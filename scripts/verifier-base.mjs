@@ -1198,7 +1198,7 @@ async function controle19_chef_par_projet() {
     { encoding: "utf8", input: JSON.stringify({ hook_event_name: "Stop", session_id: session }), env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_PROJECT_DIR: racine } });
   verifie("hook Stop : la chef de C, dans une session de D, n'est ni bloquée ni pilotée", stop(SLUG_D, "chef-c").trim() === "");
   const sortieD = lancer(SLUG_D, "chef-d");
-  verifie("la passe de D sert D (2 places : réponse + vérification, prioritaire depuis 0048, avant le code libre), et rien de C", (sortieD.includes(libre.D) || sortieD.includes(verif.D)) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
+  verifie("la passe de D sert D (2 places : réponse + vérification, prioritaire depuis 0046, avant le code libre), et rien de C", (sortieD.includes(libre.D) || sortieD.includes(verif.D)) && ![libre.C, rep.C, verif.C].some((id) => sortieD.includes(id)), sortieD.slice(0, 600));
   // Le hook de message : Raphaël écrit dans une session de D → elle devient chef de D, C garde la sienne.
   execFileSync("bash", [join(racine, "hooks/prompt-rappel.sh")],
     { encoding: "utf8", input: JSON.stringify({ session_id: "nouvelle-d", prompt: "fais ceci" }), env: { ...process.env, COCKPIT_PROJET: SLUG_D, CLAUDE_PROJECT_DIR: racine } });
@@ -2046,19 +2046,19 @@ async function controle36_deplacer_chantier() {
   verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
 }
 
-// 38. « Vérifie pour moi » sans retour (0048) : priorité sur le code, la section d'un renfort ne la garde que 10 min, jamais un certifié/archivé, le relais ouvre une session, --verifs la sert.
+// 38. « Vérifie pour moi » sans retour (0046) : priorité sur le code, la section d'un renfort ne la garde que 10 min, jamais un certifié/archivé, le relais ouvre une session, --verifs la sert.
 async function controle38_verif_sans_retour() {
-  section("38. Vérifie pour moi servi (0048) : priorité, renfort de section limité à 10 min, certifié/archivé jamais, relais, --verifs");
+  section("38. Vérifie pour moi servi (0046) : priorité, renfort de section limité à 10 min, certifié/archivé jamais, relais, --verifs");
   const S = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'VERIF Section', 8)`);
   const v = await creerChantier(P9, { titre: "VERIF à juger", etat: "a_verifier" });
   const code = await creerChantier(P9, { titre: "VERIF du code libre", etat: "libre" });
   await sql(`update chantiers set section_id = ${q(S)} where id in (${q(v)}, ${q(code)})`);
   const R = randomUUID();
-  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/vv0048', 'actif', now())`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/vv0046', 'actif', now())`);
   const verifs = async (par = null) => (await sql(`select id from verifs_prenables(${q(P9)}, ${par ? q(par) : "null"})`)).map((r) => r.id);
   await sql(`update chantiers set verif_demandee_at = now() where id = ${q(v)}`);
-  verifie("demande fraîche, renfort vivant sur sa section : le renfort la prend, pas la chef", (await verifs("renfort/vv0048/")).includes(v) && !(await verifs()).includes(v));
+  verifie("demande fraîche, renfort vivant sur sa section : le renfort la prend, pas la chef", (await verifs("renfort/vv0046/")).includes(v) && !(await verifs()).includes(v));
   await sql(`update chantiers set verif_demandee_at = now() - interval '11 minutes' where id = ${q(v)}`);
   verifie("au-delà de 10 min : n'importe qui la prend (le renfort muet ne la garde plus)", (await verifs()).includes(v));
   const rf = (await une(`select prochain_renfort(${q(R)}) as r`)).r;
@@ -2137,9 +2137,9 @@ async function controle37_traite_sans_attendre() {
   await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
 }
 
-// 39. Délai « sans signe de vie » réglable (0048) : une source, défaut 3 min, agent vivant intouché, mort repris.
+// 39. Délai « sans signe de vie » réglable (0046) : une source, défaut 3 min, agent vivant intouché, mort repris.
 async function controle39_delai_sans_signe() {
-  section("39. Délai sans signe de vie réglable (0048) : défaut 3 min, une source, borné 1-120, agent vivant intouché, agent mort repris");
+  section("39. Délai sans signe de vie réglable (0046) : défaut 3 min, une source, borné 1-120, agent vivant intouché, agent mort repris");
   const vieillir = (id, min) => sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '${min} minutes' where id = ${q(id)}`);
   const reserver = (id, par) => sql(`update chantiers set pris_par = ${q(par)}, pris_jusqu_a = now() + interval '60 minutes' where id = ${q(id)}`);
   const sans = async (id) => (await une(`select sans_signe_de_vie(c) as v from chantiers c where id = ${q(id)}`)).v;
@@ -2195,7 +2195,7 @@ async function controle39_delai_sans_signe() {
   const S = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'DÉLAI Section', 10)`);
   const R = randomUUID();
-  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/tt0048', 'actif', now() - interval '5 minutes')`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/tt0046', 'actif', now() - interval '5 minutes')`);
   const vR = async () => (await une(`select renfort_vivant(r) as v from renforts r where id = ${q(R)}`)).v;
   verifie("renfort vu il y a 5 min : muet à 3 min de délai", (await vR()) === false);
   await regler(10);
