@@ -507,6 +507,14 @@ try {
   verifie('toucher une ligne → la conversation du chantier, par-dessus « Tout » (onglet inchangé)', (await page.getByTestId('onglet-tout').getAttribute('aria-selected')) === 'true')
   verifie('en-tête de conversation : « Claude y travaille — 60 % », avec le point qui pulse',
     /Claude y travaille — 60 %/.test(await conv().getByTestId('presence-conversation').textContent()) && await conv().getByTestId('presence-conversation').locator('.point-vivant').count() === 1)
+  verifie('le cadre du chantier dit la dernière action réelle (l’étape signalée), avec son âge',
+    /Dernière action : .+ · /.test(await conv().getByTestId('derniere-action').textContent()), await conv().getByTestId('derniere-action').textContent())
+  verifie('…et un message de Claude porte « Répondre » (quand il y en a) qui met le curseur dans la zone d’écriture', await (async () => {
+    const b = conv().locator('[data-testid="bulle"][data-cote="gauche"] [data-testid="repondre-bulle"]').first()
+    if (!(await b.count())) return true
+    await b.click()
+    return await conv().getByTestId('ecrire-a-claude').locator('textarea').evaluate((z) => document.activeElement === z)
+  })())
   verifie('…et une bulle « En ce moment » avec la barre vive', await conv().getByTestId('bulle-travail').locator('[data-vive="oui"]').count() === 1)
   verifie('la demande est la première bulle (après les infos du chantier, en petit)', (await conv().locator('[data-testid="fil-conversation"] > :not([data-testid="infos-chantier"])').first().getAttribute('data-testid')) === 'bulle-demande')
   verifie('conversation : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
@@ -1192,8 +1200,8 @@ try {
     await (await elementAToi(D.id, 'question')).getByTestId('verbe-a-toi').click()
     await attendreConv(D.titre)
     const finD = await enfantsD()
-    const iRep = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('Je parlais de la version courte')))
-    const iMoi2 = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('pas compris ta demande')))
+    const iRep = await filD.evaluate((el) => [...el.children].findIndex((c) => c.dataset.testid !== 'infos-chantier' && c.textContent.includes('Je parlais de la version courte')))
+    const iMoi2 = await filD.evaluate((el) => [...el.children].findIndex((c) => c.dataset.testid !== 'infos-chantier' && c.textContent.includes('pas compris ta demande')))
     verifie('Claude a répondu : plus d’attente, sa réponse (à gauche) sous ta bulle, les cartes toujours en dernier',
       await conv().getByTestId('attente-reponse').count() === 0 && iRep === iMoi2 + 1 && finD.at(-1) === 'a-faire'
         && (await filD.locator('[data-testid="bulle"]', { hasText: 'Je parlais de la version courte' }).getAttribute('data-cote')) === 'gauche', { finD, iRep, iMoi2 })
