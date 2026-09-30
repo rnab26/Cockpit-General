@@ -1185,6 +1185,7 @@ async function controle19_chef_par_projet() {
   verifie("--max règle le projet courant seulement", /pour .*: 8/.test(lancer(SLUG_C, "chef-c", ["--max", "8"]))
     && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 2);
   const sortieC = lancer(SLUG_C, "chef-c");
+  verifie("la consigne de la chef donne le modèle de chaque agent et le frein", /\[model: sonnet\]/.test(sortieC) && /\[model: haiku\]/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
   const idsD = [libre.D, rep.D, verif.D];
   verifie("la passe de C sert SES trois sortes de travail (réponse, chantier libre, vérifie pour moi)",
     sortieC.includes(`SESSION CHEF de ${SLUG_C}`) && sortieC.includes(rep.C) && sortieC.includes(libre.C) && sortieC.includes(verif.C), sortieC.slice(0, 600));
@@ -1484,6 +1485,11 @@ async function controle23_a_toi_a_jour() {
   const vu = await chantier(cD1);
   l = await revoir();
   verifie("demander.sh --confirmer <chantier> : a_toi_revu_at posé, il quitte la revue", rC.code === 0 && !!vu.a_toi_revu_at && !par(cD1), { rC, a: vu.a_toi_revu_at });
+  const cR13 = randomUUID(), cR25 = randomUUID();
+  for (const [id, h] of [[cR13, 13], [cR25, 25]])
+    await sql(`insert into chantiers (id, projet_id, titre, etat, created_at, updated_at, a_toi_revu_at) values (${q(id)}, ${q(P5)}, 'Confirmé il y a ${h} h', 'a_cadrer', ${ilYa(30)}, ${ilYa(30)}, ${ilYa(h)})`);
+  l = await revoir();
+  verifie("revue : un élément confirmé il y a 13 h ne revient pas (24 h, 0034) ; confirmé il y a 25 h, si", !par(cR13) && !!par(cR25), l.map((e) => e.titre));
   const rD = lancer("demander.sh", ["--debloquer", cB, "Clé trouvée"]);
   const db = await chantier(cB);
   const dm = await une(`select corps from messages where chantier_id = ${q(cB)} order by created_at desc limit 1`);
@@ -1498,7 +1504,7 @@ async function controle23_a_toi_a_jour() {
     ap.code === 0 && ap.sortie.includes(qNeuve) && ap.sortie.includes("--retirer") && ap.sortie.includes("--suggerer-fusion")
       && (await une(`select revue_a_toi_at from projets where id = ${q(P5)}`)).revue_a_toi_at === null, ap.sortie.slice(0, 300));
   const r1 = lancer("revue-a-toi.sh", []), r2 = lancer("revue-a-toi.sh", []);
-  verifie("revue-a-toi.sh : une revue, puis « déjà revu » pendant 24 h (0034)", r1.code === 0 && !r1.sortie.startsWith("RIEN") && r2.sortie.startsWith("RIEN") && /moins de 24 h/.test(r2.sortie), { r1: r1.sortie.slice(0, 120), r2: r2.sortie });
+  verifie("revue-a-toi.sh : une revue, puis « déjà revu » pendant 24 h (0035)", r1.code === 0 && !r1.sortie.startsWith("RIEN") && r2.sortie.startsWith("RIEN") && /moins de 24 h/.test(r2.sortie), { r1: r1.sortie.slice(0, 120), r2: r2.sortie });
 }
 
 async function controle21_aucun_reste_de_test() {
@@ -1841,7 +1847,7 @@ async function controle30_agents_fantomes() {
 }
 
 async function controle32_economie_modeles() {
-  section("32. Économie des modèles (0034) : modèle de code / de lecture, effort, frein d'usage, revue « À toi » une fois par jour");
+  section("32. Économie des modèles (0035) : modèle de code / de lecture, effort, frein d'usage, revue « À toi » une fois par jour");
   const racine = dirname(dirname(fileURLToPath(import.meta.url)));
   const sid = `test-eco-${rand}`;
   const chef = (env = {}) => {

@@ -14,7 +14,7 @@
 # mise à jour, ou fusionnée si nécessaire ». La session qui a posé un élément
 # a souvent disparu : c'est donc la chef du projet (scripts/chef.sh) qui fait
 # revoir la liste par un agent, ou la session autonome (scripts/passe.sh) quand
-# elle n'a rien d'autre à faire. Au plus une revue par JOUR et par projet (projets.revue_a_toi_delai_h, 24 par défaut, 0034 : économie des modèles).
+# elle n'a rien d'autre à faire. Au plus une revue par JOUR et par projet (projets.revue_a_toi_delai_h, 24 par défaut, 0035 : économie des modèles).
 # Seuil : COCKPIT_A_TOI_HEURES (12 par défaut). La règle est a_toi_a_revoir
 # (la même que l'app, lib/entonnoir.ts) : jamais réécrite ici.
 set -uo pipefail

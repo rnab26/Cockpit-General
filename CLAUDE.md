@@ -192,6 +192,8 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 0019 la passe ne sert que son projet ; `projet_de_test` exclut encore les
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
+
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
 « Ce sont des correctifs généraux, peu importe le repo ou le projet que je
@@ -510,6 +512,17 @@ Réglages) : l'invite de Chrome (`beforeinstallprompt`, captée avant React dans
 l'écran d'accueil). Règle : `lib/installation.ts`. `verifier-installation.ts`,
 contrôles « appli installable » de `verifier-web.mjs`.
 
+**Nouvelle version en ligne** (30 sept. 2026, chantier 3cea6ae9, Raphaël :
+« que les correctifs prennent sans recharger »). Les données arrivent en direct,
+mais le CODE reste celui du chargement. `vite.config.ts` grave le commit
+(`GITHUB_SHA`) dans l'app ET dans `version.json` (une source) ; l'app le relit
+au retour sur l'app et toutes les 5 min (`lib/version.ts`,
+`hooks/useNouvelleVersion.ts`) et affiche « Nouvelle version du cockpit ·
+Mettre à jour » (`NouvelleVersion.tsx`, un toucher recharge). Même jour : la
+liste « fini » est triée par heure de certification et chaque ligne dit
+« Certifié par toi à HH:MM · livré … » (`quandFini`, `ordreListe`) ; « À toi »
+montre l'heure à côté de l'âge. `verifier-fini.ts`.
+
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 
 Raphaël : « quitter en appuyant sur les zones extérieures de la carte ».
@@ -560,7 +573,7 @@ corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
 `ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
 `scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
 
-## Économie des modèles (30 sept. 2026, migration 0034, chantier 7a52df8f)
+## Économie des modèles (30 sept. 2026, migration 0035, chantier 7a52df8f)
 
 Raphaël : « le cockpit consomme beaucoup trop de tokens […] les sessions vont
 planter trop vite […] pouvoir choisir le modèle (Sonnet ou Opus) et l'effort » ;

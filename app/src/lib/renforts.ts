@@ -137,7 +137,7 @@ export function blocUtile(e: Pick<EtatRenforts, 'attente' | 'renforts'>): boolea
   return e.attente.length > 0 || e.renforts.length > 0
 }
 
-/** Économie des modèles (0034) : ce que la base porte (etat_modeles) et les libellés de l'écran. */
+/** Économie des modèles (0035) : ce que la base porte (etat_modeles) et les libellés de l'écran. */
 export type ModeleClaude = 'haiku' | 'sonnet' | 'opus'
 export type EffortClaude = 'bas' | 'moyen' | 'eleve'
 export interface EtatModeles {

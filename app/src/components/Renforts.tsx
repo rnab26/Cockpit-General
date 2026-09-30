@@ -221,7 +221,7 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
 }
 
 /**
- * Économie des modèles (0034) : quel modèle pour coder, lequel pour lire, quel effort, combien d'agents en
+ * Économie des modèles (0035) : quel modèle pour coder, lequel pour lire, quel effort, combien d'agents en
  * parallèle, et le frein (posé à la main ici, ou tout seul quand une session touche la limite d'usage).
  */
 function ReglagesModeles({ projet }: { projet: Projet }) {

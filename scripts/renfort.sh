@@ -55,7 +55,7 @@ case "${1:-}" in
     if [ "$etat" = "attends" ]; then
       echo "ATTENDS — $(printf '%s' "$r" | jq -r '.en_cours') chantier(s) de ta section avancent encore avec tes agents, rien de nouveau à prendre. Ne prends rien d'autre : à la fin de chaque agent, relance $RENF --suivant $2. Termine ta réponse en une ligne."; exit 0
     fi
-    # ÉCONOMIE DES MODÈLES (0034) : les modèles et l'effort du projet, réglés dans le cockpit (chefs), et le frein.
+    # ÉCONOMIE DES MODÈLES (0035) : les modèles et l'effort du projet, réglés dans le cockpit (chefs), et le frein.
     slug=$(printf '%s' "$r" | jq -r '.slug')
     cfg=$("$SQL" "select modele_code, modele_leger, effort, frein from (select p.id, coalesce(c.modele_code, 'sonnet') as modele_code, coalesce(c.modele_leger, 'haiku') as modele_leger, coalesce(c.effort, 'moyen') as effort, frein_actif(p.id) as frein from projets p left join chefs c on c.projet_id = p.id where p.slug = '$(q "$slug")') x" 2>/dev/null | jq -c '.rows[0] // {}')
     export MODELE_CODE=$(printf '%s' "$cfg" | jq -r '.modele_code // "sonnet"') MODELE_LEGER=$(printf '%s' "$cfg" | jq -r '.modele_leger // "haiku"')
@@ -63,7 +63,7 @@ case "${1:-}" in
     if [ "$(printf '%s' "$cfg" | jq -r '.frein.actif // false')" = "true" ]; then
       echo "FREIN d'usage ($(printf '%s' "$cfg" | jq -r '.frein.raison')) : ne lance qu'UN seul agent à la fois, quel que soit le maximum ci-dessous."
     fi
-    printf '%s' "$r" | jq -r --arg rid "$2" --arg r "$RENF" '"RENFORT : lance \(.chantiers | length) agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chacun est déjà réservé à SA branche : aucun autre agent ni aucune session ne le touche. Ne fais pas le travail toi-même. Économie des modèles : lance CHAQUE agent avec le paramètre model indiqué sur sa ligne « [model: X] » ; effort de raisonnement — \($ENV.EFFORT_TXT). Au plus \(.max_agents) à la fois ; à la fin de CHAQUE agent : relis son rapport en une ligne, puis relance \($r) --suivant \($rid)."'
+    printf '%s' "$r" | jq -r --arg rid "$2" --arg r "$RENF" '"RENFORT : lance \(.chantiers | length) agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chacun est déjà réservé à SA branche : aucun autre agent ni aucune session ne le touche. Ne fais pas le travail toi-même. Économie des modèles : lance CHAQUE agent avec le paramètre model indiqué sur sa ligne « [model: X] » ; effort de raisonnement — \($ENV.EFFORT_TXT). Si get_session → rate_limit_info.status n’est pas « allowed » : au plus 1 agent. Au plus \(.max_agents) à la fois ; à la fin de CHAQUE agent : relis son rapport en une ligne, puis relance \($r) --suivant \($rid)."'
     echo
     printf '%s' "$r" | jq -c '.slug as $s | .depot as $d | .chantiers[] | . + {slug: $s, depot: $d}' | while IFS= read -r c; do
       if [ "$(printf '%s' "$c" | jq -r '.verif')" = "true" ]; then

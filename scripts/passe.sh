@@ -33,7 +33,7 @@ r=$("$SQL" "select prochain_chantier_autonome('$(q "$PROJET")', $( [ -n "${CLAUD
 constat=$("$SQL" "select constater_autonome('$(q "$PROJET")') as r" 2>/dev/null | jq -r '.rows[0].r // empty')
 if [ "$constat" = "eteint_auto" ]; then echo "RIEN — le mode autonome de $PROJET s'est éteint tout seul : plus rien à prendre depuis le délai réglé. Termine ta réponse en une ligne, sans rien faire d'autre."; exit 0; fi
 if [ -z "$r" ] || [ "$r" = "null" ]; then
-  # Rien à coder : la session autonome revoit « À toi » à la place de la chef (0022), au plus une fois par jour (0034).
+  # Rien à coder : la session autonome revoit « À toi » à la place de la chef (0022), au plus une fois par jour (0035).
   revue=$(COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" bash "$RACINE/scripts/revue-a-toi.sh" 2>/dev/null)
   case "$revue" in RIEN*|"") ;; *) printf '%s\n' "$revue"; exit 0 ;; esac
 fi

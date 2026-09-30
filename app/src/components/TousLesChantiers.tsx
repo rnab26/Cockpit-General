@@ -7,6 +7,7 @@ import { compteursPresence, presenceDe, trierParPresence, LIBELLE_COURT_PRESENCE
 import type { Presence } from '../lib/presence.ts'
 import { normaliser } from '../lib/doublons.ts'
 import { dansFenetre, estFenetre, FENETRES, FENETRE_DEFAUT } from '../lib/fenetre.ts'
+import { quandFini } from '../lib/ouJenSuis.ts'
 import { Repliable } from '../ui/Repliable.tsx'
 import { Vide } from '../ui/Etats.tsx'
 import { Input } from '../ui/Champs.tsx'
@@ -34,7 +35,8 @@ export function TousLesChantiers({ sectionOuverte, basculerSection, deplierTout,
     [chantiers, activites, taches, enAttente, now, silenceMs])
   const trouves = useMemo(() => q ? trierParPresence(avec.filter(({ c }) => normaliser(`${c.titre} ${c.demande ?? ''} ${c.resume_simple ?? ''}`).includes(q))) : [], [avec, q])
   const ouverts = trierParPresence(avec.filter(({ c }) => bacDe(c) === 'optimisation'))
-  const finis = avec.filter(({ c }) => bacDe(c) === 'actif')
+  // Le plus récemment certifié en haut (même règle que la tuile « fini »).
+  const finis = avec.filter(({ c }) => bacDe(c) === 'actif').sort((a, b) => (b.c.valide_at ?? '').localeCompare(a.c.valide_at ?? ''))
   const archives = avec.filter(({ c }) => bacDe(c) === 'archives')
   const fenetre = estFenetre(prefs.fenetre_livre) ? prefs.fenetre_livre : FENETRE_DEFAUT
   const libelleFenetre = FENETRES.find((f) => f.valeur === fenetre)?.libelle.toLowerCase() ?? ''
@@ -104,9 +106,10 @@ export function TousLesChantiers({ sectionOuverte, basculerSection, deplierTout,
 
 /** Une ligne : [case à cocher] · icône de présence · le sujet · où il en est en mots · › — un toucher ouvre la conversation. */
 function LigneChantier({ c, presence }: Avec) {
-  const { selection, ouvrirChantier } = useCockpit()
+  const { selection, ouvrirChantier, moi, now } = useCockpit()
   const coche = selection.ids.has(c.id)
   const details = [
+    quandFini(c, moi.email, now),
     c.priorite === 'haute' ? 'priorité haute' : null,
     c.origine === 'session' ? 'lancé par Claude' : c.origine === 'utilisateur' ? 'demande d’un utilisateur' : null,
     c.doublon_de ? 'doublon fusionné' : null,
