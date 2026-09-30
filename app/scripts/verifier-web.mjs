@@ -390,7 +390,8 @@ try {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
       (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
       && ['Répondre', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
-    verifie('une ligne « À toi » dit aussi l’heure (« (12:17) », « (hier 23:53) »)', /\(.*\d\d:\d\d\)/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
+    verifie('une ligne « À toi » dit aussi l’heure (« · 12:17 », « · hier 23:53 »)', /^ · .*\d\d:\d\d$/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
+    verifie('une ligne « À toi » COMMENCE par son âge (« il y a … » / « à l’instant »)', /^(il y a|à l’instant|hier|\d)/.test((await ligne1.getByTestId('titre-a-toi').evaluate((el) => el.parentElement.innerText)).trim()))
   }
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
