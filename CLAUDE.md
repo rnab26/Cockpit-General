@@ -59,6 +59,7 @@ node scripts/verifier-mcp.mjs                              # serveur MCP déploy
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
+node scripts/verifier-fusion.mjs                           # règle de ressemblance de la fusion suggérée sur une table de cas (lecture seule)
 node scripts/verifier-push.mjs                            # notifications push : fonction déployée (401 sans secret, chiffrement, abonnement mort retiré), coffre, trigger, droits
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
 bash -n scripts/*.sh hooks/*.sh
@@ -247,7 +248,7 @@ n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
 Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
 reste ouverte (non suivie en base). `verifier-base` §34.
 
-## Traité sans attendre : aucun chantier « tenu » pour rien (30 sept. 2026, migration 0041, chantier fb19d6a8)
+## Traité sans attendre : aucun chantier « tenu » pour rien (30 sept. 2026, migration 0043, chantier fb19d6a8)
 
 Raphaël : « je ne veux pas que les chantiers soient tenus, je veux qu'ils soient
 traités quand ils peuvent l'être. » Mesuré sur la base : 0036 ne libérait que les
@@ -263,6 +264,17 @@ fiche, JAMAIS un message de session dans le fil : il compterait comme réponse) 
 min : libéré à HH:MM, repris seul vers HH:MM ». `verifier-base` §37, `verifier-silence.ts`.
 Limite : un agent qui code plus de 30 min sans aucune étape signalée est libéré (même
 seuil qu'en 0036).
+
+## PR à fusionner : une carte « À toi » par PR (30 sept. 2026, chantier dbae6397)
+
+Raphaël : « je n'ai aucune notification dans le cockpit pour savoir quand merger ».
+`scripts/pr-a-fusionner.sh <n>` (commande `cockpit-pr-a-fusionner.sh` dans les projets branchés) pose UNE action
+« Fusionne la PR #n : <titre> » (lien exact + « Merge pull request » + « Confirm merge » ; question ≤ 140 car.).
+Clé = numéro de PR : 2 appels = 1 carte, une carte déjà répondue n'est pas reposée. `--fermee` (ou `--etat
+merged|closed`) la retire ; `--etat open|…` évite GitHub (sinon un GET léger, `GITHUB_TOKEN` si dépôt privé). Tout
+agent qui ouvre une PR l'appelle juste après (consignes de `chef.sh` / `renfort.sh`, une seule règle). La passe de
+`chef.sh` réconcilie (au plus 30 min par projet, jamais un projet de test) : la chef liste les PR ouvertes (un appel
+GitHub) et appelle le script pour chacune ; les cartes dont la PR n'est plus ouverte : `--fermee`. `verifier-base` §37.
 
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
@@ -472,6 +484,27 @@ recopiés dans le fil).
   (`trouver_chantier`, une seule règle). Consignes : agent « Répondre » de
   `chef.sh` (point 3), session relais, `hooks/suivi.sh`, hook de démarrage,
   bloc CLAUDE.md. `verifier-base` §31, `verifier-discussion.ts`.
+
+## Fusion : menu « Fusionner avec… » et carte suggérée toute seule (30 sept. 2026, migration 0042, chantier 5b5900a9)
+
+Raphaël : « ce chantier est un doublon d'un nouveau chantier ; la fusion n'a pas
+été proposée […] je préfère qu'on me SUGGÈRE une fusion automatique plutôt que
+de me laisser déduire. » (1) Menu ⋯ du fil › « Fusionner avec… » (`Doublons.tsx::
+DoublonDe`, `lib/fusion.ts`) : liste recherchable des chantiers OUVERTS du même
+projet, confirmation qui dit ce qui se passe, toast, état vide ; passe par
+`fusionner_chantiers` (une seule règle). (2) Un trigger sur `chantiers` (création
+ou titre modifié, toutes voies) pose UNE carte `fusion` « À toi » quand le titre
+ressemble au plus près à un chantier ouvert du même projet : `ressemblance_fusion`
+= la plus forte de la similarité de trigrammes des SUJETS et des mots
+significatifs communs (au moins 2, jamais un seul), `candidat_fusion`,
+`poser_carte_fusion` (une carte par paire, dans un sens ou l'autre, même refusée ;
+partagée avec `suggerer_fusion` des sessions). Le nouveau est la source, l'ancien
+est gardé. Jamais : projet `test-…`, chantier archivé/certifié/doublon.
+Réglable par projet : `projets.fusion_seuil` (0,65 par défaut, mesuré : 0,60
+proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
+(pas encore d'écran : SQL ou `scripts/sql.sh`). Un faux doublon constaté → un cas
+dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
+`verifier-fusion.ts` (menu).
 
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 

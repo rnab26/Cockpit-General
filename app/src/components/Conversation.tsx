@@ -440,7 +440,7 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
         <div role="menu" className="absolute right-0 top-11 z-10 w-60 overflow-hidden rounded-xl border border-bord bg-carte py-1 shadow-xl" data-testid="actions-admin">
           {item(<Pencil size={17} className={ic} />, 'Modifier', () => ouvrirModifier(chantier), 'modifier')}
           {item(<History size={17} className={ic} />, 'Historique', onHistorique, 'ouvrir-historique')}
-          {!chantier.doublon_de ? item(<Copy size={17} className={ic} />, 'C’est un doublon de…', () => ouvrirDoublonDe(chantier), 'doublon-de') : null}
+          {!chantier.doublon_de ? item(<Copy size={17} className={ic} />, 'Fusionner avec…', () => ouvrirDoublonDe(chantier), 'doublon-de') : null}
           {chantier.pris_par ? item(<LockOpen size={17} className={ic} />, 'Libérer la réservation', liberer, 'liberer') : null}
           {chantier.etat !== 'reporte' || chantier.reporte_jusqu_a ? item(<CirclePause size={17} className={ic} />, 'Mettre de côté', () => void deCote(null), 'mettre-de-cote') : null}
           {item(<CalendarClock size={17} className={ic} />, chantier.reporte_jusqu_a ? 'Changer la date de report…' : 'Reporter…', () => setReporter(true), 'reporter')}
