@@ -512,6 +512,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
 
 function FilChantier({ chantierId }: { chantierId: string }) {
   const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser } = useCockpit()
+  const { projets } = useGlobal()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
   // « Ça marche » avec une question ouverte : ses cartes s'affichent dans le bloc de validation, pas deux fois.
@@ -535,7 +536,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   // « Où ça en est ? » en attente : le bloc suit la DEMANDE, pas la barre grise d'une livraison passée.
   const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
   const demandeEnCours = !!etatOuEnEst(c, messages, tenus(c.id), now, tenus)?.enAttente
-  const silence = presence.code === 'silencieux' && c.etat !== 'a_cadrer' ? situationSilence(c, activite, { now, prochainPassage, demandeEnCours }) : null
+  const silence = presence.code === 'silencieux' && c.etat !== 'a_cadrer' ? situationSilence(c, activite, { now, prochainPassage, demandeEnCours, abandonMin: projets.find((p) => p.id === c.projet_id)?.delai_sans_signe_min }) : null
   const { historique, aChoisir } = ordreDuFil(fil)
   const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })

@@ -10,8 +10,23 @@ import type { Activite, Chantier } from './types.ts'
 import { heureLisible, dateRelative } from './dates.ts'
 import { nomCourtSession } from './texte.ts'
 
-/** Sans signe de vie depuis ce délai, un chantier réservé est « abandonné » : la chef le reprend (même valeur que 0036). */
-export const DELAI_ABANDON_MIN = 30
+/**
+ * Délai « sans signe de vie » PAR DÉFAUT (min) : au-delà, un chantier réservé est « abandonné » et la chef le
+ * reprend. La vraie valeur est réglable par projet (`projets.delai_sans_signe_min`, 1 à 120, 0046) et lue par
+ * UNE règle en base (`delai_signe`) ; l'écran la reçoit en `abandonMin`. Ce défaut n'est que le repli quand la
+ * ligne du projet ne la porte pas ; `verifier-base` le compare au défaut de la colonne.
+ */
+export const DELAI_ABANDON_MIN = 3
+/** Mêmes bornes que `regler_sans_signe` (0046). */
+export const DELAI_ABANDON_MIN_BORNES = { min: 1, max: 120 } as const
+
+/** Message d'erreur du réglage du délai, ou null s'il est valable (même règle que la base). */
+export function erreurDelaiSansSigne(min: number): string | null {
+  if (!Number.isInteger(min) || min < DELAI_ABANDON_MIN_BORNES.min || min > DELAI_ABANDON_MIN_BORNES.max) {
+    return `Délai sans signe de vie : de ${DELAI_ABANDON_MIN_BORNES.min} à ${DELAI_ABANDON_MIN_BORNES.max} minutes.`
+  }
+  return null
+}
 
 export type GesteSilence = 'rien' | 'attendre' | 'relancer'
 

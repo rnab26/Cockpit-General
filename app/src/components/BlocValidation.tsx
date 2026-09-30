@@ -5,6 +5,7 @@ import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { dateRelative } from '../lib/dates.ts'
+import { etatVerification } from '../lib/presence.ts'
 import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
 import { EncadreCommentVerifier } from './CommentVerifier.tsx'
@@ -90,7 +91,7 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
       </div>
       {enVerification ? (
         <p data-testid="verification-en-cours" className="mt-2 flex items-center gap-1.5 rounded-xl border border-bord bg-carte-2/60 px-3 py-2 text-sm">
-          <HelpCircle size={16} className="shrink-0 text-info" aria-hidden />En attente de Claude : il vérifie pour toi (demandé {dateRelative(chantier.verif_demandee_at!, now)}). Tu n’as rien à faire ; le chantier reviendra ici avec son verdict.
+          <HelpCircle size={16} className="shrink-0 text-info" aria-hidden />En attente de Claude : il vérifie pour toi (demandé {dateRelative(chantier.verif_demandee_at!, now)} : {etatVerification(chantier, now)}). Tu n’as rien à faire ; le chantier reviendra ici avec son verdict.
         </p>
       ) : chantier.verdict_at ? (
         <div data-testid="verdict-claude" className={`mt-2 rounded-xl border border-l-4 border-bord bg-carte px-3 py-2 text-sm ${chantier.verdict_ok ? 'border-l-ok' : 'border-l-alerte'}`}>

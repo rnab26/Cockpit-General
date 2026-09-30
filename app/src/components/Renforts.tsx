@@ -4,6 +4,7 @@ import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
+import { DELAI_ABANDON_MIN, DELAI_ABANDON_MIN_BORNES, erreurDelaiSansSigne } from '../lib/silence.ts'
 import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
@@ -261,6 +262,9 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   const [haikuOk, setHaikuOk] = useState(true)
   const [fermAuto, setFermAuto] = useState(true)
   const [fermMin, setFermMin] = useState(10)
+  const { rechargerProjets } = useGlobal()
+  const [sansSigne, setSansSigne] = useState(projet.delai_sans_signe_min ?? DELAI_ABANDON_MIN)
+  useEffect(() => { setSansSigne(projet.delai_sans_signe_min ?? DELAI_ABANDON_MIN) }, [projet.delai_sans_signe_min])
   const [envoi, setEnvoi] = useState(false)
   const lire = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_modeles', { p_projet: projet.slug })
@@ -273,17 +277,20 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   }, [projet.slug])
   useEffect(() => { void lire() }, [lire])
   const enregistrer = async () => {
-    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin) ?? erreurSeuilBascule(seuil)
+    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin) ?? erreurSeuilBascule(seuil) ?? erreurDelaiSansSigne(sansSigne)
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_modeles', { p_projet: projet.slug, p_code: code, p_leger: leger, p_effort: effort, p_agents: agents, p_revue_h: revueH })
     const rb = error ? null : await supabase.rpc('regler_bascule_seuils', { p_projet: projet.slug, p_seuil: seuil, p_haiku: haikuOk })
     const rf = error || rb?.error ? null : await supabase.rpc('regler_fermeture', { p_projet: projet.slug, p_auto: fermAuto, p_delai_min: fermMin })
+    const rs = error || rb?.error || rf?.error ? null : await supabase.rpc('regler_sans_signe', { p_projet: projet.slug, p_min: sansSigne })
     setEnvoi(false)
     if (error) { toast.erreur(`Modèles non enregistrés : ${messageErreur(error)}`); return }
     if (rb?.error) { toast.erreur(`Bascule non enregistrée : ${messageErreur(rb.error)}`); return }
     if (rf?.error) { toast.erreur(`Fermeture des sessions non enregistrée : ${messageErreur(rf.error)}`); return }
-    toast.succes('Modèles enregistrés : ils servent aux prochains agents lancés.')
+    if (rs?.error) { toast.erreur(`Délai sans signe de vie non enregistré : ${messageErreur(rs.error)}`); return }
+    void rechargerProjets()
+    toast.succes(`Réglages enregistrés : les modèles servent aux prochains agents lancés ; une réservation sans signe de vie depuis ${sansSigne} min est libérée.`)
     void lire()
   }
   const frein = async (heures: number) => {
@@ -358,6 +365,13 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
           <input type="number" inputMode="numeric" min={0} max={1440} value={fermMin} disabled={!fermAuto} onChange={(e) => setFermMin(Number(e.target.value))}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="fermeture-delai" />
         </label>
+      </div>
+      <div data-testid="sans-signe-reglage">
+        <label className="text-xs text-texte-2">Libérer un chantier réservé sans signe de vie depuis (minutes, {DELAI_ABANDON_MIN_BORNES.min} à {DELAI_ABANDON_MIN_BORNES.max})
+          <input type="number" inputMode="numeric" min={DELAI_ABANDON_MIN_BORNES.min} max={DELAI_ABANDON_MIN_BORNES.max} value={sansSigne} onChange={(e) => setSansSigne(Number(e.target.value))}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="sans-signe-delai" />
+        </label>
+        <p className="mt-0.5 text-[11px] leading-snug text-texte-2">Un agent vivant donne un signe au moins toutes les minutes, même pendant une longue commande ; la chef reprend le chantier dès que le délai passe.</p>
       </div>
       <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>
       <p className={`text-xs leading-snug ${(etat.palier ?? 0) > 0 && etat.bascule_auto !== false ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-bascule">{libelleBascule(etat)}</p>

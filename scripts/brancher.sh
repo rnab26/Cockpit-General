@@ -160,8 +160,8 @@ def declarer(ev, nom, timeout=None, matcher=None):
     lst.append(e)
 declarer("SessionStart", "session-start")
 declarer("UserPromptSubmit", "prompt-rappel")
-for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse", "StopFailure", "SessionEnd"):
-    declarer(ev, "suivi", 10, "*" if ev == "PostToolUse" else None)
+for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PreToolUse", "PostToolUse", "StopFailure", "SessionEnd"):
+    declarer(ev, "suivi", 10, "*" if ev in ("PreToolUse", "PostToolUse") else None)
 declarer("Stop", "autonome", 15)
 d["autoContinueAtUsageLimit"] = True
 if json.dumps(d, sort_keys=True) != avant:
@@ -258,11 +258,11 @@ if not any(x.get("command") == cmd2 for h in ups for x in h.get("hooks", [])):
 # Suivi des sessions et de leurs agents (29 sept. 2026) : quelle session
 # travaille, quels agents et commandes elle a lancés (voir hooks/suivi.sh).
 cmd3 = "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/cockpit-suivi.sh"
-for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse", "StopFailure", "SessionEnd"):
+for ev in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PreToolUse", "PostToolUse", "StopFailure", "SessionEnd"):
     lst = hooks.setdefault(ev, [])
     if not any(x.get("command") == cmd3 for h in lst for x in h.get("hooks", [])):
         entree = {"hooks": [{"type": "command", "command": cmd3, "timeout": 10}]}
-        if ev == "PostToolUse":
+        if ev in ("PreToolUse", "PostToolUse"):
             entree["matcher"] = "*"
         lst.append(entree)
 # Mode autonome (29 sept. 2026) : à la fin d'une tâche, le chantier libre suivant

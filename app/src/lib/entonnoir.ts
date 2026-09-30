@@ -424,14 +424,13 @@ export function caAvanceToutSeul(
     }
     if (presence.code === 'claude_verifie') {
       // « Vérifie pour moi » : sorti de « À toi », il avance ici, sous le même nom partout.
-      // Mais SEULEMENT si quelqu'un vérifie vraiment (assistant ou session vivants). Sinon la demande
-      // attend Claude : « en attente de Claude », comptée en attente, jamais « ça avance »
-      // (Raphaël, 30 sept. : « il attend un retour de Claude, donc ne travaille pas »).
       const barre = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : parSession
-      const quelquUn = !!(agentVivant || parSession)
-      lignes.push({ c, presence, activite: quelquUn ? barre : null, vivant: quelquUn, qui: quelquUn ? presence.libelle : '',
-        pourquoi: quelquUn ? null : 'En attente de Claude : personne ne vérifie encore',
-        etape: quelquUn ? barre?.etape || agentVivant?.etape || null : null, demandeLe: quelquUn ? null : c.verif_demandee_at ?? null, ouEnEst: etatOuEnEst(c, messages, quelquUn, now, tenus) })
+      // Retour de Raphaël, 30 sept. : sans session ni assistant vivant il n'y a ni barre ni travail :
+      // la ligne passe dans « en cours sans session dessus », pas dans « ça avance ».
+      const vivant = !!(parSession || agentVivant)
+      lignes.push({ c, presence, activite: vivant ? barre : null, vivant, qui: vivant ? presence.libelle : '',
+        etape: vivant ? (barre?.etape || agentVivant?.etape || null) : null, pourquoi: vivant ? null : 'Vérification demandée : en attente d’un assistant',
+        demandeLe: null, ouEnEst: etatOuEnEst(c, messages, vivant, now, tenus) })
     } else if (presence.code === 'travaille') {
       const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
       const morceaux: string[] = []

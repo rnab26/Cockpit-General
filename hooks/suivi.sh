@@ -2,7 +2,7 @@
 # Hook de SUIVI : dit au cockpit, tout seul, quelle session travaille et
 # quelles tâches elle a lancées en arrière-plan (agents, commandes longues).
 # Déclaré par brancher.sh sur UserPromptSubmit, Stop, SubagentStart,
-# SubagentStop, PostToolUse, StopFailure et SessionEnd.
+# SubagentStop, PreToolUse, PostToolUse, StopFailure et SessionEnd.
 #
 # Pourquoi (Raphaël, 29 sept. 2026, capture du panneau « Tâches en
 # arrière-plan » de FacePro) : « j'ai cinq agents […] c'est illisible,
@@ -135,8 +135,35 @@ consigner_message() {
   ( setsid "$SQL" "select consigner_message_session('$qp', '$qs', '$qb', '$qt')" >/dev/null 2>&1 & ) >/dev/null 2>&1
 }
 
+# BATTEMENT d'un outil long (0046, Raphaël 30 sept. : « ZÉRO chantier tenu pour
+# rien », délai « sans signe de vie » de 3 min). Mesuré : le signe de vie d'une
+# session ne part qu'AU RETOUR d'un outil (PostToolUse, au plus 1 fois/minute) ; or
+# un outil peut durer jusqu'à 10 min (plafond de l'outil Bash) sans qu'aucun hook
+# ne parle : un agent VIVANT qui lance une suite de tests semblerait mort. Avant
+# chaque outil (PreToolUse), un petit processus détaché envoie un signe toutes les
+# 45 s tant que CET outil tourne (il s'arrête à son retour, ou après 11 min). Un
+# outil court ne coûte rien : le premier signe part après 45 s.
+outil_id=$(printf '%s' "$entree" | jq -r '.tool_use_id // empty' 2>/dev/null | tr -cd 'A-Za-z0-9_-')
+repere_outil="${TMPDIR:-/tmp}/cockpit-outil-$sid-${outil_id:-sans-id}"
+battement() {
+  local plafond="${COCKPIT_BATTEMENT_MAX:-660}" pas="${COCKPIT_BATTEMENT_PAS:-45}" charge req
+  charge=$(jq -cn --arg s "$sid" --arg b "$branche" '{session_id: $s, hook_event_name: "Vie", branche: $b}') || return 0
+  req="select suivre('$(printf '%s' "$PROJET" | sed "s/'/''/g")', '$(printf '%s' "$charge" | sed "s/'/''/g")'::jsonb)"
+  : > "$repere_outil" 2>/dev/null || return 0
+  ( setsid bash -c '
+      fin=$(( SECONDS + $1 ))
+      while [ -e "$2" ] && [ "$SECONDS" -lt "$fin" ]; do
+        sleep "$3"
+        [ -e "$2" ] || break
+        "$4" "$5" >/dev/null 2>&1
+      done
+      rm -f "$2"' _ "$plafond" "$repere_outil" "$pas" "$SQL" "$req" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
 case "$ev" in
+  PreToolUse) battement; exit 0 ;;
   PostToolUse)
+    rm -f "$repere_outil" 2>/dev/null
     reponses_fraiches PostToolUse
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
     # avec sa description. Sinon, un simple signe de vie, au plus 1 fois/minute.
