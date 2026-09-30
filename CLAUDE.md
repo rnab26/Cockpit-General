@@ -194,6 +194,22 @@ le seuil du moment (« ouvert automatiquement à HH h MM parce que… »). Limit
 l'ouverture a lieu au passage de la chef (fin d'agent, réveil, message), pas
 à la seconde où la file grossit. `verifier-base` §34, `verifier-renforts.ts`.
 
+**Renforts qui échouent : pause, pas de boucle** (30 sept., migration 0044, chantier
+60317482 ; deux renforts FacePro morts en 2 min, l'ouverture auto en redemandait).
+Cause PROUVÉE du Haiku : `chefs.modele_code` était sonnet, mais un `chef.sh --usage
+status` (l'aide prise à la lettre) avait posé le palier 3 (« usage : status ») ;
+`bascule_usage` rangeait tout statut inconnu en palier 3 = tout en Haiku. Désormais
+un statut inconnu ne change RIEN (base ET `chef.sh --usage`, qui le refuse avant
+d'écrire). Non prouvé : pourquoi Haiku n'a pas trouvé les scripts (dépôt de FacePro
+illisible depuis ici) ; la consigne de `create_session` donne donc un repli complet
+(`~/.cockpit/bin`, sinon téléchargement du cockpit dans `~/.cache/cockpit-general`,
+3 essais si « injoignable ») et `renfort.sh` retrouve ses commandes sœurs à côté de
+lui. Protection : `renforts_pause(projet, section)` (une règle) — un renfort mort en
+moins de 5 min sans travail = échec ; pause 30 min, 3 h dès 2 échecs de suite ;
+seule l'ouverture AUTOMATIQUE est freinée (le bouton reste libre) ; UNE ligne dans le
+fil du projet (« Renfort FacePro Objets : 2 échecs, en pause jusqu'à HHhMM ; cause : … »).
+`verifier-base` §38.
+
 **« Traiter ce projet »** (29 sept., Raphaël : « j'appuie sur un bouton, ça lance une
 session […] plus d'heures à ouvrir des sessions et à configurer »). Bloc au-dessus des
 renforts (`Renforts.tsx::TraiterCeProjet`, logique `lib/traiter.ts`, test

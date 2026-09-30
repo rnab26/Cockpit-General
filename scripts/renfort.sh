@@ -14,8 +14,11 @@
 set -uo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
-PRFUS="${COCKPIT_PRFUS_CMD:-scripts/pr-a-fusionner.sh}"; PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
-VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"; RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
+# Commande soeur : celle du dépôt courant si elle y est, sinon celle qui est à côté de CE script (renfort lancé
+# depuis le cache du cockpit dans une copie qui n'a pas les scripts : chantier 60317482).
+soeur() { if [ -x "scripts/$1" ]; then printf 'scripts/%s' "$1"; else printf '%s/scripts/%s' "$RACINE" "$1"; fi; }
+PRFUS="${COCKPIT_PRFUS_CMD:-$(soeur pr-a-fusionner.sh)}"; PROG="${COCKPIT_PROG_CMD:-$(soeur progression.sh)}"; DEM="${COCKPIT_DEM_CMD:-$(soeur demander.sh)}"
+VERDICT="${COCKPIT_VERDICT_CMD:-$(soeur verdict.sh)}"; RENF="${COCKPIT_RENFORT_CMD:-$(soeur renfort.sh)}"
 # D-05 : la ligne « scénario capturé chez l'utilisateur » d'une consigne, vide s'il n'y en a pas.
 repro_ligne() { [ -n "${1:-}" ] || return 0; COCKPIT_SQL="$SQL" bash "$(dirname "${BASH_SOURCE[0]}")/reproduction.sh" --ligne "$1" 2>/dev/null || true; }
 q() { printf '%s' "$1" | sed "s/'/''/g"; }

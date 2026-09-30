@@ -2076,6 +2076,52 @@ async function controle37_fusion_auto() {
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
 // Un projet NEUF (I) pour l'ouverture automatique des renforts.
 const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
+// 38. Renforts en échec (0044) : pause 30 min, puis 3 h après 2 échecs de suite ; statut d'usage inconnu = aucun changement.
+const P11 = randomUUID(), SLUG_K = `test-verif-${rand}-k`;
+async function controle38_renforts_echecs() {
+  section("38. Renforts en échec (0044) : pause 30 min, 3 h après 2 échecs de suite, une seule ligne claire ; usage inconnu sans effet sur les modèles");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test K', 'rnab26/test-inexistant')`);
+  const S1 = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P11)}, 'Objets', 1)`);
+  for (const t of ["PAUSE 1", "PAUSE 2", "PAUSE 3"]) { const id = await creerChantier(P11, { titre: t, etat: "libre", demande: `travail ${t}` }); await sql(`update chantiers set section_id = ${q(S1)} where id = ${q(id)}`); }
+  await sql(`select regler_renforts(${q(SLUG_K)}, 2, 3)`);
+  const pause = async () => (await une(`select renforts_pause(${q(P11)}, ${q(S1)}) as p`)).p;
+  const nb = async () => (await une(`select count(*)::int as n from renforts where projet_id = ${q(P11)}`)).n;
+  verifie("sans historique : pas de pause", (await pause()).pause === false);
+  const echec = (min, erreur = "scripts/cockpit-renfort.sh not found") => sql(`insert into renforts (projet_id, section_id, prefixe, statut, erreur, faits, created_at, vu_at) values (${q(P11)}, ${q(S1)}, 'renfort/${randomUUID().slice(0, 6)}', 'erreur', ${q(erreur)}, 0, now() - interval '${min} minutes', now() - interval '${min - 2} minutes')`);
+  await echec(10);
+  let p = await pause();
+  verifie("un échec en 2 min il y a 10 min : pause, 1 échec, cause reprise", p.pause === true && p.echecs === 1 && /not found/.test(p.cause), p);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_K)}, true)`);
+  verifie("pendant la pause, l'ouverture automatique ne recrée RIEN pour cette section", (await nb()) === 1);
+  const msgs = async () => await sql(`select corps from messages where projet_id = ${q(P11)} and corps like 'Renfort %en pause%'`);
+  const m = await msgs();
+  verifie("UNE ligne claire dans le fil : « Renfort … Objets : 1 échec, en pause jusqu'à HHhMM ; cause : … »", m.length === 1 && /Objets : 1 échec, en pause jusqu’à \d\dh\d\d ; cause : scripts/.test(m[0].corps), m);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_K)}, true)`);
+  verifie("repasser n'empile pas la ligne", (await msgs()).length === 1);
+  await sql(`delete from renforts where projet_id = ${q(P11)}`);
+  await echec(40);
+  verifie("échec vieux de 40 min : la pause de 30 min est finie", (await pause()).pause === false);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_K)}, true)`);
+  verifie("pause finie : un nouveau renfort peut s'ouvrir", (await nb()) === 2);
+  await sql(`update renforts set statut = 'erreur', erreur = 'cockpit central unreachable', faits = 0, created_at = now() - interval '35 minutes', vu_at = now() - interval '33 minutes' where projet_id = ${q(P11)} and statut = 'demande'`);
+  p = await pause();
+  verifie("2 échecs de suite : pause de 3 h (pas 30 min), 2 échecs", p.pause === true && p.echecs === 2 && new Date(p.jusqu_a) - Date.now() > 2 * 3600e3, p);
+  const avant = await nb();
+  await sql(`select renforts_a_ouvrir(${q(SLUG_K)}, true)`);
+  verifie("après 2 échecs de suite : rien de recréé", (await nb()) === avant);
+  await sql(`insert into renforts (projet_id, section_id, prefixe, statut, faits, created_at, vu_at, fini_at) values (${q(P11)}, ${q(S1)}, 'renfort/${randomUUID().slice(0, 6)}', 'fini', 2, now() - interval '20 minutes', now() - interval '5 minutes', now() - interval '5 minutes')`);
+  verifie("un renfort qui a travaillé (faits > 0) remet le compteur à zéro", (await pause()).pause === false);
+
+  // Usage : « status » (l’aide prise à la lettre) est refusé par le script avant toute écriture (sinon palier 3 = tout en Haiku).
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const avantP = (await une(`select palier from chefs where projet_id = ${q(P11)}`))?.palier ?? null;
+  const cli = spawnSync("bash", [join(racine, "scripts/chef.sh"), "--usage", "status"], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_K } });
+  const apresP = (await une(`select palier from chefs where projet_id = ${q(P11)}`))?.palier ?? null;
+  verifie("… et le palier du projet n’a pas bougé", apresP === avantP, { avantP, apresP });
+  verifie("chef.sh --usage status : refusé côté script, avant toute écriture", cli.status === 2 && /inconnu/.test(cli.stderr), { status: cli.status, se: cli.stderr });
+}
+
 async function controle35_renforts_auto() {
   section("35. Renforts ouverts tout seuls (0040) : une seule règle, seuil réglable, interrupteur, frein, maximum, jamais un projet de test, origine visible");
   await sql(`insert into projets (id, slug, nom, depot) values (${q(P9)}, ${q(SLUG_I)}, 'Projet de test I', 'rnab26/test-inexistant')`);
@@ -2113,7 +2159,7 @@ async function controle35_renforts_auto() {
   verifie("le bouton manuel reste manuel (origine « manuel »)", noMan.demandes.length === 1 && manuels.length === 1, noMan);
 
   // Interrupteur, frein, réglage à 0, maximum : chacun bloque, et l'écran le sait (bloque).
-  await sql(`update renforts set statut = 'erreur' where projet_id = ${q(P9)} and statut in ('demande', 'actif')`);
+  await sql(`update renforts set statut = 'erreur', faits = 1 where projet_id = ${q(P9)} and statut in ('demande', 'actif')`);
   await sql(`select regler_renforts_auto(${q(SLUG_I)}, false, null)`);
   await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
   verifie("interrupteur éteint : rien ne s'ouvre seul, bloque = eteint", (await vivants()) === 0 && (await etat()).auto.bloque === "eteint");
@@ -2351,7 +2397,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_pr_a_fusionner, controle37_accuse_action, controle37_fusion_auto, controle37_traite_sans_attendre,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle38_renforts_echecs, controle36_deplacer_chantier, controle37_pr_a_fusionner, controle37_accuse_action, controle37_fusion_auto, controle37_traite_sans_attendre,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2362,7 +2408,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2370,8 +2416,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);
