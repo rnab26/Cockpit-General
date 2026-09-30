@@ -860,6 +860,35 @@ try {
   await page.keyboard.press('Escape')
   await page.waitForTimeout(400)
   await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
+  // 0033 (chantier e9a7c360) : une ACTION porte sa marche à suivre — lien exact, étapes numérotées, texte à copier.
+  console.log('  — action manuelle : lien exact, étapes, copier-coller')
+  const AM = creerTest('action avec marche', { etat: 'libre' })
+  script('demander.sh', ['--action', '--chantier', AM.id, '--question', 'Ajoute le secret dans GitHub', '--pourquoi', 'Pour vérifier la marche à suivre.',
+    '--lien', 'https://github.com/settings/secrets/actions/new|Ouvrir les secrets', '--etape', 'Dans « Name », colle le nom ci-dessous', '--etape', 'Touche « Add secret »',
+    '--copier', 'Nom du secret|RUNPOD_API_KEY', '--image', imgFichier])
+  await allerCockpit()
+  await actualiser()
+  await (await elementAToi(AM.id, 'question')).getByTestId('verbe-a-toi').click()
+  await attendreConv(AM.titre)
+  const blocAM = conv().getByTestId('bloc-question')
+  const lienAM = blocAM.getByTestId('marche-lien').first()
+  await lienAM.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('action : le bouton du lien ouvre la page EXACTE dans un nouvel onglet, domaine affiché',
+    await lienAM.getAttribute('href').catch(() => null) === 'https://github.com/settings/secrets/actions/new' && await lienAM.getAttribute('target').catch(() => null) === '_blank'
+      && /Ouvrir les secrets/.test(await lienAM.textContent().catch(() => '')) && /github\.com/.test(await lienAM.textContent().catch(() => '')))
+  const etapesAM = await blocAM.locator('[data-testid="marche-etapes"] li').allTextContents().catch(() => [])
+  verifie('action : les étapes sont numérotées 1, 2 dans l’ordre', etapesAM.length === 2 && /^1\s*Dans « Name »/.test(etapesAM[0]) && /^2\s*Touche/.test(etapesAM[1]), etapesAM)
+  await page.evaluate(() => navigator.clipboard.writeText('vide'))
+  await blocAM.getByTestId('marche-copier-bouton').first().click()
+  await page.waitForTimeout(300)
+  const ppAM = await page.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+  verifie('action : « Copier » met le texte exact dans le presse-papier et le dit (« Copié »)',
+    ppAM === 'RUNPOD_API_KEY' && /Copié/.test(await blocAM.getByTestId('marche-copier-bouton').first().textContent().catch(() => '')), ppAM)
+  verifie('action : la capture est sous la question, et les boutons Fait / Pas encore / Ça bloque restent',
+    await blocAM.locator('[data-testid="images-question"] [data-testid="media"]').count() === 1 && /Fait/.test(await blocAM.textContent()) && /Ça bloque/.test(await blocAM.textContent()))
+  verifie('action : pas de défilement horizontal (téléphone)', (await scrollX()) <= 0, await scrollX())
+  await capture(page, 'action-marche-a-suivre')
+  await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
   // « Comment vérifier » avec « Ce que tu dois voir ».
   const VI = creerTest('verif avec image', { etat: 'en_cours' })
   script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--pas-en-ligne', 'test', '--image', imgFichier])

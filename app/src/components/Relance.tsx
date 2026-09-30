@@ -8,21 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { consigneClaude } from '../lib/presence.ts'
 import { chantierTenu, etapesOuEnEst, etatOuEnEst, type EtatOuEnEst } from '../lib/ouEnEst.ts'
 import { extrait } from '../lib/texte.ts'
-
-/** Copie un texte. Appelée DANS le gestionnaire du clic (exigence des navigateurs). */
-async function copierTexte(texte: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(texte); return true }
-  } catch { /* refusé (contexte non sécurisé, permission) : repli ci-dessous */ }
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = texte; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.appendChild(ta); ta.select()
-    const ok = document.execCommand('copy')
-    ta.remove()
-    return ok
-  } catch { return false }
-}
+import { copierTexte } from '../lib/copier.ts'
 
 /**
  * Les deux gestes pour un chantier que personne ne tient : copier la consigne
