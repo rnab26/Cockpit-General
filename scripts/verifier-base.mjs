@@ -1607,6 +1607,51 @@ async function controle27_question_gardee() {
   verifie("droits : ni anon ni un utilisateur connecté n'exécutent ces fonctions", droits && !droits.a && !droits.b && !droits.c, droits);
 }
 
+// ------------------------------------------------------------------ 37
+async function controle37_accuse_action() {
+  section("37. « Fait » à une carte d'ACTION ne lance rien (0041) : une règle, lue par reponses_sans_suite et donc par reprendre_reponse");
+  const marche = JSON.stringify({ liens: [{ url: "https://example.com/pr/1", libelle: "La PR" }], etapes: ["Clique sur « Merge »"] });
+  const repondre = (id, reponse, precision = null) => sql(`update messages set reponse = ${q(reponse)}, precision = ${precision ? q(precision) : "null"}, answered_at = now(), answered_by = ${q(userId)} where id = ${q(id)}`);
+  const carte = async (c, corps) => { const id = await creerMessage(P1, c, { kind: "action", corps }); await sql(`update messages set marche = ${q(marche)}::jsonb where id = ${q(id)}`); return id; };
+  const cAcc = await creerChantier(P1, { titre: "Chantier livré, PR à fusionner", etat: "a_verifier" });
+  const aFait = await carte(cAcc, "Fusionne la PR 1 : test");
+  const cPrec = await creerChantier(P1, { titre: "Action avec précision", etat: "a_verifier" });
+  const aPrec = await carte(cPrec, "Fusionne la PR 2 : test");
+  const cMed = await creerChantier(P1, { titre: "Action avec capture", etat: "a_verifier" });
+  const aMed = await carte(cMed, "Fusionne la PR 3 : test");
+  const cLong = await creerChantier(P1, { titre: "Action au texte long", etat: "a_verifier" });
+  const aLong = await carte(cLong, "Fusionne la PR 4 : test");
+  const cQ = await creerChantier(P1, { titre: "Question ordinaire", etat: "a_verifier" });
+  const qOrd = await creerMessage(P1, cQ, { kind: "question", corps: "Quelle couleur ?" });
+  const cSans = await creerChantier(P1, { titre: "Action sans marche à suivre", etat: "a_verifier" });
+  const aSans = await creerMessage(P1, cSans, { kind: "action", corps: "Ancienne carte sans marche" });
+  await repondre(aFait, "Fait");
+  await repondre(aPrec, "Fait", "Mais la CI est rouge, regarde");
+  await repondre(aMed, "ok");
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, medias) values (${q(P1)}, ${q(cMed)}, 'raphael', 'utilisateur', 'info', 'Image jointe', ${q(JSON.stringify([{ chemin: `${P1}/${cMed}/x.png`, nom: "x.png", type: "image/png", taille: 1 }]))}::jsonb)`);
+  await repondre(aLong, "Fait, mais le bouton Merge est grisé et je ne sais pas pourquoi, peux-tu regarder ?");
+  await repondre(qOrd, "Bleu");
+  await repondre(aSans, "Fait");
+  const servis = (await sql(`select message_id from reponses_sans_suite(${q(P1)})`)).map((r) => r.message_id);
+  verifie("« Fait » à une carte d'action (marche à suivre) : NON servie", !servis.includes(aFait), servis);
+  verifie("« Fait » : la règle en base (est_accuse_action) le reconnaît, une seule règle",
+    (await une(`select est_accuse_action(m) as a from messages m where id = ${q(aFait)}`)).a === true);
+  verifie("question ordinaire répondue : toujours servie", servis.includes(qOrd), servis);
+  verifie("action avec une précision : servie", servis.includes(aPrec), servis);
+  verifie("action avec un média joint : servie", servis.includes(aMed), servis);
+  verifie("action avec un vrai texte : servie", servis.includes(aLong), servis);
+  verifie("ancienne carte SANS marche à suivre : règle inchangée (servie)", servis.includes(aSans), servis);
+  for (let i = 0; i < 8; i++) { const r = (await une(`select reprendre_reponse(${q(`agent/accuse-verif-${rand}-${i}`)}, ${q(P1)}) as r`)).r; if (!r) break; }
+  const acc = await chantier(cAcc);
+  verifie("reprise : le chantier de la carte « Fait » reste « à vérifier », non réservé", acc.etat === "a_verifier" && acc.pris_par === null, acc);
+  verifie("reprise : aucun chantier « Suite de ta réponse » ne cite la carte « Fait »",
+    (await une(`select count(*)::int as n from chantiers where projet_id = ${q(P1)} and demande like '%Fusionne la PR 1 : test%'`)).n === 0);
+  verifie("reprise : les autres réponses ont bien été reprises (précision, question)",
+    (await chantier(cPrec)).etat === "en_cours" && (await chantier(cQ)).etat === "en_cours");
+  verifie("droits : ni anon ni un utilisateur connecté n'exécutent est_accuse_action",
+    !(await une(`select has_function_privilege('anon', 'cockpit.est_accuse_action(cockpit.messages)', 'execute') or has_function_privilege('authenticated', 'cockpit.est_accuse_action(cockpit.messages)', 'execute') as a`)).a);
+}
+
 // ------------------------------------------------------------------ 28
 async function controle28_messages_de_session() {
   section("28. Ses messages dans une SESSION arrivent dans le fil du chantier (0027), jamais comme « à répondre », jamais chez un utilisateur");
@@ -2157,7 +2202,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_accuse_action,
   ];
   for (const etape of etapes) {
     try { await etape(); }
