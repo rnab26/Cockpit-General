@@ -25,7 +25,7 @@
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
 #   scripts/chef.sh --usage <status> [pct]   note l'usage (rate_limit_info) : la BASCULE change le modèle, jamais le nombre d'agents (0036)
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
-#   scripts/chef.sh --sans-signe <min>  délai « sans signe de vie » du projet : au-delà, une réservation est libérée (1 à 120, défaut 3 ; 0044)
+#   scripts/chef.sh --sans-signe <min>  délai « sans signe de vie » du projet : au-delà, une réservation est libérée (1 à 120, défaut 3 ; 0045)
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
@@ -199,7 +199,7 @@ if [ "$mode" = "etat" ]; then printf '%s\n' "$etat" | jq .; exit 0; fi
 
 pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
-# 0041/0044 : une réservation sans signe de vie depuis le délai du projet (projets.delai_sans_signe_min, 3 min par défaut) est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
+# 0041/0045 : une réservation sans signe de vie depuis le délai du projet (projets.delai_sans_signe_min, 3 min par défaut) est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
 un "select liberer_silencieux($P) as n" >/dev/null
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session

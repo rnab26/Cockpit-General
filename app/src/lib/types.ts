@@ -34,7 +34,7 @@ export interface Projet {
   autonome_toujours: boolean
   /** S'éteint tout seul après N heures sans rien à prendre (0031 ; 0 = jamais, 3 par défaut). */
   autonome_arret_vide_h?: number
-  /** Minutes sans signe de vie après lesquelles une réservation est libérée (1-120, défaut 3 depuis 0044). */
+  /** Minutes sans signe de vie après lesquelles une réservation est libérée (1-120, défaut 3 depuis 0045). */
   delai_sans_signe_min?: number
   /** Premier passage qui n'a rien trouvé à prendre (0031), null dès qu'il y a du travail. */
   autonome_vide_depuis?: string | null

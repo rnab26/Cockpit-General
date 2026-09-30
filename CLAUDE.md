@@ -506,6 +506,27 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
 
+## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0045)
+
+Raphaël : « Pourquoi attendre 30 minutes ? […] zéro chantier tenu pour rien. »
+UN réglage, `projets.delai_sans_signe_min` (1 à 120, défaut 3), lu par UNE
+fonction `cockpit.delai_signe(projet)` que lisent `sans_signe_de_vie`,
+`renfort_vivant` et les autres règles « session/agent vivant » (messages sans
+réponse, réponses sans suite, « où ça en est », mode autonome, réveil, relais,
+filet) : plus aucun « 30 minutes » en dur (`verifier-base` §38 le vérifie sur
+les fonctions en vigueur ; toute nouvelle règle « vivant » lit `delai_signe`).
+Réglage : app (Renforts › Réglages › « Libérer un chantier réservé sans signe
+de vie depuis… », message succès/échec) ou `chef.sh --sans-signe <min>` ;
+l'écran (`lib/silence.ts`) reçoit la valeur du projet, son défaut 3 est comparé
+à celui de la colonne. **Mesuré** : le signe de vie d'une session ne part qu'au
+RETOUR d'un outil (PostToolUse, ≤ 1/min) et les tâches d'agent (`taches.vu_at`)
+le suivent ; un outil long (jusqu'à 10 min, plafond du Bash) ne disait rien.
+D'où le hook **PreToolUse** de `hooks/suivi.sh` : un battement détaché toutes
+les 45 s tant que l'outil tourne (déclaré par `brancher.sh`, propagé par le
+hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outil
+(> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
+dans la même transaction que le choix ; la fiche est touchée, début du délai).
+
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 
 Raphaël : un chantier écrit dans FacePro devait être un correctif du cockpit.

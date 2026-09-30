@@ -2017,9 +2017,9 @@ async function controle37_traite_sans_attendre() {
   await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
 }
 
-// 38. Délai « sans signe de vie » réglable (0044) : une source, défaut 3 min, agent vivant intouché, mort repris.
+// 38. Délai « sans signe de vie » réglable (0045) : une source, défaut 3 min, agent vivant intouché, mort repris.
 async function controle38_delai_sans_signe() {
-  section("38. Délai sans signe de vie réglable (0044) : défaut 3 min, une source, borné 1-120, agent vivant intouché, agent mort repris");
+  section("38. Délai sans signe de vie réglable (0045) : défaut 3 min, une source, borné 1-120, agent vivant intouché, agent mort repris");
   const vieillir = (id, min) => sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '${min} minutes' where id = ${q(id)}`);
   const reserver = (id, par) => sql(`update chantiers set pris_par = ${q(par)}, pris_jusqu_a = now() + interval '60 minutes' where id = ${q(id)}`);
   const sans = async (id) => (await une(`select sans_signe_de_vie(c) as v from chantiers c where id = ${q(id)}`)).v;
@@ -2033,7 +2033,7 @@ async function controle38_delai_sans_signe() {
   verifie("défaut de l'écran (DELAI_ABANDON_MIN) = défaut de la colonne (3)", !!mts && String(col?.d) === mts[1] && mts[1] === "3", { app: mts?.[1], base: col?.d });
   const inconnu = await une(`select extract(epoch from cockpit.delai_signe(null))::int as s`);
   verifie("projet inconnu : le repli est le même défaut (3 min)", inconnu.s === 180, inconnu);
-  const restes = await sql(`select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'cockpit' and p.proname in ('sans_signe_de_vie','renfort_vivant','messages_sans_reponse','reponses_sans_suite','ou_en_est_sans_suite','prendre_ou_en_est','constater_autonome','reveiller_chef','relais_a_servir') and pg_get_functiondef(p.oid) ilike '%30 minutes%'`);
+  const restes = await sql(`select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'cockpit' and p.proname in ('sans_signe_de_vie','renfort_vivant','messages_sans_reponse','reponses_sans_suite','ou_en_est_sans_suite','prendre_ou_en_est','constater_autonome','reveiller_chef','relais_a_servir','filet_vivant') and pg_get_functiondef(p.oid) ilike '%30 minutes%'`);
   verifie("aucune de ces règles n'écrit encore « 30 minutes » en dur", restes.length === 0, restes);
 
   // Bornes et droits.
@@ -2075,7 +2075,7 @@ async function controle38_delai_sans_signe() {
   const S = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(P9)}, 'DÉLAI Section', 10)`);
   const R = randomUUID();
-  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/tt0044', 'actif', now() - interval '5 minutes')`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at) values (${q(R)}, ${q(P9)}, ${q(S)}, 'renfort/tt0045', 'actif', now() - interval '5 minutes')`);
   const vR = async () => (await une(`select renfort_vivant(r) as v from renforts r where id = ${q(R)}`)).v;
   verifie("renfort vu il y a 5 min : muet à 3 min de délai", (await vR()) === false);
   await regler(10);
