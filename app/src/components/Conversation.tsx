@@ -150,8 +150,8 @@ function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: Reac
 }
 
 /** Une bulle du fil : Claude à gauche (fond carte), toi à droite (fond neutre plus soutenu). Jamais de pavé teinté. */
-function Bulle({ cote, auteur, quand, children, testId, aFaire = false }: {
-  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean
+function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet }: {
+  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null
 }) {
   const { now } = useCockpit()
   return (
@@ -159,7 +159,10 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false }: {
       <div className={`max-w-[88%] rounded-2xl border border-bord px-3 py-2 ${cote === 'droite' ? 'rounded-br-md bg-carte-2' : 'rounded-bl-md bg-carte'}`}>
         {auteur || quand ? (
           <p className="mb-0.5 flex items-baseline justify-between gap-3 text-[11px] text-texte-2">
-            <span className="truncate">{auteur}</span>{quand ? <span className="shrink-0" title={dateLongue(quand)}>{dateRelative(quand, now)}</span> : null}
+            <span className="truncate">
+              <span className={`font-semibold ${cote === 'droite' ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'}`}>{auteur}</span>
+              {sujet ? <strong className="text-texte"> · {sujet}</strong> : null}
+            </span>{quand ? <span className="shrink-0" title={dateLongue(quand)}>{dateRelative(quand, now)}</span> : null}
           </p>
         ) : null}
         {children}
@@ -175,6 +178,11 @@ function AFaire({ children, testId }: { children: ReactNode; testId?: string }) 
 
 const auteurDe = (m: Pick<Message, 'auteur_type' | 'auteur'>, admin: boolean) =>
   m.auteur_type === 'session' ? 'Claude' : m.auteur_type === 'proprietaire' ? (admin ? 'Toi' : 'Raphaël') : m.auteur
+/** « Sujet : … » en tête d'un message : extrait pour l'afficher en gras sur la ligne de l'expéditeur. */
+const sujetDe = (corps: string | null) => {
+  const r = corps?.match(/^\s*Sujet\s*:\s*([^\n.]{1,80}?)\s*(?:\.\s*|\n|$)/i)
+  return r ? { sujet: r[1], reste: corps!.slice(r[0].length) } : { sujet: null, reste: corps }
+}
 const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session' ? 'gauche' : 'droite') as 'gauche' | 'droite'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */
@@ -193,10 +201,11 @@ function BulleMessage({ m }: { m: Message }) {
     await recharger()
     return null
   }
+  const { sujet, reste } = sujetDe(m.corps)
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
-    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle">
-      {m.corps ? <TexteLong texte={m.corps} /> : null}
+    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet}>
+      {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {m.reponse ? (
         <p className="mt-1 border-t border-bord pt-1 text-sm" data-testid="reponse-donnee">
