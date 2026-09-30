@@ -16,6 +16,7 @@ import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
+import { BulleFlottanteAide } from './BulleFlottanteAide.tsx'
 import { TousLesChantiers } from './TousLesChantiers.tsx'
 import { NouveauChantier } from './NouveauChantier.tsx'
 import { ModifierChantier } from './ModifierChantier.tsx'
@@ -231,6 +232,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {reglages}
         {aideInstallation}
         {projetsMembres}
+        {d.projet ? <BulleFlottanteAide /> : null}
       </div>
     </GlobalCtx.Provider>
   )
