@@ -554,7 +554,7 @@ ligne provisoire `prov:…` (migration 0030, 30 sept.) : elle ne vit que par
 ses étapes, passe « arrêtée » après `delai_tache_prov()` (45 min) sans étape,
 et `progression.sh --chantier X --termine|--echec` ferme celles de sa session
 sur X. `chef.sh` compte ses agents par `agents_actifs(session, projet)`.
-**Un agent = une seule ligne comptée (30 sept. 2026, migration 0046, chantier dd84764f)** :
+**Un agent = une seule ligne comptée (30 sept. 2026, migration 0048, chantier dd84764f)** :
 Raphaël voyait la chef répondre RIEN (« 8 agents ») avec 6 chantiers en attente. Mesuré : les
 commandes de fond (`wait`, `until`, tests ; type `commande`/`autre`) n'ont jamais été comptées ;
 c'est un DOUBLON : un agent = sa vraie ligne (hook, description de l'outil Agent) + sa ligne
