@@ -147,6 +147,11 @@ export interface EtatModeles {
   agents: number
   revue_h: number
   frein: { actif: boolean; raison?: string; jusqu_a?: string | null }
+  /** Bascule automatique selon l'usage (0036) : palier 0 à 3, modèles réellement utilisés maintenant. */
+  bascule_auto?: boolean
+  palier?: number
+  palier_raison?: string | null
+  effectifs?: { modele_code: ModeleClaude; modele_leger: ModeleClaude; effort: EffortClaude; palier: number }
 }
 export const MODELES: { valeur: ModeleClaude; nom: string; aide: string }[] = [
   { valeur: 'haiku', nom: 'Haiku', aide: 'le moins cher' },
@@ -163,7 +168,15 @@ export function erreurReglageModeles(agents: number, revueH: number): string | n
   if (!Number.isInteger(revueH) || revueH < 1 || revueH > 168) return 'Revue « À toi » : de 1 à 168 heures.'
   return null
 }
+/** Ce que dit l'écran de la bascule d'usage (0036) : jamais un nombre d'agents, seulement les modèles. */
+export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 'palier_raison' | 'effectifs'>): string {
+  if (e.bascule_auto === false) return 'Bascule automatique éteinte : les modèles réglés ci-dessus servent toujours.'
+  const p = e.palier ?? 0
+  if (p === 0 || !e.effectifs) return 'Bascule automatique : usage normal, les meilleurs modèles réglés servent.'
+  const nom = (m: ModeleClaude) => MODELES.find((x) => x.valeur === m)?.nom ?? m
+  return `Bascule automatique, palier ${p} sur 3 (${e.palier_raison ?? 'usage élevé'}) : code ${nom(e.effectifs.modele_code)}, lecture ${nom(e.effectifs.modele_leger)}. Le nombre d’agents ne change pas ; retour aux modèles réglés dès que l’usage se calme.`
+}
 export function libelleFrein(f: EtatModeles['frein']): string {
   if (!f.actif) return 'Aucun frein : les agents travaillent normalement.'
-  return `Frein actif (${f.raison ?? 'usage proche de la limite'}) : 1 agent à la fois, aucune revue, aucun nouveau renfort.`
+  return `Frein posé à la main (${f.raison ?? 'sans raison'}) : 1 agent à la fois, aucune revue, aucun nouveau renfort.`
 }

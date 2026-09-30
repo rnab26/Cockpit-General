@@ -1941,16 +1941,38 @@ async function controle32_economie_modeles() {
   const normal = chef();
   verifie("chef.sh : chaque agent porte son modèle (code = sonnet) et l'effort est dit", /━━ Agent « [^»]+ » \[model: sonnet\]/.test(normal) && /effort de raisonnement — moyen/.test(normal), normal.slice(0, 1200));
   await sql(`update chantiers set etat = 'libre', pris_par = null, pris_jusqu_a = null where projet_id = ${q(P1)} and titre like 'Eco %'`);
-  // Frein : une session du projet arrêtée sur la limite d'usage → 1 agent, dit.
+  // Bascule (0036) : une session arrêtée sur la limite d'usage -> palier 3 : modèles descendus, MAIS le nombre d'agents ne bouge pas.
   await sql(`insert into sessions (id, projet_id, sujet, vu_at, pause_raison, pause_at) values (${q("pause-" + sid)}, ${q(P1)}, 'pause test', now(), 'rate_limit', now()) on conflict (id) do update set pause_raison = 'rate_limit', pause_at = now()`);
-  const f = (await une(`select frein_actif(${q(P1)}) as f`)).f;
-  verifie("frein_actif : une session en pause « rate_limit » freine le projet", f.actif === true && /limite d'usage/.test(f.raison), f);
-  const freine = chef();
-  verifie("sous frein : un seul agent lancé et le frein est dit", /FREIN d’usage/.test(freine) && (freine.match(/━━ Agent « /g) ?? []).length === 1 && /lance 1 agent/.test(freine), freine.slice(0, 1200));
+  const f = (await une(`select frein_actif(${q(P1)}) as f, palier_actif(${q(P1)}) as p`));
+  verifie("une session en pause « rate_limit » = palier 3, sans frein d'agents", f.p === 3 && f.f.actif === false, f);
+  const bas = chef();
+  verifie("palier 3 : tous les agents en haiku, nombre d'agents inchangé (2), bascule dite",
+    /BASCULE d’usage : palier 3/.test(bas) && !/\[model: sonnet\]/.test(bas) && (bas.match(/━━ Agent « /g) ?? []).length === 2 && !/FREIN d’usage/.test(bas), bas.slice(0, 1200));
   await sql(`delete from sessions where id = ${q("pause-" + sid)}`);
   chef({ ARGS: ["--frein", "2", "test du frein"] });
   verifie("chef.sh --frein 2 : frein posé à la main, puis levé par --frein 0",
     (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === true && (chef({ ARGS: ["--frein", "0"] }), (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === false));
+  // Bascule par mesure d'usage : monte tout de suite, plafonne à haiku, interrupteur.
+  const pal = async (st, pct) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}) as e`)).e;
+  chef({ ARGS: ["--modeles", "opus", "sonnet", "eleve", "2"] });
+  let e = await pal("allowed", 10);
+  verifie("palier 0 : les modèles réglés (opus/sonnet, effort élevé)", e.palier === 0 && e.effectifs.modele_code === "opus" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "eleve", e.effectifs);
+  e = await pal("allowed_warning", null);
+  verifie("palier 1 (avertissement) : code opus → sonnet, lecture inchangée", e.palier === 1 && e.effectifs.modele_code === "sonnet" && e.effectifs.modele_leger === "sonnet", e.effectifs);
+  e = await pal("allowed", 85);
+  verifie("palier 2 (85 %) : code haiku, lecture haiku, effort bas", e.palier === 2 && e.effectifs.modele_code === "haiku" && e.effectifs.modele_leger === "haiku" && e.effectifs.effort === "bas", e.effectifs);
+  e = await pal("allowed", 5);
+  verifie("pas de yo-yo : une mesure calme juste après ne redescend pas le palier", e.palier === 2, e);
+  await sql(`update chefs set palier_at = now() - interval '31 minutes' where projet_id = ${q(P1)}`);
+  e = await pal("allowed", 5);
+  verifie("après 30 min de calme le palier redescend à 0", e.palier === 0, e);
+  const ligne = chef({ ARGS: ["--usage", "allowed", "95"] });
+  verifie("chef.sh --usage : dit le palier et les modèles à utiliser", /palier 3 sur 3/.test(ligne) && /code = haiku/.test(ligne) && /nombre d’agents ne change pas/.test(ligne), ligne);
+  chef({ ARGS: ["--bascule", "off"] });
+  verifie("bascule off : retour aux modèles réglés malgré la mesure", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.effectifs.modele_code === "opus");
+  chef({ ARGS: ["--bascule", "on"] });
+  await sql(`update chefs set palier = 0, palier_at = null where projet_id = ${q(P1)}`);
+  chef({ ARGS: ["--modeles", "sonnet", "haiku", "moyen", "2"] });
   const fh = (await sql(`select column_default from information_schema.columns where table_schema = 'cockpit' and table_name = 'projets' and column_name = 'revue_a_toi_delai_h'`))[0];
   verifie("revue « À toi » : une fois par jour par défaut (revue_a_toi_delai_h = 24)", /24/.test(fh?.column_default ?? ""), fh);
   const pirate = await rpcUtilisateur("freiner", { p_projet: SLUG_A, p_heures: 1, p_raison: "x" }, jwt);
