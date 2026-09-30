@@ -16,7 +16,7 @@ COCKPIT_CACHE="${COCKPIT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/cockpit-general}
 COCKPIT_FICHIERS=(scripts/sql.sh scripts/demander.sh scripts/marche.py scripts/progression.sh scripts/progression_tableau.py scripts/chantier.sh hooks/session-start.sh hooks/prompt-rappel.sh hooks/suivi.sh hooks/autonome.sh scripts/passe.sh scripts/media.sh scripts/chef.sh scripts/verdict.sh scripts/revue-a-toi.sh scripts/renfort.sh scripts/reproduction.sh scripts/greffe.sh modeles/cockpit-pre-push.sh)
 
 # Noms des commandes tels qu'on les tape DANS le projet (affichés par le hook).
-export COCKPIT_SQL_CMD="scripts/cockpit-sql.sh" COCKPIT_PROG_CMD="scripts/cockpit-progression.sh" COCKPIT_DEM_CMD="scripts/cockpit-demander.sh" COCKPIT_CHANTIER_CMD="scripts/cockpit-chantier.sh" COCKPIT_MEDIA_CMD="scripts/cockpit-media.sh" COCKPIT_CHEF_CMD="scripts/cockpit-chef.sh" COCKPIT_VERDICT_CMD="scripts/cockpit-verdict.sh" COCKPIT_RENFORT_CMD="scripts/cockpit-renfort.sh" COCKPIT_REPRO_CMD="scripts/cockpit-reproduction.sh"
+export COCKPIT_SQL_CMD="scripts/cockpit-sql.sh" COCKPIT_PROG_CMD="scripts/cockpit-progression.sh" COCKPIT_DEM_CMD="scripts/cockpit-demander.sh" COCKPIT_CHANTIER_CMD="scripts/cockpit-chantier.sh" COCKPIT_MEDIA_CMD="scripts/cockpit-media.sh" COCKPIT_CHEF_CMD="scripts/cockpit-chef.sh" COCKPIT_VERDICT_CMD="scripts/cockpit-verdict.sh" COCKPIT_RENFORT_CMD="scripts/cockpit-renfort.sh" COCKPIT_REPRO_CMD="scripts/cockpit-reproduction.sh" COCKPIT_PRFUS_CMD="scripts/cockpit-pr-a-fusionner.sh"
 export COCKPIT_SQL="$COCKPIT_CACHE/scripts/sql.sh"
 export COCKPIT_GREFFE_CMD="scripts/cockpit-greffe.sh"
 
@@ -43,7 +43,7 @@ if [ -z "${COCKPIT_PROJET:-}" ] && _cockpit_s=$(cockpit_greffe_slug "${CLAUDE_PR
 fi
 if [ "${COCKPIT_SANS_TRACE:-}" = 1 ]; then
   # Les commandes montrées aux sessions : hors du dépôt, chemin complet.
-  for _cockpit_v in COCKPIT_SQL_CMD COCKPIT_PROG_CMD COCKPIT_DEM_CMD COCKPIT_CHANTIER_CMD COCKPIT_MEDIA_CMD COCKPIT_CHEF_CMD COCKPIT_VERDICT_CMD COCKPIT_RENFORT_CMD COCKPIT_REPRO_CMD COCKPIT_GREFFE_CMD; do
+  for _cockpit_v in COCKPIT_SQL_CMD COCKPIT_PROG_CMD COCKPIT_DEM_CMD COCKPIT_CHANTIER_CMD COCKPIT_MEDIA_CMD COCKPIT_CHEF_CMD COCKPIT_VERDICT_CMD COCKPIT_RENFORT_CMD COCKPIT_REPRO_CMD COCKPIT_PRFUS_CMD COCKPIT_GREFFE_CMD; do
     export "$_cockpit_v=$COCKPIT_HOME/bin/${!_cockpit_v#scripts/}"
   done
 fi
