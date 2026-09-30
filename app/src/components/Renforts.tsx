@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
 } from '../lib/renforts.ts'
 
@@ -253,10 +253,12 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   const [etat, setEtat] = useState<EtatModeles | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [code, setCode] = useState<ModeleClaude>('sonnet')
-  const [leger, setLeger] = useState<ModeleClaude>('haiku')
+  const [leger, setLeger] = useState<ModeleClaude>('sonnet')
   const [effort, setEffort] = useState<EffortClaude>('moyen')
   const [agents, setAgents] = useState(2)
   const [revueH, setRevueH] = useState(24)
+  const [seuil, setSeuil] = useState(50)
+  const [haikuOk, setHaikuOk] = useState(true)
   const [fermAuto, setFermAuto] = useState(true)
   const [fermMin, setFermMin] = useState(10)
   const [envoi, setEnvoi] = useState(false)
@@ -267,17 +269,19 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
     if (!e) return
     const f = await supabase.rpc('etat_fermeture', { p_projet: projet.slug })
     if (!f.error && f.data) { const ff = f.data as { auto: boolean; delai_min: number }; setFermAuto(ff.auto); setFermMin(ff.delai_min) }
-    setErreur(null); setEtat(e); setCode(e.modele_code); setLeger(e.modele_leger); setEffort(e.effort); setAgents(e.agents); setRevueH(e.revue_h)
+    setErreur(null); setEtat(e); setCode(e.modele_code); setLeger(e.modele_leger); setEffort(e.effort); setAgents(e.agents); setRevueH(e.revue_h); setSeuil(e.bascule_seuil_pct ?? 50); setHaikuOk(e.bascule_haiku !== false)
   }, [projet.slug])
   useEffect(() => { void lire() }, [lire])
   const enregistrer = async () => {
-    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin)
+    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin) ?? erreurSeuilBascule(seuil)
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_modeles', { p_projet: projet.slug, p_code: code, p_leger: leger, p_effort: effort, p_agents: agents, p_revue_h: revueH })
-    const rf = error ? null : await supabase.rpc('regler_fermeture', { p_projet: projet.slug, p_auto: fermAuto, p_delai_min: fermMin })
+    const rb = error ? null : await supabase.rpc('regler_bascule_seuils', { p_projet: projet.slug, p_seuil: seuil, p_haiku: haikuOk })
+    const rf = error || rb?.error ? null : await supabase.rpc('regler_fermeture', { p_projet: projet.slug, p_auto: fermAuto, p_delai_min: fermMin })
     setEnvoi(false)
     if (error) { toast.erreur(`Modèles non enregistrés : ${messageErreur(error)}`); return }
+    if (rb?.error) { toast.erreur(`Bascule non enregistrée : ${messageErreur(rb.error)}`); return }
     if (rf?.error) { toast.erreur(`Fermeture des sessions non enregistrée : ${messageErreur(rf.error)}`); return }
     toast.succes('Modèles enregistrés : ils servent aux prochains agents lancés.')
     void lire()
@@ -333,6 +337,16 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
         <label className="text-xs text-texte-2">Revue « À toi » toutes les (heures)
           <input type="number" inputMode="numeric" min={1} max={168} value={revueH} onChange={(e) => setRevueH(Number(e.target.value))}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="modele-revue" />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3" data-testid="bascule-reglages">
+        <label className="text-xs text-texte-2">Plein gaz jusqu’à (% de la fenêtre d’usage, 10 à 90)
+          <input type="number" inputMode="numeric" min={10} max={90} value={seuil} onChange={(e) => setSeuil(Number(e.target.value))}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="bascule-seuil" />
+        </label>
+        <label className="flex items-center gap-2 text-xs text-texte-2">
+          <input type="checkbox" checked={haikuOk} onChange={(e) => setHaikuOk(e.target.checked)} data-testid="bascule-haiku" />
+          Autoriser Haiku en dernier recours (limite proche)
         </label>
       </div>
       <div className="flex flex-wrap items-center gap-3" data-testid="fermeture-reglages">
