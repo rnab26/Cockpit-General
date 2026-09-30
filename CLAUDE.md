@@ -177,6 +177,21 @@ vie < 3 h), personne d'autre ne prend dans sa section (`chantiers_prenables`,
 `verifs_prenables`). Un renfort ne devient JAMAIS chef : consigne préfixée
 « [cockpit-renfort] » et marque `cockpit-renfort` dans le `.git` de sa copie
 (lue par `prompt-rappel.sh` et `autonome.sh`). `verifier-base.mjs` §20.
+**Ouverts TOUT SEULS** (30 sept., migration 0040, chantier 6faa9e7b : « la chef a
+9 tâches et n'a pas ouvert seule de renforts ») : la passe de la chef
+(`renforts_a_ouvrir` → `renforts_auto`) en pose quand la file (chantiers qui
+attendent sans personne, jamais ce qui attend Raphaël) atteint le seuil
+(`chefs.renforts_auto_seuil`, défaut = `agents_par_renfort`) : un renfort par
+section, la plus chargée d'abord, tant que ce qui reste atteint le seuil, dans
+la limite `max_renforts`. Rien si l'interrupteur `chefs.renforts_auto` est
+éteint (Réglages des renforts, allumé par défaut), si un frein est actif, si le
+maximum est atteint, ni jamais pour un projet de test. UNE règle :
+`cockpit.file_renforts` (file, seuil, niveau « proche/saturée », `bloque`),
+lue par l'alerte de l'écran (`etat_renforts.auto`, `alerteSaturation` ne
+recalcule rien) ; chaque renfort garde son `origine` (auto/manuel) + la file et
+le seuil du moment (« ouvert automatiquement à HH h MM parce que… »). Limite :
+l'ouverture a lieu au passage de la chef (fin d'agent, réveil, message), pas
+à la seconde où la file grossit. `verifier-base` §34, `verifier-renforts.ts`.
 
 **« Traiter ce projet »** (29 sept., Raphaël : « j'appuie sur un bouton, ça lance une
 session […] plus d'heures à ouvrir des sessions et à configurer »). Bloc au-dessus des
@@ -209,6 +224,28 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
 **Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> [pct]` (depuis `get_session` → `rate_limit_info`) pose un palier 0 à 3 (`bascule_usage`) : 0 les modèles réglés, 1 code d'un cran plus bas (opus>sonnet>haiku), 2 code -2 crans, lecture -1, effort bas, 3 tout en haiku. Monte tout de suite, redescend après 30 min de calme, expire seul après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
+
+## Sessions qui se ferment seules (30 sept. 2026, migration 0038, chantier 27d251f8)
+
+Raphaël : « dès qu'une session a fini son travail elle se ferme directement ; un
+correctif ou une vérification repart ensuite dans une nouvelle session. Éviter la
+pollution. » Avant : seuls les renforts finis étaient archivés (à la passe
+suivante de la chef) ; sessions relais et sessions de réveil /fire restaient
+ouvertes. Maintenant, chaque session ouverte par le cockpit reçoit une consigne de
+fin : renfort FINI, relais (`[cockpit-relais]`) et réveil /fire s'archivent
+eux-mêmes si l'outil `archive_session` existe (`get_session` sans id = son id) ;
+sinon la chef les archive à sa passe (`renforts_a_ouvrir.archiver`,
+`ouvertures_a_fermer` / `relais_a_servir.fermer`, puis `chef.sh
+--ouverture-archive <id>`). Jamais fermée : session avec un chantier en cours,
+une question posée sans réponse, ou un message de Raphaël sans réponse
+(`ouverture_finie`, une seule règle). Réglages par projet (`projets`,
+`regler_fermeture`, écran « Modèles et effort » du cockpit, ou `chef.sh
+--fermeture oui|non [minutes]`) : `fermeture_auto` (oui) et
+`fermeture_delai_min` (10). Ouvrir seulement s'il y a du travail : le relais
+n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
+`rien_a_servir` (aucun /fire) quand rien n'est sans réponse ni sans suite.
+Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
+reste ouverte (non suivie en base). `verifier-base` §34.
 
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 

@@ -8,7 +8,7 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, ligneRenfort, messageDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
 } from '../lib/renforts.ts'
 
@@ -124,6 +124,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
         <UsersRound size={16} aria-hidden />Lancer des renforts
       </Button>
       <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-aide">{b.aide}</p>
+      <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-auto">{libelleAuto(etat.auto)}</p>
       {dernier ? <p className={`mt-1 text-xs leading-snug ${dernier.ok ? 'text-ok' : 'text-alerte'}`} role="status" data-testid="renforts-resultat">{dernier.texte}</p> : null}
       {etat.renforts.length ? (
         <ul className="mt-2 divide-y divide-bord/70 rounded-xl border border-bord" data-testid="renforts-liste">
@@ -136,6 +137,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
                   <span className={`shrink-0 text-xs font-medium ${TEINTE[l.code]}`} data-testid="renfort-etat">{l.etat}</span>
                 </p>
                 <p className={`text-xs leading-snug ${l.code === 'erreur' ? 'text-alerte' : 'text-texte-2'}`}>{l.detail}</p>
+                {origineRenfort(r) ? <p className="text-xs leading-snug text-texte-2" data-testid="renfort-origine">{origineRenfort(r)}</p> : null}
               </li>
             )
           })}
@@ -191,15 +193,19 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
   const toast = useToast()
   const [sessions, setSessions] = useState(etat.sessions_max)
   const [agents, setAgents] = useState(etat.agents_par_session)
+  const [auto, setAuto] = useState(etat.auto?.actif ?? true)
+  const [seuil, setSeuil] = useState(etat.auto && !etat.auto.seuil_defaut ? String(etat.auto.seuil) : '')
   const [envoi, setEnvoi] = useState(false)
   const enregistrer = async () => {
-    const pb = erreurReglageRenforts(sessions, agents)
+    const pb = erreurReglageRenforts(sessions, agents) ?? erreurSeuilAuto(seuil)
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
-    const { error } = await supabase.rpc('regler_renforts', { p_projet: projet.slug, p_sessions: sessions, p_agents: agents })
+    const r1 = await supabase.rpc('regler_renforts', { p_projet: projet.slug, p_sessions: sessions, p_agents: agents })
+    const r2 = r1.error ? null : await supabase.rpc('regler_renforts_auto', { p_projet: projet.slug, p_actif: auto, p_seuil: seuil.trim() === '' ? null : Number(seuil) })
     setEnvoi(false)
+    const error = r1.error ?? r2?.error
     if (error) { toast.erreur(`Réglage non enregistré : ${messageErreur(error)}`); return }
-    toast.succes(`Renforts : ${sessions} session${sessions > 1 ? 's' : ''} au plus, ${agents} agent${agents > 1 ? 's' : ''} chacune.`)
+    toast.succes(`Renforts : ${sessions} session${sessions > 1 ? 's' : ''} au plus, ${agents} agent${agents > 1 ? 's' : ''} chacune ; ouverture automatique ${auto ? 'allumée' : 'éteinte'}.`)
     onFini()
   }
   const choix = (min: number, max: number, valeur: number, poser: (n: number) => void, nom: string, testId: string) => (
@@ -219,6 +225,16 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
       <div>
         <p className="mb-1 text-xs text-texte-2">Agents en même temps dans chaque session (5 au plus : au-delà, ça coûte et ça se marche dessus)</p>
         {choix(1, AGENTS_MAX, agents, setAgents, 'Agents par session', 'renforts-agents')}
+      </div>
+      <div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-5 w-5" data-testid="renforts-auto-case" />
+          Ouvrir des renforts automatiquement
+        </label>
+        <label className="mt-1.5 block text-xs text-texte-2">Seuil : chantiers en file à partir desquels la chef ouvre (vide = agents par session)
+          <input type="number" inputMode="numeric" min={1} max={20} value={seuil} placeholder={String(agents)} disabled={!auto} onChange={(e) => setSeuil(e.target.value)}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums disabled:opacity-50" data-testid="renforts-auto-seuil" />
+        </label>
       </div>
       <div className="flex justify-end gap-2">
         <Button taille="sm" onClick={onFini}>Annuler</Button>
@@ -241,22 +257,28 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   const [effort, setEffort] = useState<EffortClaude>('moyen')
   const [agents, setAgents] = useState(2)
   const [revueH, setRevueH] = useState(24)
+  const [fermAuto, setFermAuto] = useState(true)
+  const [fermMin, setFermMin] = useState(10)
   const [envoi, setEnvoi] = useState(false)
   const lire = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_modeles', { p_projet: projet.slug })
     if (error) { setErreur(messageErreur(error)); return }
     const e = data as EtatModeles | null
     if (!e) return
+    const f = await supabase.rpc('etat_fermeture', { p_projet: projet.slug })
+    if (!f.error && f.data) { const ff = f.data as { auto: boolean; delai_min: number }; setFermAuto(ff.auto); setFermMin(ff.delai_min) }
     setErreur(null); setEtat(e); setCode(e.modele_code); setLeger(e.modele_leger); setEffort(e.effort); setAgents(e.agents); setRevueH(e.revue_h)
   }, [projet.slug])
   useEffect(() => { void lire() }, [lire])
   const enregistrer = async () => {
-    const pb = erreurReglageModeles(agents, revueH)
+    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin)
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_modeles', { p_projet: projet.slug, p_code: code, p_leger: leger, p_effort: effort, p_agents: agents, p_revue_h: revueH })
+    const rf = error ? null : await supabase.rpc('regler_fermeture', { p_projet: projet.slug, p_auto: fermAuto, p_delai_min: fermMin })
     setEnvoi(false)
     if (error) { toast.erreur(`Modèles non enregistrés : ${messageErreur(error)}`); return }
+    if (rf?.error) { toast.erreur(`Fermeture des sessions non enregistrée : ${messageErreur(rf.error)}`); return }
     toast.succes('Modèles enregistrés : ils servent aux prochains agents lancés.')
     void lire()
   }
@@ -311,6 +333,16 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
         <label className="text-xs text-texte-2">Revue « À toi » toutes les (heures)
           <input type="number" inputMode="numeric" min={1} max={168} value={revueH} onChange={(e) => setRevueH(Number(e.target.value))}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="modele-revue" />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3" data-testid="fermeture-reglages">
+        <label className="flex items-center gap-2 text-xs text-texte-2">
+          <input type="checkbox" checked={fermAuto} onChange={(e) => setFermAuto(e.target.checked)} data-testid="fermeture-auto" />
+          Fermer les sessions ouvertes par le cockpit quand elles ont fini
+        </label>
+        <label className="text-xs text-texte-2">après (minutes)
+          <input type="number" inputMode="numeric" min={0} max={1440} value={fermMin} disabled={!fermAuto} onChange={(e) => setFermMin(Number(e.target.value))}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="fermeture-delai" />
         </label>
       </div>
       <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>

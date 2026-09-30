@@ -1,7 +1,7 @@
 // Les renforts (src/lib/renforts.ts, 0024) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
-import { boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurReglageModeles, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
+import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-renforts')
 const now = new Date('2026-09-29T12:00:00Z')
@@ -43,15 +43,28 @@ verifie('bloc utile seulement si quelque chose attend ou un renfort est à suivr
 // Économie des modèles (0034)
 verifie('modèles : 1 à 8 agents, revue de 1 à 168 h', erreurReglageModeles(2, 24) === null && erreurReglageModeles(8, 168) === null
   && !!erreurReglageModeles(0, 24) && !!erreurReglageModeles(9, 24) && !!erreurReglageModeles(2, 0) && !!erreurReglageModeles(2, 169))
+verifie('fermeture des sessions : 0 à 1440 minutes', erreurReglageFermeture(0) === null && erreurReglageFermeture(1440) === null && !!erreurReglageFermeture(-1) && !!erreurReglageFermeture(1441) && !!erreurReglageFermeture(1.5))
 verifie('frein : dit qu’il est levé, ou pourquoi il est actif', /Aucun frein/.test(libelleFrein({ actif: false }))
   && /1 agent à la fois/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })) && /limite d’usage/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })))
 verifie('bascule : usage normal, palier montant sans toucher au nombre d’agents, interrupteur éteint', /usage normal/.test(libelleBascule({ bascule_auto: true, palier: 0 }))
   && /palier 2 sur 3.*code Haiku.*nombre d’agents ne change pas/.test(libelleBascule({ bascule_auto: true, palier: 2, palier_raison: 'usage 85 %', effectifs: { modele_code: 'haiku', modele_leger: 'haiku', effort: 'bas', palier: 2 } }))
   && /éteinte/.test(libelleBascule({ bascule_auto: false, palier: 3 })))
-// Alerte de saturation
-verifie('file plus courte qu’une session : pas d’alerte', alerteSaturation(etat({ attente: [att('A', 2)] })) === null && alerteSaturation(etat({})) === null)
-verifie('file = une session (3 sur 3) : « bientôt saturée », conseille le bouton', (() => { const a = alerteSaturation(etat({ attente: [att('A', 2), att('B', 1)] })); return a?.niveau === 'proche' && /bientôt saturée/.test(a.titre) && /Lancer des renforts/.test(a.conseil) })())
-verifie('file = deux sessions (6 sur 3) : « saturée »', alerteSaturation(etat({ attente: [att('A', 6)] }))?.niveau === 'sature')
-verifie('saturée mais renforts au maximum : le dit, renvoie aux Réglages', (() => { const a = alerteSaturation(etat({ attente: [att('A', 4)], renforts: [r({ id: '1' }), r({ id: '2', statut: 'actif' })] })); return !!a && /Déjà 2 renforts/.test(a.conseil) && /Réglages/.test(a.conseil) })())
-verifie('saturée, renforts éteints : dit où régler', /Réglages/.test(alerteSaturation(etat({ sessions_max: 0, attente: [att('A', 4)] }))?.conseil ?? ''))
+// Alerte de saturation + ouverture automatique (0040) : le niveau, la file et le seuil viennent de la base (etat.auto).
+const au = (x: Partial<EtatAuto>): EtatAuto => ({ actif: true, seuil: 3, seuil_defaut: true, file: 0, niveau: null, bloque: null, vivants: 0, max: 2, ...x })
+verifie('sans « auto » (base pas à jour) ou file courte : pas d’alerte', alerteSaturation(etat({})) === null && alerteSaturation(etat({ auto: au({ file: 2 }) })) === null)
+verifie('file = seuil : « bientôt saturée », dit que la chef ouvre TOUTE SEULE', (() => { const a = alerteSaturation(etat({ auto: au({ file: 3, niveau: 'proche' }) })); return a?.niveau === 'proche' && /bientôt saturée/.test(a.titre) && /seuil 3/.test(a.titre) && /toute seule/.test(a.conseil) })())
+verifie('file saturée (niveau de la base)', alerteSaturation(etat({ auto: au({ file: 6, niveau: 'sature' }) }))?.niveau === 'sature')
+verifie('bloquée par le maximum : le dit, renvoie aux Réglages', (() => { const a = alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'plein', vivants: 2 }) })); return !!a && /Déjà 2 renforts/.test(a.conseil) && /Réglages/.test(a.conseil) })())
+verifie('bloquée : renforts à 0, frein, interrupteur éteint : chaque cause a son texte',
+  /Réglages/.test(alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'reglage_zero' }) }))?.conseil ?? '')
+  && /frein/.test(alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'frein' }) }))?.conseil ?? '')
+  && /automatique est éteinte/.test(alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'eteint', actif: false }) }))?.conseil ?? ''))
+verifie('réglage : la ligne dit allumé/éteint, le seuil, la file, et pourquoi rien ne s’ouvre',
+  /allumée.*dès 3 chantiers.*= agents par session.*File actuelle : 2/.test(libelleAuto(au({ file: 2 })))
+  && /éteinte/.test(libelleAuto(au({ actif: false }))) && /frein/.test(libelleAuto(au({ bloque: 'frein' })))
+  && /Maximum/.test(libelleAuto(au({ bloque: 'plein' }))) && /à 0/.test(libelleAuto(au({ bloque: 'reglage_zero' }))) && /indisponible/.test(libelleAuto(undefined)))
+verifie('seuil : vide = défaut, 1 à 20 sinon', erreurSeuilAuto('') === null && erreurSeuilAuto('1') === null && erreurSeuilAuto('20') === null
+  && !!erreurSeuilAuto('0') && !!erreurSeuilAuto('21') && !!erreurSeuilAuto('2.5') && !!erreurSeuilAuto('abc'))
+verifie('origine : un renfort auto dit l’heure et pourquoi ; un renfort manuel ne dit rien', /^ouvert automatiquement à \d+ h \d\d parce que la file \(5\) atteignait le seuil de 3$/.test(origineRenfort(r({ origine: 'auto', file: 5, seuil: 3 })) ?? '')
+  && origineRenfort(r({ origine: 'manuel' })) === null && origineRenfort(r({})) === null && /ouvert automatiquement/.test(origineRenfort(r({ origine: 'auto' })) ?? ''))
 bilan('verifier-renforts')

@@ -1327,6 +1327,7 @@ async function controle25_renforts() {
   const p4 = (await une(`select prochain_renfort(${q(rE)}) as r`)).r;
   const fini = await une(`select statut, faits, fini_at from renforts where id = ${q(rE)}`);
   verifie("section vide et plus rien en cours → FINI, 3 chantiers faits", p4.etat === "fini" && fini.statut === "fini" && fini.faits === 3 && !!fini.fini_at, { p4, fini });
+  await sql(`update renforts set fini_at = now() - interval '1 hour' where id = ${q(rE)}`); // 0038 : après le délai de grâce du projet
   const arch = (await une(`select renforts_a_ouvrir(${q(SLUG_F)}, true) as r`)).r.archiver;
   verifie("la chef voit le renfort fini à archiver (avec sa session)", arch.some((a) => a.id === rE && a.session === "session_test_e"), arch);
   verifie("renfort_archive : fini → archivé", (await une(`select renfort_archive(${q(rE)}) as ok`)).ok === true
@@ -1879,6 +1880,76 @@ async function controle36_deplacer_chantier() {
 }
 
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
+// Un projet NEUF (I) pour l'ouverture automatique des renforts.
+const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
+async function controle35_renforts_auto() {
+  section("35. Renforts ouverts tout seuls (0040) : une seule règle, seuil réglable, interrupteur, frein, maximum, jamais un projet de test, origine visible");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P9)}, ${q(SLUG_I)}, 'Projet de test I', 'rnab26/test-inexistant')`);
+  const S1 = randomUUID(), S2 = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P9)}, 'Écran', 1), (${q(S2)}, ${q(P9)}, 'Base', 2)`);
+  const enSection = async (sec, titre, etat = "libre") => { const id = await creerChantier(P9, { titre, etat, demande: `travail ${titre}` }); await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
+  const ids = [await enSection(S1, "AUTO Écran 1"), await enSection(S1, "AUTO Écran 2"), await enSection(S1, "AUTO Écran 3"), await enSection(S2, "AUTO Base 1"), await enSection(S2, "AUTO Base 2")];
+  const cadrer = await enSection(S1, "AUTO à cadrer", "a_cadrer");
+  const etat = async () => (await une(`select etat_renforts(${q(SLUG_I)}) as e`)).e;
+  const vivants = async () => (await une(`select count(*)::int as n from renforts where projet_id = ${q(P9)} and statut in ('demande', 'actif')`)).n;
+
+  await sql(`select regler_renforts(${q(SLUG_I)}, 2, 3)`);
+  let e = await etat();
+  verifie("la règle est en base : file 5 (jamais « à cadrer »), seuil 3 = agents par session (défaut), niveau « proche », rien ne bloque",
+    e.auto?.file === 5 && e.auto.seuil === 3 && e.auto.seuil_defaut === true && e.auto.niveau === "proche" && e.auto.bloque === null && e.auto.actif === true
+      && !e.attente.flatMap((a) => a.ids).includes(cadrer), e.auto);
+  verifie("regler_renforts_auto refuse un seuil de 0 ou 21", !!(await erreurDe(`select regler_renforts_auto(${q(SLUG_I)}, true, 0)`)) && !!(await erreurDe(`select regler_renforts_auto(${q(SLUG_I)}, true, 21)`)));
+
+  // Un projet de test n'est jamais servi (aucune vraie session) : rien n'est posé.
+  const sansTest = (await une(`select renforts_a_ouvrir(${q(SLUG_I)}) as r`)).r;
+  verifie("projet de test : renforts_a_ouvrir ne pose ni n'ouvre RIEN", sansTest.ouvrir.length === 0 && (await vivants()) === 0, sansTest);
+
+  // Mode test : la file (5) atteint le seuil (3) → UN renfort, sur la section la plus chargée ; ce qui reste (2) < 3 : rien de plus.
+  const a1 = (await une(`select renforts_a_ouvrir(${q(SLUG_I)}, true) as r`)).r;
+  const r1 = await sql(`select id, origine, file_declenchement, seuil_declenchement, section_id, max_agents, statut from renforts where projet_id = ${q(P9)}`);
+  verifie("la file atteint le seuil : UN renfort automatique, sur Écran (la plus chargée), avec la file (5) et le seuil (3) du moment, 3 agents",
+    r1.length === 1 && r1[0].origine === "auto" && r1[0].file_declenchement === 5 && r1[0].seuil_declenchement === 3 && r1[0].section_id === S1 && r1[0].max_agents === 3 && a1.ouvrir.length === 1, { r1, a1 });
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("repasser ne double rien (une section = un renfort, le reste de la file est sous le seuil)", (await vivants()) === 1);
+  e = await etat();
+  const ligne = e.renforts.find((r) => r.id === r1[0].id);
+  verifie("etat_renforts dit l'origine : « auto », file 5, seuil 3 (l'écran écrit « ouvert automatiquement à HH h MM parce que… »)", ligne?.origine === "auto" && ligne.file === 5 && ligne.seuil === 3, ligne);
+  const noMan = (await une(`select demander_renforts(${q(SLUG_I)}) as d`)).d;
+  const manuels = await sql(`select origine from renforts where projet_id = ${q(P9)} and origine = 'manuel'`);
+  verifie("le bouton manuel reste manuel (origine « manuel »)", noMan.demandes.length === 1 && manuels.length === 1, noMan);
+
+  // Interrupteur, frein, réglage à 0, maximum : chacun bloque, et l'écran le sait (bloque).
+  await sql(`update renforts set statut = 'erreur' where projet_id = ${q(P9)} and statut in ('demande', 'actif')`);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, false, null)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("interrupteur éteint : rien ne s'ouvre seul, bloque = eteint", (await vivants()) === 0 && (await etat()).auto.bloque === "eteint");
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, null)`);
+  await sql(`select freiner(${q(SLUG_I)}, 2, 'verifier-base')`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("frein actif : rien ne s'ouvre seul, bloque = frein", (await vivants()) === 0 && (await etat()).auto.bloque === "frein");
+  await sql(`select freiner(${q(SLUG_I)}, 0)`);
+  await sql(`select regler_renforts(${q(SLUG_I)}, 0, 3)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("renforts réglés à 0 : rien ne s'ouvre seul, bloque = reglage_zero", (await vivants()) === 0 && (await etat()).auto.bloque === "reglage_zero");
+
+  // Seuil réglé haut : la file (5) ne l'atteint pas → rien. Seuil 1 + maximum 1 : un seul renfort, jamais plus que le maximum.
+  await sql(`select regler_renforts(${q(SLUG_I)}, 1, 3)`);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, 6)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  const haut = (await etat()).auto;
+  verifie("seuil 6 > file 5 : rien ne s'ouvre, seuil_defaut = false, niveau nul", (await vivants()) === 0 && haut.seuil === 6 && haut.seuil_defaut === false && haut.niveau === null, haut);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, 1)`);
+  await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
+  verifie("seuil 1, maximum 1 : un seul renfort (le maximum jamais dépassé), ensuite bloque = plein", (await vivants()) === 1 && (await etat()).auto.bloque === "plein");
+
+  // Droits : un membre non admin ne règle ni ne lit la règle.
+  await sql(`insert into membres (projet_id, user_id) values (${q(P9)}, ${q(userId)}) on conflict do nothing`);
+  const mReg = await rpcUtilisateur("regler_renforts_auto", { p_projet: SLUG_I, p_actif: false, p_seuil: null }, jwt);
+  const mFile = await rpcUtilisateur("file_renforts", { p_projet_id: P9 }, jwt);
+  const mAuto = await rpcUtilisateur("renforts_auto", { p_projet_id: P9 }, CLE_PUBLIQUE);
+  verifie("un membre / anon : regler_renforts_auto refusé, file_renforts et renforts_auto fermés", mReg.status >= 400 && mFile.status >= 400 && mAuto.status >= 400, { mReg, mFile, mAuto });
+}
+
 async function controle33_depuis_un_fil() {
   section("33. « Il faudrait aussi X » dans un fil (0033) : chantier créé prêt à lancer, rangé, fils reliés, rien d'arraché — vrai chantier.sh");
   const sess = `agent/test-depuis-${rand}`;
@@ -2011,6 +2082,66 @@ async function controle32_economie_modeles() {
   await sql(`update projets set autonome_toujours = false where id = ${q(P1)}`);
 }
 
+// 34. Sessions qui se ferment seules (0038) : réglage, sessions relais finies, renforts finis après le délai, pas de réveil pour rien.
+async function controle34_fermeture_sessions() {
+  section("34. Sessions qui se ferment seules (0038) : réglage, relais finis, renforts finis après le délai, pas de réveil pour rien");
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const chef = (args) => {
+    try { return execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A }, stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
+  };
+  const d = (await une(`select etat_fermeture(${q(SLUG_A)}) as e`)).e;
+  verifie("défauts : fermeture automatique, 10 minutes de grâce", d.auto === true && d.delai_min === 10, d);
+  const mauvais = await sql(`select regler_fermeture(${q(SLUG_A)}, true, 5000) as r`).then(() => "accepté", (e) => e.message);
+  verifie("un délai hors 0-1440 est refusé", /1440/.test(String(mauvais)), mauvais);
+  const cli = chef(["--fermeture", "oui", "15"]);
+  verifie("chef.sh --fermeture : réglage enregistré", /oui, 15 min/.test(cli) && (await une(`select etat_fermeture(${q(SLUG_A)}) as e`)).e.delai_min === 15, cli);
+  chef(["--fermeture", "oui", "10"]);
+  // Session relais : finie seulement si rien ne l'attend.
+  const oid = randomUUID();
+  await sql(`insert into ouvertures (id, projet_id, session_distante, created_at) values (${q(oid)}, ${q(P1)}, 'session_test_fermeture', now() - interval '1 hour')`);
+  const finie = async () => (await une(`select ouverture_finie(${q(oid)}) as f`)).f;
+  await sql(`delete from messages where projet_id = ${q(P1)} and auteur_type in ('proprietaire', 'utilisateur') and kind in ('info', 'constat', 'reponse')`); // les messages de test des sections précédentes
+  await sql(`delete from messages where projet_id = ${q(P1)} and kind in ('question', 'action') and answered_at is null`);
+  await sql(`update chantiers set etat = 'libre', pris_par = null, pris_jusqu_a = null where projet_id = ${q(P1)} and etat = 'en_cours'`);
+  verifie("relais ouvert depuis plus que le délai, rien en attente : à fermer", await finie() === true);
+  verifie("… et listé par ouvertures_a_fermer", JSON.stringify((await une(`select ouvertures_a_fermer(${q(SLUG_A)}) as r`)).r).includes(oid));
+  const qid = randomUUID();
+  await sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps) values (${q(qid)}, ${q(P1)}, 'session', 'session', 'question', 'Test fermeture ?')`);
+  verifie("une question posée depuis son ouverture sans réponse : PAS fermée", await finie() === false);
+  await sql(`delete from messages where id = ${q(qid)}`);
+  const ch = randomUUID();
+  await sql(`insert into chantiers (id, projet_id, titre, demande, etat, pris_par, pris_jusqu_a) values (${q(ch)}, ${q(P1)}, 'Fermeture test', 'x', 'en_cours', 'agent/x', now() + interval '1 hour')`);
+  verifie("un chantier en cours réservé : PAS fermée", await finie() === false);
+  await sql(`delete from chantiers where id = ${q(ch)}`);
+  await sql(`update projets set fermeture_delai_min = 120 where id = ${q(P1)}`);
+  verifie("délai de grâce plus long que l'âge de la session : PAS fermée", await finie() === false);
+  await sql(`update projets set fermeture_delai_min = 10, fermeture_auto = false where id = ${q(P1)}`);
+  verifie("fermeture automatique éteinte : jamais fermée", await finie() === false);
+  await sql(`update projets set fermeture_auto = true where id = ${q(P1)}`);
+  verifie("chef.sh --ouverture-archive la note archivée, puis plus jamais proposée",
+    /archivée/.test(chef(["--ouverture-archive", oid])) && await finie() === false);
+  await sql(`delete from ouvertures where id = ${q(oid)}`);
+  // Renfort fini : archivé seulement après le délai de grâce.
+  const rid = randomUUID();
+  await sql(`insert into renforts (id, projet_id, prefixe, statut, session_distante, fini_at) values (${q(rid)}, ${q(P1)}, 'renfort/tf0', 'fini', 'session_test_renfort', now())`);
+  const dans = async () => JSON.stringify((await une(`select renforts_a_ouvrir(${q(SLUG_A)}, true) as r`)).r.archiver).includes(rid);
+  verifie("renfort fini à l'instant : pas encore archivé (délai de grâce)", await dans() === false);
+  await sql(`update renforts set fini_at = now() - interval '1 hour' where id = ${q(rid)}`);
+  verifie("renfort fini depuis plus que le délai : à archiver", await dans() === true);
+  await sql(`update projets set fermeture_auto = false where id = ${q(P1)}`);
+  verifie("fermeture automatique éteinte : le renfort fini n'est plus proposé", await dans() === false);
+  await sql(`update projets set fermeture_auto = true where id = ${q(P1)}`);
+  await sql(`delete from renforts where id = ${q(rid)}`);
+  // Pas de réveil (session neuve) quand il n'y a rien à servir.
+  const vide = `test-ferm-${rand}`;
+  const pv = randomUUID();
+  await sql(`insert into projets (id, slug, nom) values (${q(pv)}, ${q(vide)}, 'Projet de test fermeture')`);
+  const r1 = (await une(`select reveiller_chef(${q(pv)}, null, 'message') as r`)).r;
+  verifie("réveil immédiat sans message ni réponse à servir : aucune session ouverte (rien_a_servir)", r1 === "rien_a_servir", r1);
+  await sql(`delete from projets where id = ${q(pv)}`);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2026,7 +2157,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle36_deplacer_chantier,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2037,7 +2168,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2045,8 +2176,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);
