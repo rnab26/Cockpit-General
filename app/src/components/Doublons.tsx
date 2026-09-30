@@ -7,9 +7,11 @@ import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Badge } from '../ui/Badge.tsx'
-import { Textarea, Select, Champ } from '../ui/Champs.tsx'
+import { Textarea, Champ } from '../ui/Champs.tsx'
 import { Vide } from '../ui/Etats.tsx'
+import { useConfirmer } from '../ui/Confirm.tsx'
 import { pairesDoublons } from '../lib/doublons.ts'
+import { candidatsFusion, texteConfirmationFusion } from '../lib/fusion.ts'
 import { infoEtat } from '../lib/etats.ts'
 import { extrait } from '../lib/texte.ts'
 
@@ -79,33 +81,56 @@ export function Doublons({ ouvert, onFermer }: { ouvert: boolean; onFermer: () =
   )
 }
 
-/** « C'est un doublon de… » depuis une carte : choisir la cible, puis fusionner. */
+/** « Fusionner avec… » (menu ⋯ du fil) : chercher le chantier à garder, confirmer, fusionner. Même fonction de base que la carte « Fusionner ». */
 export function DoublonDe({ source, onFermer }: { source: Chantier | null; onFermer: () => void }) {
-  const { chantiers, par, recharger } = useCockpit()
+  const { chantiers, messages, par, recharger } = useCockpit()
   const toast = useToast()
+  const confirmer = useConfirmer()
   const [cible, setCible] = useState('')
+  const [recherche, setRecherche] = useState('')
   const [note, setNote] = useState('')
   const [enCours, setEnCours] = useState(false)
-  const candidats = chantiers.filter((c) => c.id !== source?.id && !c.doublon_de)
+  const candidats = useMemo(() => (source ? candidatsFusion(chantiers, source, recherche) : []), [chantiers, source, recherche])
+  const tous = useMemo(() => (source ? candidatsFusion(chantiers, source) : []), [chantiers, source])
+  const fermer = () => { setCible(''); setRecherche(''); setNote(''); onFermer() }
   const fusionner = async () => {
-    if (!source || !cible) { toast.erreur('Choisis le chantier à garder.'); return }
+    const gardee = chantiers.find((c) => c.id === cible)
+    if (!source || !gardee) { toast.erreur('Choisis le chantier à garder.'); return }
+    const n = messages.filter((m) => m.chantier_id === source.id).length
+    const ok = await confirmer({ titre: 'Fusionner ces deux chantiers ?', libelleOk: 'Fusionner',
+      texte: <p>{texteConfirmationFusion(source.titre, gardee.titre, n)}</p> })
+    if (!ok) return
     setEnCours(true)
-    const { error } = await supabase.rpc('fusionner_chantiers', { p_source: source.id, p_cible: cible, p_par: par, p_note: note.trim() || null })
+    const { error } = await supabase.rpc('fusionner_chantiers', { p_source: source.id, p_cible: gardee.id, p_par: par, p_note: note.trim() || null })
     setEnCours(false)
-    if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes('Doublon fusionné.'); setCible(''); setNote(''); onFermer(); await recharger()
+    if (error) { toast.erreur(`Fusion impossible : ${messageErreur(error)}`); return }
+    toast.succes(`« ${source.titre} » fusionné dans « ${gardee.titre} ».`); fermer(); await recharger()
   }
   return (
-    <Dialog ouvert={!!source} onFermer={onFermer} titre="C’est un doublon de…" brouillon={!!note.trim()}
-      pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} disabled={!cible} onClick={fusionner}>Fusionner</Button></>}>
-      <p className="mb-3 text-sm text-texte-2">« <b>{source?.titre}</b> » sera archivé comme doublon ; sa demande et ses messages rejoignent le chantier gardé.</p>
-      <Champ label="Chantier à garder">
-        <Select value={cible} onChange={(e) => setCible(e.target.value)}>
-          <option value="">—</option>
-          {candidats.map((c) => <option key={c.id} value={c.id}>{c.titre}{c.archived_at ? ' (archivé)' : ''}</option>)}
-        </Select>
-      </Champ>
-      <Champ label="Note (facultative)" className="mt-3"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Champ>
+    <Dialog ouvert={!!source} onFermer={fermer} titre="Fusionner avec…" brouillon={!!note.trim()}
+      pied={<><Button onClick={fermer}>Annuler</Button><Button variante="primaire" chargement={enCours} disabled={!cible} onClick={fusionner} data-testid="fusion-valider">Fusionner</Button></>}>
+      <div data-testid="dialogue-fusion">
+        <p className="mb-3 text-sm text-texte-2">« <b>{source?.titre}</b> » sera archivé comme doublon ; sa demande et ses messages rejoignent le chantier que tu gardes.</p>
+        {!tous.length ? <p className="text-sm text-texte-2" data-testid="fusion-vide">Aucun autre chantier ouvert dans ce projet.</p> : (
+          <>
+            <Champ label="Chantier à garder">
+              <input type="search" value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Chercher un chantier…" aria-label="Chercher un chantier" data-testid="fusion-recherche"
+                className="w-full rounded-xl border border-bord bg-carte px-3 py-2.5 text-[15px]" />
+            </Champ>
+            <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto" data-testid="fusion-liste">
+              {!candidats.length ? <li className="px-1 py-2 text-sm text-texte-2" data-testid="fusion-aucun">Aucun chantier ne correspond à « {recherche} ».</li> : candidats.map((c) => (
+                <li key={c.id}>
+                  <button type="button" onClick={() => setCible(c.id)} aria-pressed={cible === c.id} data-testid="fusion-choix"
+                    className={`flex w-full items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-sm ${cible === c.id ? 'border-accent bg-accent/8' : 'border-bord'}`}>
+                    {cible === c.id ? <Check size={15} className="shrink-0 text-ok" aria-hidden /> : null}<span className="font-medium leading-snug">{c.titre}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <Champ label="Note (facultative)" className="mt-3"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Champ>
+          </>
+        )}
+      </div>
     </Dialog>
   )
 }
