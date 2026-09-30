@@ -91,7 +91,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'enPause', libelle: 'en pause', aide: 'personne dessus : prêt à lancer', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number }
+interface Liste { titre: string; ids: string[]; n: number; avance?: LigneCaAvance[] }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
@@ -116,7 +116,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, avance: x.cle === 'caAvance' ? t.caAvance : undefined })}
               className="rounded-2xl border border-bord bg-carte px-1 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-xs text-texte-2">{x.libelle}</span>
@@ -207,6 +207,7 @@ function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: ()
       <ul className="divide-y divide-bord" data-testid="liste-ou-jen-suis">
         {chantiers.map((c: Chantier) => {
           const projet = g.projets.find((p) => p.id === c.projet_id)
+          const av = liste?.avance?.find((l) => l.c.id === c.id)
           return (
             <li key={c.id}>
               <button type="button" className="flex w-full items-center gap-2 py-2.5 text-left" data-testid="ligne-liste-ou-jen-suis"
@@ -217,6 +218,12 @@ function ListeChantiers({ liste, onFermer }: { liste: Liste | null; onFermer: ()
                     {g.projets.length > 1 ? <><PointProjet couleur={projet?.couleur} /><span className="truncate">{projet?.nom}</span><span>·</span></> : null}
                     <span>{infoEtat(c.etat).court}</span>
                   </span>
+                  {av?.activite ? (
+                    <span className="mt-1 flex items-center gap-2" data-testid="barre-liste">
+                      <Barre pct={av.activite.pourcentage} vive={av.vivant} />
+                      <span className="shrink-0 text-xs tabular-nums text-texte-2">{av.activite.pourcentage} %</span>
+                    </span>
+                  ) : null}
                 </span>
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
               </button>
