@@ -55,6 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
+node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
@@ -108,6 +109,20 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 `node scripts/verifier-embed.mjs`. Une modification de `embed/cockpit-embed.js`
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
+
+## Serveur MCP pour les outils IA hors Claude (30 sept. 2026, chantier 12c22ec6)
+
+Raphaël : « brancher le cockpit façon MCP à n'importe quel outil IA », en
+commençant par ChatGPT / Codex. `supabase/functions/cockpit-mcp` (Streamable
+HTTP, sans état, JSON) est un RELAIS de `cockpit-embed` : aucune règle
+dupliquée, un outil IA voit et fait exactement ce que fait le module
+embarqué, avec la `cle_embed` du projet (jamais régénérée pour ça). Clé par
+`Authorization: Bearer` (Codex), `x-cockpit-key`, `/cockpit-mcp/<clé>` ou
+`?cle=` (ChatGPT n'offre que OAuth ou aucune authentification, doc lue le 30
+sept.). Guide : `docs/mcp.md`. Une modification de `cockpit-embed` se
+propage seule ; déployer : `VERIFY_JWT=false scripts/deployer-fonction.sh
+cockpit-mcp`. `scripts/verifier-mcp.mjs`. Non fait : `search`/`fetch` de la
+recherche approfondie de ChatGPT, OAuth.
 
 ## Un chef PAR PROJET, des agents (29 sept. 2026, migrations 0014 puis 0019)
 
