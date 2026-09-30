@@ -403,6 +403,18 @@ recopiés dans le fil).
   `chef.sh` (point 3), session relais, `hooks/suivi.sh`, hook de démarrage,
   bloc CLAUDE.md. `verifier-base` §31, `verifier-discussion.ts`.
 
+## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
+
+Raphaël : un chantier écrit dans FacePro devait être un correctif du cockpit.
+Menu ⋯ du fil › « Déplacer vers un autre projet… » (`Conversation.tsx`,
+`lib/deplacer.ts`, confirmation avant) → `deplacer_chantier(id, slug)` (admin
+ou session) : change le projet du chantier ET de ses messages, activité, « ce
+qui marche », assistants, passes ; section remise (même nom, créée dans le
+projet cible) ; réservation libérée ; lien « doublon de » coupé ; ligne
+« Déplacé de … vers … » dans le fil. Les fichiers restent au même chemin
+(le stockage ne se renomme pas en SQL) : `peut_lire_media` les accepte via le
+message qui les cite. `verifier-base` §36, `verifier-deplacer.ts`.
+
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 
 Une question ouverte que du travail a suivie s'affiche « Claude a avancé

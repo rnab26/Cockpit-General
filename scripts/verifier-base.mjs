@@ -1847,6 +1847,37 @@ async function controle30_agents_fantomes() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+// 36. Déplacer un chantier vers un autre projet (0038).
+async function controle36_deplacer_chantier() {
+  section("36. Déplacer un chantier vers un autre projet (0038) : le chantier, son fil, sa section, sa réservation, ses médias");
+  const c = await creerChantier(P1, { titre: "Écrit par erreur au mauvais endroit", etat: "en_cours" });
+  const doublon = await creerChantier(P1, { titre: "Autre chantier resté", etat: "libre" });
+  await sql(`update chantiers set pris_par = 'agent/x', pris_jusqu_a = now() + interval '1 hour', doublon_de = ${q(doublon)} where id = ${q(c)}`);
+  await une(`select ranger_chantier(${q(c)}::uuid, 'Ventes zorglub', 'verifier-base') as s`);
+  const m = await creerMessage(P1, c, { kind: "question", corps: "Quelle couleur ?", options: [{ id: "a", libelle: "Bleu" }] });
+  await sql(`update messages set medias = ${q(JSON.stringify([{ chemin: `${P1}/${c}/x-photo.png`, nom: "photo.png", type: "image/png", taille: 1 }]))}::jsonb where id = ${q(m)}`);
+  await sql(`insert into activite (projet_id, chantier_id, session, etape) values (${q(P1)}, ${q(c)}, 'test', 'étape')`);
+
+  verifie("vers le même projet : refusé, raison dite", /déjà dans/.test((await erreurDe(`select deplacer_chantier(${q(c)}, ${q(SLUG_A)})`)) ?? ""));
+  verifie("vers un projet inconnu : refusé", /projet inconnu/.test((await erreurDe(`select deplacer_chantier(${q(c)}, 'test-nexiste-pas')`)) ?? ""));
+  verifie("chantier inconnu : refusé", /introuvable/.test((await erreurDe(`select deplacer_chantier(${q(randomUUID())}, ${q(SLUG_B)})`)) ?? ""));
+
+  const r = await une(`select deplacer_chantier(${q(c)}, ${q(SLUG_B)}) as r`);
+  const a = await chantier(c);
+  verifie("le chantier est dans le projet cible, réservation libérée, lien « doublon de » coupé", a.projet_id === P2 && a.pris_par === null && a.pris_jusqu_a === null && a.doublon_de === null, a);
+  const sec = await une(`select nom, projet_id from sections where id = ${q(a.section_id)}`);
+  verifie("section « Ventes zorglub » recréée dans le projet cible", sec?.nom === "Ventes zorglub" && sec.projet_id === P2, sec);
+  const reste = await une(`select (select count(*) from messages where chantier_id = ${q(c)} and projet_id <> ${q(P2)})::int as m, (select count(*) from activite where chantier_id = ${q(c)} and projet_id <> ${q(P2)})::int as a`);
+  verifie("messages et activité ont suivi (aucune ligne restée dans l'ancien projet)", reste.m === 0 && reste.a === 0 && r.r.messages >= 1, { reste, r });
+  const l = await une(`select corps, kind from messages where chantier_id = ${q(c)} order by created_at desc limit 1`);
+  verifie("une ligne « Déplacé de … vers … » (constat) dans le fil", l?.kind === "constat" && /^Déplacé de « .* » vers « .* »\./.test(l.corps), l);
+  const autre = await une(`select projet_id from chantiers where id = ${q(doublon)}`);
+  verifie("l'autre chantier n'a pas bougé", autre.projet_id === P1);
+  verifie("les médias restent cités par le message (chemin inchangé)", (await une(`select medias->0->>'chemin' as ch from messages where id = ${q(m)}`)).ch === `${P1}/${c}/x-photo.png`);
+  await sql(`select deplacer_chantier(${q(c)}, ${q(SLUG_A)})`);
+  verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
+}
+
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
 async function controle33_depuis_un_fil() {
   section("33. « Il faudrait aussi X » dans un fil (0033) : chantier créé prêt à lancer, rangé, fils reliés, rien d'arraché — vrai chantier.sh");
@@ -1995,7 +2026,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle36_deplacer_chantier,
   ];
   for (const etape of etapes) {
     try { await etape(); }
