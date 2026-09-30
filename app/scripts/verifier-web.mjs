@@ -187,6 +187,8 @@ const compterVivants = (slug = null) => {
   const f = slug ? ` and projet_id = (select id from projets where slug = '${slug}')` : ''
   return {
     barres: Number(sql(`select count(*) as n from (select distinct projet_id, session from activite where statut = 'en_cours' and updated_at > now() - interval '${silenceMin} minutes'${f}) x`)[0].n),
+    // « Vérifie pour moi » en cours : l'app le montre dans « Ça avance » (« Claude vérifie pour toi », vivant), agent lancé ou pas.
+    verifs: Number(sql(`select count(*) as n from chantiers where etat = 'a_verifier' and verif_demandee_at is not null and archived_at is null${f}`)[0].n),
     sessions: Number(sql(`select count(*) as n from sessions s where s.fin_at is null and ((s.tour_en_cours and s.vu_at > now() - interval '30 minutes') or s.vu_at > now() - interval '${silenceMin} minutes' or exists (select 1 from taches t where t.session_id = s.id and t.statut = 'en_cours' and t.vu_at > now() - interval '2 hours'))${f.replace('projet_id', 's.projet_id')}`)[0].n),
   }
 }
@@ -250,7 +252,18 @@ const deplierTout = async () => {
 }
 const ligneId = (id) => page.locator(`[data-testid="tous-les-chantiers"] [data-testid="ligne-chantier"][data-chantier="${id}"]`)
 const ligneDe = (titre) => page.locator('[data-testid="tous-les-chantiers"] [data-testid="ligne-chantier"]', { hasText: titre })
-const actualiser = async () => { await page.getByTestId('actualiser').click(); await page.waitForTimeout(700) }
+// « Actualiser » attend la FIN d'un rechargement complet commencé après le toucher
+// (data-recharge-du de l'en-tête). Avant (30 sept.) : 700 ms fixes ; sous latence,
+// les tables arrivaient une à une après (chantier sans son message de blocage,
+// réponse pas encore là) et 4 à 8 contrôles rougissaient au hasard.
+const actualiser = async () => {
+  const bouton = page.getByTestId('actualiser')
+  const t0 = await page.evaluate(() => Date.now())
+  await bouton.click()
+  await page.waitForFunction((t) => { const b = document.querySelector('[data-testid="actualiser"]'); return !!b && Number(b.getAttribute('data-recharge-du')) >= t && b.getAttribute('data-chargement') === '0' }, t0, { timeout: 20000 })
+    .catch(() => console.log('    (actualiser : pas de rechargement complet en 20 s)'))
+  await page.waitForTimeout(150)
+}
 // La conversation ouverte (modèle D) et sa fermeture.
 const conv = () => page.getByTestId('conversation')
 const attendreConv = async (titre) => {
@@ -362,7 +375,7 @@ try {
   // Ce que la base dit à l'instant, comparé à l'écran (d'autres sessions peuvent travailler en même temps).
   await actualiser()
   const vivants = compterVivants()
-  if (vivants.barres + vivants.sessions === 0) {
+  if (vivants.barres + vivants.sessions + vivants.verifs === 0) {
     verifie('aucune preuve de vie → « Personne ne travaille en ce moment » + comment lancer',
       await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille/.test(await page.getByTestId('personne-ne-travaille').textContent()) && /Lancer/.test(await page.getByTestId('personne-ne-travaille').textContent()))
   } else {
@@ -392,7 +405,7 @@ try {
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
   verifie('FacePro : « Réglages du projet » replié en bas', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
   const vivantsFp = compterVivants('facepro')
-  if (vivantsFp.barres + vivantsFp.sessions === 0)
+  if (vivantsFp.barres + vivantsFp.sessions + vivantsFp.verifs === 0)
     verifie('FacePro sans session → « Personne ne travaille sur ce projet en ce moment »', /Personne ne travaille sur ce projet/.test(await page.getByTestId('en-ce-moment').textContent()))
   verifie('FacePro : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await captureUx(page, 'ux-projet')
