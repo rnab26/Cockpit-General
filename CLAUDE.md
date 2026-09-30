@@ -361,8 +361,9 @@ recopiés dans le fil).
   les dépôts de la ROUTINE : sans le dépôt, elle répondait « Cockpit-General
   n'est pas cloné ici ». Il faut donc (1) le dépôt du projet dans les dépôts de
   la routine (claude.ai/code/routines › la routine › menu › Edit ; action de
-  Raphaël, aucun outil ne le fait), la routine sur l'environnement qui porte
-  les clés Supabase ; (2) son prompt = `chef.sh --texte-routine` (un seul texte
+  Raphaël, aucun outil ne le fait ; fait le 30 sept., vérifié : son message
+  de 00:23:11 → session ouverte par /fire → réponse dans le fil à 00:24:08),
+  la routine sur l'environnement qui porte les clés Supabase ; (2) son prompt = `chef.sh --texte-routine` (un seul texte
   pour les deux cas ; commence par « Réveil du chef », donc le hook de message
   ne fait pas d'elle la chef), qui lance `chef.sh --releve` : la chef → la
   passe ; une autre session → si la chef vit (`chef_vivante`), elle sert
