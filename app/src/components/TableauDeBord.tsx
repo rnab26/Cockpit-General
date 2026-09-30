@@ -88,7 +88,7 @@ type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
   { cle: 'caAvance', libelle: 'ça avance', aide: 'Claude y travaille, vérifie pour toi, ou l’avait pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
-  { cle: 'enPause', libelle: 'en pause', aide: 'personne dessus : prêt à lancer', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'enPause', libelle: 'en attente', aide: 'personne dessus : prêt à lancer', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
 interface Liste { titre: string; ids: string[]; n: number }
@@ -137,7 +137,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
 }
 
 const COLONNES: { cle: keyof QuatreNombres; libelle: string }[] = [
-  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en pause' }, { cle: 'livre', libelle: 'fini' },
+  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en attente' }, { cle: 'livre', libelle: 'fini' },
 ]
 const TEINTE: Record<keyof QuatreNombres, string> = { pourToi: 'text-alerte', bouge: 'text-texte', dort: 'text-texte-2', livre: 'text-ok', expirees: 'text-attention' }
 interface LigneDetail { cle: string; nom: string; couleur: string | null; nombres: QuatreNombres; ids: LigneOuJenSuis['ids'] }
