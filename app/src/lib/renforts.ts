@@ -27,10 +27,28 @@ export interface Renfort {
   faits: number
   en_cours: number
   erreur: string | null
+  /** 0040 : 'auto' = ouvert par la chef toute seule ; file et seuil = ce qui l'a déclenché. */
+  origine?: 'manuel' | 'auto'
+  file?: number | null
+  seuil?: number | null
   created_at: string
   vu_at: string | null
   fini_at: string | null
   archive_at: string | null
+}
+
+/** 0040 : LA règle de la file, calculée par la base (file_renforts). L'écran la lit, ne la recalcule pas. */
+export interface EtatAuto {
+  actif: boolean
+  seuil: number
+  /** Le seuil n'est pas réglé : il vaut « agents par session ». */
+  seuil_defaut: boolean
+  file: number
+  niveau: NiveauSaturation | null
+  /** Pourquoi rien ne s'ouvrirait tout seul (null = ça s'ouvre au prochain passage de la chef). */
+  bloque: 'eteint' | 'reglage_zero' | 'frein' | 'plein' | null
+  vivants: number
+  max: number
 }
 
 export interface AttenteSection { section_id: string | null; section: string; n: number; ids: string[] }
@@ -44,6 +62,7 @@ export interface EtatRenforts {
   projet?: string
   relais?: string | null
   relais_passage?: string | null
+  auto?: EtatAuto
   chef_vu_at: string | null
   attente: AttenteSection[]
   renforts: Renfort[]
@@ -117,23 +136,46 @@ export function boutonRenforts(e: EtatRenforts): { actif: boolean; aide: string;
 export type NiveauSaturation = 'proche' | 'sature'
 
 /**
- * Alerte « une session approche la saturation » : la file (chantiers qui attendent sans personne) est
- * comparée à ce qu'une session absorbe (agents_par_session, réglage existant : aucune valeur en dur).
- * proche : la file remplit une session ; sature : elle en remplit deux. Le texte dit quoi faire
- * selon ce que le bouton permet (renfort possible, maximum atteint, renforts éteints).
+ * Alerte « une session approche la saturation ». Le niveau, la file et le seuil viennent de la base
+ * (etat_renforts.auto, migration 0040) : une seule règle, celle que la chef applique pour ouvrir. Le texte
+ * dit ce qui va se passer (ouverture automatique) ou ce qui l'empêche (éteinte, frein, maximum, renforts à 0).
  */
 export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; titre: string; conseil: string } | null {
-  const file = e.attente.reduce((n, a) => n + a.n, 0)
-  const cap = Math.max(1, e.agents_par_session)
-  if (file < cap) return null
-  const niveau: NiveauSaturation = file >= 2 * cap ? 'sature' : 'proche'
-  const enRoute = renfortsEnRoute(e).length
-  const titre = `${niveau === 'sature' ? 'Session saturée' : 'Session bientôt saturée'} : ${file} chantier${file > 1 ? 's' : ''} en file pour ${cap} agent${cap > 1 ? 's' : ''} par session.`
+  const a = e.auto
+  if (!a || !a.niveau) return null
+  const titre = `${a.niveau === 'sature' ? 'Session saturée' : 'Session bientôt saturée'} : ${a.file} chantier${a.file > 1 ? 's' : ''} en file (seuil ${a.seuil}).`
   let conseil: string
-  if (e.sessions_max === 0) conseil = 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour en ouvrir.'
-  else if (enRoute >= e.sessions_max) conseil = `Déjà ${enRoute} renfort${enRoute > 1 ? 's' : ''} en route (maximum) : patiente, ou monte le maximum (Réglages).`
-  else conseil = 'Ouvre un renfort : touche « Lancer des renforts » ci-dessous.'
-  return { niveau, titre, conseil }
+  if (a.bloque === 'reglage_zero') conseil = 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour en ouvrir.'
+  else if (a.bloque === 'plein') conseil = `Déjà ${a.vivants} renfort${a.vivants > 1 ? 's' : ''} en route (maximum) : patiente, ou monte le maximum (Réglages).`
+  else if (a.bloque === 'frein') conseil = 'Un frein est actif : aucun renfort ne s’ouvre tant qu’il dure. Tu peux quand même en lancer un à la main ci-dessous.'
+  else if (a.bloque === 'eteint') conseil = 'L’ouverture automatique est éteinte (Réglages) : touche « Lancer des renforts » ci-dessous.'
+  else conseil = 'La session chef ouvre un renfort toute seule à son prochain passage.'
+  return { niveau: a.niveau, titre, conseil }
+}
+
+/** Une ligne de réglage lisible : ce que fait l'ouverture automatique, et pourquoi elle ne ferait rien. */
+export function libelleAuto(a: EtatAuto | undefined): string {
+  if (!a) return 'Ouverture automatique : état indisponible.'
+  if (!a.actif) return 'Ouverture automatique éteinte : les renforts ne s’ouvrent que sur ton bouton.'
+  const base = `Ouverture automatique allumée : dès ${a.seuil} chantier${a.seuil > 1 ? 's' : ''} en file${a.seuil_defaut ? ' (= agents par session)' : ''}. File actuelle : ${a.file}.`
+  if (a.bloque === 'reglage_zero') return `${base} Bloquée : sessions de renfort à 0.`
+  if (a.bloque === 'frein') return `${base} En pause : frein actif.`
+  if (a.bloque === 'plein') return `${base} Maximum de renforts atteint.`
+  return base
+}
+
+/** Erreur de saisie du seuil (vide = défaut), mêmes bornes que la base. */
+export function erreurSeuilAuto(texte: string): string | null {
+  if (texte.trim() === '') return null
+  const n = Number(texte)
+  return Number.isInteger(n) && n >= 1 && n <= 20 ? null : 'Seuil de la file : un nombre de 1 à 20 (vide = agents par session).'
+}
+
+/** « ouvert automatiquement à 14 h 32 parce que… » : null pour un renfort demandé à la main. */
+export function origineRenfort(r: Renfort): string | null {
+  if (r.origine !== 'auto') return null
+  const pourquoi = r.seuil != null && r.file != null ? `la file (${r.file}) atteignait le seuil de ${r.seuil}` : 'la file de chantiers dépassait ce qu’une session porte'
+  return `ouvert automatiquement à ${heure(r.created_at)} parce que ${pourquoi}`
 }
 
 /** Le message après le clic : réussite (ce qui a été demandé) ou pourquoi rien. */

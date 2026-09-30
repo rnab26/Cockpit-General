@@ -26,7 +26,8 @@
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
 #   scripts/chef.sh --agents-renfort <n>  agents par session de renfort (1 à 5)
-#   (renforts : Raphaël les demande d'un bouton de l'app ; voir scripts/renfort.sh)
+#   (renforts : Raphaël les demande d'un bouton de l'app, ou la passe les pose toute seule quand
+#    la file atteint le seuil (0040, renforts_a_ouvrir) ; voir scripts/renfort.sh)
 #   scripts/chef.sh --ouverture <slug> <session_…>        la chef RELAIS note la session ouverte pour
 #   scripts/chef.sh --ouverture <slug> --erreur "<raison>"   un projet sans chef (0028), ou l'échec
 #
