@@ -77,6 +77,22 @@ function dernierAvancement(a: A | null | undefined, now: Date): string | null {
   return `dernier avancement connu : ${a.pourcentage} %${quand ? ` (${quand})` : ''}${a.etape ? ` — ${a.etape}` : ''}`
 }
 
+/** Délai de grâce d'un renfort de section sur une vérification (= cockpit.delai_verif_renfort_min(), 0044). */
+export const DELAI_VERIF_RENFORT_MIN = 10
+
+/**
+ * Où en est une vérification demandée, en une phrase : prise (par qui), ou pourquoi elle attend encore.
+ * Une seule phrase pour la fiche, la liste et l'en-tête (Raphaël : « je n'ai jamais de retour »).
+ */
+export function etatVerification(c: Pick<Chantier, 'pris_par' | 'pris_jusqu_a' | 'verif_demandee_at'>, now: Date = new Date()): string {
+  const prise = !!c.pris_par && (ms(c.pris_jusqu_a) ?? 0) > now.getTime()
+  if (prise) return `prise par ${c.pris_par}, verdict attendu dans l’heure`
+  const t = ms(c.verif_demandee_at)
+  const minutes = t === null ? 0 : Math.max(0, Math.round((now.getTime() - t) / 60_000))
+  if (minutes < DELAI_VERIF_RENFORT_MIN) return 'en file : une session la prend dans quelques minutes'
+  return 'en file, pas encore prise : aucune session du projet ne l’a reprise, la chef (ou une session ouverte pour elle) passe dans l’heure'
+}
+
 export function presenceChantier(
   c: C,
   activite: A | null,
@@ -96,7 +112,7 @@ export function presenceChantier(
   // « disparaît ou prend un autre nom ». Il a un nom, partout le même, et il
   // revient dans « À toi » avec le verdict (verif_demandee_at remis à null).
   if (c.etat === 'a_verifier' && c.verif_demandee_at) return { ...base, code: 'claude_verifie', libelle: 'Claude vérifie pour toi', teinte: 'info',
-    detail: `demandé ${dateRelative(c.verif_demandee_at, now) || 'à l’instant'}`,
+    detail: `demandé ${dateRelative(c.verif_demandee_at, now) || 'à l’instant'} · ${etatVerification(c, now)}`,
     tonAction: 'Rien à faire : Claude vérifie, puis le chantier revient dans « À toi » avec son verdict.' }
   if (c.etat === 'a_verifier') return { ...base, code: 'a_verifier', libelle: 'À toi de vérifier', teinte: 'attention',
     tonAction: 'C’est livré : suis « Comment vérifier » ci-dessous, puis dis si ça fonctionne.' }
