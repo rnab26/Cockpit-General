@@ -1,4 +1,4 @@
--- 0041 — Suggestion AUTOMATIQUE de fusion de chantiers (chantier 5b5900a9).
+-- 0042 — Suggestion AUTOMATIQUE de fusion de chantiers (chantier 5b5900a9).
 --
 -- Raphaël (30 sept. 2026) : « Ce chantier est un doublon d'un nouveau chantier ;
 -- la fusion n'a pas été faite automatiquement ni proposée ; c'est de la pollution

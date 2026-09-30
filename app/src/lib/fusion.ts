@@ -1,6 +1,6 @@
 // « Fusionner avec… » (menu ⋯ du fil) : logique pure. La fusion elle-même reste
 // `fusionner_chantiers` (une seule règle, en base) ; la suggestion automatique
-// est `candidat_fusion` / `ressemblance_fusion` (0041, testées par verifier-fusion.mjs).
+// est `candidat_fusion` / `ressemblance_fusion` (0042, testées par verifier-fusion.mjs).
 import { normaliser } from './doublons.ts'
 
 export interface ChantierFusion { id: string; titre: string; projet_id: string; etat: string; archived_at?: string | null; doublon_de?: string | null }
