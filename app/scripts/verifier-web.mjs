@@ -1613,7 +1613,7 @@ try {
   verifie('une ligne s’ouvre en conversation, « Écrire à Claude… » en bas', await conv().getByTestId('ecrire-a-claude').count() === 1)
   await conv().getByTestId('menu-chantier').click()
   const itemsMenu = await Promise.all(['modifier', 'ouvrir-historique', 'doublon-de', 'archiver', 'supprimer'].map((t) => conv().getByTestId(t).count()))
-  verifie('menu ⋯ : Modifier, Historique, C’est un doublon de…, Archiver, Supprimer', itemsMenu.every((n) => n === 1), itemsMenu)
+  verifie('menu ⋯ : Modifier, Historique, Fusionner avec…, Archiver, Supprimer', itemsMenu.every((n) => n === 1), itemsMenu)
   await conv().getByTestId('modifier').click()
   const dlgM = page.getByRole('dialog').filter({ hasText: 'Modifier le chantier' })
   await dlgM.waitFor({ timeout: 5000 })
@@ -1644,9 +1644,23 @@ try {
   verifie('« Annuler » reste un abandon explicite (sans question), la conversation reste', !(await dlgM.isVisible()) && await conv().count() === 1)
   await conv().getByTestId('menu-chantier').click()
   await conv().getByTestId('doublon-de').click()
-  const dlgDd = page.getByRole('dialog').filter({ hasText: 'Chantier à garder' })
+  const dlgDd = page.getByRole('dialog').filter({ hasText: 'Fusionner avec…' })
   await dlgDd.waitFor({ timeout: 5000 })
-  verifie('« C’est un doublon de… » s’ouvre par-dessus la conversation', await dlgDd.isVisible())
+  verifie('« Fusionner avec… » s’ouvre par-dessus la conversation', await dlgDd.isVisible())
+  const nbChoix = await dlgDd.getByTestId('fusion-choix').count()
+  if (nbChoix > 0) {
+    await dlgDd.getByTestId('fusion-recherche').fill('zzzqqq-introuvable')
+    verifie('« Fusionner avec… » : une recherche sans résultat le dit', await dlgDd.getByTestId('fusion-aucun').isVisible() && await dlgDd.getByTestId('fusion-choix').count() === 0)
+    await dlgDd.getByTestId('fusion-recherche').fill('')
+    await dlgDd.getByTestId('fusion-choix').first().click()
+    await dlgDd.getByTestId('fusion-valider').click()
+    const dlgOk = page.getByRole('dialog').filter({ hasText: 'Fusionner ces deux chantiers' })
+    await dlgOk.waitFor({ timeout: 5000 })
+    verifie('« Fusionner avec… » : une confirmation dit ce qui va se passer (archivé, messages, rien supprimé)', /archivé comme doublon/.test(await dlgOk.textContent()) && /Rien n’est supprimé/.test(await dlgOk.textContent()))
+    await dlgOk.getByRole('button', { name: 'Annuler' }).click()
+  } else {
+    verifie('« Fusionner avec… » : état vide (aucun autre chantier)', await dlgDd.getByTestId('fusion-vide').isVisible())
+  }
   await dlgDd.getByRole('button', { name: 'Annuler' }).click()
   verifie('toujours pas de défilement horizontal, conversation ouverte', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'conversation')
@@ -2013,6 +2027,7 @@ try {
 } catch (e) {
   echecs++; total++
   console.log(`  ✗ exception : ${e && e.message ? e.message : e}`)
+  if (erreursConsole.length) console.log(`    erreurs console : ${erreursConsole.slice(0, 5).join(' | ')}`)
   await capture(page, 'echec').catch(() => {})
 } finally {
   // Nettoyage des lignes de test, quoi qu'il arrive.

@@ -59,6 +59,7 @@ node scripts/verifier-mcp.mjs                              # serveur MCP déploy
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
+node scripts/verifier-fusion.mjs                           # règle de ressemblance de la fusion suggérée sur une table de cas (lecture seule)
 node scripts/verifier-push.mjs                            # notifications push : fonction déployée (401 sans secret, chiffrement, abonnement mort retiré), coffre, trigger, droits
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
 bash -n scripts/*.sh hooks/*.sh
@@ -466,6 +467,27 @@ recopiés dans le fil).
   (`trouver_chantier`, une seule règle). Consignes : agent « Répondre » de
   `chef.sh` (point 3), session relais, `hooks/suivi.sh`, hook de démarrage,
   bloc CLAUDE.md. `verifier-base` §31, `verifier-discussion.ts`.
+
+## Fusion : menu « Fusionner avec… » et carte suggérée toute seule (30 sept. 2026, migration 0042, chantier 5b5900a9)
+
+Raphaël : « ce chantier est un doublon d'un nouveau chantier ; la fusion n'a pas
+été proposée […] je préfère qu'on me SUGGÈRE une fusion automatique plutôt que
+de me laisser déduire. » (1) Menu ⋯ du fil › « Fusionner avec… » (`Doublons.tsx::
+DoublonDe`, `lib/fusion.ts`) : liste recherchable des chantiers OUVERTS du même
+projet, confirmation qui dit ce qui se passe, toast, état vide ; passe par
+`fusionner_chantiers` (une seule règle). (2) Un trigger sur `chantiers` (création
+ou titre modifié, toutes voies) pose UNE carte `fusion` « À toi » quand le titre
+ressemble au plus près à un chantier ouvert du même projet : `ressemblance_fusion`
+= la plus forte de la similarité de trigrammes des SUJETS et des mots
+significatifs communs (au moins 2, jamais un seul), `candidat_fusion`,
+`poser_carte_fusion` (une carte par paire, dans un sens ou l'autre, même refusée ;
+partagée avec `suggerer_fusion` des sessions). Le nouveau est la source, l'ancien
+est gardé. Jamais : projet `test-…`, chantier archivé/certifié/doublon.
+Réglable par projet : `projets.fusion_seuil` (0,65 par défaut, mesuré : 0,60
+proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
+(pas encore d'écran : SQL ou `scripts/sql.sh`). Un faux doublon constaté → un cas
+dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
+`verifier-fusion.ts` (menu).
 
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 

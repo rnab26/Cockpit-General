@@ -1964,6 +1964,62 @@ async function controle36_deplacer_chantier() {
   verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
 }
 
+// 37. Suggestion automatique de fusion (0042) : une carte « À toi » par paire, jamais un projet de test, seuil réglable.
+async function controle37_fusion_auto() {
+  section("37. Fusion suggérée toute seule (0042) : une règle, une carte par paire, seuil et interrupteur réglables, jamais un projet de test");
+  const nCartes = async (chantierId) => (await une(`select count(*)::int as n from messages where kind = 'fusion' and chantier_id = ${q(chantierId)}`)).n;
+  const ancien = await creerChantier(P1, { titre: "Ouverture de session et agents de renfort", etat: "libre" });
+  const nouveau = await creerChantier(P1, { titre: "Ouverture des sessions et des agents de renfort", etat: "libre" });
+  const loin = await creerChantier(P1, { titre: "Couleur du bouton d'envoi", etat: "libre" });
+
+  verifie("projet de test : le trigger ne pose AUCUNE carte (même pour deux titres très proches)", (await nCartes(ancien)) === 0 && (await nCartes(nouveau)) === 0);
+  const regle = await une(`select cockpit.ressemblance_fusion('Ouverture de session et agents de renfort', 'Ouverture des sessions et des agents de renfort') as s`);
+  verifie("la règle voit ces deux titres proches (score >= seuil par défaut 0,65)", regle.s >= 0.65, regle);
+  const seuil = await une(`select fusion_auto, fusion_seuil from projets where id = ${q(P1)}`);
+  verifie("réglages par défaut : fusion_auto oui, seuil 0,65", seuil.fusion_auto === true && Math.abs(seuil.fusion_seuil - 0.65) < 1e-6, seuil);
+
+  const carte = (await une(`select fusion_auto_pour(${q(nouveau)}, true) as id`)).id;
+  const m = carte ? await une(`select kind, chantier_id, options->0->>'source' as source, options->0->>'cible' as cible, options->0->>'libelle' as lib, answered_at from messages where id = ${q(carte)}`) : null;
+  verifie("mode test : UNE carte « fusion » posée dans le fil du chantier GARDÉ (l'ancien), source = le nouveau, en attente", !!m && m.kind === "fusion" && m.chantier_id === ancien && m.source === nouveau && m.cible === ancien && m.lib === "Fusionner" && m.answered_at === null, m);
+  verifie("une seule carte par paire : repasser n'en pose pas d'autre", (await une(`select fusion_auto_pour(${q(nouveau)}, true) as id`)).id === null && (await nCartes(ancien)) === 1);
+  verifie("le chantier sans rapport n'a aucun candidat", (await une(`select fusion_auto_pour(${q(loin)}, true) as id`)).id === null);
+  const sugg = await une(`select suggerer_fusion(${q(ancien)}, ${q(nouveau)}, 'x', 'verifier-base') as id`);
+  verifie("la suggestion d'une session dans l'autre sens ne double pas la carte (même paire)", sugg.id === null && (await nCartes(ancien)) === 1);
+
+  // Refusée : plus jamais reproposée.
+  await sql(`select trancher_fusion(${q(carte)}, false, 'test')`);
+  verifie("« Garder séparés » : la paire n'est plus jamais reproposée",
+    (await une(`select fusion_auto_pour(${q(nouveau)}, true) as id`)).id === null && (await nCartes(ancien)) === 1);
+
+  // Seuil, interrupteur, états exclus, droits.
+  const a2 = await creerChantier(P1, { titre: "Alerte saturation des renforts de session", etat: "libre" });
+  await sql(`select regler_fusion(${q(SLUG_A)}, true, 1)`);
+  verifie("seuil réglé à 1 : plus de candidat (le seuil est bien lu en base)", (await une(`select fusion_auto_pour(${q(a2)}, true) as id`)).id === null);
+  await sql(`select regler_fusion(${q(SLUG_A)}, true, 0.65)`);
+  await sql(`select regler_fusion(${q(SLUG_A)}, false, null)`);
+  verifie("interrupteur éteint : aucune carte", (await une(`select fusion_auto_pour(${q(a2)}, true) as id`)).id === null);
+  await sql(`select regler_fusion(${q(SLUG_A)}, true, null)`);
+  verifie("regler_fusion refuse un seuil de 0,1 ou 2", !!(await erreurDe(`select regler_fusion(${q(SLUG_A)}, true, 0.1)`)) && !!(await erreurDe(`select regler_fusion(${q(SLUG_A)}, true, 2)`)));
+  const b1 = await creerChantier(P1, { titre: "Migration de la table des factures clients", etat: "libre" });
+  const b2 = await creerChantier(P1, { titre: "Migration table factures clients", etat: "libre" });
+  await sql(`update chantiers set archived_at = now() where id = ${q(b1)}`);
+  verifie("un chantier archivé n'est jamais candidat", (await une(`select fusion_auto_pour(${q(b2)}, true) as id`)).id === null);
+  await sql(`update chantiers set archived_at = null, etat = 'valide' where id = ${q(b1)}`);
+  verifie("un chantier certifié n'est jamais candidat", (await une(`select fusion_auto_pour(${q(b2)}, true) as id`)).id === null);
+  await sql(`update chantiers set etat = 'libre' where id = ${q(b1)}`);
+  await sql(`update chantiers set archived_at = now() where id = ${q(b2)}`);
+  verifie("un chantier archivé n'a pas de carte non plus (source archivée)", (await une(`select fusion_auto_pour(${q(b2)}, true) as id`)).id === null);
+  await sql(`update chantiers set archived_at = null where id = ${q(b2)}`);
+
+  // Accepter = la fusion existante.
+  const c2 = (await une(`select fusion_auto_pour(${q(b2)}, true) as id`)).id;
+  await sql(`select trancher_fusion(${q(c2)}, true, 'test')`);
+  const f = await chantier(b2);
+  verifie("« Fusionner » : le nouveau est archivé comme doublon de l'ancien (fusionner_chantiers, inchangée)", !!f.archived_at && f.doublon_de === b1, f);
+  const droits = await une(`select has_function_privilege('authenticated', 'cockpit.fusion_auto_pour(uuid, boolean)', 'execute') as a, has_function_privilege('anon', 'cockpit.candidat_fusion(uuid, boolean)', 'execute') as b, has_function_privilege('authenticated', 'cockpit.poser_carte_fusion(uuid, uuid, text, text, text)', 'execute') as c`);
+  verifie("droits : ni l'app ni le public ne posent une carte à la main", !droits.a && !droits.b && !droits.c, droits);
+}
+
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
 // Un projet NEUF (I) pour l'ouverture automatique des renforts.
 const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
@@ -2242,7 +2298,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_pr_a_fusionner, controle37_accuse_action,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle34_fermeture_sessions, controle35_renforts_auto, controle36_deplacer_chantier, controle37_pr_a_fusionner, controle37_accuse_action, controle37_fusion_auto,
   ];
   for (const etape of etapes) {
     try { await etape(); }
