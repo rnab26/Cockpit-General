@@ -47,8 +47,9 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
     <div className="space-y-5">
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
-      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
+      {/* Le vivant d'abord (Raphaël, 30 sept. : « voir ce qui avance en live en premier, avec la barre ») ; « À toi de jouer » en second. */}
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
+      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
@@ -103,7 +104,7 @@ function idsDe(t: Tableau, cle: CleTuile): string[] {
 function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
   const g = useGlobal()
   const [liste, setListe] = useState<Liste | null>(null)
-  const [detail, setDetail] = useState(false)
+  const [detail, setDetail] = useState(true) // ouvert d'emblée (Raphaël, 30 sept.)
   const libelleFenetre = FENETRES.find((f) => f.valeur === fenetre)?.libelle.toLowerCase() ?? ''
   const changerFenetre = () => {
     const i = FENETRES.findIndex((f) => f.valeur === fenetre)

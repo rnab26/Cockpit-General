@@ -325,10 +325,9 @@ try {
   verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
   verifie('tuile « en pause » = le nombre de « Prêt à lancer »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()))
-  await page.getByTestId('detail-ou-jen-suis').click()
   const lignesEnsemble = await page.getByTestId('ligne-ou-jen-suis').count()
   const nProjetsActifs = Number(sql(`select count(*) as n from projets where actif`)[0].n)
-  verifie('« Détail par projet » (replié sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
+  verifie('« Détail par projet » (ouvert d’emblée sous les tuiles) : une ligne par projet actif', lignesEnsemble === nProjetsActifs, { lignesEnsemble, nProjetsActifs })
   const sommeColonne = async (col) => (await page.locator(`[data-testid="ligne-ou-jen-suis"] [data-colonne="${col}"]`).allTextContents()).reduce((n, t) => n + Number(t), 0)
   verifie('le détail compte les mêmes chantiers que les tuiles (pour toi, ça avance, en pause)',
     await sommeColonne('pourToi') === await nTuile('pourToi') && await sommeColonne('bouge') === await nTuile('caAvance') && await sommeColonne('dort') === await nTuile('enPause'),
