@@ -975,6 +975,30 @@ async function controle20_images_session() {
     const fm = await une(`select corps, auteur_type, kind, medias from messages where chantier_id = ${q(c)} and kind = 'info' and auteur_type = 'session' order by created_at desc limit 1`);
     verifie("media.sh --envoyer : un message de Claude dans le fil, avec ses 2 images",
       rE.code === 0 && fm?.corps === "Voici l'écran actuel." && fm.medias?.length === 2, { rE, fm });
+
+    // §31 (0033, chantier e9a7c360) : une ACTION porte sa marche à suivre — lien exact, étapes, texte à copier.
+    section("31. Une action manuelle porte sa marche à suivre (0033) : lien exact, étapes numérotées, texte à copier, jamais un secret");
+    const act = ["--action", "--chantier", c, "--question", "Ajoute la clé dans les réglages", "--pourquoi", "Test."];
+    const avantA = await nMessages();
+    const rSans = lancer("demander.sh", [...act, "--etape", "Touche « New »"]);
+    const rSansEt = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/tokens|Jetons"]);
+    const rAccueil = lancer("demander.sh", [...act, "--lien", "https://github.com/|GitHub", "--etape", "a"]);
+    const rSecret = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/tokens|Jetons", "--etape", "a", "--copier", "Clé|sk-ant-api03-abcdefghijklmnopqrstuvwxyz"]);
+    const rBarre = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/tokens|Jetons", "--etape", "a", "--copier", "texte sans libellé"]);
+    verifie("demander.sh --action REFUSE sans lien, sans étape, un lien vers la page d'accueil, un secret à copier, un texte sans libellé — sans rien écrire",
+      [rSans, rSansEt, rAccueil, rSecret, rBarre].every((r) => r.code === 2) && /--lien/.test(rSans.sortie) && (await nMessages()) === avantA,
+      { rSans, rSansEt, rAccueil, rSecret, rBarre });
+    const rA = lancer("demander.sh", [...act, "--lien", "https://github.com/settings/secrets/actions/new|Ouvrir les secrets", "--etape", "1. Dans « Name », colle le nom ci-dessous",
+      "--etape", "Touche « Add secret »", "--copier", "Nom du secret|RUNPOD_API_KEY", "--image", png]);
+    const am = await une(`select marche, medias from messages where chantier_id = ${q(c)} and kind = 'action' order by created_at desc limit 1`);
+    verifie("demander.sh --action : messages.marche porte le lien, les étapes (sans numéro recopié) et le texte à copier, plus la capture",
+      rA.code === 0 && am?.marche?.liens?.[0]?.url === "https://github.com/settings/secrets/actions/new" && am.marche.liens[0].libelle === "Ouvrir les secrets"
+        && am.marche.etapes?.length === 2 && am.marche.etapes[0] === "Dans « Name », colle le nom ci-dessous"
+        && am.marche.copier?.[0]?.texte === "RUNPOD_API_KEY" && am.medias?.length === 1, { rA, am });
+    const rTel = lancer("demander.sh", [...act, "--sans-lien", "Geste sur le téléphone", "--etape", "Ouvre l'APK reçue"]);
+    verifie("demander.sh --action --sans-lien \"pourquoi\" : accepté quand aucune page n'existe", rTel.code === 0, rTel);
+    const lu = await rest(`messages?chantier_id=eq.${c}&kind=eq.action&select=marche&order=created_at.desc&limit=1`, { jwt });
+    verifie("le membre lit messages.marche par l'API (ce que l'app affiche)", lu.status === 200 && Array.isArray(lu.json?.[0]?.marche?.etapes), lu);
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 

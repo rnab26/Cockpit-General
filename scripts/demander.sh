@@ -9,7 +9,26 @@
 #
 #   scripts/demander.sh --action --chantier "Déploiement" \
 #     --question "Crée le dépôt rnab26/Cockpit-General sur GitHub" \
-#     --pourquoi "La plateforme interdit à une session de créer un dépôt."
+#     --pourquoi "La plateforme interdit à une session de créer un dépôt." \
+#     --lien "https://github.com/new|Ouvrir la création de dépôt" \
+#     --etape "Dans « Repository name », colle le nom ci-dessous" \
+#     --etape "Coche « Private », puis touche « Create repository »" \
+#     --copier "Nom du dépôt|Cockpit-General" \
+#     --image capture-du-formulaire.png
+#
+# MARCHE À SUIVRE D'UNE ACTION (0033, Raphaël, 30 sept. 2026 : « à chaque fois
+# il faut que j'aille chercher et ce n'est pas assez précis ; des liens précis,
+# des démarches précises pour faire simplement des copier-coller, et un visuel
+# si ça peut aider »). Une --action est REFUSÉE sans :
+#   --lien "https://…|libellé"  l'adresse EXACTE de la page où agir (1 à 3 ;
+#                               pas la page d'accueil du service). Aucune page
+#                               n'existe (geste sur le téléphone) : --sans-lien "pourquoi".
+#   --etape "…"                 1 à 8 étapes, une par geste (160 car. chacune),
+#                               avec le nom EXACT du bouton ou du champ ; l'app les numérote.
+# Et chaque fois qu'il doit taper quelque chose :
+#   --copier "libellé|texte"    texte prêt à coller (0 à 4 ; bouton « Copier »
+#                               dans l'app). JAMAIS un secret : refusé.
+#   --image capture.png         la page telle qu'il va la voir, si ça aide.
 #
 # Deux familles : --question (il DÉCIDE, options cliquables) ; --action (il FAIT
 # quelque chose et dit où il en est : fait / pas encore / ça bloque).
@@ -47,7 +66,7 @@ set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
-projet="${COCKPIT_PROJET:-}"; question=""; pourquoi=""; chantier=""; kind="question"; options=(); images=(); mode="poser"; cible=""; raison=
+projet="${COCKPIT_PROJET:-}"; question=""; pourquoi=""; chantier=""; kind="question"; options=(); images=(); liens=(); etapes=(); copier=(); sans_lien=""; mode="poser"; cible=""; raison=
 auteur="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
@@ -59,11 +78,15 @@ while [ $# -gt 0 ]; do
     --auteur)    auteur="${2:-}"; shift 2 ;;
     --option)    options+=("${2:-}"); shift 2 ;;
     --image)     images+=("${2:-}"); shift 2 ;;
+    --lien)      liens+=("${2:-}"); shift 2 ;;
+    --etape)     etapes+=("${2:-}"); shift 2 ;;
+    --copier)    copier+=("${2:-}"); shift 2 ;;
+    --sans-lien) sans_lien="${2:-}"; shift 2 ;;
     --action)    kind="action"; shift ;;
     --retirer)   mode="retirer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     --confirmer) mode="confirmer"; cible="${2:-}"; shift 2 ;;
     --debloquer) mode="debloquer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
-    -h|--help)   sed -n '2,42p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help)   sed -n '2,63p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
 done
@@ -128,6 +151,22 @@ if [ "$kind" = "question" ]; then
   done
 fi
 
+# Marche à suivre (0033) : contrôlée AVANT d'écrire, comme le reste.
+marche_json="null"
+if [ "$kind" = "action" ] || [ ${#liens[@]} -gt 0 ] || [ ${#etapes[@]} -gt 0 ] || [ ${#copier[@]} -gt 0 ]; then
+  MARCHE="Une action = le lien EXACT de la page où agir (--lien \"https://…|libellé\"), les gestes numérotés (--etape \"…\", le nom exact du bouton ou du champ), et ce qu'il doit taper prêt à coller (--copier \"libellé|texte\"). Une capture aide ? --image capture.png."
+  if [ "$kind" = "action" ]; then
+    if [ ${#liens[@]} -eq 0 ] && [ -z "${sans_lien// /}" ]; then
+      echo "Refusé (marche à suivre) : une --action sans --lien. Raphaël ne doit rien chercher. $MARCHE Aucune page n'existe (geste sur le téléphone) ? --sans-lien \"pourquoi\"." >&2; exit 2
+    fi
+    [ ${#etapes[@]} -ge 1 ] || { echo "Refusé (marche à suivre) : une --action sans --etape. $MARCHE" >&2; exit 2; }
+  fi
+  [ ${#liens[@]} -le 3 ] || { echo "Refusé (marche à suivre) : 3 liens au plus (${#liens[@]} ici) : garde ceux où il agit." >&2; exit 2; }
+  [ ${#etapes[@]} -le 8 ] || { echo "Refusé (marche à suivre) : 8 étapes au plus (${#etapes[@]} ici) : découpe en deux actions." >&2; exit 2; }
+  [ ${#copier[@]} -le 4 ] || { echo "Refusé (marche à suivre) : 4 textes à copier au plus (${#copier[@]} ici)." >&2; exit 2; }
+  marche_json=$( { printf '%s\0' "${#liens[@]}" ${liens[@]+"${liens[@]}"} "${#etapes[@]}" ${etapes[@]+"${etapes[@]}"} "${#copier[@]}" ${copier[@]+"${copier[@]}"}; } | python3 "$RACINE/scripts/marche.py") || exit 2
+fi
+
 # Les images se contrôlent aussi AVANT d'écrire (fichier absent, type, taille, nombre).
 if [ ${#images[@]} -gt 0 ]; then "$RACINE/scripts/media.sh" --verifier-images "${images[@]}"; fi
 
@@ -173,7 +212,8 @@ if [ ${#images[@]} -gt 0 ]; then
   medias_sql="'$(q "$medias")'::jsonb"
 fi
 id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-"$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options, medias) values ('$id', '$pid', $cid, '$(q "$auteur")', 'session', '$kind', '$(q "$question")', '$(q "$pourquoi")', $opts_json, $medias_sql)" >/dev/null
+marche_sql="null"; [ "$marche_json" != "null" ] && marche_sql="'$(q "$marche_json")'::jsonb"
+"$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options, medias, marche) values ('$id', '$pid', $cid, '$(q "$auteur")', 'session', '$kind', '$(q "$question")', '$(q "$pourquoi")', $opts_json, $medias_sql, $marche_sql)" >/dev/null
 relu=$("$SQL" "select id from messages where id = '$id'" | jq -r '.rows[0].id // empty')
 [ "$relu" = "$id" ] || { echo "La question n'a pas été enregistrée (relecture vide pour $id)." >&2; exit 1; }
 echo "Question posée (message $id)${images[0]:+, avec ${#images[@]} image(s)}. Elle s'affiche dans le cockpit ; la réponse reviendra au démarrage des sessions suivantes."
