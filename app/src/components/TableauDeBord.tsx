@@ -315,8 +315,8 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
           <span className="min-w-0 flex-1">
             <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
+              <span className="whitespace-nowrap font-medium tabular-nums text-texte" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span><span aria-hidden> · </span>
               {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
-              <span className="whitespace-nowrap tabular-nums" data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span><span aria-hidden> · </span>
               <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
             </span>
           </span>
