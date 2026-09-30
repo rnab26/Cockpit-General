@@ -5,7 +5,7 @@
 #   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh             consigne de revue, ou « RIEN »
 #   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh --liste     la liste seule (JSON), sans rien marquer
 #   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh --apercu    la consigne, sans rien marquer (tests)
-#   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh --forcer    même si une revue a eu lieu il y a moins d'une heure
+#   COCKPIT_PROJET=facepro scripts/revue-a-toi.sh --forcer    même si une revue a eu lieu dans le délai (24 h par défaut)
 #
 # POURQUOI (Raphaël, 29 sept. 2026) : « dans tout ce qui est à toi de jouer il
 # n'y a pas d'actualisation ; j'ai des requêtes d'il y a plus de 12 h qui ont
@@ -14,7 +14,7 @@
 # mise à jour, ou fusionnée si nécessaire ». La session qui a posé un élément
 # a souvent disparu : c'est donc la chef du projet (scripts/chef.sh) qui fait
 # revoir la liste par un agent, ou la session autonome (scripts/passe.sh) quand
-# elle n'a rien d'autre à faire. Au plus une revue par heure et par projet.
+# elle n'a rien d'autre à faire. Au plus une revue par JOUR et par projet (projets.revue_a_toi_delai_h, 24 par défaut, 0034 : économie des modèles).
 # Seuil : COCKPIT_A_TOI_HEURES (12 par défaut). La règle est a_toi_a_revoir
 # (la même que l'app, lib/entonnoir.ts) : jamais réécrite ici.
 set -uo pipefail
@@ -38,7 +38,7 @@ heures="${COCKPIT_A_TOI_HEURES:-12}"; [[ "$heures" =~ ^[0-9]+$ ]] || heures=12
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 un() { "$SQL" "$1" | jq -c '.rows[0] // empty'; }
 
-p=$(un "select id, depot, coalesce(revue_a_toi_at > now() - interval '1 hour', false) as recente from projets where slug = '$(q "$PROJET")'")
+p=$(un "select id, depot, revue_a_toi_delai_h as delai, coalesce(revue_a_toi_at > now() - make_interval(hours => revue_a_toi_delai_h), false) as recente from projets where slug = '$(q "$PROJET")'")
 pid=$(printf '%s' "$p" | jq -r '.id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $PROJET inconnu du cockpit."; exit 0; }
 liste=$(un "select a_toi_a_revoir('$pid', $heures) as l" | jq -c '.l // []')
@@ -46,7 +46,7 @@ if [ "$mode" = "liste" ]; then printf '%s\n' "$liste" | jq .; exit 0; fi
 n=$(printf '%s' "$liste" | jq 'length')
 if [ "${n:-0}" -eq 0 ]; then echo "RIEN — « À toi » de $PROJET est à jour."; exit 0; fi
 if [ "$(printf '%s' "$p" | jq -r '.recente')" = "true" ] && ! $forcer; then
-  echo "RIEN — « À toi » de $PROJET a déjà été revu il y a moins d'une heure."; exit 0
+  echo "RIEN — « À toi » de $PROJET a déjà été revu il y a moins de $(printf '%s' "$p" | jq -r '.delai // 24') h (économie des modèles : une revue par jour)."; exit 0
 fi
 $apercu || "$SQL" "update projets set revue_a_toi_at = now() where id = '$pid'" >/dev/null
 

@@ -8,8 +8,8 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, SESSIONS_MAX, blocUtile, boutonRenforts, erreurReglageRenforts, ligneRenfort, messageDemande,
-  type CodeLigne, type EtatRenforts, type ResultatDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, libelleFrein, blocUtile, boutonRenforts, erreurReglageRenforts, ligneRenfort, messageDemande,
+  type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
 } from '../lib/renforts.ts'
 
 const SONDAGE_MS = 30_000
@@ -139,6 +139,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
         <ChevronDown size={14} className={`transition ${reglages ? 'rotate-180' : ''}`} aria-hidden />
       </button>
       {reglages ? <ReglagesRenforts projet={projet} etat={etat} onFini={() => { setReglages(false); void charger() }} /> : null}
+      {reglages ? <ReglagesModeles projet={projet} /> : null}
     </section>
     </>
   )
@@ -215,6 +216,95 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
         <Button taille="sm" onClick={onFini}>Annuler</Button>
         <Button taille="sm" variante="primaire" chargement={envoi} onClick={() => void enregistrer()} data-testid="renforts-enregistrer">Enregistrer</Button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Économie des modèles (0034) : quel modèle pour coder, lequel pour lire, quel effort, combien d'agents en
+ * parallèle, et le frein (posé à la main ici, ou tout seul quand une session touche la limite d'usage).
+ */
+function ReglagesModeles({ projet }: { projet: Projet }) {
+  const toast = useToast()
+  const [etat, setEtat] = useState<EtatModeles | null>(null)
+  const [erreur, setErreur] = useState<string | null>(null)
+  const [code, setCode] = useState<ModeleClaude>('sonnet')
+  const [leger, setLeger] = useState<ModeleClaude>('haiku')
+  const [effort, setEffort] = useState<EffortClaude>('moyen')
+  const [agents, setAgents] = useState(2)
+  const [revueH, setRevueH] = useState(24)
+  const [envoi, setEnvoi] = useState(false)
+  const lire = useCallback(async () => {
+    const { data, error } = await supabase.rpc('etat_modeles', { p_projet: projet.slug })
+    if (error) { setErreur(messageErreur(error)); return }
+    const e = data as EtatModeles | null
+    if (!e) return
+    setErreur(null); setEtat(e); setCode(e.modele_code); setLeger(e.modele_leger); setEffort(e.effort); setAgents(e.agents); setRevueH(e.revue_h)
+  }, [projet.slug])
+  useEffect(() => { void lire() }, [lire])
+  const enregistrer = async () => {
+    const pb = erreurReglageModeles(agents, revueH)
+    if (pb) { toast.erreur(pb); return }
+    setEnvoi(true)
+    const { error } = await supabase.rpc('regler_modeles', { p_projet: projet.slug, p_code: code, p_leger: leger, p_effort: effort, p_agents: agents, p_revue_h: revueH })
+    setEnvoi(false)
+    if (error) { toast.erreur(`Modèles non enregistrés : ${messageErreur(error)}`); return }
+    toast.succes('Modèles enregistrés : ils servent aux prochains agents lancés.')
+    void lire()
+  }
+  const frein = async (heures: number) => {
+    setEnvoi(true)
+    const { error } = await supabase.rpc('freiner', { p_projet: projet.slug, p_heures: heures, p_raison: heures ? 'frein posé depuis le cockpit' : null })
+    setEnvoi(false)
+    if (error) { toast.erreur(`Frein non modifié : ${messageErreur(error)}`); return }
+    toast.succes(heures ? `Frein posé pour ${heures} h.` : 'Frein levé.')
+    void lire()
+  }
+  const choix = <T extends string>(valeurs: { valeur: T; nom: string; aide?: string }[], courant: T, poser: (v: T) => void, nom: string, testId: string) => (
+    <div className="flex flex-wrap items-center gap-1" role="radiogroup" aria-label={nom} data-testid={testId}>
+      {valeurs.map((v) => (
+        <button key={v.valeur} type="button" role="radio" aria-checked={courant === v.valeur} onClick={() => poser(v.valeur)}
+          className={`h-9 rounded-lg border px-2.5 text-sm ${courant === v.valeur ? 'border-accent bg-accent text-accent-fg' : 'border-bord bg-carte hover:bg-carte-2'}`}>
+          {v.nom}{v.aide ? <span className="ml-1 text-[11px] opacity-70">{v.aide}</span> : null}
+        </button>
+      ))}
+    </div>
+  )
+  if (erreur) return <p className="mt-2 text-xs text-alerte" data-testid="modeles-erreur">Modèles indisponibles : {erreur}</p>
+  if (!etat) return <p className="mt-2 text-xs text-texte-2" role="status">Chargement des modèles…</p>
+  return (
+    <div className="mt-2 space-y-2 rounded-xl border border-bord bg-carte-2/40 p-2.5 text-sm" data-testid="modeles-reglages">
+      <p className="text-xs font-medium">Modèles et effort des agents</p>
+      <div>
+        <p className="mb-1 text-xs text-texte-2">Modèle pour coder (et pour les sessions de renfort)</p>
+        {choix(MODELES, code, setCode, 'Modèle pour coder', 'modele-code')}
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-texte-2">Modèle pour lire (répondre, point, vérifier, revue)</p>
+        {choix(MODELES, leger, setLeger, 'Modèle pour lire', 'modele-leger')}
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-texte-2">Effort de réflexion</p>
+        {choix(EFFORTS, effort, setEffort, 'Effort', 'modele-effort')}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <label className="text-xs text-texte-2">Agents en parallèle (1 à {AGENTS_PARALLELE_MAX})
+          <input type="number" inputMode="numeric" min={1} max={AGENTS_PARALLELE_MAX} value={agents} onChange={(e) => setAgents(Number(e.target.value))}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="modele-agents" />
+        </label>
+        <label className="text-xs text-texte-2">Revue « À toi » toutes les (heures)
+          <input type="number" inputMode="numeric" min={1} max={168} value={revueH} onChange={(e) => setRevueH(Number(e.target.value))}
+            className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="modele-revue" />
+        </label>
+      </div>
+      <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>
+      <div className="flex flex-wrap justify-end gap-2">
+        {etat.frein.actif
+          ? <Button taille="sm" chargement={envoi} onClick={() => void frein(0)} data-testid="frein-lever">Lever le frein</Button>
+          : <Button taille="sm" chargement={envoi} onClick={() => void frein(3)} data-testid="frein-poser">Freiner 3 h</Button>}
+        <Button taille="sm" variante="primaire" chargement={envoi} onClick={() => void enregistrer()} data-testid="modeles-enregistrer">Enregistrer</Button>
+      </div>
+      <p className="text-[11px] leading-snug text-texte-2">L’effort est une consigne donnée à chaque agent, pas un réglage forcé de Claude Code.</p>
     </div>
   )
 }

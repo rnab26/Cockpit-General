@@ -560,6 +560,28 @@ corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
 `ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
 `scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
 
+## Économie des modèles (30 sept. 2026, migration 0034, chantier 7a52df8f)
+
+Raphaël : « le cockpit consomme beaucoup trop de tokens […] les sessions vont
+planter trop vite […] pouvoir choisir le modèle (Sonnet ou Opus) et l'effort » ;
+« ne jamais atteindre la limite des modèles ». Par projet (table `chefs`,
+réglé dans l'app : Renforts › Réglages › « Modèles et effort des agents », ou
+`chef.sh --modeles <code> <léger> <effort> [agents]`) : `modele_code` (agents qui
+codent, sessions relais/renfort ; **sonnet** par défaut), `modele_leger` (Répondre,
+Point, Vérifier, Revoir « À toi » ; **haiku**), `effort` (bas/moyen/eleve : une
+CONSIGNE écrite dans la consigne des agents, pas un réglage forcé de Claude Code),
+agents en parallèle **2 par défaut** (avant 3). `chef.sh` et `renfort.sh` écrivent
+`[model: X]` sur la ligne de chaque agent et `model:` dans chaque `create_session` ;
+la chef passe ce paramètre à l'outil Agent. **Frein** (`frein_actif`, une seule
+règle) : actif si `chef.sh --frein <h> "raison"` / le bouton « Freiner 3 h », ou si une
+session du projet est en pause `rate_limit` depuis moins de 3 h → 1 agent, aucune
+revue « À toi », aucun nouveau renfort (le travail reste en file). **Revue « À toi »
+une fois par jour** et par projet (`projets.revue_a_toi_delai_h`, 24, réglable).
+Limite connue : le signal `rate_limit_info allowed_warning` de Claude Code n'est pas
+exposé aux hooks (non vérifié) ; le frein automatique repose sur la pause
+`rate_limit` déjà remontée par `StopFailure`. `passe.sh` (projet sans chef) ne lit pas
+encore le frein. `verifier-base` §32, `verifier-renforts.ts`.
+
 ## Limites d'usage et mode autonome (29 sept. 2026, migration 0010)
 
 - Reprise de la tâche en cours après une limite : native, réglage
