@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
-import { useCockpit } from '../contexte.ts'
+import { useCockpit, useGlobal } from '../contexte.ts'
 import { useMarquerLu } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
+import { projetsCibles, texteConfirmationDeplacement } from '../lib/deplacer.ts'
+import { Select } from '../ui/Champs.tsx'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
@@ -14,9 +16,10 @@ import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
 import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
+import { situationSilence } from '../lib/silence.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
-import { attenteReponse, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
+import { attenteReponse, derniereAction, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
@@ -152,8 +155,8 @@ function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: Reac
 }
 
 /** Une bulle du fil : Claude à gauche (fond carte), toi à droite (fond neutre plus soutenu). Jamais de pavé teinté. */
-function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet }: {
-  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null
+function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, repondre = false }: {
+  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null; repondre?: boolean
 }) {
   const { now } = useCockpit()
   return (
@@ -168,6 +171,12 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet }:
           </p>
         ) : null}
         {children}
+        {repondre ? (
+          <button type="button" data-testid="repondre-bulle" onClick={() => window.dispatchEvent(new CustomEvent('cockpit:repondre', { detail: { sujet: sujet ?? null } }))}
+            className="mt-1.5 -mb-0.5 inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-accent hover:bg-carte-2">
+            <Reply size={14} aria-hidden />Répondre
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -206,7 +215,7 @@ function BulleMessage({ m }: { m: Message }) {
   const { sujet, reste } = sujetDe(m.corps)
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
-    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet}>
+    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet} repondre={m.auteur_type === 'session'}>
       {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {m.reponse ? (
@@ -261,7 +270,7 @@ function Corps({ children, chantierId, placeholder, cle }: { children: ReactNode
   const surDefilement = () => { const el = corps.current; if (el) enBas.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160 }
   return (
     <>
-      <div ref={corps} onScroll={surDefilement} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
+      <div ref={corps} onScroll={surDefilement} className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
       <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => { enBas.current = true; window.setTimeout(() => allerEnBas(true), 150) }} />
     </>
   )
@@ -317,6 +326,16 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
   const pj = useMediasAJoindre(projet.id, chantierId)
   const zone = useRef<HTMLTextAreaElement>(null)
   const vide = !texte.trim() && !pj.medias.length
+  // « Répondre » sous un message de Claude : le curseur va dans la zone, avec le sujet rappelé si elle est vide.
+  useEffect(() => {
+    const ecoute = (e: Event) => {
+      const sujet = (e as CustomEvent<{ sujet: string | null }>).detail?.sujet
+      if (sujet) setTexte((t) => (t.trim() ? t : `Re : ${sujet}\n`))
+      window.setTimeout(() => { const z = zone.current; if (z) { z.focus(); z.setSelectionRange(z.value.length, z.value.length) } }, 0)
+    }
+    window.addEventListener('cockpit:repondre', ecoute)
+    return () => window.removeEventListener('cockpit:repondre', ecoute)
+  }, [])
   // La zone grandit avec le texte (jusqu'à ~5 lignes), puis défile.
   useLayoutEffect(() => { const z = zone.current; if (!z) return; z.style.height = 'auto'; z.style.height = `${Math.min(z.scrollHeight, 132)}px` }, [texte])
 
@@ -359,6 +378,8 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   const fermeture = useContext(FermetureCtx)
   const [ouvert, setOuvert] = useState(false)
   const [reporter, setReporter] = useState(false)
+  const [deplacer, setDeplacer] = useState(false)
+  const global = useGlobal()
   const ref = useRef<HTMLDivElement>(null)
   useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
   // Mettre de côté / reporter / abandonner (0028) : une fonction de la base, une ligne dans le fil.
@@ -394,6 +415,18 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
     if (error) { toast.erreur(messageErreur(error)); return }
     toast.succes(`« ${chantier.titre} » supprimé.`); fermeture.forcer(); await recharger()
   }
+  const deplacerVers = async (slug: string) => {
+    const cible = global.projets.find((p) => p.slug === slug)
+    const depart = global.projets.find((p) => p.id === chantier.projet_id)
+    if (!cible) { toast.erreur('Choisis le projet où le déplacer.'); return false }
+    const section = global.sections.find((s) => s.id === chantier.section_id)?.nom ?? null
+    const ok = await confirmer({ titre: 'Déplacer ce chantier ?', libelleOk: 'Déplacer',
+      texte: <p>{texteConfirmationDeplacement(chantier.titre, depart?.nom ?? '?', cible.nom, nMessages, section)}</p> })
+    if (!ok) return false
+    const { error } = await supabase.rpc('deplacer_chantier', { p_id: chantier.id, p_slug: slug })
+    if (error) { toast.erreur(messageErreur(error)); return false }
+    toast.succes(`« ${chantier.titre} » déplacé dans « ${cible.nom} ».`); fermeture.forcer(); await recharger(); return true
+  }
   const item = (icone: ReactNode, libelle: string, action: () => void, testId?: string, danger = false) => (
     <button type="button" role="menuitem" data-testid={testId} onClick={() => { setOuvert(false); action() }}
       className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[15px] hover:bg-carte-2 ${danger ? 'text-alerte' : ''}`}>{icone}{libelle}</button>
@@ -411,6 +444,7 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
           {chantier.pris_par ? item(<LockOpen size={17} className={ic} />, 'Libérer la réservation', liberer, 'liberer') : null}
           {chantier.etat !== 'reporte' || chantier.reporte_jusqu_a ? item(<CirclePause size={17} className={ic} />, 'Mettre de côté', () => void deCote(null), 'mettre-de-cote') : null}
           {item(<CalendarClock size={17} className={ic} />, chantier.reporte_jusqu_a ? 'Changer la date de report…' : 'Reporter…', () => setReporter(true), 'reporter')}
+          {item(<FolderInput size={17} className={ic} />, 'Déplacer vers un autre projet…', () => setDeplacer(true), 'deplacer')}
           {!chantier.archived_at ? item(<Ban size={17} className={ic} />, 'Abandonner', () => void abandonner(), 'abandonner') : null}
           {chantier.archived_at
             ? item(<ArchiveRestore size={17} className={ic} />, 'Désarchiver', () => maj({ archived_at: null }, 'Chantier désarchivé.'), 'archiver')
@@ -418,12 +452,37 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
           {item(<Trash2 size={17} className="shrink-0" />, 'Supprimer', supprimer, 'supprimer', true)}
         </div>
       ) : null}
+      <DialogueDeplacer ouvert={deplacer} projetId={chantier.projet_id} onFermer={() => setDeplacer(false)} onChoisir={async (slug) => { if (await deplacerVers(slug)) setDeplacer(false) }} />
       <DialogueReporter ouvert={reporter} onFermer={() => setReporter(false)} onChoisir={async (d) => { if (await deCote(d)) setReporter(false) }} />
     </div>
   )
 }
 
 /** « Reporter… » : quatre choix d'un toucher, ou une date. Il revient tout seul ce jour-là. */
+function DialogueDeplacer({ ouvert, projetId, onFermer, onChoisir }: { ouvert: boolean; projetId: string; onFermer: () => void; onChoisir: (slug: string) => Promise<void> }) {
+  const { projets } = useGlobal()
+  const cibles = useMemo(() => projetsCibles(projets, projetId), [projets, projetId])
+  const [slug, setSlug] = useState('')
+  const [envoi, setEnvoi] = useState(false)
+  return (
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre="Déplacer vers quel projet ?">
+      <div className="space-y-3" data-testid="dialogue-deplacer">
+        {cibles.length === 0 ? <p className="text-sm text-texte-2" data-testid="deplacer-vide">Il n’y a aucun autre projet où le déplacer.</p> : (
+          <>
+            <p className="text-sm text-texte-2">Le chantier, son fil, ses questions et ses pièces jointes changent de projet. Rien n’est supprimé.</p>
+            <Select value={slug} onChange={(e) => setSlug(e.target.value)} aria-label="Projet d’arrivée" data-testid="deplacer-projet">
+              <option value="">Choisir un projet…</option>
+              {cibles.map((p) => <option key={p.id} value={p.slug}>{p.nom}</option>)}
+            </Select>
+            <Button variante="primaire" pleine disabled={!slug || envoi} chargement={envoi} data-testid="deplacer-valider"
+              onClick={async () => { setEnvoi(true); await onChoisir(slug); setEnvoi(false) }}>Déplacer</Button>
+          </>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
 function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; onFermer: () => void; onChoisir: (d: Date) => Promise<void> }) {
   const [saisie, setSaisie] = useState('')
   const [envoi, setEnvoi] = useState(false)
@@ -476,10 +535,12 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   // « Où ça en est ? » en attente : le bloc suit la DEMANDE, pas la barre grise d'une livraison passée.
   const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
   const demandeEnCours = !!etatOuEnEst(c, messages, tenus(c.id), now, tenus)?.enAttente
+  const silence = presence.code === 'silencieux' && c.etat !== 'a_cadrer' ? situationSilence(c, activite, { now, prochainPassage, demandeEnCours }) : null
   const { historique, aChoisir } = ordreDuFil(fil)
   const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })
   const section = c.section_id ? sections.find((s) => s.id === c.section_id) : null
+  const derniere = derniereAction(c.id, messages, activites, taches)
   const dernierBlocage = [...fil].reverse().find((m) => m.kind === 'blocage') ?? null
   const relancer = async () => {
     const { error } = await supabase.from('chantiers').update({ etat: 'libre', reporte_jusqu_a: null, archived_at: null }).eq('id', c.id)
@@ -510,6 +571,9 @@ function FilChantier({ chantierId }: { chantierId: string }) {
             {c.pris_par ? <span title={c.pris_par}>Réservé par {nomCourtSession(c.pris_par)}</span> : null}
             {c.archived_at ? <span>archivé</span> : null}
           </p>
+          {derniere ? (
+            <p className="px-1 text-xs text-texte-2" data-testid="derniere-action"><span className="font-medium text-texte">Dernière action :</span> {derniere.texte} · {dateRelative(derniere.quand, now)}</p>
+          ) : <p className="px-1 text-xs text-texte-2" data-testid="derniere-action">Dernière action : aucune trace de Claude sur ce chantier.</p>}
           {c.notes ? <Repliable titre={<span className="text-sm font-medium">Notes de travail de Claude</span>}><p className="whitespace-pre-wrap text-sm text-texte-2">{c.notes}</p></Repliable> : null}
           <PourReproduire chantier={c} />
           {admin ? <Historique chantierId={c.id} signal={signalHistorique} /> : null}
@@ -552,9 +616,17 @@ function FilChantier({ chantierId }: { chantierId: string }) {
                 <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
                 {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
                 {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
-                <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>
+                {silence ? null : <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>}
               </>)}
-              <BoutonsRelance chantier={c} />
+              {silence ? (
+                <div data-testid="situation-silence" data-geste={silence.geste} className="space-y-1 text-sm">
+                  {demandeEnCours ? null : <p className="text-texte-2" data-testid="silence-quoi">{silence.ceQuiSePasse}</p>}
+                  <p className={`font-medium ${silence.geste === 'relancer' ? 'text-attention' : 'text-ok'}`} data-testid="silence-geste">{silence.consigne}</p>
+                </div>
+              ) : null}
+              {silence && silence.geste !== 'relancer' ? (
+                <Repliable titre={<span className="text-sm text-texte-2">Relancer quand même</span>}><BoutonsRelance chantier={c} /></Repliable>
+              ) : <BoutonsRelance chantier={c} />}
             </div>
           </AFaire>
         ) : null}

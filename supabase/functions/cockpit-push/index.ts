@@ -4,7 +4,7 @@ import webpush from "npm:web-push@3.6.7"
 
 /**
  * cockpit-push — envoie la notification « Claude a répondu » aux appareils
- * abonnés (migration 0037). Appelée UNIQUEMENT par le trigger de la base
+ * abonnés (migration 0039). Appelée UNIQUEMENT par le trigger de la base
  * (`cockpit.push_sur_reponse`, pg_net) avec l'en-tête `x-push-secret` ; jamais
  * par l'app. Le corps est `{message_id}` : le texte est relu en base, jamais
  * pris de l'appelant.

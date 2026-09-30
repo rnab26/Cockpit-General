@@ -16,7 +16,7 @@ async function registration() {
 /**
  * Les notifications push de CET appareil (Réglages). Réglage par appareil : un
  * abonnement = une ligne `push_abonnements` (les siennes seulement, RLS) ;
- * l'envoi est fait par la fonction serveur cockpit-push (migration 0037).
+ * l'envoi est fait par la fonction serveur cockpit-push (migration 0039).
  */
 export function usePush() {
   const [cle, setCle] = useState<string | null>(null)

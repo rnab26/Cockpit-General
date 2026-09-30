@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Met en place les notifications push (migration 0037), UNE fois, sans rien
+// Met en place les notifications push (migration 0039), UNE fois, sans rien
 // afficher de secret :
 //   1. génère la paire de clés VAPID (la privée ne quitte jamais ce script) ;
 //   2. pose les secrets de la fonction cockpit-push (API de gestion Supabase) ;

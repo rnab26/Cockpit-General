@@ -1847,6 +1847,37 @@ async function controle30_agents_fantomes() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+// 36. Déplacer un chantier vers un autre projet (0038).
+async function controle36_deplacer_chantier() {
+  section("36. Déplacer un chantier vers un autre projet (0038) : le chantier, son fil, sa section, sa réservation, ses médias");
+  const c = await creerChantier(P1, { titre: "Écrit par erreur au mauvais endroit", etat: "en_cours" });
+  const doublon = await creerChantier(P1, { titre: "Autre chantier resté", etat: "libre" });
+  await sql(`update chantiers set pris_par = 'agent/x', pris_jusqu_a = now() + interval '1 hour', doublon_de = ${q(doublon)} where id = ${q(c)}`);
+  await une(`select ranger_chantier(${q(c)}::uuid, 'Ventes zorglub', 'verifier-base') as s`);
+  const m = await creerMessage(P1, c, { kind: "question", corps: "Quelle couleur ?", options: [{ id: "a", libelle: "Bleu" }] });
+  await sql(`update messages set medias = ${q(JSON.stringify([{ chemin: `${P1}/${c}/x-photo.png`, nom: "photo.png", type: "image/png", taille: 1 }]))}::jsonb where id = ${q(m)}`);
+  await sql(`insert into activite (projet_id, chantier_id, session, etape) values (${q(P1)}, ${q(c)}, 'test', 'étape')`);
+
+  verifie("vers le même projet : refusé, raison dite", /déjà dans/.test((await erreurDe(`select deplacer_chantier(${q(c)}, ${q(SLUG_A)})`)) ?? ""));
+  verifie("vers un projet inconnu : refusé", /projet inconnu/.test((await erreurDe(`select deplacer_chantier(${q(c)}, 'test-nexiste-pas')`)) ?? ""));
+  verifie("chantier inconnu : refusé", /introuvable/.test((await erreurDe(`select deplacer_chantier(${q(randomUUID())}, ${q(SLUG_B)})`)) ?? ""));
+
+  const r = await une(`select deplacer_chantier(${q(c)}, ${q(SLUG_B)}) as r`);
+  const a = await chantier(c);
+  verifie("le chantier est dans le projet cible, réservation libérée, lien « doublon de » coupé", a.projet_id === P2 && a.pris_par === null && a.pris_jusqu_a === null && a.doublon_de === null, a);
+  const sec = await une(`select nom, projet_id from sections where id = ${q(a.section_id)}`);
+  verifie("section « Ventes zorglub » recréée dans le projet cible", sec?.nom === "Ventes zorglub" && sec.projet_id === P2, sec);
+  const reste = await une(`select (select count(*) from messages where chantier_id = ${q(c)} and projet_id <> ${q(P2)})::int as m, (select count(*) from activite where chantier_id = ${q(c)} and projet_id <> ${q(P2)})::int as a`);
+  verifie("messages et activité ont suivi (aucune ligne restée dans l'ancien projet)", reste.m === 0 && reste.a === 0 && r.r.messages >= 1, { reste, r });
+  const l = await une(`select corps, kind from messages where chantier_id = ${q(c)} order by created_at desc limit 1`);
+  verifie("une ligne « Déplacé de … vers … » (constat) dans le fil", l?.kind === "constat" && /^Déplacé de « .* » vers « .* »\./.test(l.corps), l);
+  const autre = await une(`select projet_id from chantiers where id = ${q(doublon)}`);
+  verifie("l'autre chantier n'a pas bougé", autre.projet_id === P1);
+  verifie("les médias restent cités par le message (chemin inchangé)", (await une(`select medias->0->>'chemin' as ch from messages where id = ${q(m)}`)).ch === `${P1}/${c}/x-photo.png`);
+  await sql(`select deplacer_chantier(${q(c)}, ${q(SLUG_A)})`);
+  verifie("retour possible : redéplacé dans le projet d'origine", (await chantier(c)).projet_id === P1);
+}
+
 // 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
 async function controle33_depuis_un_fil() {
   section("33. « Il faudrait aussi X » dans un fil (0033) : chantier créé prêt à lancer, rangé, fils reliés, rien d'arraché — vrai chantier.sh");
@@ -1941,16 +1972,38 @@ async function controle32_economie_modeles() {
   const normal = chef();
   verifie("chef.sh : chaque agent porte son modèle (code = sonnet) et l'effort est dit", /━━ Agent « [^»]+ » \[model: sonnet\]/.test(normal) && /effort de raisonnement — moyen/.test(normal), normal.slice(0, 1200));
   await sql(`update chantiers set etat = 'libre', pris_par = null, pris_jusqu_a = null where projet_id = ${q(P1)} and titre like 'Eco %'`);
-  // Frein : une session du projet arrêtée sur la limite d'usage → 1 agent, dit.
+  // Bascule (0037) : une session arrêtée sur la limite d'usage -> palier 3 : modèles descendus, MAIS le nombre d'agents ne bouge pas.
   await sql(`insert into sessions (id, projet_id, sujet, vu_at, pause_raison, pause_at) values (${q("pause-" + sid)}, ${q(P1)}, 'pause test', now(), 'rate_limit', now()) on conflict (id) do update set pause_raison = 'rate_limit', pause_at = now()`);
-  const f = (await une(`select frein_actif(${q(P1)}) as f`)).f;
-  verifie("frein_actif : une session en pause « rate_limit » freine le projet", f.actif === true && /limite d'usage/.test(f.raison), f);
-  const freine = chef();
-  verifie("sous frein : un seul agent lancé et le frein est dit", /FREIN d’usage/.test(freine) && (freine.match(/━━ Agent « /g) ?? []).length === 1 && /lance 1 agent/.test(freine), freine.slice(0, 1200));
+  const f = (await une(`select frein_actif(${q(P1)}) as f, palier_actif(${q(P1)}) as p`));
+  verifie("une session en pause « rate_limit » = palier 3, sans frein d'agents", f.p === 3 && f.f.actif === false, f);
+  const bas = chef();
+  verifie("palier 3 : tous les agents en haiku, nombre d'agents inchangé (2), bascule dite",
+    /BASCULE d’usage : palier 3/.test(bas) && !/\[model: sonnet\]/.test(bas) && (bas.match(/━━ Agent « /g) ?? []).length === 2 && !/FREIN d’usage/.test(bas), bas.slice(0, 1200));
   await sql(`delete from sessions where id = ${q("pause-" + sid)}`);
   chef({ ARGS: ["--frein", "2", "test du frein"] });
   verifie("chef.sh --frein 2 : frein posé à la main, puis levé par --frein 0",
     (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === true && (chef({ ARGS: ["--frein", "0"] }), (await une(`select frein_actif(${q(P1)}) as f`)).f.actif === false));
+  // Bascule par mesure d'usage : monte tout de suite, plafonne à haiku, interrupteur.
+  const pal = async (st, pct) => (await une(`select bascule_usage(${q(SLUG_A)}, ${q(st)}, ${pct ?? "null"}) as e`)).e;
+  chef({ ARGS: ["--modeles", "opus", "sonnet", "eleve", "2"] });
+  let e = await pal("allowed", 10);
+  verifie("palier 0 : les modèles réglés (opus/sonnet, effort élevé)", e.palier === 0 && e.effectifs.modele_code === "opus" && e.effectifs.modele_leger === "sonnet" && e.effectifs.effort === "eleve", e.effectifs);
+  e = await pal("allowed_warning", null);
+  verifie("palier 1 (avertissement) : code opus → sonnet, lecture inchangée", e.palier === 1 && e.effectifs.modele_code === "sonnet" && e.effectifs.modele_leger === "sonnet", e.effectifs);
+  e = await pal("allowed", 85);
+  verifie("palier 2 (85 %) : code haiku, lecture haiku, effort bas", e.palier === 2 && e.effectifs.modele_code === "haiku" && e.effectifs.modele_leger === "haiku" && e.effectifs.effort === "bas", e.effectifs);
+  e = await pal("allowed", 5);
+  verifie("pas de yo-yo : une mesure calme juste après ne redescend pas le palier", e.palier === 2, e);
+  await sql(`update chefs set palier_at = now() - interval '31 minutes' where projet_id = ${q(P1)}`);
+  e = await pal("allowed", 5);
+  verifie("après 30 min de calme le palier redescend à 0", e.palier === 0, e);
+  const ligne = chef({ ARGS: ["--usage", "allowed", "95"] });
+  verifie("chef.sh --usage : dit le palier et les modèles à utiliser", /palier 3 sur 3/.test(ligne) && /code = haiku/.test(ligne) && /nombre d’agents ne change pas/.test(ligne), ligne);
+  chef({ ARGS: ["--bascule", "off"] });
+  verifie("bascule off : retour aux modèles réglés malgré la mesure", (await une(`select etat_modeles(${q(SLUG_A)}) as e`)).e.effectifs.modele_code === "opus");
+  chef({ ARGS: ["--bascule", "on"] });
+  await sql(`update chefs set palier = 0, palier_at = null where projet_id = ${q(P1)}`);
+  chef({ ARGS: ["--modeles", "sonnet", "haiku", "moyen", "2"] });
   const fh = (await sql(`select column_default from information_schema.columns where table_schema = 'cockpit' and table_name = 'projets' and column_name = 'revue_a_toi_delai_h'`))[0];
   verifie("revue « À toi » : une fois par jour par défaut (revue_a_toi_delai_h = 24)", /24/.test(fh?.column_default ?? ""), fh);
   const pirate = await rpcUtilisateur("freiner", { p_projet: SLUG_A, p_heures: 1, p_raison: "x" }, jwt);
@@ -1973,7 +2026,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil, controle36_deplacer_chantier,
   ];
   for (const etape of etapes) {
     try { await etape(); }

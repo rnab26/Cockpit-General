@@ -193,7 +193,7 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 0019 la passe ne sert que son projet ; `projet_de_test` exclut encore les
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
-**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> [pct]` (depuis `get_session` → `rate_limit_info`) pose un palier 0 à 3 (`bascule_usage`) : 0 les modèles réglés, 1 code d'un cran plus bas (opus>sonnet>haiku), 2 code -2 crans, lecture -1, effort bas, 3 tout en haiku. Monte tout de suite, redescend après 30 min de calme, expire seul après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
 
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
@@ -404,6 +404,18 @@ recopiés dans le fil).
   `chef.sh` (point 3), session relais, `hooks/suivi.sh`, hook de démarrage,
   bloc CLAUDE.md. `verifier-base` §31, `verifier-discussion.ts`.
 
+## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
+
+Raphaël : un chantier écrit dans FacePro devait être un correctif du cockpit.
+Menu ⋯ du fil › « Déplacer vers un autre projet… » (`Conversation.tsx`,
+`lib/deplacer.ts`, confirmation avant) → `deplacer_chantier(id, slug)` (admin
+ou session) : change le projet du chantier ET de ses messages, activité, « ce
+qui marche », assistants, passes ; section remise (même nom, créée dans le
+projet cible) ; réservation libérée ; lien « doublon de » coupé ; ligne
+« Déplacé de … vers … » dans le fil. Les fichiers restent au même chemin
+(le stockage ne se renomme pas en SQL) : `peut_lire_media` les accepte via le
+message qui les cite. `verifier-base` §36, `verifier-deplacer.ts`.
+
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 
 Une question ouverte que du travail a suivie s'affiche « Claude a avancé
@@ -591,7 +603,7 @@ corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
 `ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
 `scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
 
-## « Claude a répondu » : pastille + notification du téléphone (30 sept. 2026, migration 0037, chantier bff5a8cf)
+## « Claude a répondu » : pastille + notification du téléphone (30 sept. 2026, migration 0039, chantier bff5a8cf)
 
 Raphaël : « quand j'envoie un message […] je ne vois aucune notification comme
 quoi il m'a répondu […] il faudrait une notification pour pouvoir répondre le

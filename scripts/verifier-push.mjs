@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Notifications push (migration 0037) : la fonction déployée refuse sans secret,
+// Notifications push (migration 0039) : la fonction déployée refuse sans secret,
 // lit une vraie réponse de Claude, et — avec un faux abonnement (endpoint bidon
 // chez FCM, clés valides) — chiffre et tente l'envoi puis retire l'abonnement mort.
 // N'envoie JAMAIS de notification à un vrai appareil : l'essai d'envoi ne tourne
