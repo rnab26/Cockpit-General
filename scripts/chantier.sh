@@ -7,6 +7,14 @@
 #   scripts/chantier.sh --ouvrir "…" --demande "…" --id <uuid>     # c'est CE chantier-là
 #   scripts/chantier.sh --ouvrir "…" --demande "…" --nouveau       # vraiment un sujet neuf
 #   scripts/chantier.sh --chercher "bouche hybride"                # voir les proches, sans rien écrire
+#   scripts/chantier.sh --ouvrir "…" --demande "<ses mots>" --depuis <id du fil | projet> [--reponse "…"]
+#     un NOUVEAU sujet écrit par Raphaël dans le fil d'un chantier (« il
+#     faudrait aussi X ») ou dans la discussion du projet (0033) : créé « Prêt
+#     à lancer » (non réservé : le mode autonome ou la chef le prend), rangé
+#     (--section, sinon Correctifs, sinon la section du fil), ou ajouté au
+#     chantier vivant qui existe déjà (sans toucher à son état) ; --reponse
+#     (sinon une phrase par défaut) part dans le fil d'origine avec un bouton
+#     vers le nouveau fil, et compte comme ta réponse à son message.
 #   scripts/chantier.sh --ranger <id> --section "Tête entière"     # le ranger (section créée si besoin)
 #   (un correctif visuel / mise en page / ergonomie est rangé TOUT SEUL dans
 #    « Correctifs » à la création, migration 0021 ; --ranger corrige un faux tri)
@@ -43,7 +51,7 @@
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
-decote=""; jusqua=""; abandon=""
+decote=""; jusqua=""; abandon=""; depuis=""; reponse=""
 projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; dans=""; pourquoi=""
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 while [ $# -gt 0 ]; do
@@ -63,6 +71,8 @@ while [ $# -gt 0 ]; do
     --jusqu-au) jusqua="${2:-}"; shift 2 ;;
     --abandonner) abandon="${2:-}"; shift 2 ;;
     --session)  session="${2:-}"; shift 2 ;;
+    --depuis)   depuis="${2:-}"; shift 2 ;;
+    --reponse)  reponse="${2:-}"; shift 2 ;;
     -h|--help)  sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
@@ -117,6 +127,33 @@ fi
 [ -n "$demande" ] || { echo "--demande manque : recopie la demande de Raphaël, avec ses mots." >&2; exit 2; }
 
 idsql="null"; [ -n "$id" ] && idsql="'$(q "$id")'::uuid"
+if [ -n "$depuis" ]; then
+  if [ -n "$reponse" ]; then
+    nr=$(printf '%s' "$reponse" | python3 -c 'import sys; print(len(sys.stdin.read()))')
+    [ "$nr" -le 400 ] || { echo "Refusé (règle de clarté) : --reponse de $nr caractères, 400 au plus." >&2; exit 2; }
+  fi
+  repsql="null"; [ -n "$reponse" ] && repsql="'$(q "$reponse")'"
+  srcsql="'$(q "$depuis")'::uuid"; [ "$depuis" = "projet" ] && srcsql="null"
+  secsql="null"; [ -n "$section" ] && secsql="'$(q "$section")'"
+  out=$("$SQL" "select ouvrir_depuis_fil($srcsql, '$(q "$titre")', '$(q "$demande")', '$(q "$session")', $idsql, $nouveau, $repsql, $secsql, '$(q "$projet")') as r" || true)
+  [ "$(printf '%s' "$out" | jq -r '.ok')" = "true" ] || { echo "Échec : $(printf '%s' "$out" | jq -r '.error // .message // .')" >&2; exit 1; }
+  r=$(printf '%s' "$out" | jq -c '.rows[0].r')
+  case "$(jq -r .action <<<"$r")" in
+    cree)     printf 'Nouveau chantier « %s » (%s) : prêt à lancer, non réservé%s.\n' "$(jq -r .titre <<<"$r")" "$(jq -r .id <<<"$r")" "$(jq -r 'if .section then ", rangé dans « \(.section) »" else "" end' <<<"$r")" ;;
+    complete) printf 'Le sujet existait : demande ajoutée au chantier « %s » (%s), sans toucher à son état.\n' "$(jq -r .titre <<<"$r")" "$(jq -r .id <<<"$r")" ;;
+    ambigu)   echo "Plusieurs chantiers ressemblent — rien n'a été écrit. C'EST À TOI DE TRANCHER :"
+              jq -r '.candidats[] | "  \(.score)  \(.id)  \(.titre)  [\(.etat)]"' <<<"$r"
+              echo "Relance avec --id <le bon> ou --nouveau."; exit 3 ;;
+    *)        echo "Réponse inattendue : $r" >&2; exit 1 ;;
+  esac
+  echo "Ta réponse est dans le fil d'origine, avec le bouton « Ouvrir le fil » ; le nouveau fil renvoie à l'origine."
+  cid=$(jq -r .id <<<"$r")
+  [ -z "$section" ] || [ "$(jq -r .action <<<"$r")" = "cree" ] || ranger_dans "$cid" "$section" || true
+  if [ "$(jq -r .action <<<"$r")" = "cree" ] && [ -z "$section" ] && [ "$(jq -r '.section // ""' <<<"$r")" = "" ]; then
+    echo "À RANGER par toi : ${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh} --ranger $cid --section \"<rubrique>\". Sections existantes : $(sections)."
+  fi
+  exit 0
+fi
 secsql="null"  # la section est posée juste après par ranger_chantier (qui la crée si besoin)
 r=$("$SQL" "select ouvrir_ou_reprendre('$(q "$projet")', '$(q "$titre")', '$(q "$demande")', '$(q "$session")', $idsql, $nouveau, $secsql) as r" | jq -c '.rows[0].r')
 case "$(printf '%s' "$r" | jq -r .action)" in

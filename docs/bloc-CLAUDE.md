@@ -45,6 +45,16 @@ demandes des utilisateurs, progression des autres sessions.
   tour n'a pas sa réponse dans son fil. Il demande de mettre de côté, reporter
   ou abandonner : `scripts/cockpit-chantier.sh --de-cote <id> [--jusqu-au
   AAAA-MM-JJ]` ou `--abandonner <id>` (mêmes gestes que les boutons du fil).
+- **UN AUTRE SUJET ÉCRIT DANS UN FIL (« il faudrait aussi X ») → C'EST TOI
+  QUI CRÉES LE CHANTIER** (30 sept. : « plutôt que de quitter ce chat et de
+  créer un nouveau chantier manuellement […] que la session Claude comprenne
+  qu'il faut créer le chantier et l'attribuer là où c'est nécessaire ») :
+  `scripts/cockpit-chantier.sh --ouvrir "<titre>" --demande "<ses mots>"
+  --depuis <id du fil | projet> --reponse "<ta réponse, 400 car.>"`. Créé
+  « Prêt à lancer » (non réservé), rangé (Correctifs, sinon la section du
+  fil, ou `--section`), ou ajouté au chantier vivant qui existe déjà ; ta
+  réponse arrive dans son fil avec un bouton vers le nouveau. Ne le code pas
+  dans la foulée sauf s'il le demande.
 - **TES QUESTIONS RESTENT À JOUR** (29 sept. : « je ne veux pas répondre à
   des choses déjà faites, déjà répondues ou en cours »). Dès que tu avances sur
   un chantier où tu as une question ouverte : `scripts/cockpit-demander.sh

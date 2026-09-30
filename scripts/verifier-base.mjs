@@ -36,6 +36,7 @@
 //   28. ses messages dans une session arrivent dans le fil du chantier (0027), internes, jamais « à répondre »
 //   29. session et cockpit synchronisés (0028) : de côté / reporter / abandonner, chef relais, réveil immédiat
 //   30. agents fantômes (0030) : une ligne provisoire finit toujours, la chef ne se croit plus pleine
+//   31. « il faudrait aussi X » dans un fil (0033) : chantier créé prêt à lancer, rangé, fils reliés
 //
 // Deux chemins, exprès : « session » (exec_sql en service_role, comme
 // scripts/sql.sh) et « navigateur » (PostgREST avec la clé publique et un
@@ -1846,6 +1847,75 @@ async function controle30_agents_fantomes() {
   } finally { rmSync(dossier, { recursive: true, force: true }); }
 }
 
+// 33. Un chantier né dans le fil d'un autre (0033) : créé, rangé, relié, sans rien arracher.
+async function controle33_depuis_un_fil() {
+  section("33. « Il faudrait aussi X » dans un fil (0033) : chantier créé prêt à lancer, rangé, fils reliés, rien d'arraché — vrai chantier.sh");
+  const sess = `agent/test-depuis-${rand}`;
+  const lancer = (args) => spawnSync("bash", [join(RACINE_DEPOT, "scripts/chantier.sh"), "--projet", SLUG_A, "--session", sess, ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_TOUR: "/nonexistent" } });
+  const src = await creerChantier(P1, { titre: "Quadrant des ventes régionales", etat: "en_cours" });
+  await une(`select ranger_chantier(${q(src)}::uuid, 'Ventes zorglub', 'verifier-base') as s`);
+  const msgR = await creerMessage(P1, src, { corps: "il faudrait aussi un export pdf des factures fournisseurs", auteur_type: "proprietaire" });
+  const avant = (await sql(`select message_id from messages_sans_reponse(${q(P1)}::uuid)`)).map((r) => r.message_id);
+  verifie("avant : son message attend une réponse (messages_sans_reponse)", avant.includes(msgR), avant);
+
+  const r1 = lancer(["--ouvrir", "Export pdf des factures fournisseurs", "--demande", "il faudrait aussi un export pdf des factures fournisseurs", "--depuis", src, "--reponse", "C’est noté : nouveau chantier, prêt à lancer."]);
+  verifie("chantier.sh --depuis : « Nouveau chantier … prêt à lancer, non réservé, rangé dans « Ventes zorglub » »", r1.status === 0 && /prêt à lancer, non réservé, rangé dans « Ventes zorglub »/.test(r1.stdout), { status: r1.status, out: r1.stdout, err: r1.stderr });
+  const nouveau = (await une(`select id from chantiers where projet_id = ${q(P1)} and titre = 'Export pdf des factures fournisseurs'`))?.id;
+  const n = nouveau ? await chantier(nouveau) : null;
+  const secN = n ? (await une(`select nom from sections where id = ${q(n.section_id)}`))?.nom : null;
+  verifie("le nouveau chantier est LIBRE (Prêt à lancer), non réservé, origine session, dans la section du fil d'origine",
+    n && n.etat === "libre" && n.pris_par === null && n.origine === "session" && secN === "Ventes zorglub", { n, secN });
+  const rep = await une(`select * from messages where chantier_id = ${q(src)} and auteur_type = 'session' order by created_at desc limit 1`);
+  verifie("fil d'origine : SA réponse, reliée au nouveau fil (chantier_lie) et à son message (repond_a)",
+    rep && rep.corps === "C’est noté : nouveau chantier, prêt à lancer." && rep.chantier_lie === nouveau && rep.repond_a === msgR, rep);
+  const apres = (await sql(`select message_id from messages_sans_reponse(${q(P1)}::uuid)`)).map((r) => r.message_id);
+  verifie("après : son message a sa réponse (plus dans messages_sans_reponse)", !apres.includes(msgR), apres);
+  const retour = await une(`select * from messages where chantier_id = ${q(nouveau)} order by created_at limit 1`);
+  verifie("nouveau fil : « Chantier ouvert depuis le fil « … » », relié au fil d'origine",
+    retour && retour.chantier_lie === src && contient(retour.corps, "Chantier ouvert depuis le fil « Quadrant des ventes régionales »"), retour);
+  verifie("le chantier d'origine n'a pas bougé (état)", (await chantier(src)).etat === "en_cours");
+
+  // Le sujet existe déjà et quelqu'un le tient : on COMPLÈTE, on n'arrache rien.
+  await sql(`update chantiers set etat = 'en_cours', pris_par = 'autre-session', pris_jusqu_a = now() + interval '1 hour' where id = ${q(nouveau)}`);
+  const r2 = lancer(["--ouvrir", "Export pdf des factures fournisseurs", "--demande", "et en csv aussi", "--depuis", src]);
+  const n2 = await chantier(nouveau);
+  verifie("même sujet déjà ouvert : demande AJOUTÉE, état et réservation intacts", r2.status === 0 && /demande ajoutée/.test(r2.stdout)
+    && n2.etat === "en_cours" && n2.pris_par === "autre-session" && contient(n2.demande, "Ajouté depuis le fil « Quadrant des ventes régionales »") && contient(n2.demande, "et en csv aussi"), { out: r2.stdout, err: r2.stderr, n2 });
+  const rep2 = await une(`select * from messages where chantier_id = ${q(src)} and auteur_type = 'session' order by created_at desc limit 1`);
+  verifie("réponse par défaut dans le fil d'origine : « ajouté au chantier « … », qui existait déjà », avec le lien", rep2 && rep2.chantier_lie === nouveau && contient(rep2.corps, "qui existait déjà"), rep2);
+
+  // Un chantier certifié n'est jamais rouvert : c'en est un nouveau.
+  const fini = await creerChantier(P1, { titre: "Relance automatique des impayés", etat: "valide" });
+  await sql(`update chantiers set archived_at = now() where id = ${q(fini)}`);
+  const r3 = lancer(["--ouvrir", "Relance automatique des impayés", "--demande", "refaire la relance des impayés", "--depuis", src]);
+  const neufs = await sql(`select id, etat from chantiers where projet_id = ${q(P1)} and titre = 'Relance automatique des impayés' order by created_at`);
+  verifie("sujet d'un chantier certifié : un NOUVEAU chantier, le certifié reste certifié", r3.status === 0 && neufs.length === 2 && neufs.some((x) => x.id === fini && x.etat === "valide") && neufs.some((x) => x.id !== fini && x.etat === "libre"), { out: r3.stdout, err: r3.stderr, neufs });
+
+  // Section donnée, correctif visuel rangé tout seul, sujet = le fil lui-même refusé.
+  const r4 = lancer(["--ouvrir", "Tableau de bord des marges", "--demande", "un tableau des marges", "--depuis", src, "--section", "Finance zorglub"]);
+  const c4 = await une(`select c.etat, s.nom from chantiers c left join sections s on s.id = c.section_id where c.projet_id = ${q(P1)} and c.titre = 'Tableau de bord des marges'`);
+  verifie("--section : rangé dans la section donnée (créée si besoin)", r4.status === 0 && c4?.nom === "Finance zorglub", { out: r4.stdout, err: r4.stderr, c4 });
+  const titreCorr = "Bouton trop petit sur téléphone";
+  const estCorr = (await une(`select est_correctif(${q(titreCorr)}, 'bouton trop petit', 'session') as v`)).v;
+  lancer(["--ouvrir", titreCorr, "--demande", "le bouton est trop petit", "--depuis", src]);
+  const c5 = await une(`select s.nom from chantiers c left join sections s on s.id = c.section_id where c.projet_id = ${q(P1)} and c.titre = ${q(titreCorr)}`);
+  verifie("correctif visuel né d'un fil : rangé dans « Correctifs » (0021), pas dans la section du fil", estCorr === true && c5?.nom === "Correctifs", { estCorr, c5 });
+  const r6 = lancer(["--ouvrir", "Quadrant des ventes régionales", "--demande", "le quadrant des ventes", "--depuis", src]);
+  verifie("sujet = le chantier du fil lui-même : refusé, raison dite", r6.status === 1 && /ressemble au chantier de ce fil/.test(r6.stderr), { status: r6.status, err: r6.stderr });
+
+  // Depuis la « Discussion du projet » (aucun chantier) : même geste, réponse dans le fil du projet.
+  const msgP = await creerMessage(P1, null, { corps: "et aussi un annuaire des transporteurs", auteur_type: "proprietaire" });
+  const r7 = lancer(["--ouvrir", "Annuaire des transporteurs", "--demande", "et aussi un annuaire des transporteurs", "--depuis", "projet"]);
+  const c7 = await une(`select id, etat, pris_par from chantiers where projet_id = ${q(P1)} and titre = 'Annuaire des transporteurs'`);
+  const rep7 = await une(`select * from messages where projet_id = ${q(P1)} and chantier_id is null and auteur_type = 'session' order by created_at desc limit 1`);
+  verifie("--depuis projet : créé prêt à lancer ; réponse dans la discussion du projet, reliée, qui répond à son message",
+    r7.status === 0 && c7?.etat === "libre" && c7.pris_par === null && rep7?.chantier_lie === c7.id && rep7.repond_a === msgP, { out: r7.stdout, err: r7.stderr, c7, rep7 });
+
+  const pirate = await rpcUtilisateur("ouvrir_depuis_fil", { p_source: src, p_titre: "Pirate", p_demande: "x", p_auteur: "x" }, jwt);
+  const pirate2 = await rpcUtilisateur("trouver_chantier", { p_projet: SLUG_A, p_titre: "x", p_demande: "x" }, jwt);
+  verifie("ouvrir_depuis_fil / trouver_chantier avec un JWT utilisateur → refusés", pirate.status >= 400 && pirate2.status >= 400, { pirate, pirate2 });
+}
+
 async function controle32_economie_modeles() {
   section("32. Économie des modèles (0035) : modèle de code / de lecture, effort, frein d'usage, revue « À toi » une fois par jour");
   const racine = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -1903,7 +1973,7 @@ try {
     controle6_repondre, controle7_fusionner, controle8_activite, controle9_marquer_vu,
     async () => { const ctx = await controle10_rls_membre(); await controle11_rls_non_membre(ctx); },
     controle12_realtime, controle13_exec_sql, controle14_sessions_agents_fusions, controle15_limites_autonome, controle16_medias, controle17_verifie_pour_moi,
-    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles,
+    controle18_reponses_prises, controle19_chef_par_projet, controle20_images_session, controle23_a_toi_a_jour, controle24_ou_en_est, controle21_aucun_reste_de_test, controle22_correctifs, controle25_renforts, controle26_fil_discussion, controle27_question_gardee, controle28_messages_de_session, controle29_synchro, controle30_agents_fantomes, controle32_economie_modeles, controle33_depuis_un_fil,
   ];
   for (const etape of etapes) {
     try { await etape(); }

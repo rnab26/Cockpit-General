@@ -17,7 +17,7 @@
 //   9-11. message LIBRE (0025) : remis et « reçu », réponse --point dans le fil ; sans personne, la chef le confie ; fil du projet
 //   12. ses messages tapés dans la session arrivent dans le fil du chantier qu'elle tient (0027), sans lui être renvoyés
 //   13. un sujet = un fil (0028) : l'arrêt refusé une fois tant qu'un chantier du tour n'a pas sa réponse (--point) dans son fil
-//   14. un message multi-sujets écrit dans le cockpit : la chef le confie avec « un chantier par sujet, une réponse par fil »
+//   14. un message multi-sujets écrit dans le cockpit : la chef le confie avec « un chantier par sujet, créé et rangé depuis ce fil (--depuis, 0033) »
 // Le cas « personne ne tient le chantier » relève de scripts/chef.sh (autre chantier).
 
 import { spawnSync } from "node:child_process";
@@ -326,8 +326,8 @@ try {
   const s14 = passe14.stdout ?? "";
   const bloc14 = s14.split("━━").find((b) => /Trois sujets/.test(b)) ?? "";
   verifie("la chef confie le message à un agent « Répondre : Fil du projet »", /Agent « Répondre : Fil du projet »/.test(s14) && !!bloc14, s14.slice(0, 1200) || passe14.stderr);
-  verifie("sa consigne : un chantier par sujet (--ouvrir), une réponse dans CHAQUE fil (--point), et où chaque sujet est parti",
-    /PLUSIEURS SUJETS/.test(bloc14) && /chantier\.sh --ouvrir/.test(bloc14) && /--chantier <id> --point/.test(bloc14) && /où chaque sujet est parti/.test(bloc14), bloc14.slice(0, 1500));
+  verifie("sa consigne : un chantier par sujet, créé et rangé depuis CE fil (--ouvrir … --depuis projet --reponse), sa réponse ici (--point)",
+    /PLUSIEURS SUJETS/.test(bloc14) && /chantier\.sh --ouvrir/.test(bloc14) && /--depuis projet --reponse/.test(bloc14) && /progression\.sh --point/.test(bloc14), bloc14.slice(0, 1500));
 } catch (e) {
   verifie("le banc s'est déroulé sans planter", false, e.message);
 } finally {

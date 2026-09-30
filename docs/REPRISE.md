@@ -325,6 +325,18 @@ api.anthropic.com (401 authentication_error enregistré). Reste :
 - non fait : la case « Écrire à Claude » dans l'onglet « Tout » (seulement vue
   projet) ; le module embarqué (`embed/`) n'a pas les boutons de côté / reporter.
 
+## 2 septdecies. 30 sept. : « il faudrait aussi X » dans un fil → chantier créé et rangé (chantier `7b85b3bd`, migration 0033)
+
+- `chantier.sh --ouvrir … --depuis <id du fil | projet> [--reponse] [--section]`
+  → `ouvrir_depuis_fil` : créé « Prêt à lancer » non réservé, rangé, ou
+  demande ajoutée au chantier vivant existant (sans rien lui arracher) ;
+  réponse dans le fil d'origine avec bouton « Ouvrir ce fil »
+  (`messages.chantier_lie`). Consignes mises à jour (chef « Répondre »,
+  relais, suivi, démarrage, bloc CLAUDE.md). `verifier-base` §31.
+- non fait : le module embarqué (`embed/`) n'affiche pas le bouton de fil
+  lié ; côté SESSION (il tape « il faudrait aussi X » dans la session), on
+  garde `--ouvrir` sans `--depuis` (la session le tient).
+
 ## 3. Ensuite (dans l'ordre)
 
 - Propagation AUTOMATIQUE (cbef0db) : chaque démarrage de session met le projet
