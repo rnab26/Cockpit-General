@@ -105,4 +105,14 @@ const agentPoint = { id: 't1', projet_id: 'p', session_id: 's', chantier_id: 'mu
 const ca4 = caAvanceToutSeul([C('muet', 'en_cours')], [livre], [M('d', 'muet', 2, { recu_at: il(1), recu_par: 'agent/point-1' })], [], [agentPoint], now, SILENCE)
 verifie('l’assistant signale son étape : ligne VIVANTE, barre à 20 %, frise « Assistant »', ca4[0]?.vivant === true && ca4[0]?.activite?.pourcentage === 20 && ca4[0]?.ouEnEst?.code === 'prise', ca4[0])
 
+console.log('\nUn chantier FINI quitte « Ça avance » (Raphaël, 30 sept. : « ça reste dans ce qui avance, ça pollue »)')
+// Cas réel acd4dde5 : demande 00:19, réponse 00:34:31, livré « à vérifier » 00:34:43.
+const fini = [C('fini', 'a_verifier', { livre_at: il(2) })]
+const repFini = [M('d', 'fini', 15), S('r', 'fini', 2)]
+verifie('livré « à vérifier » juste après la réponse : pas dans « Ça avance »', !caAvanceToutSeul(fini, [], repFini, [], [], now, SILENCE).some((l) => l.c.id === 'fini'))
+verifie('demande encore en attente sur un chantier livré : pas dans « Ça avance » non plus', !caAvanceToutSeul(fini, [], [M('d', 'fini', 3)], [], [], now, SILENCE).some((l) => l.c.id === 'fini'))
+for (const etat of ['bloque', 'a_cadrer', 'reporte'])
+  verifie(`« ${etat} » avec une réponse récente : pas dans « Ça avance »`, !caAvanceToutSeul([C('x', etat)], [], [M('d', 'x', 15), S('r', 'x', 2)], [], [], now, SILENCE).some((l) => l.c.id === 'x'))
+verifie('en cours, réponse récente : reste dans « Ça avance » (inchangé)', caAvanceToutSeul([C('y', 'en_cours')], [], [M('d', 'y', 15), S('r', 'y', 2)], [], [], now, SILENCE).some((l) => l.c.id === 'y' && l.ouEnEst?.code === 'repondue'))
+
 bilan('verifier-ou-en-est')
