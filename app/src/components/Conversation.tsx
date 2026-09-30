@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
-import { useCockpit } from '../contexte.ts'
+import { useCockpit, useGlobal } from '../contexte.ts'
+import { projetsCibles, texteConfirmationDeplacement } from '../lib/deplacer.ts'
+import { Select } from '../ui/Champs.tsx'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
@@ -357,6 +359,8 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   const fermeture = useContext(FermetureCtx)
   const [ouvert, setOuvert] = useState(false)
   const [reporter, setReporter] = useState(false)
+  const [deplacer, setDeplacer] = useState(false)
+  const global = useGlobal()
   const ref = useRef<HTMLDivElement>(null)
   useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
   // Mettre de côté / reporter / abandonner (0028) : une fonction de la base, une ligne dans le fil.
@@ -392,6 +396,18 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
     if (error) { toast.erreur(messageErreur(error)); return }
     toast.succes(`« ${chantier.titre} » supprimé.`); fermeture.forcer(); await recharger()
   }
+  const deplacerVers = async (slug: string) => {
+    const cible = global.projets.find((p) => p.slug === slug)
+    const depart = global.projets.find((p) => p.id === chantier.projet_id)
+    if (!cible) { toast.erreur('Choisis le projet où le déplacer.'); return false }
+    const section = global.sections.find((s) => s.id === chantier.section_id)?.nom ?? null
+    const ok = await confirmer({ titre: 'Déplacer ce chantier ?', libelleOk: 'Déplacer',
+      texte: <p>{texteConfirmationDeplacement(chantier.titre, depart?.nom ?? '?', cible.nom, nMessages, section)}</p> })
+    if (!ok) return false
+    const { error } = await supabase.rpc('deplacer_chantier', { p_id: chantier.id, p_slug: slug })
+    if (error) { toast.erreur(messageErreur(error)); return false }
+    toast.succes(`« ${chantier.titre} » déplacé dans « ${cible.nom} ».`); fermeture.forcer(); await recharger(); return true
+  }
   const item = (icone: ReactNode, libelle: string, action: () => void, testId?: string, danger = false) => (
     <button type="button" role="menuitem" data-testid={testId} onClick={() => { setOuvert(false); action() }}
       className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[15px] hover:bg-carte-2 ${danger ? 'text-alerte' : ''}`}>{icone}{libelle}</button>
@@ -409,6 +425,7 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
           {chantier.pris_par ? item(<LockOpen size={17} className={ic} />, 'Libérer la réservation', liberer, 'liberer') : null}
           {chantier.etat !== 'reporte' || chantier.reporte_jusqu_a ? item(<CirclePause size={17} className={ic} />, 'Mettre de côté', () => void deCote(null), 'mettre-de-cote') : null}
           {item(<CalendarClock size={17} className={ic} />, chantier.reporte_jusqu_a ? 'Changer la date de report…' : 'Reporter…', () => setReporter(true), 'reporter')}
+          {item(<FolderInput size={17} className={ic} />, 'Déplacer vers un autre projet…', () => setDeplacer(true), 'deplacer')}
           {!chantier.archived_at ? item(<Ban size={17} className={ic} />, 'Abandonner', () => void abandonner(), 'abandonner') : null}
           {chantier.archived_at
             ? item(<ArchiveRestore size={17} className={ic} />, 'Désarchiver', () => maj({ archived_at: null }, 'Chantier désarchivé.'), 'archiver')
@@ -416,12 +433,37 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
           {item(<Trash2 size={17} className="shrink-0" />, 'Supprimer', supprimer, 'supprimer', true)}
         </div>
       ) : null}
+      <DialogueDeplacer ouvert={deplacer} projetId={chantier.projet_id} onFermer={() => setDeplacer(false)} onChoisir={async (slug) => { if (await deplacerVers(slug)) setDeplacer(false) }} />
       <DialogueReporter ouvert={reporter} onFermer={() => setReporter(false)} onChoisir={async (d) => { if (await deCote(d)) setReporter(false) }} />
     </div>
   )
 }
 
 /** « Reporter… » : quatre choix d'un toucher, ou une date. Il revient tout seul ce jour-là. */
+function DialogueDeplacer({ ouvert, projetId, onFermer, onChoisir }: { ouvert: boolean; projetId: string; onFermer: () => void; onChoisir: (slug: string) => Promise<void> }) {
+  const { projets } = useGlobal()
+  const cibles = useMemo(() => projetsCibles(projets, projetId), [projets, projetId])
+  const [slug, setSlug] = useState('')
+  const [envoi, setEnvoi] = useState(false)
+  return (
+    <Dialog ouvert={ouvert} onFermer={onFermer} titre="Déplacer vers quel projet ?">
+      <div className="space-y-3" data-testid="dialogue-deplacer">
+        {cibles.length === 0 ? <p className="text-sm text-texte-2" data-testid="deplacer-vide">Il n’y a aucun autre projet où le déplacer.</p> : (
+          <>
+            <p className="text-sm text-texte-2">Le chantier, son fil, ses questions et ses pièces jointes changent de projet. Rien n’est supprimé.</p>
+            <Select value={slug} onChange={(e) => setSlug(e.target.value)} aria-label="Projet d’arrivée" data-testid="deplacer-projet">
+              <option value="">Choisir un projet…</option>
+              {cibles.map((p) => <option key={p.id} value={p.slug}>{p.nom}</option>)}
+            </Select>
+            <Button variante="primaire" pleine disabled={!slug || envoi} chargement={envoi} data-testid="deplacer-valider"
+              onClick={async () => { setEnvoi(true); await onChoisir(slug); setEnvoi(false) }}>Déplacer</Button>
+          </>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
 function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; onFermer: () => void; onChoisir: (d: Date) => Promise<void> }) {
   const [saisie, setSaisie] = useState('')
   const [envoi, setEnvoi] = useState(false)
