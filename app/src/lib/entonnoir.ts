@@ -424,9 +424,14 @@ export function caAvanceToutSeul(
     }
     if (presence.code === 'claude_verifie') {
       // « Vérifie pour moi » : sorti de « À toi », il avance ici, sous le même nom partout.
+      // Mais SEULEMENT si quelqu'un vérifie vraiment (assistant ou session vivants). Sinon la demande
+      // attend Claude : « en attente de Claude », comptée en attente, jamais « ça avance »
+      // (Raphaël, 30 sept. : « il attend un retour de Claude, donc ne travaille pas »).
       const barre = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : parSession
-      lignes.push({ c, presence, activite: barre, vivant: true, qui: presence.libelle,
-        etape: barre?.etape || agentVivant?.etape || null, pourquoi: null, demandeLe: null, ouEnEst: etatOuEnEst(c, messages, true, now, tenus) })
+      const quelquUn = !!(agentVivant || parSession)
+      lignes.push({ c, presence, activite: quelquUn ? barre : null, vivant: quelquUn, qui: quelquUn ? presence.libelle : '',
+        pourquoi: quelquUn ? null : 'En attente de Claude : personne ne vérifie encore',
+        etape: quelquUn ? barre?.etape || agentVivant?.etape || null : null, demandeLe: quelquUn ? null : c.verif_demandee_at ?? null, ouEnEst: etatOuEnEst(c, messages, quelquUn, now, tenus) })
     } else if (presence.code === 'travaille') {
       const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
       const morceaux: string[] = []

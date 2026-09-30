@@ -221,14 +221,15 @@ console.log('verifier-entonnoir')
   verifie('vérifie pour moi : pas dans « À toi » ; les deux autres y sont', !t.some((e) => e.chantier?.id === 'v-demande') && t.length === 2, t.map((e) => e.chantier?.id))
   const l = caAvanceToutSeul(cv, [], [], [], [], now, SILENCE)
   const ligne = l.find((x) => x.c.id === 'v-demande')
-  verifie('vérifie pour moi : dans « Ça avance tout seul », vivant, « Claude vérifie pour toi », sans « Relancer »',
-    l.length === 1 && !!ligne && ligne.vivant && ligne.qui === 'Claude vérifie pour toi', l)
+  // 30 sept. (3f879a19) : sans assistant dessus, la demande ATTEND Claude : jamais « vivant » (pas de barre), « en attente de Claude ».
+  verifie('vérifie pour moi SANS assistant : « en attente de Claude », non vivant, sans barre',
+    l.length === 1 && !!ligne && !ligne.vivant && ligne.activite === null && /^En attente de Claude/.test(ligne.pourquoi ?? ''), l)
   const tb = tableauDeBord({ chantiers: cv, messages: [], activites: [], sessions: [], taches: [] }, now, SILENCE, '7j', ['ck'])
-  verifie('vérifie pour moi : compté dans la tuile « ça avance » (1) et pas dans « pour toi » (2)', tb.tuiles.caAvance === 1 && tb.tuiles.pourToi === 2, tb.tuiles)
+  verifie('vérifie pour moi sans assistant : compté « en attente » (1), pas « ça avance » (0), pas « pour toi » (2)', tb.tuiles.caAvance === 0 && tb.tuiles.enPause === 1 && tb.tuiles.pourToi === 2, tb.tuiles)
   // Un agent de vérification vivant ne change pas le nom (il reste « Claude vérifie pour toi »), sa barre s'affiche.
   const agent = { id: 't1', projet_id: 'ck', chantier_id: 'v-demande', type: 'agent', statut: 'en_cours', vu_at: il(1), progres_at: il(1), pourcentage: 40, etape: 'compare à la source', description: 'vérif' } as never
   const la = caAvanceToutSeul(cv, [], [], [], [agent], now, SILENCE).find((x) => x.c.id === 'v-demande')
-  verifie('vérifie pour moi + agent vivant : même nom, sa barre et son étape', la?.presence.code === 'claude_verifie' && la.activite?.pourcentage === 40 && la.etape === 'compare à la source', la)
+  verifie('vérifie pour moi + agent vivant : même nom, sa barre et son étape', la?.presence.code === 'claude_verifie' && la.vivant && la.qui === 'Claude vérifie pour toi' && la.activite?.pourcentage === 40 && la.etape === 'compare à la source', la)
   // Le verdict rendu (verif_demandee_at remis à null) : de retour dans « À toi ».
   verifie('verdict rendu : de retour dans « À toi », hors de « Ça avance »', t.some((e) => e.chantier?.id === 'v-verdict') && !l.some((x) => x.c.id === 'v-verdict'))
   const ordre = trierParPresence([{ c: cv[1], presence: presenceDe(cv[1], [], new Set(), now, SILENCE).presence }, { c: cv[0], presence: p }]).map((x) => (x.c as { id: string }).id)

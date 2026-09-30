@@ -58,6 +58,8 @@ const chantiers = [
   C('agent-sans-etape', 'en_cours'),
   // 0016 : « vérifie pour moi » en cours (hors « à toi »), puis verdict « c'est bon ».
   C('verif-demandee', 'a_verifier', { verif_demandee_at: il(5) }),
+  // 30 sept. (3f879a19) : « vérifie pour moi » demandé, MAIS aucun assistant dessus = il attend Claude.
+  C('verif-agent', 'a_verifier', { verif_demandee_at: il(5) }),
   C('verif-verdict', 'a_verifier', { verdict_at: il(2), verdict_ok: true, verdict_texte: 'OK' }),
 ]
 const activites = [
@@ -77,6 +79,7 @@ const taches = [
   T('t2', 's-agents', 'agent-muet', { etape: 'lecture du code', progres_at: il(2) }),
   T('t3', 's-agents', 'agent-question', { pourcentage: 35, etape: 'diagnostic', progres_at: il(2) }),
   T('t4', 's-agents', 'agent-bloque', { pourcentage: 20, etape: 'banc objets', progres_at: il(3) }),
+  T('t6', 's-agents', 'verif-agent', { pourcentage: 40, etape: 'compare à la source', progres_at: il(1) }),
   T('t5', 's-agents', 'agent-sans-etape', { etape: 'lecture', progres_at: il(40), vu_at: il(1) }),
 ]
 const messages = [
@@ -100,14 +103,18 @@ verifie('fini : seulement le certifié du jour', t.fini.map((c) => c.id).join(',
 // 2. Ça avance tout seul : par chantier, présence honnête
 const ca = new Map([...t.caAvance, ...t.sansSession].map((l) => [l.c.id, l]))
 verifie('ça avance : vivant, cinq agents, « Claude vérifie pour toi », silencieux, personne — ni libre, ni reporté, ni archivé',
-  ['vivant', 'agent-pct', 'agent-muet', 'agent-question', 'agent-bloque', 'agent-sans-etape', 'verif-demandee', 'silencieux', 'personne'].every((id) => ca.has(id)) && t.caAvance.length + t.sansSession.length === 9, ids([...t.caAvance, ...t.sansSession]))
+  ['vivant', 'agent-pct', 'agent-muet', 'agent-question', 'agent-bloque', 'agent-sans-etape', 'verif-demandee', 'verif-agent', 'silencieux', 'personne'].every((id) => ca.has(id)) && t.caAvance.length + t.sansSession.length === 10, ids([...t.caAvance, ...t.sansSession]))
 // 30 sept. 2026, Raphaël (chantier 3f879a19) : « il y a 10 choses qui avancent alors qu'elles sont à l'arrêt […]
 // dans ce qui avance uniquement quand il y a une barre active […] sinon c'est de la fausse information. »
 verifie('« ça avance » = SEULEMENT ce qui a une preuve de vie ; silencieux et personne dessus sont dans « sans session », comptés « en pause »',
-  t.caAvance.length === 7 && t.caAvance.every((l) => l.vivant) && ids(t.sansSession).join(',') === 'silencieux,personne' && t.sansSession.every((l) => !l.vivant)
-  && t.tuiles.caAvance === 7 && t.tuiles.enPause === t.pretALancer.length + 2, { ca: ids(t.caAvance), sans: ids(t.sansSession), tuiles: t.tuiles })
-verifie('« vérifie pour moi » en cours : dans « ça avance », vivant, sous le nom « Claude vérifie pour toi »',
-  ca.get('verif-demandee')?.vivant === true && ca.get('verif-demandee')?.qui === 'Claude vérifie pour toi' && ca.get('verif-demandee')?.presence.code === 'claude_verifie', ca.get('verif-demandee'))
+  t.caAvance.length === 7 && t.caAvance.every((l) => l.vivant) && ids(t.sansSession).join(',') === 'verif-demandee,silencieux,personne' && t.sansSession.every((l) => !l.vivant)
+  && t.tuiles.caAvance === 7 && t.tuiles.enPause === t.pretALancer.length + 3, { ca: ids(t.caAvance), sans: ids(t.sansSession), tuiles: t.tuiles })
+verifie('« vérifie pour moi » AVEC un assistant dessus : dans « ça avance », vivant, sous le nom « Claude vérifie pour toi »',
+  ca.get('verif-agent')?.vivant === true && ca.get('verif-agent')?.qui === 'Claude vérifie pour toi' && ca.get('verif-agent')?.presence.code === 'claude_verifie', ca.get('verif-agent'))
+// Cas de Raphaël (30 sept., 14:37) : « le 8e chantier en cours n'a pas de barre, il attend un retour de Claude, donc ne travaille pas ».
+verifie('« vérifie pour moi » SANS personne dessus : « en attente de Claude », dans en attente, jamais dans « ça avance », sans barre',
+  ca.get('verif-demandee')?.vivant === false && !t.caAvance.some((l) => l.c.id === 'verif-demandee') && t.sansSession.some((l) => l.c.id === 'verif-demandee')
+  && /^En attente de Claude/.test(ca.get('verif-demandee')?.pourquoi ?? '') && ca.get('verif-demandee')?.activite === null, ca.get('verif-demandee'))
 verifie('0015 : un agent sans étape depuis 40 min mais listé en cours par une session vivante reste « en cours »', ca.get('agent-sans-etape')?.vivant === true, ca.get('agent-sans-etape'))
 const qDepassee = t.aToi.find((e) => e.cle === 'q-q2'), qNeuve = t.aToi.find((e) => e.cle === 'q-q')
 verifie('0015 : une question que du travail a suivie est marquée « Claude a avancé depuis », pas une question sans suite',
@@ -116,7 +123,7 @@ verifie('un agent vivant sur un chantier qui attend ta réponse (ou bloqué) est
   ca.get('agent-question')?.vivant && ca.get('agent-bloque')?.vivant && ca.get('agent-question')?.activite?.pourcentage === 35
   && t.aToi.some((e) => e.chantier?.id === 'agent-question') && t.aToi.some((e) => e.chantier?.id === 'agent-bloque'), [ca.get('agent-question'), ca.get('agent-bloque')])
 verifie('ordre : les vivants d’abord (Claude qui vérifie après ceux qui codent), puis silencieux, puis personne',
-  t.caAvance[6].c.id === 'verif-demandee' && t.sansSession[0].c.id === 'silencieux' && t.sansSession[1].c.id === 'personne', ids([...t.caAvance, ...t.sansSession]))
+  t.caAvance[6].c.id === 'verif-agent' && ids(t.sansSession).join(',') === 'verif-demandee,silencieux,personne', ids([...t.caAvance, ...t.sansSession]))
 const v = ca.get('vivant')!
 verifie('mode autonome : « Claude, en autonomie », sa barre et son étape', v.vivant && v.qui === 'Claude, en autonomie' && v.activite?.pourcentage === 60 && v.etape === 'étape a1', v)
 const ap = ca.get('agent-pct')!
