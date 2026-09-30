@@ -176,4 +176,6 @@ demandes des utilisateurs, progression des autres sessions.
   Cockpit-General et arrive dans tous les projets branchés en 10 minutes.
 - `{{SQL}}` vise le schéma `cockpit` sans préfixe, une instruction par appel ;
   demande à Raphaël avant tout drop / delete massif / truncate.
+**Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`).
+
 <!-- fin du bloc cockpit : brancher.sh remplace tout ce qui précède jusqu'au titre -->

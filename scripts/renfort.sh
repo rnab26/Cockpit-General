@@ -55,12 +55,12 @@ case "${1:-}" in
     if [ "$etat" = "attends" ]; then
       echo "ATTENDS — $(printf '%s' "$r" | jq -r '.en_cours') chantier(s) de ta section avancent encore avec tes agents, rien de nouveau à prendre. Ne prends rien d'autre : à la fin de chaque agent, relance $RENF --suivant $2. Termine ta réponse en une ligne."; exit 0
     fi
-    printf '%s' "$r" | jq -r --arg rid "$2" --arg r "$RENF" '"RENFORT : lance \(.chantiers | length) agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chacun est déjà réservé à SA branche : aucun autre agent ni aucune session ne le touche. Ne fais pas le travail toi-même. Au plus \(.max_agents) à la fois ; à la fin de CHAQUE agent : relis son rapport en une ligne, puis relance \($r) --suivant \($rid)."'
+    printf '%s' "$r" | jq -r --arg rid "$2" --arg r "$RENF" '"RENFORT : lance \(.chantiers | length) agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chacun est déjà réservé à SA branche : aucun autre agent ni aucune session ne le touche. Ne fais pas le travail toi-même. Au plus \(.max_agents) à la fois ; à la fin de CHAQUE agent : relis son rapport en une ligne, puis relance \($r) --suivant \($rid). MODÈLES : passe le paramètre model de l\u2019outil Agent indiqué sur la ligne de chaque agent (haiku pour Vérifier, sonnet pour coder) ; jamais opus sauf mention explicite de Raphaël. FREIN : si l\u2019usage approche la limite (get_session → rate_limit_info.status différent de allowed), lance au plus 1 agent."'
     echo
     printf '%s' "$r" | jq -c '.slug as $s | .depot as $d | .chantiers[] | . + {slug: $s, depot: $d}' | while IFS= read -r c; do
       if [ "$(printf '%s' "$c" | jq -r '.verif')" = "true" ]; then
         printf '%s' "$c" | jq -r --arg verdict "$VERDICT" '
-"━━ Agent « Vérifier : \(.titre) » (projet \(.slug), chantier \(.id))
+"━━ Agent « Vérifier : \(.titre) » [modèle : haiku] (projet \(.slug), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit (renfort). Raphaël a testé le chantier « \(.titre) » (projet \(.slug)) mais ne sait pas dire si le résultat est le bon : c’est TOI qui juges.
@@ -75,7 +75,7 @@ Rends un rapport de 3 lignes.
 ---"'
       else
         printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
-"━━ Agent « \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
+"━━ Agent « \(.titre) » [modèle : sonnet] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit (renfort). Chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot).\(if .etat_avant == "en_cours" then " Il était en cours puis abandonné : lis son fil et reprends où il en était." elif .etat_avant == "a_trier" then " Pas encore trié : décide s’il faut le faire ; doublon → scripts/chantier.sh --suggerer-fusion ; décision de Raphaël nécessaire → question avec \($dem), puis arrête-toi." else "" end)

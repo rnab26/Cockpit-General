@@ -61,8 +61,8 @@ RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
 relais_texte() { jq -r --arg r "$RENF" --arg chef "$CHEF_CMD" --arg moi "$projet" '
   map(. as $p |
     ((.renforts.archiver // []) | map("- [\($p.slug)] Renfort « \(.section) » \(if .statut == "fini" then "fini" else "muet depuis 3 h" end) : archive_session(\"\(.session)\"), puis \($r) --archive \(.id)")) +
-    ((.renforts.ouvrir // []) | map("- [\($p.slug)] Nouveau renfort « \(.section) » (\(.chantiers) chantier(s), \(.agents) agent(s) au plus) : create_session(title: \"Renfort · \(.slug) · \(.section) — ne pas toucher\", tags: [\"cockpit-renfort\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-renfort] Tu es un RENFORT du cockpit (projet \(.slug), section « \(.section) »). Lance scripts/cockpit-renfort.sh --suivant \(.id) (ou scripts/renfort.sh s’il n’existe pas) et suis sa consigne : elle te donne jusqu’à \(.agents) chantier(s) de ta section, un agent chacun. À la fin de CHAQUE agent, relance-le. Quand elle dit FINI, arrête-toi en une ligne. Ne prends rien d’autre, ne parle pas à Raphaël ici : il répond dans le cockpit.\"), puis \($r) --session \(.id) <session_… rendu>. Échec : \($r) --erreur \(.id) \"<raison courte>\".")) +
-    (if .ouvrir_session then ["- [\(.slug)] Raphaël a écrit dans le cockpit de \(.nom) (\(.messages) fil(s) sans réponse) et aucune session \(.nom) ne vit : create_session(title: \"\(.nom) · répondre au cockpit\", tags: [\"cockpit-relais\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-relais] Raphaël a écrit dans le cockpit du projet \(.slug) et attend une réponse dans chaque fil. Le hook de démarrage te montre ses messages sans réponse : réponds dans CHAQUE fil (scripts/cockpit-progression.sh --chantier <id> --point \\\"…\\\", ou sans --chantier pour le fil du projet) ; un message qui aborde plusieurs sujets : un chantier par sujet (scripts/cockpit-chantier.sh --ouvrir) et une réponse dans chaque fil. Un travail court et sans risque : fais-le sur une branche ; sinon ouvre le chantier et dis-le-lui. Aucune dépense, suppression ni envoi en son nom.\"), puis \($chef) --ouverture \(.slug) <session_… rendu> (échec : \($chef) --ouverture \(.slug) --erreur \"<raison>\"). Ne lui réponds PAS d’ici : chaque projet dans sa session."] else [] end)
+    ((.renforts.ouvrir // []) | map("- [\($p.slug)] Nouveau renfort « \(.section) » (\(.chantiers) chantier(s), \(.agents) agent(s) au plus) : create_session(model: \"claude-sonnet-5-5\", title: \"Renfort · \(.slug) · \(.section) — ne pas toucher\", tags: [\"cockpit-renfort\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-renfort] Tu es un RENFORT du cockpit (projet \(.slug), section « \(.section) »). Lance scripts/cockpit-renfort.sh --suivant \(.id) (ou scripts/renfort.sh s’il n’existe pas) et suis sa consigne : elle te donne jusqu’à \(.agents) chantier(s) de ta section, un agent chacun. À la fin de CHAQUE agent, relance-le. Quand elle dit FINI, arrête-toi en une ligne. Ne prends rien d’autre, ne parle pas à Raphaël ici : il répond dans le cockpit.\"), puis \($r) --session \(.id) <session_… rendu>. Échec : \($r) --erreur \(.id) \"<raison courte>\".")) +
+    (if .ouvrir_session then ["- [\(.slug)] Raphaël a écrit dans le cockpit de \(.nom) (\(.messages) fil(s) sans réponse) et aucune session \(.nom) ne vit : create_session(model: \"claude-sonnet-5-5\", title: \"\(.nom) · répondre au cockpit\", tags: [\"cockpit-relais\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-relais] Raphaël a écrit dans le cockpit du projet \(.slug) et attend une réponse dans chaque fil. Le hook de démarrage te montre ses messages sans réponse : réponds dans CHAQUE fil (scripts/cockpit-progression.sh --chantier <id> --point \\\"…\\\", ou sans --chantier pour le fil du projet) ; un message qui aborde plusieurs sujets : un chantier par sujet (scripts/cockpit-chantier.sh --ouvrir) et une réponse dans chaque fil. Un travail court et sans risque : fais-le sur une branche ; sinon ouvre le chantier et dis-le-lui. Aucune dépense, suppression ni envoi en son nom.\"), puis \($chef) --ouverture \(.slug) <session_… rendu> (échec : \($chef) --ouverture \(.slug) --erreur \"<raison>\"). Ne lui réponds PAS d’ici : chaque projet dans sa session."] else [] end)
   ) | flatten | join("\n")'; }
 if [ "$mode" = "relais_texte" ]; then relais_texte; exit 0; fi
 dossier="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -186,7 +186,7 @@ if [ -z "$attente" ]; then
 renforts=$(un "select renforts_a_ouvrir($P) as r" | jq -c '.r // {}')
 renf_txt=$(printf '%s' "$renforts" | jq -r --arg r "$RENF" '
   ((.archiver // []) | map("- Renfort « \(.section) » \(if .statut == "fini" then "fini (sa section est vide)" else "muet depuis 3 h" end) : archive_session(\"\(.session)\"), puis \($r) --archive \(.id)")) +
-  ((.ouvrir // []) | map("- Nouveau renfort « \(.section) » (\(.chantiers) chantier(s), \(.agents) agent(s) au plus) : create_session(title: \"Renfort · \(.slug) · \(.section) — ne pas toucher\", tags: [\"cockpit-renfort\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-renfort] Tu es un RENFORT du cockpit (projet \(.slug), section « \(.section) »). Lance \($r) --suivant \(.id) et suis sa consigne : elle te donne jusqu’à \(.agents) chantier(s) de ta section, un agent chacun. À la fin de CHAQUE agent, relance \($r) --suivant \(.id). Quand elle dit FINI, arrête-toi en une ligne. Ne prends rien d’autre, ne parle pas à Raphaël ici : il répond dans le cockpit.\"), puis \($r) --session \(.id) <session_… rendu>. Si create_session échoue : \($r) --erreur \(.id) \"<raison courte>\" (Raphaël la verra).")) | join("\n")')
+  ((.ouvrir // []) | map("- Nouveau renfort « \(.section) » (\(.chantiers) chantier(s), \(.agents) agent(s) au plus) : create_session(model: \"claude-sonnet-5-5\", title: \"Renfort · \(.slug) · \(.section) — ne pas toucher\", tags: [\"cockpit-renfort\", \"cockpit-\(.slug)\"], source_url: \"https://github.com/\(.depot)\", prompt: \"[cockpit-renfort] Tu es un RENFORT du cockpit (projet \(.slug), section « \(.section) »). Lance \($r) --suivant \(.id) et suis sa consigne : elle te donne jusqu’à \(.agents) chantier(s) de ta section, un agent chacun. À la fin de CHAQUE agent, relance \($r) --suivant \(.id). Quand elle dit FINI, arrête-toi en une ligne. Ne prends rien d’autre, ne parle pas à Raphaël ici : il répond dans le cockpit.\"), puis \($r) --session \(.id) <session_… rendu>. Si create_session échoue : \($r) --erreur \(.id) \"<raison courte>\" (Raphaël la verra).")) | join("\n")')
 [ -n "$renf_txt" ] && renf_txt="RENFORTS de $projet, demandés par Raphaël dans le cockpit (sessions à part, chacune sa machine ; ne fais pas leur travail) :
 $renf_txt
 "
@@ -270,10 +270,10 @@ if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $pro
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
 
 if [ -n "$attente" ]; then
-  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef."
+  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. MODÈLES (économie de crédits, règle de Raphaël du 30 sept.) : passe le paramètre model de l'outil Agent indiqué sur la ligne de chaque agent (« modèle : haiku » pour Revoir À toi / Point / Vérifier ; « modèle : sonnet » pour Répondre, Réponse et coder un chantier) ; jamais opus sauf mention explicite de Raphaël. FREIN : si l'usage approche la limite (get_session → rate_limit_info.status différent de « allowed »), lance au plus 1 agent et saute les revues."
   echo "Quand un agent a fini : relis son rapport, puis relance $CHEF_CMD --releve ; quand il répond RIEN, termine en une ligne. Ne fais PAS le travail toi-même."
 else
-echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche."
+echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche. MODÈLES (économie de crédits, règle de Raphaël du 30 sept.) : passe le paramètre model de l'outil Agent indiqué sur la ligne de chaque agent (« modèle : haiku » pour Revoir À toi / Point / Vérifier ; « modèle : sonnet » pour Répondre, Réponse et coder un chantier) ; jamais opus sauf mention explicite de Raphaël. FREIN : si l'usage approche la limite (get_session → rate_limit_info.status différent de « allowed »), lance au plus 1 agent et saute les revues."
 echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce qui est livré, puis relance $CHEF_CMD pour lancer le suivant. Ne fais PAS le travail toi-même : tu diriges."
 fi
 echo
@@ -281,7 +281,7 @@ VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
 for c in "${donnes[@]}"; do
   if [ "$(printf '%s' "$c" | jq -r '.reponse_prise // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
-"━━ Agent « Réponse : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
+"━━ Agent « Réponse : \(.titre) » [modèle : sonnet] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit. Raphaël a répondu à une question sur le chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot), et personne ne l’a reprise : c’est toi. \(if .etat_avant == "question de projet" then "C’était une question de projet, sans chantier : ce chantier interne vient d’être ouvert pour la suivre, réservé à ta branche." else "Le chantier était « \(.etat_avant) » ; il est remis en cours, réservé à ta branche." end)
@@ -299,7 +299,7 @@ Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch
   if [ "$(printf '%s' "$c" | jq -r '.message_pris // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
 (if .id then "--chantier \(.id) --point" else "--point" end) as $ou |
-"━━ Agent « Répondre : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche)\(if .id then ", chantier \(.id)" else ", fil du projet" end))
+"━━ Agent « Répondre : \(.titre) » [modèle : sonnet] (projet \(.slug), dépôt \(.depot), branche \(.branche)\(if .id then ", chantier \(.id)" else ", fil du projet" end))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit. Raphaël a écrit dans le fil « \(.titre) » (projet \(.slug), dépôt \(.depot)) et personne ne lui a répondu : c’est toi. Il attend une RÉPONSE ÉCRITE dans ce fil, comme dans une discussion.
@@ -321,7 +321,7 @@ Aucune dépense, suppression ni envoi en son nom. Ne change pas l’état du cha
   fi
   if [ "$(printf '%s' "$c" | jq -r '.point // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg sql "${COCKPIT_SQL_CMD:-scripts/sql.sh}" '
-"━━ Agent « Point : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
+"━━ Agent « Point : \(.titre) » [modèle : haiku] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit. Raphaël demande OÙ EN EST le chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot) (demandé le \(.demande_le)). Aucune session ne le tient : c’est toi qui réponds.
@@ -340,7 +340,7 @@ Ne réserve pas le chantier, ne code rien. Rends un rapport de 2 lignes.
   fi
   if [ "$(printf '%s' "$c" | jq -r '.verif // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg verdict "$VERDICT" '
-"━━ Agent « Vérifier : \(.titre) » (projet \(.slug), dépôt \(.depot), chantier \(.id))
+"━━ Agent « Vérifier : \(.titre) » [modèle : haiku] (projet \(.slug), dépôt \(.depot), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit. Raphaël a testé le chantier « \(.titre) » (projet \(.slug)) mais ne sait pas dire si le résultat est le bon : c’est TOI qui juges.
@@ -356,7 +356,7 @@ Rends un rapport de 3 lignes.
     echo; continue
   fi
   printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
-"━━ Agent « \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
+"━━ Agent « \(.titre) » [modèle : sonnet] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit. Chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot).\(if .etat_avant == "en_cours" then " Il était en cours puis abandonné : lis son fil et reprends où il en était." elif .etat_avant == "a_trier" then " Pas encore trié : décide s’il faut le faire ; doublon → scripts/chantier.sh --suggerer-fusion ; décision de Raphaël nécessaire → question avec \($dem), puis arrête-toi." else "" end)
@@ -368,7 +368,7 @@ Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch
   echo
 done
 if [ -n "$revue" ]; then
-  echo "━━ Agent « Revoir À toi de jouer » (projet $projet, dépôt $depot, aucune branche : il ne code pas)"
+  echo "━━ Agent « Revoir À toi de jouer » [modèle : haiku] (projet $projet, dépôt $depot, aucune branche : il ne code pas)"
   echo "Consigne à lui donner, telle quelle :"
   echo "---"
   printf '%s\n' "$revue"

@@ -1183,8 +1183,9 @@ async function controle19_chef_par_projet() {
     { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: projet, CLAUDE_CODE_SESSION_ID: session } });
   verifie("la chef de C lancée sur D : RIEN (elle ne dirige pas D)", /^RIEN — cette session n'est pas la session chef de /.test(lancer(SLUG_D, "chef-c")));
   verifie("--max règle le projet courant seulement", /pour .*: 8/.test(lancer(SLUG_C, "chef-c", ["--max", "8"]))
-    && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 3);
+    && (await une(`select (select max_agents from chefs where projet_id = ${q(P3)}) as c, (select max_agents from chefs where projet_id = ${q(P4)}) as d`)).d === 2);
   const sortieC = lancer(SLUG_C, "chef-c");
+  verifie("la consigne de la chef donne le modèle de chaque agent et le frein", /modèle : sonnet/.test(sortieC) && /modèle : haiku/.test(sortieC) && /rate_limit_info/.test(sortieC), sortieC.slice(0, 400));
   const idsD = [libre.D, rep.D, verif.D];
   verifie("la passe de C sert SES trois sortes de travail (réponse, chantier libre, vérifie pour moi)",
     sortieC.includes(`SESSION CHEF de ${SLUG_C}`) && sortieC.includes(rep.C) && sortieC.includes(libre.C) && sortieC.includes(verif.C), sortieC.slice(0, 600));
@@ -1484,6 +1485,11 @@ async function controle23_a_toi_a_jour() {
   const vu = await chantier(cD1);
   l = await revoir();
   verifie("demander.sh --confirmer <chantier> : a_toi_revu_at posé, il quitte la revue", rC.code === 0 && !!vu.a_toi_revu_at && !par(cD1), { rC, a: vu.a_toi_revu_at });
+  const cR13 = randomUUID(), cR25 = randomUUID();
+  for (const [id, h] of [[cR13, 13], [cR25, 25]])
+    await sql(`insert into chantiers (id, projet_id, titre, etat, created_at, updated_at, a_toi_revu_at) values (${q(id)}, ${q(P5)}, 'Confirmé il y a ${h} h', 'a_cadrer', ${ilYa(30)}, ${ilYa(30)}, ${ilYa(h)})`);
+  l = await revoir();
+  verifie("revue : un élément confirmé il y a 13 h ne revient pas (24 h, 0034) ; confirmé il y a 25 h, si", !par(cR13) && !!par(cR25), l.map((e) => e.titre));
   const rD = lancer("demander.sh", ["--debloquer", cB, "Clé trouvée"]);
   const db = await chantier(cB);
   const dm = await une(`select corps from messages where chantier_id = ${q(cB)} order by created_at desc limit 1`);
