@@ -2407,6 +2407,59 @@ async function controle34_fermeture_sessions() {
   await sql(`delete from projets where id = ${q(pv)}`);
 }
 
+const P11 = randomUUID(), SLUG_K = `test-verif-${rand}-k`;
+async function controle38_filet_securite() {
+  section("38. Filet de sécurité (0044) : du travail attend + personne de vivant = un réveil journalisé ; sinon rien");
+  await sql(`insert into projets (id, slug, nom) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test filet')`);
+  const passe = async (test = true, simuler = true) => (await une(`select filet_passe(${q(SLUG_K)}, ${simuler}, ${test}) as r`)).r[0]?.resultat;
+  const journal = async () => (await une(`select count(*)::int as n from filet_reveils where projet_id = ${q(P11)}`)).n;
+  const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
+  // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
+  const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
+    has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
+    has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
+    has_function_privilege('service_role', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as srv`);
+  verifie("filet_passe et reveiller_chef : réservés au service (ni anon ni authenticated)", !droits.anon && !droits.auth && !droits.reveil && droits.srv, droits);
+  verifie("rien n'attend : aucun réveil", await passe() === "rien_en_attente" && await journal() === 0);
+  await vieux(1);
+  verifie("travail arrivé il y a 1 min : on laisse la chef et les hooks d'abord (trop_recent)", await passe() === "trop_recent" && await journal() === 0);
+  await sql(`delete from messages where projet_id = ${q(P11)}`);
+  await vieux(30);
+  verifie("projet de test sans p_test : jamais réveillé", await passe(false, true) === "projet_de_test" && await journal() === 0);
+  const sid = `test-filet-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(P11)}, 'claude/vivante-filet', now())`);
+  verifie("travail en attente + session vivante : aucun réveil", await passe() === "session_vivante" && await journal() === 0);
+  await sql(`delete from sessions where id = ${q(sid)}`);
+  await sql(`update projets set filet_actif = false where id = ${q(P11)}`);
+  verifie("interrupteur du projet éteint : aucun réveil", await passe() === "eteint" && await journal() === 0);
+  await sql(`update projets set filet_actif = true where id = ${q(P11)}`);
+  verifie("travail en attente depuis 30 min + personne de vivant : un réveil journalisé", await passe() === "simule" && await journal() === 1);
+  const j = await une(`select pourquoi, resultat from filet_reveils where projet_id = ${q(P11)}`);
+  verifie("… avec son pourquoi", /1 message\(s\) sans réponse/.test(j.pourquoi) && j.resultat === "simule", j);
+  verifie("deux passes rapprochées : un seul réveil (anti-rafale 5 min)", await passe() === "trop_tot" && await journal() === 1);
+  await sql(`update filet_reveils set at = now() - interval '10 minutes' where projet_id = ${q(P11)}`);
+  await sql(`update projets set filet_plafond_jour = 1 where id = ${q(P11)}`);
+  verifie("plafond du jour atteint : aucun réveil de plus", await passe() === "plafond" && await journal() === 1);
+  await sql(`update projets set filet_plafond_jour = 2 where id = ${q(P11)}`);
+  verifie("plafond relevé et 5 min passées : le réveil repart", await passe() === "simule" && await journal() === 2);
+  // Sans jeton : le vrai chemin (sans simulation) n'appelle rien et ne journalise rien.
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  const r = await passe(true, false);
+  verifie("sans jeton : rien n'est appelé, rien n'est journalisé (pas_configure)", r === "pas_configure" && await journal() === 0, r);
+  // Réglages : bornes, et la ligne d'écran.
+  const mauvais = await sql(`select regler_filet(${q(SLUG_K)}, null, 99, null) as r`).then(() => "accepté", (e) => e.message);
+  verifie("plafond hors 0-48 refusé", /48/.test(String(mauvais)), mauvais);
+  const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e;
+  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 2, e);
+  // Le vrai cron ne touche jamais un projet de test.
+  const vraie = await une(`select filet_passe() as r`);
+  verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
+  const reel = await une(`select count(*)::int as n from filet_reveils f join projets p on p.id = f.projet_id where f.simule and p.slug not like 'test-%'`);
+  verifie("aucun réveil simulé sur un vrai projet", reel.n === 0, reel);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2457,6 +2510,7 @@ try {
     controle37_traite_sans_attendre,
     controle38_pr_propre,
     controle38_prochaine_migration,
+    controle38_filet_securite,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2467,7 +2521,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2475,8 +2529,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);

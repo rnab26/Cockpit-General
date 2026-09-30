@@ -506,6 +506,10 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
 
+## Filet de sécurité : du travail attend, personne ne traite → réveil auto (30 sept. 2026, migration 0044, chantier 42938fc3)
+
+Raphaël : « un chantier ne doit jamais rester mort […] sans que j'aille vérifier dans l'app Claude Code ». Un job **pg_cron** de la base (`cockpit-filet-securite`, toutes les 3 min, visible dans `cron.job`) appelle `filet_passe()` : par projet, si du travail attend (`filet_attente` : messages sans réponse, réponses sans suite, vérifications demandées, renforts demandés, chantiers prenables SEULEMENT si le mode autonome est allumé) depuis plus de `filet_delai_min` (10) et que rien ne vit (`filet_vivant` : session, agent, renfort < 30 min), elle appelle `reveiller_chef` (réveil immédiat 0028, jeton dans le Vault, jamais lu ici). Sûretés : jamais un projet de test, au plus 1 réveil/5 min/projet (table `filet_reveils`), plafond `filet_plafond_jour` (6, réglable 0-48), interrupteur par projet (`regler_filet`, `chef.sh --filet oui|non [plafond] [délai]`) et global (`regler_filet_global`, `chef.sh --filet-global oui|non`, coupe aussi le job). Sans jeton : rien n'est appelé, l'écran dit « colle le jeton dans Réglages ». Écran : `FiletSecurite.tsx` (vue projet, `etat_filet`, `lib/filet.ts`). Non couvert : PR en conflit. `verifier-base` §38, `verifier-filet.ts`.
+
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 
 Raphaël : un chantier écrit dans FacePro devait être un correctif du cockpit.
