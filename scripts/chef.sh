@@ -21,6 +21,8 @@
 #                                   du projet (--minute : minute de son cron → « prochain passage vers … » dans l'app)
 #   scripts/chef.sh --modeles <code> <léger> <effort> [agents]  modèles des agents (haiku|sonnet|opus) et effort (bas|moyen|eleve), 0035
 #   scripts/chef.sh --fermeture <oui|non> [min]   fermer (ou non) les sessions finies ouvertes par le cockpit, minutes de grâce (0038)
+#   scripts/chef.sh --filet <oui|non> [plafond/jour] [délai min]   filet de sécurité du projet (0044) : réveil auto si du travail attend
+#   scripts/chef.sh --filet-global <oui|non>       coupe/rallume la surveillance pg_cron de TOUS les projets (0044)
 #   scripts/chef.sh --ouverture-archive <id>      note l'archivage d'une session relais finie
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
 #   scripts/chef.sh --usage <status> [pct]   note l'usage (rate_limit_info) : la BASCULE change le modèle, jamais le nombre d'agents (0036)
@@ -63,6 +65,8 @@ while [ $# -gt 0 ]; do
     --relais-texte) mode="relais_texte"; shift ;;
     --ouverture-archive) mode="ouverture_archive"; cible="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --fermeture) mode="fermeture"; cible="${2:-}"; max="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
+    --filet) mode="filet"; cible="${2:-}"; max="${3:-}"; ouv_session="${4:-}"; shift $(( $# < 4 ? $# : 4 )) ;;
+    --filet-global) mode="filet_global"; cible="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --session) sid="${2:-}"; shift 2 ;;
     --projet)  projet="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
@@ -130,6 +134,14 @@ case "$mode" in
     [[ "$cible" =~ ^(oui|non)$ ]] && [[ "${max:-10}" =~ ^[0-9]+$ ]] || { echo "--fermeture <oui|non> [minutes de grâce, 0 à 1440, défaut 10] : ferme (ou non) les sessions finies ouvertes par le cockpit (0038)." >&2; exit 2; }
     r=$("$SQL" "select regler_fermeture($P, $([ "$cible" = oui ] && echo true || echo false), ${max:-10}) as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r.ok == true' >/dev/null \
       && echo "Fermeture des sessions finies de $projet : $cible, ${max:-10} min de grâce." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .' 2>/dev/null | head -c 200)" >&2; exit 1; }
+    exit 0 ;;
+  filet|filet_global)
+    [[ "$cible" =~ ^(oui|non)$ ]] && [[ "${max:-0}" =~ ^[0-9]*$ ]] && [[ "${ouv_session:-0}" =~ ^[0-9]*$ ]] || { echo "--filet <oui|non> [plafond 0-48] [délai 1-240 min] | --filet-global <oui|non> (0044)." >&2; exit 2; }
+    bool=$([ "$cible" = oui ] && echo true || echo false)
+    if [ "$mode" = filet_global ]; then req="select regler_filet_global($bool) as r"
+    else req="select regler_filet($P, $bool, ${max:-null}, ${ouv_session:-null}) as r"; fi
+    r=$("$SQL" "$req" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r != null' >/dev/null \
+      && echo "Filet de sécurité ($mode) : $(printf '%s' "$r" | jq -c '.rows[0].r')" || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .' 2>/dev/null | head -c 200)" >&2; exit 1; }
     exit 0 ;;
   ouverture)
     [ -n "$cible" ] && { [ -n "$ouv_session" ] || [ -n "$ouv_erreur" ]; } || { echo "--ouverture <slug> <session_…>   ou   --ouverture <slug> --erreur \"<raison>\"" >&2; exit 2; }
