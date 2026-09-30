@@ -1,7 +1,7 @@
 // Les renforts (src/lib/renforts.ts, 0024) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
-import { boutonRenforts, erreurReglageRenforts, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
+import { boutonRenforts, erreurReglageRenforts, erreurReglageModeles, libelleFrein, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-renforts')
 const now = new Date('2026-09-29T12:00:00Z')
@@ -40,4 +40,9 @@ verifie('clic sans effet (plein / éteint / rien) : un message d’échec clair'
 verifie('réglages : 0 à 4 sessions, 1 à 5 agents', erreurReglageRenforts(0, 1) === null && erreurReglageRenforts(4, 5) === null
   && !!erreurReglageRenforts(5, 3) && !!erreurReglageRenforts(2, 6) && !!erreurReglageRenforts(2, 0))
 verifie('bloc utile seulement si quelque chose attend ou un renfort est à suivre', !blocUtile({ attente: [], renforts: [] }) && blocUtile({ attente: [att('A', 1)], renforts: [] }))
+// Économie des modèles (0034)
+verifie('modèles : 1 à 8 agents, revue de 1 à 168 h', erreurReglageModeles(2, 24) === null && erreurReglageModeles(8, 168) === null
+  && !!erreurReglageModeles(0, 24) && !!erreurReglageModeles(9, 24) && !!erreurReglageModeles(2, 0) && !!erreurReglageModeles(2, 169))
+verifie('frein : dit qu’il est levé, ou pourquoi il est actif', /Aucun frein/.test(libelleFrein({ actif: false }))
+  && /1 agent à la fois/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })) && /limite d’usage/.test(libelleFrein({ actif: true, raison: 'limite d’usage' })))
 bilan('verifier-renforts')

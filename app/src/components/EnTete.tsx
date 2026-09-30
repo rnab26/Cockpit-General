@@ -31,10 +31,12 @@ function PastillesOnglet({ p }: { p: Pastilles | undefined; actif?: boolean }) {
   )
 }
 
-export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin, chargement, direct, derniereMaj, onActualiser, onNouveau, onMenu, selectionActive, installable }: {
+export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin, chargement, direct, derniereMaj, rechargeDu, onActualiser, onNouveau, onMenu, selectionActive, installable }: {
   projets: Projet[]; projet: Projet | null; vueTout: boolean; choisirVue: (id: string) => void
   pastilles: Map<string, Pastilles>; admin: boolean
   chargement: boolean; direct: EtatDirect; derniereMaj: Date | null
+  /** Début du dernier rechargement complet (ms) : les bancs attendent qu'il dépasse leur toucher. */
+  rechargeDu: number | null
   onActualiser: () => void; onNouveau: () => void; onMenu: (a: ActionMenu) => void; selectionActive: boolean
   /** Faux quand le cockpit tourne déjà en appli installée. */
   installable: boolean
@@ -71,7 +73,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
             )
           })}
         </div>
-        <Button variante="discret" taille="sm" aria-label="Actualiser" title={derniereMaj ? `Mis à jour ${dateRelative(derniereMaj.toISOString())}` : 'Actualiser'} onClick={onActualiser} className="px-2" data-testid="actualiser">
+        <Button variante="discret" taille="sm" aria-label="Actualiser" title={derniereMaj ? `Mis à jour ${dateRelative(derniereMaj.toISOString())}` : 'Actualiser'} onClick={onActualiser} className="px-2" data-testid="actualiser" data-chargement={chargement ? '1' : '0'} data-recharge-du={rechargeDu ?? 0}>
           <RefreshCw size={18} className={chargement ? 'animate-spin' : ''} />
         </Button>
         {projet && !vueTout ? <Button variante="primaire" taille="sm" onClick={onNouveau} data-testid="nouveau-chantier" className="px-2.5"><Plus size={18} /><span className="hidden sm:inline">Chantier</span></Button> : null}

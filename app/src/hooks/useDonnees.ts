@@ -47,6 +47,8 @@ export function useDonnees(pret: boolean, email: string | null = null) {
   const [erreur, setErreur] = useState<string | null>(null)
   const [direct, setDirect] = useState<EtatDirect>('connexion')
   const [derniereMaj, setDerniereMaj] = useState<Date | null>(null)
+  /** Heure de DÉBUT (ms) du dernier rechargement complet réussi : toutes les tables lues après elle. */
+  const [rechargeDu, setRechargeDu] = useState<number | null>(null)
   const canal = useRef<RealtimeChannel | null>(null)
   const minuteries = useRef<Partial<Record<Table, number>>>({})
 
@@ -118,10 +120,12 @@ export function useDonnees(pret: boolean, email: string | null = null) {
 
   const recharger = useCallback(async (silencieux = false) => {
     if (!silencieux) setChargement(true)
+    const debut = Date.now()
     try {
       await Promise.all([...TABLES.map((t) => chargerTable(t)), rechargerProjets()])
       setErreur(null)
       setDerniereMaj(new Date())
+      setRechargeDu((avant) => Math.max(avant ?? 0, debut))
       setCharge(true)
     } catch (e) {
       setErreur(messageErreur(e))
@@ -178,7 +182,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
   return {
     projets, projet, projetId, vue, choisirVue, chargerProjets,
     ...vis,
-    chargementProjets, chargement, charge, erreur, direct, derniereMaj,
+    chargementProjets, chargement, charge, erreur, direct, derniereMaj, rechargeDu,
     recharger, rechargerCible, rechargerProjets,
   }
 }

@@ -118,6 +118,8 @@ export interface Message {
   created_at: string
   /** Pièces jointes (0013) : fichiers du stockage privé `cockpit-medias`. */
   medias?: Media[] | null
+  /** 0033 : marche à suivre d'une action manuelle ({liens, etapes, copier}) ; se lit par `marcheDe` (lib/marche.ts). */
+  marche?: unknown
   /** 0015 : la session a confirmé la question « toujours d'actualité » après avoir avancé. */
   confirmee_at?: string | null
   /** 0023 : une demande « Où ça en est ? » (demander_ou_en_est), et quand/par qui elle a été reçue.

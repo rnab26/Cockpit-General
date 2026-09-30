@@ -42,3 +42,20 @@ export function reservationValide(prisJusquA: string | null | undefined, now: Da
   const t = new Date(prisJusquA).getTime()
   return !Number.isNaN(t) && t > now.getTime()
 }
+
+/**
+ * L'heure exacte, lisible sur un téléphone (30 sept. 2026, Raphaël : « je ne
+ * vois pas à quelle heure ils ont fini ») : « 12:17 » aujourd'hui, « hier
+ * 23:53 », « 28 sept. 09:05 » avant. Heure locale de l'appareil.
+ */
+export function heureLisible(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const jour = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const ecart = Math.round((jour(now) - jour(d)) / 86_400_000)
+  if (ecart === 0) return hh
+  if (ecart === 1) return `hier ${hh}`
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} ${hh}`
+}
