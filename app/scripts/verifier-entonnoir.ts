@@ -4,7 +4,7 @@
 import { verifie, bilan } from './_assert.ts'
 import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
-import { MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
+import { MESSAGE_OU_CA_EN_EST, etatVerification } from '../src/lib/presence.ts'
 
 const now = new Date('2026-09-29T01:04:00Z')
 const SILENCE = 15 * 60_000
@@ -217,6 +217,12 @@ console.log('verifier-entonnoir')
   const p = presenceDe(cv[0], [], new Set(), now, SILENCE).presence
   verifie('vérifie pour moi : présence « Claude vérifie pour toi », rien à faire', p.code === 'claude_verifie' && p.libelle === 'Claude vérifie pour toi' && /Rien à faire/.test(p.tonAction ?? ''), p)
   verifie('vérifie pour moi : même libellé court (liste, en-tête de conversation)', LIBELLE_COURT_PRESENCE.claude_verifie === 'Claude vérifie pour toi' && presenceEnMots(p, null) === 'Claude vérifie pour toi')
+  const ilY = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
+  const fut = new Date(now.getTime() + 3_600_000).toISOString()
+  verifie('vérifie pour moi : dit pourquoi ça attend (fraîche / pas encore prise / prise par X)',
+    /quelques minutes/.test(etatVerification({ pris_par: null, pris_jusqu_a: null, verif_demandee_at: ilY(2) }, now))
+    && /pas encore prise/.test(etatVerification({ pris_par: null, pris_jusqu_a: null, verif_demandee_at: ilY(90) }, now))
+    && /prise par agent\/verif-1/.test(etatVerification({ pris_par: 'agent/verif-1', pris_jusqu_a: fut, verif_demandee_at: ilY(90) }, now)))
   const t = aToi(cv, [])
   verifie('vérifie pour moi : pas dans « À toi » ; les deux autres y sont', !t.some((e) => e.chantier?.id === 'v-demande') && t.length === 2, t.map((e) => e.chantier?.id))
   const l = caAvanceToutSeul(cv, [], [], [], [], now, SILENCE)
