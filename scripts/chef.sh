@@ -245,6 +245,8 @@ if [ -z "$attente" ] && [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" 
     [ -n "$c" ] && [ "$c" != "null" ] || break
     donnes+=("$(printf '%s' "$c" | jq -c --arg slug "$projet" --arg depot "$depot" --arg br "$br" '. + {slug: $slug, depot: $depot, branche: $br}')")
   done
+  # Sans crédit perdu (0031) : rien à faire depuis le délai réglé → le mode s'éteint tout seul.
+  [ "$(un "select constater_autonome($P) as r" | jq -r '.r // empty')" = "eteint_auto" ] && note_auto="Mode autonome de $projet éteint tout seul (plus rien à prendre). "
 fi
 # « Je ne sais pas : vérifie pour moi » (0016) : un agent juge à sa place, dans CE projet.
 while [ -z "$attente" ] && [ ${#donnes[@]} -lt "$libres" ]; do
@@ -264,7 +266,7 @@ if [ -z "$attente" ] && [ ${#donnes[@]} -lt "$libres" ]; then
   case "$revue" in RIEN*|"") revue="" ;; esac
 fi
 nb=$(( ${#donnes[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
-if [ "$nb" -eq 0 ]; then rien "aucun chantier à prendre dans $projet ($agents agent(s) au travail)."; fi
+if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $projet ($agents agent(s) au travail)."; fi
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
 
 if [ -n "$attente" ]; then
@@ -290,7 +292,7 @@ Demande du chantier :
 \(.demande)\(if $repro != "" then "\n" + $repro else "" end)
 
 Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
-Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch -c \(.branche), et travaille sur cette branche (jamais directement sur main ; ta copie à toi ; le cockpit te reconnaît à ce nom). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
     echo; continue
   fi
@@ -307,6 +309,7 @@ Juste avant, dans le fil :
 \(if (.contexte | length) > 0 then (.contexte | map("- [\(.quand)] \(.qui) : \(.texte)") | join("\n")) else "(rien)" end)
 \(if .id then "État du chantier : \(.etat). Demande :\n\(.demande)" else "C’est le fil du projet (hors chantier)." end)\(if (.medias // 0) > 0 then "\nPièces jointes : COCKPIT_PROJET=\(.slug) scripts/media.sh \(if .id then "--chantier \(.id)" else "--message <id>" end), puis REGARDE-les." else "" end)
 
+0. Commence par : git switch -c \(.branche) (le cockpit te reconnaît à ce nom)\(if .id then ", puis montre-lui que tu as pris son message : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Répondre : \(.titre)\" --chantier \(.id) --etape \"Je lis ton message\" --pct 20 --eta 5m" else "" end).\(if .ou_en_est then "\nIl a AUSSI demandé « où ça en est ? » sur ce chantier : ta réponse le dit aussi (ce qui est fait, ce qui reste pour finir et qui le fait, ce qui bloque)." else "" end)
 1. Comprends ce qu’il demande (lis le fil, le code, la base : vérifie avant d’affirmer).
 2. RÉPONDS-LUI d’abord, court, en mots simples (400 caractères au plus), la réponse en premier : COCKPIT_PROJET=\(.slug) \($prog) \($ou) \"…\". Une capture aide ? COCKPIT_PROJET=\(.slug) scripts/media.sh --envoyer --chantier <id> --texte \"…\" --image capture.png.
 3. PLUSIEURS SUJETS dans son message ? Un sujet = un fil : rattache chacun à son chantier (COCKPIT_PROJET=\(.slug) scripts/chantier.sh --ouvrir \"<titre>\" --demande \"<ses mots sur ce sujet>\" : il reprend, regroupe ou crée), réponds dans le fil de CHAQUE chantier (COCKPIT_PROJET=\(.slug) \($prog) --chantier <id> --point \"…\"), et dans ce fil-ci une ligne qui dit où chaque sujet est parti.
@@ -318,16 +321,19 @@ Aucune dépense, suppression ni envoi en son nom. Ne change pas l’état du cha
   fi
   if [ "$(printf '%s' "$c" | jq -r '.point // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg sql "${COCKPIT_SQL_CMD:-scripts/sql.sh}" '
-"━━ Agent « Point : \(.titre) » (projet \(.slug), dépôt \(.depot), chantier \(.id))
+"━━ Agent « Point : \(.titre) » (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
 Consigne à lui donner, telle quelle :
 ---
 Tu es un agent du cockpit. Raphaël demande OÙ EN EST le chantier « \(.titre) » (id \(.id)), projet \(.slug), dépôt \(.depot) (demandé le \(.demande_le)). Aucune session ne le tient : c’est toi qui réponds.
 État : \(.etat)\(if .pris_par then " · dernière branche : \(.pris_par)" else "" end)\(if .derniere_etape then " · dernière étape signalée : \(.derniere_etape)" else "" end)
 Demande du chantier :
-\(.demande)
+\(.demande)\(if ((.messages // []) | length) > 0 then "\nIl a AUSSI écrit dans ce fil (ta même réponse doit y répondre) :\n" + ((.messages // []) | map("- [\(.quand)] \(.texte)") | join("\n")) else "" end)
 
-Regarde à la source, SANS rien modifier : le fil du chantier (\($sql) \u0027select auteur_type, kind, corps, reponse, created_at from messages where chantier_id = $$\(.id)$$ order by created_at\u0027), la branche et ses commits s’il y en a, ce qui est sur main et en ligne. Puis réponds-lui dans le fil, en 3 lignes au plus, mots simples (fait / reste / ce qui bloque, et ce que tu conseilles : relancer, attendre ou abandonner) :
-COCKPIT_PROJET=\(.slug) \($prog) --chantier \(.id) --point \"Fait : … Reste : … Bloque : …\"
+0. Commence par : git switch -c \(.branche) (le cockpit te reconnaît à ce nom), puis montre-lui tout de suite que tu regardes : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Point : \(.titre)\" --chantier \(.id) --etape \"Je regarde où en est le chantier\" --pct 20 --eta 5m
+1. Regarde à la source, SANS rien modifier : le fil du chantier (\($sql) \u0027select auteur_type, kind, corps, reponse, created_at from messages where chantier_id = $$\(.id)$$ order by created_at\u0027), la branche et ses commits s’il y en a, ce qui est sur main et en ligne.
+2. Réponds-lui dans le fil, 400 caractères au plus, mots simples, en trois morceaux : ce qui est fait ; ce qui reste pour FINIR le chantier et QUI le fait (Claude, ou lui : quel geste) ; ce qui bloque (ou « rien ») :
+COCKPIT_PROJET=\(.slug) \($prog) --chantier \(.id) --point \"Fait : … Pour finir : … Bloque : …\"
+3. Termine ta ligne : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Point : \(.titre)\" --termine \"Réponse écrite dans le fil\"
 Ne réserve pas le chantier, ne code rien. Rends un rapport de 2 lignes.
 ---"'
     echo; continue
@@ -357,7 +363,7 @@ Tu es un agent du cockpit. Chantier « \(.titre) » (id \(.id)), projet \(.slug)
 Demande :
 \(.demande)\(if $repro != "" then "\n" + $repro else "" end)
 
-Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Travaille sur la branche \(.branche) (jamais directement sur main ; ta copie à toi). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
+Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch -c \(.branche), et travaille sur cette branche (jamais directement sur main ; ta copie à toi ; le cockpit te reconnaît à ce nom). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert, vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. … 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
   echo
 done

@@ -111,7 +111,7 @@ export function SuiviOuEnEst({ etat, compact = false }: { etat: EtatOuEnEst; com
         </ol>
       )}
       <p className={`${compact ? '' : 'mt-1'} text-xs leading-snug ${teinte}`} data-testid="libelle-ou-en-est">{etat.libelle}</p>
-      {fini && etat.reponse && !compact ? <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="reponse-ou-en-est">« {extrait(etat.reponse.corps, 160)} »</p> : null}
+      {fini && etat.reponse && !compact ? <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="reponse-ou-en-est">« {extrait(etat.reponse.corps, 400)} »</p> : null}
     </div>
   )
 }

@@ -443,8 +443,12 @@ export function caAvanceToutSeul(
     } else if (ouEnEstVisible(etatOuEnEst(c, messages, false, now, tenus), now)) {
       // « Où ça en est ? » (0023) : sa demande le remet dans ce qui avance ;
       // la ligne suit la demande (envoyée → en file / reçue → réponse), en direct.
+      // Jamais la vieille barre grise d'une livraison passée sous la demande
+      // (Raphaël, 30 sept. : « la barre ne se réactive pas ») : la ligne suit
+      // la DEMANDE ; la barre revient, vive, dès que l'assistant signale son étape
+      // (il passe alors dans « travaille », au-dessus).
       const oe = etatOuEnEst(c, messages, false, now, tenus)!
-      lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: oe.libelle, demandeLe: oe.demande.created_at, ouEnEst: oe })
+      lignes.push({ c, presence, activite: null, vivant: false, qui: '', etape: null, pourquoi: oe.libelle, demandeLe: oe.demande.created_at, ouEnEst: oe })
     } else if (estEnCoursSansNouvelles(c, presence)) {
       const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
       lignes.push({ c, presence, activite, vivant: false, qui: '', etape: activite?.etape || null, pourquoi: presence.code === 'silencieux' ? 'Plus de nouvelles' : 'Personne dessus',

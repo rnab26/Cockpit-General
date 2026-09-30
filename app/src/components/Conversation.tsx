@@ -25,6 +25,7 @@ import { PourReproduire } from './PourReproduire.tsx'
 import { FriseMiseEnLigne } from './MiseEnLigne.tsx'
 import { Historique } from './Historique.tsx'
 import { BoutonsRelance } from './Relance.tsx'
+import { chantierTenu, etatOuEnEst } from '../lib/ouEnEst.ts'
 import { Progression } from './Progression.tsx'
 import { TachesDuChantier } from './QuiTravaille.tsx'
 import { PointTravaille } from './Vivant.tsx'
@@ -449,6 +450,9 @@ function FilChantier({ chantierId }: { chantierId: string }) {
     )
   }
   const { presence, activite } = pd
+  // « Où ça en est ? » en attente : le bloc suit la DEMANDE, pas la barre grise d'une livraison passée.
+  const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
+  const demandeEnCours = !!etatOuEnEst(c, messages, tenus(c.id), now, tenus)?.enAttente
   const { historique, aChoisir } = ordreDuFil(fil)
   const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })
@@ -519,10 +523,14 @@ function FilChantier({ chantierId }: { chantierId: string }) {
         {(presence.code === 'personne' || presence.code === 'silencieux') && c.etat !== 'a_cadrer' ? (
           <AFaire testId="bulle-relance">
             <div className="space-y-2 rounded-2xl border border-bord bg-carte p-3">
-              <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
-              {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
-              {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
-              <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>
+              {demandeEnCours ? (
+                <p className="flex items-center gap-1.5 text-[15px] font-medium text-info" data-testid="titre-ou-en-est"><span className="point-vivant inline-block h-2 w-2 shrink-0 rounded-full bg-info" aria-hidden />Tu as demandé où ça en est</p>
+              ) : (<>
+                <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
+                {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
+                {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
+                <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>
+              </>)}
               <BoutonsRelance chantier={c} />
             </div>
           </AFaire>

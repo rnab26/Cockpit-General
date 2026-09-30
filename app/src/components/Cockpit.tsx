@@ -7,6 +7,7 @@ import type { Theme } from '../hooks/useTheme.ts'
 import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { pastillesProjet } from '../lib/entonnoir.ts'
+import { autonomeActif, chantiersPrenables, etatAutonome, travailEnCours } from '../lib/autonome.ts'
 import { Layers, Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase.ts'
 import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
@@ -125,9 +126,15 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const pastilles = useMemo(() => {
     const m = new Map<string, Pastilles>()
     m.set(VUE_TOUT, pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, null))
-    for (const p of d.projets) m.set(p.id, pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id))
+    for (const p of d.projets) {
+      // Le mode autonome se voit sur chaque onglet (0031) ; ambre s'il tourne sans rien à prendre.
+      const auto = admin && autonomeActif(p, now)
+        ? (etatAutonome(p, chantiersPrenables(d.chantiers, p.id, now, d.activites, d.taches, d.sessions), travailEnCours(d.chantiers, d.taches, p.id, now), now).alerte ? 'alerte' : 'actif')
+        : null
+      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto })
+    }
     return m
-  }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs])
+  }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin])
 
   const onMenu = (a: ActionMenu) => {
     if (a === 'choisir') { setSelectionActive((v) => !v); setSelectionIds(new Set()); return }

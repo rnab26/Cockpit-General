@@ -1,7 +1,7 @@
 // Le mode autonome (src/lib/autonome.ts) : l'heure de fin se choisit en heure
 // d'ISRAËL, quel que soit le fuseau de l'appareil ; « 9:00 » passé = demain.
 import { verifie, bilan } from './_assert.ts'
-import { prochaineHeure, heureIsrael, autonomeActif, chantiersPrenables, erreurReglage, estHeure } from '../src/lib/autonome.ts'
+import { prochaineHeure, heureIsrael, autonomeActif, chantiersPrenables, erreurReglage, estHeure, etatAutonome, texteArretVide, travailEnCours, ARRET_VIDE_CHOIX, ARRET_VIDE_DEFAUT } from '../src/lib/autonome.ts'
 
 console.log('verifier-autonome')
 // 29 sept. 2026, 23 h 30 à Jérusalem (été : UTC+3) = 20 h 30 UTC.
@@ -36,4 +36,26 @@ verifie('allumé « tout le temps » (0011), même sans heure', autonomeActif({ 
 verifie('réglage : le passé est refusé en clair', erreurReglage(new Date(soir.getTime() - 1000), 8, soir) === 'L’heure de fin doit être dans le futur.')
 verifie('réglage : plus de 24 h refusé', erreurReglage(new Date(soir.getTime() + 25 * 3600_000), 8, soir) === 'Pas plus de 24 h d’affilée.')
 verifie('réglage : plafond 1-50', erreurReglage(f, 0, soir) !== null && erreurReglage(f, 51, soir) !== null && erreurReglage(f, 8, soir) === null)
+
+// 0031 : interrupteur, alerte « rien à prendre », extinction automatique (chantier 79ec70d6).
+{
+  const base = { autonome_jusqu_a: null, autonome_toujours: true, autonome_arret_vide_h: 3, autonome_vide_depuis: null, autonome_eteint_auto_at: null }
+  verifie('allumé avec du travail prêt : aucune alerte', etatAutonome(base, 2, false, soir).alerte === null && etatAutonome(base, 2, false, soir).libelle === 'Autonome tout le temps')
+  verifie('allumé sans chantier prêt MAIS un agent au travail : aucune alerte', etatAutonome(base, 0, true, soir).alerte === null)
+  verifie('allumé, rien à prendre, pas encore constaté : « s’éteindra seul après 3 h »', /après 3 h/.test(etatAutonome(base, 0, false, soir).alerte ?? ''))
+  const vide = { ...base, autonome_vide_depuis: '2026-09-29T19:30:00Z' } // 22 h 30 Israël
+  verifie('rien depuis 22 h 30, 3 h : « s’éteindra seul vers 01:30 »', etatAutonome(vide, 0, false, soir).alerte === 'Rien à prendre : il s’éteindra seul vers 01:30.', etatAutonome(vide, 0, false, soir).alerte)
+  verifie('délai dépassé : « au prochain passage »', /prochain passage/.test(etatAutonome({ ...vide, autonome_vide_depuis: '2026-09-29T10:00:00Z' }, 0, false, soir).alerte ?? ''))
+  verifie('extinction « jamais » : l’alerte dit qu’il réveille pour rien', /réveille quand même/.test(etatAutonome({ ...base, autonome_arret_vide_h: 0 }, 0, false, soir).alerte ?? ''))
+  const eteint = etatAutonome({ ...base, autonome_toujours: false, autonome_eteint_auto_at: '2026-09-29T19:30:00Z' }, 0, false, soir)
+  verifie('éteint tout seul : pas d’alerte, la note dit l’heure', !eteint.actif && eteint.alerte === null && eteint.note === 'Éteint tout seul à 22:30 : plus rien à prendre.', eteint)
+  verifie('éteint à la main : ni alerte ni note', (({ alerte, note }) => !alerte && !note)(etatAutonome({ ...base, autonome_toujours: false }, 0, false, soir)))
+  verifie('texte de l’extinction', texteArretVide(3) === 's’éteint seul après 3 h sans rien à prendre' && texteArretVide(0) === 'ne s’éteint jamais seul')
+  verifie('choix proposés : jamais, 1, 3, 6 h (3 par défaut)', ARRET_VIDE_CHOIX.join() === '0,1,3,6' && ARRET_VIDE_DEFAUT === 3)
+  const C = (x: Record<string, unknown>) => ({ projet_id: 'p', etat: 'en_cours', archived_at: null, pris_par: 'agent/x', pris_jusqu_a: '2026-09-29T22:00:00Z', ...x }) as never
+  verifie('travail : un chantier réservé en cours', travailEnCours([C({})], [], 'p', soir))
+  verifie('pas de travail : réservation expirée, autre projet, archivé', !travailEnCours([C({ pris_jusqu_a: '2026-09-29T10:00:00Z' }), C({ projet_id: 'q' }), C({ archived_at: 'x' })], [], 'p', soir))
+  verifie('travail : un agent vu il y a 10 min ; pas s’il est muet depuis 2 h', travailEnCours([], [{ projet_id: 'p', statut: 'en_cours', vu_at: '2026-09-29T20:20:00Z' } as never], 'p', soir)
+    && !travailEnCours([], [{ projet_id: 'p', statut: 'en_cours', vu_at: '2026-09-29T18:30:00Z' } as never], 'p', soir))
+}
 bilan('verifier-autonome')

@@ -9,7 +9,7 @@ import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenet
 import { infoEtat } from '../lib/etats.ts'
 import { etaLisible, dateRelative, dateLongue } from '../lib/dates.ts'
 import { useToast } from '../ui/Toast.tsx'
-import { autonomeActif } from '../lib/autonome.ts'
+import { ModeAutonome } from './ModeAutonome.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
@@ -436,6 +436,7 @@ function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean 
           ) : oe ? (
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={l.c.projet_id} /> · </> : null}
+              {oe.enAttente ? <span className="point-vivant mr-1.5 inline-block h-2 w-2 rounded-full bg-info align-middle" aria-hidden data-testid="point-ou-en-est" /> : null}
               <span className={oe.enAttente ? 'text-info' : 'text-ok'}>{oe.enAttente ? 'Tu as demandé où ça en est' : 'Claude a répondu à « où ça en est ? »'}</span>
             </span>
           ) : l.reprise ? (
@@ -534,13 +535,15 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
   const g = useGlobal()
   const p = g.projets.find((x) => x.id === projetId)
   if (!p || (!p.depot && !g.admin)) return null
-  const auto = autonomeActif(p, g.now)
   return (
-    <Repliable testId="reglages-projet" titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}
-      badge={auto ? <span className="text-xs text-info">autonome</span> : null}>
-      <BarreProjet projet={p} nu />
-      {g.admin ? <div className="mt-2"><ReveilImmediat projet={p} /></div> : null}
-    </Repliable>
+    <>
+      {/* L'interrupteur du mode autonome reste visible, hors du repli : un toucher (chantier 79ec70d6). */}
+      {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
+      <Repliable testId="reglages-projet" titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
+        <BarreProjet projet={p} nu sansAutonome />
+        {g.admin ? <div className="mt-2"><ReveilImmediat projet={p} /></div> : null}
+      </Repliable>
+    </>
   )
 }
 
