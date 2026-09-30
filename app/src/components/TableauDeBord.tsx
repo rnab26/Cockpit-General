@@ -25,6 +25,7 @@ import { ReveilImmediat } from './ReveilImmediat.tsx'
 import { FiletSecurite } from './FiletSecurite.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
+import { bulleActive, cleBulle } from '../lib/bulleAide.ts'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -565,8 +566,8 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
   const toast = useToast()
   if (!p || (!p.depot && !g.admin)) return null
 
-  const clepref = `bulle_flottante_aide_${p.id}`
-  const actif = Boolean(g.prefs[clepref])
+  const clepref = cleBulle(p.id)
+  const actif = bulleActive(g.prefs, p.id)
   const basculer = async () => {
     try {
       await g.poser(clepref, !actif)

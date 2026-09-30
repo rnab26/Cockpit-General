@@ -54,6 +54,7 @@ cockpit` (réservée à service_role).
 cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
+node app/scripts/verifier-bulle.mjs                       # bulle d'aide : visible par défaut (projet et « Tout »), message → fil du projet, réponse de session → bulle, réglage d'extinction
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
 node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
@@ -711,6 +712,27 @@ Mettre à jour » (`NouvelleVersion.tsx`, un toucher recharge). Même jour : la
 liste « fini » est triée par heure de certification et chaque ligne dit
 « Certifié par toi à HH:MM · livré … » (`quandFini`, `ordreListe`) ; « À toi »
 montre l'heure à côté de l'âge. `verifier-fini.ts`.
+
+## Bulle flottante d'aide : visible par défaut (30 sept. 2026, chantier 851282af)
+
+Raphaël : « Actuellement il n'y a aucune bulle dans le cockpit. » Trois causes
+prouvées : (1) préférence `bulle_flottante_aide_<projet>` lue par `Boolean(...)`
+= ÉTEINTE par défaut ; (2) rendue seulement `{d.projet ? … }`, donc jamais dans
+« Tout », et hors du contexte projet (`useCockpit hors du CockpitCtx` : l'écran
+d'un projet plantait dès qu'elle s'affichait) ; (3) l'app ne lisait que 1000
+messages sur 1129 (max-rows du serveur, `.limit(5000)` ignoré, tri ancien →
+récent : les 129 DERNIERS, réponses de Claude comprises, restaient invisibles ;
+`useDonnees` lit maintenant par pages de 1000). Règles (`lib/bulleAide.ts`,
+`verifier-bulle-aide.ts`) : allumée sauf préférence explicitement `false`
+(case « Bulle d'aide sur ce projet » dans Réglages du projet) ; vue projet =
+son fil, vue « Tout » = le projet `cockpit`, sinon le dernier fil utilisé
+(jamais un `test-…`). Un message tapé = message libre du fil du projet
+(`ecrireAvecMedias`, comme « Écrire à Claude sur ce projet ») ; la réponse de
+session (`progression.sh --point`) s'y affiche, la bulle ouverte relit toutes
+les 10 s tant qu'une réponse est attendue. Le bouton « Chantier » d'origine
+est retiré (`ouvrir_depuis_fil` est réservée aux sessions : il ne pouvait pas
+marcher) : Claude crée lui-même le chantier depuis le message.
+`app/scripts/verifier-bulle.mjs` prouve le trajet complet (projet jetable).
 
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 

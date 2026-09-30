@@ -1594,6 +1594,8 @@ try {
   verifie('ouvrir le fil = le lire : la pastille disparaît', await page.getByTestId('ecrire-projet').getByTestId('pastille-reponse').count() === 0)
   verifie('…et le compteur de l’onglet retombe', await nbTitre() === avantTitre, { avant: avantTitre, apres: await nbTitre() })
 
+  // Bulle flottante d'aide : son parcours complet est dans app/scripts/verifier-bulle.mjs (banc dédié, court).
+
   // ===================================================================
   // 8. La liste complète en lignes, le menu ⋯, créer / supprimer
   console.log('  — tous les chantiers, menu ⋯')

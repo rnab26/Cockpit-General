@@ -1,251 +1,84 @@
 import { useEffect, useRef, useState } from 'react'
-import { HelpCircle, Send, X, Plus } from 'lucide-react'
-import type { Message } from '../lib/types.ts'
-import { useCockpit } from '../contexte.ts'
-import { supabase } from '../lib/supabase.ts'
+import { HelpCircle, Send } from 'lucide-react'
+import { useGlobal } from '../contexte.ts'
+import { VUE_TOUT } from '../hooks/useDonnees.ts'
 import { useToast } from '../ui/Toast.tsx'
+import { Dialog } from '../ui/Dialog.tsx'
+import { ecrireAvecMedias } from './Medias.tsx'
+import { bulleActive, filDeLaBulle, projetDeLaBulle } from '../lib/bulleAide.ts'
 
 /**
- * Bulle flottante d'aide : un bouton discret en bas à droite (ne cache aucun
- * contrôle sur téléphone). Ouvre un panneau où l'utilisateur pose des questions
- * sur le fonctionnement du cockpit. Les messages partent dans le fil du projet.
+ * Bulle flottante d'aide (allumée par défaut ; l'extinction est dans « Réglages
+ * du projet »). Un message tapé ici est un message LIBRE du fil du projet (comme
+ * « Écrire à Claude sur ce projet ») : une session y répond (progression.sh
+ * --point) et la réponse s'affiche ici en direct, car la bulle lit les mêmes
+ * messages que l'app (canal temps réel de useDonnees), pas une copie chargée
+ * une fois. Vue « Tout » : le projet cockpit (règle : lib/bulleAide.ts).
  */
 export function BulleFlottanteAide() {
-  const { projet, prefs } = useCockpit()
-  const [ouvert, setOuvert] = useState(false)
-  const [messages, setMessages] = useState<Array<Message & { de: 'claude' | 'user' }>>([])
-  const [charge, setCharge] = useState(false)
-  const [erreur, setErreur] = useState<string | null>(null)
-  const [envoi, setEnvoi] = useState(false)
-  const [creationChantier, setCreationChantier] = useState(false)
-  const [texte, setTexte] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const dialogRef = useRef<HTMLDialogElement>(null)
+  const g = useGlobal()
   const toast = useToast()
+  const [ouvert, setOuvert] = useState(false)
+  const [envoi, setEnvoi] = useState(false)
+  const [texte, setTexte] = useState('')
+  const fin = useRef<HTMLDivElement>(null)
 
-  // Lire la préférence d'activation
-  const actif = Boolean(prefs[`bulle_flottante_aide_${projet.id}`])
-
-  // Ne rien afficher si pas activé
-  if (!actif) return null
-
-  // Charger l'historique au premier ouverture
+  const projet = projetDeLaBulle(g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
+  const fil = projet ? filDeLaBulle(g.messages, projet.id) : []
+  useEffect(() => { if (ouvert) fin.current?.scrollIntoView({ block: 'end' }) }, [ouvert, fil.length])
+  // Sa question attend une réponse : la bulle ouverte relit toutes les 10 s (le direct l'apporte déjà s'il est
+  // actif ; ceci couvre le direct coupé, sans recharger l'app en continu quand rien n'est attendu).
+  const attend = fil.length > 0 && fil[fil.length - 1].auteur_type !== 'session'
+  const recharger = g.recharger
   useEffect(() => {
-    if (!ouvert) return
-    const charger = async () => {
-      try {
-        setCharge(true)
-        setErreur(null)
-        const { data, error } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('projet_id', projet.id)
-          .is('chantier_id', null)
-          .in('kind', ['info', 'constat', 'reponse'])
-          .order('created_at', { ascending: true })
-          .limit(50)
+    if (!ouvert || !attend) return
+    const t = window.setInterval(() => { void recharger() }, 10_000)
+    return () => window.clearInterval(t)
+  }, [ouvert, attend, recharger])
 
-        if (error) throw error
-        setMessages(
-          (data || []).map((m: any) => ({
-            ...m,
-            de: m.auteur_type === 'session' ? ('claude' as const) : ('user' as const),
-          }))
-        )
-      } catch (e) {
-        console.error(e)
-        setErreur('Impossible de charger l\'historique')
-      } finally {
-        setCharge(false)
-      }
-    }
-    charger()
-  }, [ouvert, projet.id])
-
-  // Scroller en bas
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages])
+  if (!projet || !bulleActive(g.prefs, projet.id)) return null
 
   const envoyer = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!texte.trim() || envoi) return
-
-    try {
-      setEnvoi(true)
-      setErreur(null)
-      const { error } = await supabase.from('messages').insert({
-        projet_id: projet.id,
-        chantier_id: null,
-        auteur: 'utilisateur',
-        auteur_type: 'proprietaire',
-        kind: 'info',
-        corps: texte.trim(),
-      })
-
-      if (error) throw error
-      setTexte('')
-      toast.succes('Message envoyé')
-
-      // Recharger
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('projet_id', projet.id)
-        .is('chantier_id', null)
-        .in('kind', ['info', 'constat', 'reponse'])
-        .order('created_at', { ascending: true })
-        .limit(50)
-
-      setMessages(
-        (data || []).map((m: any) => ({
-          ...m,
-          de: m.auteur_type === 'session' ? ('claude' as const) : ('user' as const),
-        }))
-      )
-    } catch (e) {
-      console.error(e)
-      setErreur('Impossible d\'envoyer le message')
-    } finally {
-      setEnvoi(false)
-    }
-  }
-
-  const creerChantierDuMessage = async (messageId: string) => {
-    try {
-      setCreationChantier(true)
-      setErreur(null)
-      const message = messages.find((m) => m.id === messageId)
-      if (!message) throw new Error('Message non trouvé')
-
-      // Créer un chantier avec le titre du message
-      const titre = message.corps.substring(0, 80)
-      const { error } = await supabase.rpc('ouvrir_depuis_fil', {
-        p_projet_id: projet.id,
-        p_titre: titre,
-        p_demande: message.corps,
-        p_depuis: messageId,
-        p_section: null,
-      })
-
-      if (error) throw error
-      toast.succes('Chantier créé')
-    } catch (e) {
-      console.error(e)
-      setErreur('Impossible de créer le chantier')
-    } finally {
-      setCreationChantier(false)
-    }
-  }
-
-  const fermer = () => {
-    setOuvert(false)
+    const corps = texte.trim()
+    if (!corps || envoi) return
+    setEnvoi(true)
+    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId: null, par: g.par, admin: g.admin, corps, medias: [] })
+    setEnvoi(false)
+    if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return }
+    setTexte('')
+    toast.succes('Message envoyé : Claude te répondra ici.')
+    await g.recharger()
   }
 
   return (
     <>
-      {/* Bouton flottant discret */}
+      {/* À droite, au-dessus de la barre système et du bas de page : ne cache aucun bouton. */}
       {!ouvert && (
-        <button
-          type="button"
-          onClick={() => setOuvert(true)}
-          aria-label="Ouvrir l'aide"
-          className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-carte text-texte shadow-lg hover:bg-carte-2 focus:outline-none focus:ring-2 focus:ring-lien sm:bottom-6 sm:right-6"
-          title="Aide sur le cockpit">
-          <HelpCircle size={24} />
+        <button type="button" onClick={() => setOuvert(true)} aria-label="Ouvrir l’aide" data-testid="bulle-aide-bouton" title={`Aide · ${projet.nom}`}
+          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 76px)', right: 'calc(env(safe-area-inset-right) + 12px)' }}
+          className="fixed z-30 flex h-11 w-11 items-center justify-center rounded-full border border-bord bg-carte text-texte shadow-lg hover:bg-carte-2 focus:outline-none focus:ring-2 focus:ring-accent/40">
+          <HelpCircle size={22} />
         </button>
       )}
-
-      {/* Panneau */}
-      {ouvert && (
-        <dialog
-          ref={dialogRef}
-          open
-          onClick={() => {
-            if (dialogRef.current?.lastChild === (document.activeElement as any)?.parentElement) fermer()
-          }}
-          className="fixed inset-x-0 bottom-0 top-auto m-0 h-[calc(100dvh-2.75rem)] max-h-none w-full max-w-none border-0 bg-transparent p-0 backdrop:bg-black/50 sm:inset-0 sm:m-auto sm:h-[72vh] sm:max-w-md">
-          <div className="flex h-full flex-col overflow-hidden rounded-t-2xl bg-fond text-texte sm:rounded-2xl sm:border sm:border-bord">
-            {/* En-tête */}
-            <header className="flex items-center justify-between gap-2 border-b border-bord bg-carte px-3 py-2">
-              <div className="flex items-center gap-2">
-                <HelpCircle size={20} className="text-texte-2" />
-                <h2 className="text-[15px] font-medium">Aide</h2>
-              </div>
-              <button
-                type="button"
-                onClick={fermer}
-                aria-label="Fermer"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-texte-2 hover:bg-carte-2">
-                <X size={18} />
-              </button>
-            </header>
-
-            {/* Messages */}
-            <div
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto space-y-2 px-3 py-2">
-              {erreur && (
-                <div className="rounded-lg bg-orange-100 px-3 py-2 text-sm text-orange-900 dark:bg-orange-900/20 dark:text-orange-200">
-                  {erreur}
-                </div>
-              )}
-              {charge ? (
-                <p className="text-center text-texte-2 py-4 text-sm">Chargement…</p>
-              ) : messages.length === 0 ? (
-                <p className="text-center text-texte-2 py-4 text-sm">
-                  Pose une question. Claude y répondra.
-                </p>
-              ) : (
-                messages.map((m) => (
-                  <div key={m.id}>
-                    <div className={`flex ${m.de === 'claude' ? 'justify-start' : 'justify-end'}`}>
-                      <div className={`max-w-xs rounded-lg px-3 py-2 text-sm ${m.de === 'claude' ? 'bg-carte text-texte' : 'bg-lien text-fond'}`}>
-                        {m.corps}
-                      </div>
-                    </div>
-                    {m.de === 'user' && (
-                      <div className="flex justify-end mt-1 px-3">
-                        <button
-                          type="button"
-                          onClick={() => creerChantierDuMessage(m.id)}
-                          disabled={creationChantier}
-                          className="flex items-center gap-1 text-xs text-texte-2 hover:text-lien disabled:opacity-50"
-                          title="Créer un chantier à partir de ce message">
-                          <Plus size={14} />
-                          <span>Chantier</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
+      {ouvert ? <Dialog ouvert onFermer={() => setOuvert(false)} titre={`Aide · ${projet.nom}`} brouillon={!!texte.trim()}
+        pied={
+          <form onSubmit={envoyer} className="flex w-full items-end gap-2">
+            <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={2} placeholder="Pose ta question…" aria-label="Ta question" disabled={envoi} data-testid="bulle-aide-saisie"
+              className="min-h-10 flex-1 resize-none rounded-2xl border border-bord bg-fond px-3 py-2 text-[15px] text-texte focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-50" />
+            <button type="submit" disabled={envoi || !texte.trim()} aria-label="Envoyer" data-testid="bulle-aide-envoyer" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-40"><Send size={17} /></button>
+          </form>
+        }>
+        <div data-testid="bulle-aide-panneau" className="min-h-[30dvh] space-y-2">
+          {fil.length === 0 ? <p className="py-6 text-center text-sm text-texte-2" data-testid="bulle-aide-vide">Pose une question sur le cockpit ou sur ce projet. Claude te répond ici.</p> : fil.map((m) => (
+            <div key={m.id} className={`flex ${m.auteur_type === 'session' ? 'justify-start' : 'justify-end'}`}>
+              <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[15px] ${m.auteur_type === 'session' ? 'bg-carte-2 text-texte' : 'bg-accent text-white'}`} data-testid="bulle-aide-message">{m.corps}</div>
             </div>
-
-            {/* Saisie */}
-            <form onSubmit={envoyer} className="border-t border-bord bg-carte px-3 py-2">
-              <div className="flex gap-2">
-                <textarea
-                  value={texte}
-                  onChange={(e) => setTexte(e.target.value)}
-                  placeholder="Pose ta question…"
-                  disabled={envoi}
-                  rows={1}
-                  className="flex-1 rounded border border-bord bg-fond px-2 py-1.5 text-sm text-texte placeholder:text-texte-2 focus:outline-none focus:ring-1 focus:ring-lien disabled:opacity-50"
-                />
-                <button
-                  type="submit"
-                  disabled={envoi || !texte.trim()}
-                  className="px-2 py-1.5 rounded text-texte hover:bg-carte-2 disabled:opacity-50">
-                  {envoi ? '…' : <Send size={16} />}
-                </button>
-              </div>
-            </form>
-          </div>
-        </dialog>
-      )}
+          ))}
+          {attend ? <p className="text-center text-xs text-texte-2" data-testid="bulle-aide-attente">Claude n’a pas encore répondu : la réponse arrivera ici.</p> : null}
+          <div ref={fin} />
+        </div>
+      </Dialog> : null}
     </>
   )
 }

@@ -93,9 +93,23 @@ export function useDonnees(pret: boolean, email: string | null = null) {
       if (error) throw error
       setChantiers((data ?? []) as Chantier[])
     } else if (table === 'messages') {
-      const { data, error } = await supabase.from('messages').select('*').order('created_at').limit(5000)
-      if (error) throw error
-      setMessages((data ?? []) as Message[])
+      // Le serveur plafonne une requête à 1000 lignes (max-rows de PostgREST) : `.limit(5000)` était ignoré et,
+      // triés du plus ancien au plus récent, les DERNIERS messages disparaissaient de l'app dès le 1001e
+      // (constaté le 30 sept. 2026 : 1129 messages, les 129 derniers — dont les réponses de Claude — invisibles).
+      // Une première page donne le total, les suivantes partent ensemble (jusqu'à 5000 messages).
+      const PAGE = 1000
+      const page = (debut: number) => supabase.from('messages').select('*', { count: 'exact' }).order('created_at').order('id').range(debut, debut + PAGE - 1)
+      const premiere = await page(0)
+      if (premiere.error) throw premiere.error
+      const lignes = [...((premiere.data ?? []) as Message[])]
+      const total = Math.min(premiere.count ?? lignes.length, 5000)
+      const debuts: number[] = []
+      for (let d = PAGE; d < total; d += PAGE) debuts.push(d)
+      for (const r of await Promise.all(debuts.map(page))) {
+        if (r.error) throw r.error
+        lignes.push(...((r.data ?? []) as Message[]))
+      }
+      setMessages(lignes)
     } else if (table === 'activite') {
       const { data, error } = await supabase.from('activite').select('*').order('updated_at', { ascending: false }).limit(1000)
       if (error) throw error
