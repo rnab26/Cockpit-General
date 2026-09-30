@@ -26,3 +26,34 @@ self.addEventListener('fetch', (e) => {
     }
   })())
 })
+
+// Notifications push (migration 0037) : « Claude a répondu ». Le corps est
+// écrit par la fonction serveur cockpit-push ; aucune donnée sensible ici.
+// Si l'appli est déjà à l'écran et active, la pastille suffit : pas de bannière.
+self.addEventListener('push', (e) => {
+  e.waitUntil((async () => {
+    let d = {}
+    try { d = e.data ? e.data.json() : {} } catch (err) { d = { titre: 'Claude a répondu', corps: e.data ? e.data.text() : '' } }
+    const fenetres = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    if (fenetres.some((c) => c.visibilityState === 'visible' && c.focused)) return
+    await self.registration.showNotification(d.titre || 'Claude a répondu', {
+      body: [d.sujet, d.corps].filter(Boolean).join('\n'),
+      icon: self.registration.scope + 'icon-192.png',
+      badge: self.registration.scope + 'icon-192.png',
+      tag: d.chantier_id || d.projet_id || 'cockpit',
+      renotify: true,
+      data: { url: self.registration.scope },
+    })
+  })())
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  const url = (e.notification.data && e.notification.data.url) || self.registration.scope
+  e.waitUntil((async () => {
+    const fenetres = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const deja = fenetres.find((c) => c.url.startsWith(self.registration.scope))
+    if (deja) { await deja.focus(); return }
+    await self.clients.openWindow(url)
+  })())
+})

@@ -7,6 +7,7 @@ import { FENETRES, FENETRE_DEFAUT, estFenetre, type Fenetre } from '../lib/fenet
 import { CLE_PREF_SILENCE, SILENCES_MIN, silenceMsDe } from '../lib/presence.ts'
 import type { Theme } from '../hooks/useTheme.ts'
 import { SectionInstallation } from './InstallerAppli.tsx'
+import { SectionNotifications } from './NotificationsPush.tsx'
 
 const THEMES: { valeur: Theme; libelle: string; I: typeof Sun }[] = [
   { valeur: 'systeme', libelle: 'Système', I: Monitor }, { valeur: 'clair', libelle: 'Clair', I: Sun }, { valeur: 'sombre', libelle: 'Sombre', I: Moon },
@@ -52,6 +53,7 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
             {THEMES.map((t) => <Button key={t.valeur} variante={theme === t.valeur ? 'primaire' : 'secondaire'} onClick={() => changerTheme(t.valeur)}><t.I size={16} aria-hidden />{t.libelle}</Button>)}
           </div>
         </section>
+        <SectionNotifications ouvrirAide={() => { onFermer(); onAideInstallation() }} />
         <SectionInstallation ouvrirAide={() => { onFermer(); onAideInstallation() }} />
         {admin ? (
           <section>

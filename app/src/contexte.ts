@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { Activite, Chantier, Message, Moi, Projet, Section, SessionClaude, Tache } from './lib/types.ts'
 import type { Preferences } from './hooks/usePreferences.ts'
+import type { NonLus } from './lib/lecture.ts'
 
 /**
  * Deux étages de contexte (29 sept. 2026, onglet « Tout ») :
@@ -56,6 +57,8 @@ export interface Global {
   recharger: () => Promise<void>
   /** Relit la liste des projets (mode autonome, dépôt…). */
   rechargerProjets: () => Promise<void>
+  /** Réponses de Claude pas encore lues, par fil (lib/lecture.ts). */
+  nonLus: ReadonlyMap<string, NonLus>
   /** 'tout' ou l'id du projet affiché. */
   vue: string
   ouvrirChantier: (projetId: string, chantierId: string | null) => void

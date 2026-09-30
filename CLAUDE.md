@@ -55,9 +55,11 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
+node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
+node scripts/verifier-push.mjs                            # notifications push : fonction déployée (401 sans secret, chiffrement, abonnement mort retiré), coffre, trigger, droits
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -108,6 +110,20 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 `node scripts/verifier-embed.mjs`. Une modification de `embed/cockpit-embed.js`
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
+
+## Serveur MCP pour les outils IA hors Claude (30 sept. 2026, chantier 12c22ec6)
+
+Raphaël : « brancher le cockpit façon MCP à n'importe quel outil IA », en
+commençant par ChatGPT / Codex. `supabase/functions/cockpit-mcp` (Streamable
+HTTP, sans état, JSON) est un RELAIS de `cockpit-embed` : aucune règle
+dupliquée, un outil IA voit et fait exactement ce que fait le module
+embarqué, avec la `cle_embed` du projet (jamais régénérée pour ça). Clé par
+`Authorization: Bearer` (Codex), `x-cockpit-key`, `/cockpit-mcp/<clé>` ou
+`?cle=` (ChatGPT n'offre que OAuth ou aucune authentification, doc lue le 30
+sept.). Guide : `docs/mcp.md`. Une modification de `cockpit-embed` se
+propage seule ; déployer : `VERIFY_JWT=false scripts/deployer-fonction.sh
+cockpit-mcp`. `scripts/verifier-mcp.mjs`. Non fait : `search`/`fetch` de la
+recherche approfondie de ChatGPT, OAuth.
 
 ## Un chef PAR PROJET, des agents (29 sept. 2026, migrations 0014 puis 0019)
 
@@ -208,6 +224,28 @@ sont JAMAIS servis par la chef d'un vrai projet (incident du 29 sept. ; depuis
 tests de `reponses_sans_suite()` sans projet). `verifier-base.mjs` §18.
 
 **Consommation, règle GÉNÉRALE (Raphaël, 30 sept. 2026, migration 0034 puis 0035)** : « ne jamais atteindre la limite des modèles ». Les consignes de `chef.sh` / `renfort.sh` donnent le modèle de chaque agent (paramètre `model` de l'outil Agent) : `haiku` pour Revoir À toi, Point, Vérifier ; `sonnet` pour Répondre/Réponse et coder un chantier ; jamais `opus` sauf mention explicite de Raphaël. `create_session` (renforts, relais) : `model: "claude-sonnet-5-5"`. Frein : 2 agents par défaut (`chefs.max_agents`) ; si `get_session` → `rate_limit_info.status` n'est pas `allowed`, au plus 1 agent et aucune revue. Un élément de « À toi » confirmé ne revient pas avant 24 h (`a_toi_a_revoir`). **Bascule automatique (30 sept. 2026, migration 0037, chantier 29fac2e1)** : le NOMBRE d'agents ne pose pas problème, seuls les modèles : l'usage ne freine plus les agents, il descend les MODÈLES. `chef.sh --usage <status> [pct]` (depuis `get_session` → `rate_limit_info`) pose un palier 0 à 3 (`bascule_usage`) : 0 les modèles réglés, 1 code d'un cran plus bas (opus>sonnet>haiku), 2 code -2 crans, lecture -1, effort bas, 3 tout en haiku. Monte tout de suite, redescend après 30 min de calme, expire seul après 3 h ; une session en pause `rate_limit` vaut palier 3. `modeles_effectifs` (une règle) est lue par `chef.sh` et `renfort.sh`. Interrupteur `chef.sh --bascule on|off` ou bouton de l'app. Le frein « 1 agent » reste un geste manuel seulement. `verifier-base` §32.
+
+## Sessions qui se ferment seules (30 sept. 2026, migration 0038, chantier 27d251f8)
+
+Raphaël : « dès qu'une session a fini son travail elle se ferme directement ; un
+correctif ou une vérification repart ensuite dans une nouvelle session. Éviter la
+pollution. » Avant : seuls les renforts finis étaient archivés (à la passe
+suivante de la chef) ; sessions relais et sessions de réveil /fire restaient
+ouvertes. Maintenant, chaque session ouverte par le cockpit reçoit une consigne de
+fin : renfort FINI, relais (`[cockpit-relais]`) et réveil /fire s'archivent
+eux-mêmes si l'outil `archive_session` existe (`get_session` sans id = son id) ;
+sinon la chef les archive à sa passe (`renforts_a_ouvrir.archiver`,
+`ouvertures_a_fermer` / `relais_a_servir.fermer`, puis `chef.sh
+--ouverture-archive <id>`). Jamais fermée : session avec un chantier en cours,
+une question posée sans réponse, ou un message de Raphaël sans réponse
+(`ouverture_finie`, une seule règle). Réglages par projet (`projets`,
+`regler_fermeture`, écran « Modèles et effort » du cockpit, ou `chef.sh
+--fermeture oui|non [minutes]`) : `fermeture_auto` (oui) et
+`fermeture_delai_min` (10). Ouvrir seulement s'il y a du travail : le relais
+n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
+`rien_a_servir` (aucun /fire) quand rien n'est sans réponse ni sans suite.
+Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
+reste ouverte (non suivie en base). `verifier-base` §34.
 
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
@@ -418,6 +456,18 @@ recopiés dans le fil).
   `chef.sh` (point 3), session relais, `hooks/suivi.sh`, hook de démarrage,
   bloc CLAUDE.md. `verifier-base` §31, `verifier-discussion.ts`.
 
+## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
+
+Raphaël : un chantier écrit dans FacePro devait être un correctif du cockpit.
+Menu ⋯ du fil › « Déplacer vers un autre projet… » (`Conversation.tsx`,
+`lib/deplacer.ts`, confirmation avant) → `deplacer_chantier(id, slug)` (admin
+ou session) : change le projet du chantier ET de ses messages, activité, « ce
+qui marche », assistants, passes ; section remise (même nom, créée dans le
+projet cible) ; réservation libérée ; lien « doublon de » coupé ; ligne
+« Déplacé de … vers … » dans le fil. Les fichiers restent au même chemin
+(le stockage ne se renomme pas en SQL) : `peut_lire_media` les accepte via le
+message qui les cite. `verifier-base` §36, `verifier-deplacer.ts`.
+
 ## Questions et assistants toujours à jour (29 sept. 2026, migration 0015)
 
 Une question ouverte que du travail a suivie s'affiche « Claude a avancé
@@ -604,6 +654,34 @@ moteur, migration…) dans le TITRE ; pour un utilisateur final (`origine =
 corrige un faux tri et n'est pas défait. Les existants ouverts sans section :
 `ranger_correctifs(slug)`. Un faux tri constaté → un cas dans
 `scripts/verifier-correctifs.mjs` d'abord, puis les listes. `verifier-base` §22.
+
+## « Claude a répondu » : pastille + notification du téléphone (30 sept. 2026, migration 0039, chantier bff5a8cf)
+
+Raphaël : « quand j'envoie un message […] je ne vois aucune notification comme
+quoi il m'a répondu […] il faudrait une notification pour pouvoir répondre le
+plus rapidement possible » (capture : la case « Écrire à Claude sur ce projet »)
+« […] et une notification push du téléphone, à régler dans les paramètres ».
+- **Dans l'app** : une RÉPONSE = message de session avec `repond_a` (posé par
+  `repondre_dans_fil`, donc pas les lignes automatiques). Non lue tant qu'elle
+  est plus récente que le « lu jusqu'à » du fil (préférences `lu_fils`, par
+  personne ; `lu_depuis` posé au premier chargement pour ne pas allumer
+  l'historique). Pastille rouge « Réponse » sur la case du projet et sur les
+  lignes « À toi » / « Ça avance » (`PastilleReponse.tsx`), compteur dans le
+  titre de l'onglet et sur l'icône de l'appli ; ouvrir le fil = le lire.
+  Règle unique : `lib/lecture.ts`, `verifier-lecture.ts`, `verifier-web.mjs`
+  (« pastille Réponse »).
+- **Push** : Réglages › « Notifications de réponses » › « Activer sur cet
+  appareil » (par appareil ; `usePush.ts`, règle des états `lib/push.ts`,
+  iPhone : seulement dans l'appli installée). Un trigger sur la réponse
+  (`push_sur_reponse`, pg_net, jamais pour un projet `test-…`) appelle la
+  fonction `cockpit-push` (web-push ; `x-push-secret` du coffre) qui envoie
+  aux appareils des admins et membres du projet et retire les abonnements
+  morts. `sw.js` affiche la bannière (sauf appli déjà à l'écran). Mise en
+  place UNE fois : `node scripts/installer-push.mjs` (clés VAPID, secrets de
+  la fonction, coffre, `push_config` ; idempotent, `--regenerer` désabonne
+  tout) puis `VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-push`.
+  Preuve : `node scripts/verifier-push.mjs`. **Non prouvé ici** : la
+  livraison sur un vrai téléphone (aucun navigateur abonné dans le conteneur).
 
 ## Économie des modèles (30 sept. 2026, migration 0035, chantier 7a52df8f)
 
