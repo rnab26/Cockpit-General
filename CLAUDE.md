@@ -55,7 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), mode autonome qui s’éteint seul (§15)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
@@ -473,6 +473,29 @@ service_role dans `cockpit-medias` au chemin du chantier (les droits de
 lecture suivent donc ceux du chantier). Écran du cockpit : `node
 app/scripts/capture-ecran.mjs <url> <dossier>`. Pas encore affiché par le
 module embarqué (`embed/`) : seulement l'app.
+
+## Une action manuelle = lien exact + étapes + texte à coller (30 sept. 2026, migration 0033)
+
+Raphaël (chantier e9a7c360) : « à chaque fois il faut que j'aille chercher et
+ce n'est pas assez précis. Il faut que Claude renvoie les liens précis et les
+démarches précises pour faire simplement des copier-coller […] peu importe le
+type de chantier et dans toutes les discussions. Et un visuel si ça peut
+aider. » Règle GÉNÉRALE, pour toutes les sessions de tous les projets
+branchés (bloc `docs/bloc-CLAUDE.md`, consignes d'agents de `chef.sh` et
+`renfort.sh`) : tout geste demandé à Raphaël donne la page EXACTE, un geste
+numéroté par étape (nom exact du bouton), chaque chose à taper prête à coller,
+une capture quand ça aide — dans le cockpit ET dans la session. Outil :
+`demander.sh --action --lien "https://…|libellé" --etape "…" --copier
+"libellé|texte" [--image f.png]` → `messages.marche` (jsonb). Le script
+refuse AVANT d'écrire (`scripts/marche.py`) : action sans lien (sauf
+`--sans-lien "pourquoi"`) ou sans étape, lien http/page d'accueil, plus de
+3 liens / 8 étapes / 4 textes, un texte sans libellé, un SECRET (motifs de
+jetons connus). App : `MarcheASuivre.tsx` sous la question (bouton vers la
+page, nouvel onglet, domaine affiché ; étapes numérotées ; « Copier » qui dit
+« Copié » ou l'échec), lecture défensive `lib/marche.ts` (https seulement),
+copie commune `lib/copier.ts`. Pas encore dans le module embarqué (`embed/`) :
+une action s'adresse à Raphaël, pas à l'utilisateur final. `verifier-base`
+§31, `verifier-marche.ts`, `verifier-web.mjs` (« action manuelle »).
 
 ## Appli installable (30 sept. 2026)
 

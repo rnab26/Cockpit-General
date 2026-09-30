@@ -11,6 +11,8 @@ import { dateRelative } from '../lib/dates.ts'
 import { extrait } from '../lib/texte.ts'
 import { ChoisirMedias, MediasMessage, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 import { mediasDe } from '../lib/medias.ts'
+import { marcheDe } from '../lib/marche.ts'
+import { MarcheASuivre } from './MarcheASuivre.tsx'
 
 /**
  * Une question (options cliquables + précision) ou une action (Fait / Pas
@@ -28,6 +30,7 @@ export function BlocQuestion({ message }: { message: Message }) {
   const options = message.options ?? []
   const estAction = message.kind === 'action'
   const pj = useMediasAJoindre(projet.id, message.chantier_id)
+  const marche = marcheDe(message)
 
   const envoyer = async (reponse: string, etat?: 'fait' | 'pas_encore' | 'bloque') => {
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
@@ -64,6 +67,8 @@ export function BlocQuestion({ message }: { message: Message }) {
       {message.pourquoi ? <TexteLong texte={message.pourquoi} petit /> : null}
       {/* 0020 : l'image que Claude montre pour que la question se comprenne d'un coup d'œil. */}
       {mediasDe(message).length ? <div className="mt-2"><MediasMessage medias={mediasDe(message)} apercu testId="images-question" /></div> : null}
+      {/* 0033 : la marche à suivre d'un geste — lien exact, étapes numérotées, textes prêts à coller. */}
+      {marche ? <MarcheASuivre marche={marche} /> : null}
 
       {estAction ? (
         <div className="mt-3 grid grid-cols-3 gap-2">
