@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, CircleCheck, CirclePause, Clock, Copy, Ellipsis, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -15,7 +15,7 @@ import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { situationSilence } from '../lib/silence.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
-import { attenteReponse, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
+import { attenteReponse, derniereAction, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
@@ -151,8 +151,8 @@ function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: Reac
 }
 
 /** Une bulle du fil : Claude à gauche (fond carte), toi à droite (fond neutre plus soutenu). Jamais de pavé teinté. */
-function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet }: {
-  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null
+function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, repondre = false }: {
+  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null; repondre?: boolean
 }) {
   const { now } = useCockpit()
   return (
@@ -167,6 +167,12 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet }:
           </p>
         ) : null}
         {children}
+        {repondre ? (
+          <button type="button" data-testid="repondre-bulle" onClick={() => window.dispatchEvent(new CustomEvent('cockpit:repondre', { detail: { sujet: sujet ?? null } }))}
+            className="mt-1.5 -mb-0.5 inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-accent hover:bg-carte-2">
+            <Reply size={14} aria-hidden />Répondre
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -205,7 +211,7 @@ function BulleMessage({ m }: { m: Message }) {
   const { sujet, reste } = sujetDe(m.corps)
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
-    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet}>
+    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet} repondre={m.auteur_type === 'session'}>
       {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {m.reponse ? (
@@ -260,7 +266,7 @@ function Corps({ children, chantierId, placeholder, cle }: { children: ReactNode
   const surDefilement = () => { const el = corps.current; if (el) enBas.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160 }
   return (
     <>
-      <div ref={corps} onScroll={surDefilement} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
+      <div ref={corps} onScroll={surDefilement} className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
       <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => { enBas.current = true; window.setTimeout(() => allerEnBas(true), 150) }} />
     </>
   )
@@ -316,6 +322,16 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
   const pj = useMediasAJoindre(projet.id, chantierId)
   const zone = useRef<HTMLTextAreaElement>(null)
   const vide = !texte.trim() && !pj.medias.length
+  // « Répondre » sous un message de Claude : le curseur va dans la zone, avec le sujet rappelé si elle est vide.
+  useEffect(() => {
+    const ecoute = (e: Event) => {
+      const sujet = (e as CustomEvent<{ sujet: string | null }>).detail?.sujet
+      if (sujet) setTexte((t) => (t.trim() ? t : `Re : ${sujet}\n`))
+      window.setTimeout(() => { const z = zone.current; if (z) { z.focus(); z.setSelectionRange(z.value.length, z.value.length) } }, 0)
+    }
+    window.addEventListener('cockpit:repondre', ecoute)
+    return () => window.removeEventListener('cockpit:repondre', ecoute)
+  }, [])
   // La zone grandit avec le texte (jusqu'à ~5 lignes), puis défile.
   useLayoutEffect(() => { const z = zone.current; if (!z) return; z.style.height = 'auto'; z.style.height = `${Math.min(z.scrollHeight, 132)}px` }, [texte])
 
@@ -479,6 +495,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })
   const section = c.section_id ? sections.find((s) => s.id === c.section_id) : null
+  const derniere = derniereAction(c.id, messages, activites, taches)
   const dernierBlocage = [...fil].reverse().find((m) => m.kind === 'blocage') ?? null
   const relancer = async () => {
     const { error } = await supabase.from('chantiers').update({ etat: 'libre', reporte_jusqu_a: null, archived_at: null }).eq('id', c.id)
@@ -509,6 +526,9 @@ function FilChantier({ chantierId }: { chantierId: string }) {
             {c.pris_par ? <span title={c.pris_par}>Réservé par {nomCourtSession(c.pris_par)}</span> : null}
             {c.archived_at ? <span>archivé</span> : null}
           </p>
+          {derniere ? (
+            <p className="px-1 text-xs text-texte-2" data-testid="derniere-action"><span className="font-medium text-texte">Dernière action :</span> {derniere.texte} · {dateRelative(derniere.quand, now)}</p>
+          ) : <p className="px-1 text-xs text-texte-2" data-testid="derniere-action">Dernière action : aucune trace de Claude sur ce chantier.</p>}
           {c.notes ? <Repliable titre={<span className="text-sm font-medium">Notes de travail de Claude</span>}><p className="whitespace-pre-wrap text-sm text-texte-2">{c.notes}</p></Repliable> : null}
           <PourReproduire chantier={c} />
           {admin ? <Historique chantierId={c.id} signal={signalHistorique} /> : null}

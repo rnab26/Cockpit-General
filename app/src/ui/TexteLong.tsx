@@ -9,7 +9,9 @@ export function TexteLong({ texte, petit = false }: { texte: string; petit?: boo
   const long = texte.length > (petit ? 200 : 320)
   return (
     <>
-      <p className={`whitespace-pre-wrap leading-snug ${petit ? 'mt-0.5 text-sm text-texte-2' : 'text-[15px]'} ${long && !tout ? (petit ? 'line-clamp-3' : 'line-clamp-6') : ''}`}>{texte}</p>
+      <div className={`space-y-2 whitespace-pre-wrap leading-relaxed ${petit ? 'mt-1 text-sm text-texte-2' : 'text-[15px]'} ${long && !tout ? (petit ? 'line-clamp-3' : 'line-clamp-6') : ''}`} data-testid="texte-aere">
+        {texte.split(/\n{2,}/).map((p, i) => <p key={i}>{p.trim()}</p>)}
+      </div>
       {long ? <button type="button" onClick={() => setTout(!tout)} className="mt-0.5 text-sm font-medium text-accent" data-testid="lire-la-suite">{tout ? 'Réduire' : 'Lire la suite'}</button> : null}
     </>
   )
