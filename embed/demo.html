@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exemple de site avec le cockpit</title>
+<!--
+  Page hôte minimaliste pour essayer le module embarqué.
+
+  Son style est VOLONTAIREMENT agressif (tout en serif rouge, en capitales,
+  espacé) : c'est la preuve que le Shadow DOM isole le module — seule la
+  police de caractères est héritée, rien d'autre ne traverse.
+
+  La clé data-cle est celle du projet pilote « cockpit ». Elle est publique
+  par nature (elle vit dans la page de n'importe quel site hôte) : elle ne
+  donne aucun droit sur la base, seulement le droit de parler à la fonction
+  serveur pour CE projet, et elle se révoque en la régénérant.
+-->
+<style>
+  * { font-family: Georgia, serif; color: red; text-transform: uppercase; letter-spacing: 3px; font-size: 22px; }
+  body { margin: 0; padding: 16px; background: #fffbe6; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 26px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Exemple : un site qui affiche le cockpit</h1>
+  <p>Le texte rouge appartient à ce site. Le cadre juste en dessous, lui, c'est le cockpit : il garde ses propres couleurs.</p>
+
+  <script src="./cockpit-embed.js"
+          data-cle="fac00c119a3d4f1fadeebf929cd2a4c01f168aa15d4b423ea9b8edf7e547aeee"
+          data-utilisateur="Démo"
+          data-titre="Demandes et corrections"></script>
+
+  <p>Fin du cockpit : ce texte est de nouveau celui du site.</p>
+</main>
+</body>
+</html>
