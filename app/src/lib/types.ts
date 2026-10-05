@@ -40,6 +40,9 @@ export interface Projet {
   autonome_vide_depuis?: string | null
   /** Quand il s'est éteint tout seul (0031), null s'il a été réglé à la main depuis. */
   autonome_eteint_auto_at?: string | null
+  /** Où partent les factures (0052) : moyen et destinataire (e-mail, numéro WhatsApp, nom). */
+  compta_canal?: 'email' | 'whatsapp' | 'autre' | null
+  compta_destinataire?: string | null
 }
 
 export interface Section {

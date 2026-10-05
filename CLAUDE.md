@@ -55,6 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node app/scripts/verifier-bulle.mjs                       # bulle d'aide : visible par défaut (projet et « Tout »), message → fil du projet, réponse de session → bulle, réglage d'extinction
+node app/scripts/verifier-depenses.mjs                    # Coûts : prestataires, dépenses par période, factures jointes, envoi à la compta (projet jetable, téléphone)
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
 node scripts/verifier-emplacement.mjs                      # où le cockpit apparaît : analyse du dépôt (choix possibles seulement) + module en mode bouton / page
 node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
@@ -842,6 +843,22 @@ plus rapidement possible » (capture : la case « Écrire à Claude sur ce proje
   Preuve : `node scripts/verifier-push.mjs`. **Non prouvé ici** : la
   livraison sur un vrai téléphone (aucun navigateur abonné dans le conteneur).
 
+**Choisir quelles notifications on reçoit** (5 oct. 2026, migration 0052, chantier 70288582 ;
+Raphaël : « gérer quel type de notifications […] pareil pour tous les projets, le plus simple
+possible »). Réglages › Notifications : un interrupteur par TYPE, puis « Tous les projets » +
+un interrupteur par projet, résumé en une phrase, toast succès/échec. Par personne :
+`notif_reglages` (`types` code → bool, absent = défaut du catalogue ; `projets_coupes`, vide =
+tous). Catalogue `notif_types` (code, libellé, `defaut`, `emis`) : UNE source pour l'écran et le
+serveur ; **seul `reponse` est émis** (défaut allumé) ; « À toi », « PR à fusionner » et « Chantier
+terminé » sont listés « bientôt », sans interrupteur, tant qu'aucun trigger ne les envoie. UNE
+règle de décision côté serveur : `notif_veut(user, type, projet)` et `notif_destinataires(type,
+projet)` (admins + membres qui veulent ; jamais un projet `test-…`, jamais un type non émis),
+lue par `cockpit-push` (déployée v2). **Ajouter un type** = une ligne dans `notif_types` (`emis`
+faux), puis le trigger qui l'envoie et `emis` vrai ; l'écran suit tout seul. Règles d'affichage :
+`lib/notifications.ts`, `verifier-notifications.ts` ; base : `verifier-base` §41 (`SEUL=41` joue
+ce seul contrôle). Le réglage vaut pour tous les appareils de la personne ; l'abonnement reste par
+appareil (message clair si l'appareil n'est pas abonné).
+
 ## Économie des modèles (30 sept. 2026, migration 0035, chantier 7a52df8f)
 
 Raphaël : « le cockpit consomme beaucoup trop de tokens […] les sessions vont
@@ -898,3 +915,19 @@ encore le frein. `verifier-base` §32, `verifier-renforts.ts`.
   règle côté écran : `etatAutonome`, `travailEnCours` (`lib/autonome.ts`).
   Limite : éteint, un réveil horaire (routine) tourne encore et répond RIEN ;
   seule la désactivation de la routine l'arrête (non automatisée).
+
+## Coûts du projet : prestataires, dépenses, factures, compta (5 oct. 2026, migration 0052, chantier 41127de1)
+
+Raphaël : un onglet à part par projet avec ses services (Supabase, Claude, RunPod…), leurs factures, les coûts
+(jour / semaine / mois / année), le solde des comptes à crédit, et l'envoi des factures à la compta en un clic.
+Onglet « Coûts » de la vue projet (`components/Depenses.tsx`, règles pures `lib/depenses.ts`, une seule source).
+Tables `services` et `depenses` (ADMIN seulement : donnée interne, aucune politique membre), colonnes
+`projets.compta_canal` / `compta_destinataire`. Factures dans `cockpit-medias`, dossier `<projet>/depenses/`
+(illisible aux membres : `peut_lire_media` ne connaît que « projet » et les chantiers visibles).
+- Totaux PAR devise, jamais convertis ; une recharge de crédit n'est pas un coût.
+- Solde = saisi par Raphaël (date affichée), alerte sous `seuil_alerte`. **Non fait : lecture automatique des
+  comptes (API RunPod, Supabase, Anthropic…)** : exige une clé par service (action de Raphaël) et une fonction serveur.
+- Envoi à la compta : JAMAIS côté serveur. « Envoyer » = partage du téléphone (`navigator.share` avec les fichiers
+  et le résumé), l'état « Envoyée à la compta » (qui, quand, canal) n'est posé qu'après ce partage ; annulé = rien
+  marqué. Sans partage de fichiers (ordinateur) : marche manuelle (télécharger, copier le résumé, lien e-mail/WhatsApp
+  pré-rempli) puis « C'est envoyé : marquer ». `verifier-depenses.ts` (règles), `verifier-depenses.mjs` (parcours).

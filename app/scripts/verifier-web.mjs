@@ -470,6 +470,7 @@ try {
   verifie('FacePro : les trois icônes tiennent sur la même ligne, dans l’écran', new Set(bTabs).size === 1 && bOnglets.width <= (page.viewportSize()?.width ?? 9999))
   verifie('FacePro : les réglages sont derrière la 2e icône, pas à la suite', await page.getByTestId('reglages-projet').count() === 0)
   await page.getByTestId('onglet-vue-couts').click()
+  await page.getByTestId('couts-projet').waitFor({ timeout: 15000 }).catch(() => {})
   verifie('FacePro : Coûts = état vide honnête (aucune donnée de coût), les 4 chiffres restent en haut', await page.getByTestId('couts-projet').count() === 1 && /Aucune dépense enregistrée/.test(await page.getByTestId('couts-projet').textContent()) && await page.getByTestId('tuiles').count() === 1 && await page.getByTestId('tous-les-chantiers').count() === 0)
   await page.getByTestId('onglet-vue-reglages').click()
   verifie('FacePro : « Réglages du projet » replié, dans l’onglet Réglages', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
@@ -1325,6 +1326,7 @@ try {
   const bRej = await rejouer.boundingBox()
   verifie('« Rejouer » : visible, entier sur l’écran du téléphone, nouvel onglet sans lien avec le cockpit',
     await rejouer.isVisible() && bRej && bRej.x >= 0 && bRej.x + bRej.width <= 390 && (await rejouer.getAttribute('target')) === '_blank' && /noopener/.test(await rejouer.getAttribute('rel')), bRej)
+  verifie('« prête · rejouable » affiché, pas de test synthétique quand une adresse existe', /prête · rejouable/.test(await repro.getByTestId('repro-etat').textContent()) && await repro.getByTestId('test-synthetique').count() === 0)
   verifie('conversation avec « Pour reproduire » : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await repro.evaluate((e) => e.scrollIntoView({ block: 'center' }))
   await capture(page, 'pour-reproduire')
