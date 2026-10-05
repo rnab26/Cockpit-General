@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
-import type { Chantier } from '../lib/types.ts'
+import { Ban, Check, Clock, ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
+import type { Chantier, Message } from '../lib/types.ts'
+import { supabase, messageErreur } from '../lib/supabase.ts'
+import { marcheDe } from '../lib/marche.ts'
+import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
 import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
@@ -29,7 +32,7 @@ import { FiletSecurite } from './FiletSecurite.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
 import { bulleActive, cleBulle } from '../lib/bulleAide.ts'
-import { basculerRepli, comptesAToi, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
+import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -363,7 +366,7 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
         <>
-          {comptes.length > 1 ? (
+          {pastillesVisibles(elements) ? (
             <div className="-mx-1 mb-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Filtrer par geste attendu" data-testid="filtre-a-toi">
               {[{ type: null as null, n: elements.length }, ...comptes].map((x) => {
                 const actif = filtre === x.type
@@ -395,6 +398,36 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
   )
 }
 
+/**
+ * Une action (« Fusionne la PR… ») se traite ICI, sans ouvrir de fil : la marche à suivre, puis Fait / Pas encore /
+ * Ça bloque, avec un retour visible (toast succès ou échec). Même RPC que la carte du fil (`repondre_message`).
+ */
+function ActionDirecte({ message, onOuvrir }: { message: Message; onOuvrir: () => void }) {
+  const g = useGlobal()
+  const toast = useToast()
+  const [enCours, setEnCours] = useState<string | null>(null)
+  const marche = marcheDe(message)
+  const repondre = async (reponse: string, etat: 'fait' | 'pas_encore' | 'bloque') => {
+    setEnCours(etat)
+    const { error } = await supabase.rpc('repondre_message', { p_id: message.id, p_par: g.par, p_reponse: reponse, p_precision: null, p_etat: etat })
+    if (error) { setEnCours(null); toast.erreur(`Action non enregistrée : ${messageErreur(error)}`); return }
+    toast.succes(etat === 'fait' ? 'Fait : Claude est prévenu.' : etat === 'pas_encore' ? 'Noté : pas encore.' : 'Noté : ça bloque.')
+    await g.recharger()
+    setEnCours(null)
+  }
+  return (
+    <div className="px-3 pb-2.5" data-testid="action-directe">
+      {marche ? <MarcheASuivre marche={marche} /> : null}
+      <div className="mt-1.5 grid grid-cols-3 gap-2">
+        <Button taille="sm" variante="ok" chargement={enCours === 'fait'} disabled={!!enCours} onClick={() => void repondre('Fait', 'fait')} data-testid="action-fait"><Check size={15} aria-hidden />Fait</Button>
+        <Button taille="sm" chargement={enCours === 'pas_encore'} disabled={!!enCours} onClick={() => void repondre('Pas encore', 'pas_encore')} data-testid="action-pas-encore"><Clock size={15} aria-hidden />Pas encore</Button>
+        <Button taille="sm" variante="attention" chargement={enCours === 'bloque'} disabled={!!enCours} onClick={() => void repondre('Ça bloque', 'bloque')} data-testid="action-bloque"><Ban size={15} aria-hidden />Ça bloque</Button>
+      </div>
+      <button type="button" onClick={onOuvrir} className="mt-1 text-xs text-texte-2 underline-offset-2 hover:underline" data-testid="action-voir-fil">Écrire un mot ou voir le fil</button>
+    </div>
+  )
+}
+
 function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
   const g = useGlobal()
   const ouvrir = () => g.ouvrirChantier(e.projetId, e.chantier?.id ?? null)
@@ -416,8 +449,9 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
             </span>
           </span>
         </button>
-        <Button taille="sm" variante={e.avanceDepuis ? 'discret' : undefined} onClick={ouvrir} data-testid="verbe-a-toi" className="shrink-0">{VERBE_A_TOI[e.type]}</Button>
+        {e.type === 'action' && e.message ? null : <Button taille="sm" variante={e.avanceDepuis ? 'discret' : undefined} onClick={ouvrir} data-testid="verbe-a-toi" className="shrink-0">{VERBE_A_TOI[e.type]}</Button>}
       </div>
+      {e.type === 'action' && e.message ? <ActionDirecte message={e.message} onOuvrir={ouvrir} /> : null}
     </li>
   )
 }
