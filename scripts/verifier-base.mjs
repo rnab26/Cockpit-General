@@ -748,6 +748,29 @@ async function controle17_verifie_pour_moi() {
   verifie("verdict « pas bon » : le chantier repart en correction (libre, demande complétée)", l3.etat === "libre" && /Il manque une section/.test(l3.demande ?? ""), l3);
   const hors = await rpcUtilisateur("demander_verification", { p_id: await creerChantier(P1, { titre: "Pas livré" }), p_par: "u" }, jwt);
   verifie("refusé sur un chantier qui n'est pas « à vérifier »", hors.status >= 400, hors);
+  // 0056 : « Ça ne marche pas » sans correctif, et un message tapé vaut « ça ne marche pas ».
+  const c3 = await creerChantier(P1, { titre: "Ça ne marche peut-être pas", etat: "a_verifier" });
+  const pb = await rpcUtilisateur("signaler_ne_marche_pas", { p_id: c3, p_par: "utilisateur test" }, jwt);
+  const l4 = await chantier(c3);
+  const m4 = await une(`select count(*)::int as n from messages where chantier_id = ${q(c3)} and corps like 'Ça ne marche pas (je ne sais pas pourquoi)%'`);
+  verifie("« Ça ne marche pas » SANS un mot : vérification demandée (motif ne_marche_pas), signalé dans le fil, rien de plus à écrire",
+    pb.status < 300 && !!l4.verif_demandee_at && l4.verif_motif === "ne_marche_pas" && m4.n === 1, { pb, l4, m4 });
+  const c4 = await creerChantier(P1, { titre: "Message tapé dans un chantier à vérifier", etat: "a_verifier" });
+  // Raphaël est « proprietaire » : le compte de test (membre) ne l'est pas, on écrit donc sa ligne en service.
+  const mt = { status: 201, json: [await une(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(P1)}, ${q(c4)}, 'Raphaël', 'proprietaire', 'info', 'ça ne marche pas chez moi') returning id`)] };
+  const l5 = await chantier(c4);
+  const ack = await une(`select count(*)::int as n from messages a join messages m on m.id = a.repond_a where a.chantier_id = ${q(c4)} and a.auteur_type = 'session' and a.corps like 'Reçu : je prends ça%' and m.auteur_type = 'proprietaire'`)
+  verifie("un message tapé dans le fil d'un chantier « à vérifier » = « ça ne marche pas » : vérification demandée + accusé de réception qui lui répond",
+    mt.status === 201 && !!l5.verif_demandee_at && l5.verif_motif === "ne_marche_pas" && ack.n === 1, { mt: mt.status, l5, ack });
+  const c5 = await creerChantier(P1, { titre: "Message dans un chantier libre", etat: "libre" });
+  await rest("messages", { methode: "POST", jwt, corps: { projet_id: P1, chantier_id: c5, auteur: "utilisateur test", auteur_type: "utilisateur", kind: "info", corps: "une remarque" } });
+  verifie("le même message dans un chantier qui n'est pas « à vérifier » ne déclenche aucune vérification", !(await chantier(c5)).verif_demandee_at);
+  const rSans = (() => {
+    const args = ["--chantier", c5, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton.", "--pas-en-ligne", "test"]
+    try { return { code: 0, sortie: execFileSync("bash", [join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts/progression.sh"), ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "verifier-base" }, stdio: ["ignore", "pipe", "pipe"] }) } }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` } }
+  })();
+  verifie("progression.sh --verifier sans lien est refusé (le lien exact de ce qu'il doit ouvrir)", rSans.code === 2 && /aucun lien/.test(rSans.sortie), rSans);
 }
 
 async function controle15_limites_autonome() {
@@ -962,14 +985,14 @@ async function controle20_images_session() {
     // « Comment vérifier » avec image.
     const rP0 = lancer("progression.sh", ["--chantier", c, "--etape", "en cours", "--image", png]);
     verifie("progression.sh --image hors --termine est refusé (il n'accompagne que « Comment vérifier »)", rP0.code === 2, rP0);
-    const rP = lancer("progression.sh", ["--chantier", c, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton bleu.", "--pas-en-ligne", "test", "--image", png]);
+    const rP = lancer("progression.sh", ["--chantier", c, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton bleu.", "--sans-lien", "test", "--pas-en-ligne", "test", "--image", png]);
     const l = await chantier(c);
     verifie("progression.sh --termine … --image : chantiers.verifier_medias porte l'image, le chantier passe « à vérifier »",
       rP.code === 0 && l.etat === "a_verifier" && l.verifier_medias?.length === 1 && l.verifier_medias[0].chemin.startsWith(`${P1}/${c}/`), { rP: rP.sortie.slice(0, 400), l: { etat: l.etat, vm: l.verifier_medias } });
     const vu = await rest(`chantiers?id=eq.${c}&select=verifier_medias`, { jwt });
     verifie("le membre lit verifier_medias par l'API (ce que l'app affiche)", vu.status === 200 && vu.json?.[0]?.verifier_medias?.length === 1, vu);
     await sql(`update chantiers set etat = 'en_cours' where id = ${q(c)}`);
-    lancer("progression.sh", ["--chantier", c, "--termine", "Relivré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+    lancer("progression.sh", ["--chantier", c, "--termine", "Relivré (test)", "--verifier", "1. Ouvre la carte.", "--sans-lien", "test", "--pas-en-ligne", "test"]);
     verifie("un nouveau --termine SANS image efface les anciennes (périmées)", ((await chantier(c)).verifier_medias ?? []).length === 0);
     // Fil.
     const rE = lancer("media.sh", ["--envoyer", "--chantier", c, "--texte", "Voici l'écran actuel.", "--image", png, "--image", png]);
@@ -1883,7 +1906,7 @@ async function controle30_agents_fantomes() {
   await prov("Finisseur", c);
   const env = { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "agent/test-prov", CLAUDE_CODE_SESSION_ID: sid };
   try {
-    execFileSync("bash", [join(racine, "scripts/progression.sh"), "--chantier", c, "--pas-en-ligne", "banc de test", "--termine", "Fini : test", "--verifier", "1. Rien à voir."],
+    execFileSync("bash", [join(racine, "scripts/progression.sh"), "--chantier", c, "--pas-en-ligne", "banc de test", "--termine", "Fini : test", "--verifier", "1. Rien à voir.", "--sans-lien", "banc de test"],
       { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { verifie("progression.sh --termine a tourné", false, `${e.stdout ?? ""}${e.stderr ?? ""}`); }
   verifie("progression.sh --chantier X --termine ferme la ligne provisoire de SA session sur X", (await statut("Finisseur")) === "termine");
@@ -2748,6 +2771,40 @@ async function controle41_reglages_notifications() {
   await sql(`delete from notif_reglages where user_id = ${q(userId)}`);
 }
 
+// 42. « Les 3 correctifs » (0051, chantier 72d09c69) : Terminé sort de « bloqué », un chantier déjà livré n'est pas repris, les réservations expirées sont rendues.
+async function controle42_deja_livre_rien_repris() {
+  section("41. Rien n'est repris à tort (0051) : Terminé sort de « bloqué », déjà livré = pas repris, réservation expirée rendue");
+  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération') on conflict do nothing`);
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_LB, COCKPIT_SESSION: "verifier-base-41" };
+  const lancer = (script, args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts", script), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  // 1. --termine sort un chantier de « bloqué ».
+  const bl = await creerChantier(PLB, { titre: "41 Bloqué puis livré", etat: "bloque" });
+  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+  verifie("progression.sh --termine : un chantier « bloqué » passe « à vérifier »", r.code === 0 && (await une(`select etat from chantiers where id = ${q(bl)}`)).etat === "a_verifier", r);
+  // 2. Déjà livré, sans nouveau mot de Raphaël : pas repris ; après un « Corriger » : repris.
+  const livre = await creerChantier(PLB, { titre: "41 Déjà livré", etat: "libre" });
+  const neuf = await creerChantier(PLB, { titre: "41 Vraiment libre", etat: "libre" });
+  await sql(`select signaler_activite(${q(SLUG_LB)}, ${q(livre)}, 'agent/test-41', 'Livré', 100, null, 'termine', null)`);
+  const prenables = async () => (await sql(`select id from chantiers_prenables(${q(PLB)}, null)`)).map((x) => x.id);
+  let l = await prenables();
+  verifie("chantier libre dont la dernière activité est « terminé » sans suite : pas repris ; un chantier libre neuf : repris", !l.includes(livre) && l.includes(neuf), l);
+  await creerMessage(PLB, livre, { kind: "constat", corps: "Ça ne marche pas", auteur_type: "proprietaire" });
+  l = await prenables();
+  verifie("après un message de Raphaël (Corriger) : le chantier redevient prenable", l.includes(livre), l);
+  // 3. Réservation expirée rendue, réservation valide gardée.
+  const exp = await creerChantier(PLB, { titre: "41 Réservation expirée", etat: "libre" });
+  const val = await creerChantier(PLB, { titre: "41 Réservation valide", etat: "libre" });
+  await sql(`update chantiers set pris_par = 'agent/vieux', pris_jusqu_a = now() - interval '1 hour' where id = ${q(exp)}`);
+  await sql(`update chantiers set pris_par = 'agent/vivant', pris_jusqu_a = now() + interval '1 hour' where id = ${q(val)}`);
+  await une(`select liberation_passe(${q(SLUG_LB)}, true) as r`);
+  const e = await une(`select (select pris_par from chantiers where id = ${q(exp)}) as exp, (select pris_par from chantiers where id = ${q(val)}) as val`);
+  verifie("la passe rend la réservation expirée (pris_par vidé) et garde la valide", e.exp === null && e.val === "agent/vivant", e);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2805,6 +2862,7 @@ try {
     controle40_liberation_auto,
     controle41_reglages_notifications,
     controle42_agent_vivant_garde,
+    controle42_deja_livre_rien_repris,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {

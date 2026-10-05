@@ -34,7 +34,7 @@ console.log('verifier-silence')
   const s = situationSilence(c, act(20), { now, prochainPassage: dans(5), demandeEnCours: false, abandonMin: 30 })
   verifie('délai réglé à 30 min : 20 min de silence, on attend encore', s.geste === 'attendre', s)
   const t = situationSilence(c, act(20), { now, prochainPassage: dans(5), demandeEnCours: false, abandonMin: 10 })
-  verifie('délai réglé à 10 min : 20 min de silence, abandonné', t.geste === 'rien' && /abandonné/.test(t.ceQuiSePasse), t)
+  verifie('délai réglé à 10 min : 20 min de silence, abandonné', t.geste === 'rien' && /s’est arrêté/.test(t.ceQuiSePasse), t)
 }
 verifie('défaut du délai = 3 min (même valeur que la colonne, comparée par verifier-base)', DELAI_ABANDON_MIN === 3)
 verifie('borne du réglage : 1 à 120, entier', erreurDelaiSansSigne(1) === null && erreurDelaiSansSigne(120) === null && !!erreurDelaiSansSigne(0) && !!erreurDelaiSansSigne(121) && !!erreurDelaiSansSigne(2.5))
