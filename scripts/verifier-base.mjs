@@ -2679,6 +2679,42 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
+// 41. Un agent vivant garde son chantier (0052) : sa ligne tâche vivante (étape signalée il y a 5 min, battement muet) empêche toute reprise ; morte (40 min), le chantier est repris.
+async function controle41_agent_vivant_garde() {
+  section("41. Un agent vivant garde son chantier (0052) : ni reprise, ni libération, ni changement de pris_par");
+  const sid = `test-vivant-${rand}`;
+  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération') on conflict (id) do nothing`);
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(PLB)}, 'claude/chef-vivant', now() - interval '6 minutes')`);
+  const vivant = await creerChantier(PLB, { titre: "VIVANT Agent qui signale toutes les 10 min", etat: "en_cours" });
+  const mort = await creerChantier(PLB, { titre: "VIVANT Agent muet depuis 40 min", etat: "en_cours" });
+  await sql(`update chantiers set pris_par = 'agent/reel', pris_jusqu_a = now() + interval '60 minutes' where id in (${q(vivant)}, ${q(mort)})`);
+  await sql(`insert into taches (session_id, projet_id, tache_id, type, chantier_id, statut, vu_at, progres_at) values (${q(sid)}, ${q(PLB)}, 'tv', 'agent', ${q(vivant)}, 'en_cours', now() - interval '6 minutes', now() - interval '5 minutes'), (${q(sid)}, ${q(PLB)}, 'tm', 'agent', ${q(mort)}, 'en_cours', now() - interval '40 minutes', now() - interval '40 minutes')`);
+  await sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '45 minutes' where id in (${q(vivant)}, ${q(mort)})`);
+  const abandonne = async (id) => (await une(`select chantier_abandonne(c) as a from chantiers c where c.id = ${q(id)}`)).a;
+  verifie("agent vivant (étape il y a 5 min, battement muet 6 min) : le chantier n'est PAS abandonné", await abandonne(vivant) === false);
+  verifie("agent muet depuis 40 min : le chantier est abandonné (le délai reste fini)", await abandonne(mort) === true);
+  const prenables = (await sql(`select id from chantiers_prenables(${q(PLB)}, null)`)).map((x) => x.id);
+  verifie("chantiers_prenables : le chantier tenu n'est pas proposé, l'abandonné l'est", !prenables.includes(vivant) && prenables.includes(mort), prenables);
+  const pris = await une(`select reserver_chantier(${q(vivant)}, 'agent/160812', 60) as ok`);
+  const apres = await une(`select pris_par from chantiers where id = ${q(vivant)}`);
+  verifie("reserver_chantier par un autre nom de branche : refusé, pris_par inchangé", pris.ok === false && apres.pris_par === "agent/reel", { pris, apres });
+  const ouvre = await une(`select ouvrir_ou_reprendre(${q(SLUG_LB)}, 'VIVANT Agent qui signale toutes les 10 min', 'suite', 'agent/intrus', ${q(vivant)}) as r`);
+  const apres2 = await une(`select pris_par, demande like '%suite%' as demande from chantiers where id = ${q(vivant)}`);
+  verifie("chantier.sh --ouvrir sur un chantier tenu : la demande est ajoutée, pris_par n'est pas écrasé", ouvre.r.action === "repris" && apres2.pris_par === "agent/reel" && apres2.demande === true, { ouvre, apres2 });
+  const lib = (await une(`select liberation_passe(${q(SLUG_LB)}, true) as r`)).r[0];
+  const tenu = async (id) => (await une(`select pris_jusqu_a > now() as encore from chantiers where id = ${q(id)}`)).encore;
+  verifie("balayage de 3 min : l'abandonné est libéré, le vivant reste tenu", await tenu(mort) === false && await tenu(vivant) === true, lib);
+  // Les gestes ci-dessus ont touché la fiche du vivant (updated_at) : on la revieillit pour ne juger que la ligne tâche.
+  await sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '45 minutes' where id = ${q(vivant)}`);
+  await sql(`update taches set statut = 'termine' where session_id = ${q(sid)} and chantier_id = ${q(vivant)}`);
+  verifie("sa ligne tâche terminée : la protection tombe aussi (pas de chantier tenu pour rien)", await abandonne(vivant) === true);
+  await sql(`update taches set statut = 'en_cours' where session_id = ${q(sid)} and chantier_id = ${q(vivant)}`);
+  await sql(`update sessions set fin_at = now() where id = ${q(sid)}`);
+  verifie("session finie : sa ligne tâche ne protège plus rien", await abandonne(vivant) === true);
+  const bornes = await sql(`update projets set delai_agent_signale_min = 1 where id = ${q(PLB)}`).then(() => "accepté", (e) => e.message);
+  verifie("délai de l'agent hors 3-240 min refusé", /projets_delai_agent_signale_chk|check/i.test(String(bornes)), bornes);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2734,8 +2770,12 @@ try {
     controle38_renforts_echecs,
     controle39_delai_sans_signe,
     controle40_liberation_auto,
+    controle41_agent_vivant_garde,
   ];
+  // SEULEMENT=controle41_agent_vivant_garde,... : ne rejoue que ces contrôles (reprise partielle).
+  const seulement = (process.env.SEULEMENT || "").split(",").filter(Boolean);
   for (const etape of etapes) {
+    if (seulement.length && !seulement.includes(etape.name)) continue;
     try { await etape(); }
     catch (e) { verifie(`${etape.name || "bloc"} : s'est terminé sans planter`, false, e.message); }
   }
