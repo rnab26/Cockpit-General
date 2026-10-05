@@ -748,7 +748,7 @@ async function controle17_verifie_pour_moi() {
   verifie("verdict « pas bon » : le chantier repart en correction (libre, demande complétée)", l3.etat === "libre" && /Il manque une section/.test(l3.demande ?? ""), l3);
   const hors = await rpcUtilisateur("demander_verification", { p_id: await creerChantier(P1, { titre: "Pas livré" }), p_par: "u" }, jwt);
   verifie("refusé sur un chantier qui n'est pas « à vérifier »", hors.status >= 400, hors);
-  // 0052 : « Ça ne marche pas » sans correctif, et un message tapé vaut « ça ne marche pas ».
+  // 0056 : « Ça ne marche pas » sans correctif, et un message tapé vaut « ça ne marche pas ».
   const c3 = await creerChantier(P1, { titre: "Ça ne marche peut-être pas", etat: "a_verifier" });
   const pb = await rpcUtilisateur("signaler_ne_marche_pas", { p_id: c3, p_par: "utilisateur test" }, jwt);
   const l4 = await chantier(c3);
