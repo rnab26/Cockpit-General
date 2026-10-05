@@ -149,7 +149,7 @@ export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; t
   const renf = (n: number) => `${n} renfort${n > 1 ? 's' : ''}`
   if (a.bloque === 'reglage_zero') return { niveau: a.niveau, geste: true, titre: `${etat} : ${file}.`, conseil: 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour qu’ils s’ouvrent seuls.' }
   if (a.bloque === 'eteint') return { niveau: a.niveau, geste: true, titre: `${etat} : ${file}.`, conseil: 'L’ouverture automatique est éteinte (Réglages) : allume-la, ou touche « Lancer des renforts » ci-dessous.' }
-  if (a.bloque === 'plein') return { niveau: a.niveau, geste: false, titre: `Tous les renforts sont déjà ouverts (${a.vivants} sur ${a.max}) : rien à ouvrir de plus.`, conseil: `${file} : repris par les renforts en route dès qu’un agent finit. Rien à faire (pour en avoir davantage : monte le maximum dans Réglages).` }
+  if (a.bloque === 'plein') return { niveau: a.niveau, geste: false, titre: `Maximum de renforts atteint : ${a.vivants} demandé${a.vivants > 1 ? 's' : ''} ou actif${a.vivants > 1 ? 's' : ''} sur ${a.max}.`, conseil: `${file}. Dès qu’une place se libère, un nouveau renfort s’ouvre tout seul au prochain passage de la chef. Rien à faire (pour en avoir davantage : monte le maximum dans Réglages).` }
   if (a.bloque === 'frein') return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: 'Un frein est actif (économie d’usage) : l’ouverture automatique reprend seule à sa fin. Rien à faire.' }
   return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: `Automatique : la session chef ouvre un renfort toute seule à son prochain passage (${renf(a.vivants)} déjà en route sur ${a.max}). Rien à faire.` }
 }
