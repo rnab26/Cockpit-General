@@ -566,6 +566,11 @@ hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outi
 (> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
 dans la même transaction que le choix ; la fiche est touchée, début du délai).
 
+## Renfort vivant = sa SESSION vit (5 oct. 2026, migration 0057, chantier 2bf7d90c)
+
+Cause prouvée : `renfort_vivant` ne lisait que `renforts.vu_at` (posé seulement par `renfort.sh --suivant`) et ses chantiers ; un renfort dont la session travaillait (hooks → `sessions.vu_at`) était déclaré mort après `delai_signe`, passé « erreur » par `renforts_expirer`, et la chef disait « muet depuis 3 h » (libellé faux, corrigé).
+`renfort.sh --suivant` lie la session des hooks (`CLAUDE_CODE_SESSION_ID`, ≠ `session_distante` cloud) par `renfort_lier` → `renforts.session_hook` ; UNE règle, `renfort_vivant`, la lit (session non finie, vue depuis moins de `delai_signe`). Limite : lié au premier `--suivant` ; avant, seule la règle d'avant joue. `verifier-base` §42.
+
 ## Filet de sécurité : du travail attend, personne ne traite → réveil auto (30 sept. 2026, migration 0044, chantier 42938fc3)
 
 Raphaël : « un chantier ne doit jamais rester mort […] sans que j'aille vérifier dans l'app Claude Code ». Un job **pg_cron** de la base (`cockpit-filet-securite`, toutes les 3 min, visible dans `cron.job`) appelle `filet_passe()` : par projet, si du travail attend (`filet_attente` : messages sans réponse, réponses sans suite, vérifications demandées, renforts demandés, chantiers prenables SEULEMENT si le mode autonome est allumé) depuis plus de `filet_delai_min` (10) et que rien ne vit (`filet_vivant` : session, agent, renfort < 30 min), elle appelle `reveiller_chef` (réveil immédiat 0028, jeton dans le Vault, jamais lu ici). Sûretés : jamais un projet de test, au plus 1 réveil/5 min/projet (table `filet_reveils`), plafond `filet_plafond_jour` (6, réglable 0-48), interrupteur par projet (`regler_filet`, `chef.sh --filet oui|non [plafond] [délai]`) et global (`regler_filet_global`, `chef.sh --filet-global oui|non`, coupe aussi le job). Sans jeton : rien n'est appelé, l'écran dit « colle le jeton dans Réglages ». Écran : `FiletSecurite.tsx` (vue projet, `etat_filet`, `lib/filet.ts`). Non couvert : PR en conflit. `verifier-base` §38, `verifier-filet.ts`.
