@@ -96,6 +96,20 @@ print(json.dumps({
 PY
 )
 
+# Déploiement par lot : une fonction dont les fichiers n'ont pas changé depuis
+# le dernier déploiement RÉUSSI depuis cette machine n'est pas renvoyée
+# (--force pour passer outre). L'empreinte (sha256 des fichiers + verify_jwt)
+# est tenue dans ~/.cache/cockpit-deploiements : elle ne remplace pas la
+# vérité du serveur (une autre machine ou l'outil MCP peut avoir déployé),
+# d'où --force quand on doute.
+empreinte=$( { printf 'jwt=%s\n' "$verify_jwt"; for c in "${chemins[@]}"; do printf '%s ' "$c"; sha256sum < "$BASE/$c"; done; } | sha256sum | cut -d' ' -f1)
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/cockpit-deploiements"
+cache="$cache_dir/$PROJET.$FONCTION"
+if [ "${2:-}" != "--force" ] && [ -f "$cache" ] && [ "$(cat "$cache")" = "$empreinte" ]; then
+  echo "$FONCTION inchangée depuis le dernier déploiement : rien envoyé (déploiement évité). --force pour forcer."
+  exit 0
+fi
+
 echo "Déploiement de $FONCTION (verify_jwt=$verify_jwt) :"
 printf '  %s\n' "${chemins[@]}"
 
@@ -114,6 +128,7 @@ corps=$(printf '%s' "$reponse" | sed '$d')
 
 if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
   version=$(printf '%s' "$corps" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
+  mkdir -p "$cache_dir" && printf '%s' "$empreinte" > "$cache" || true
   echo "$FONCTION déployée (version $version)."
   echo "Vérifie maintenant le comportement réel : node scripts/verifier-embed.mjs"
 else
