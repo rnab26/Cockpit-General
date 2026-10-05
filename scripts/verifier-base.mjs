@@ -2905,6 +2905,25 @@ async function controle42_renfort_session_vivante() {
   verifie("session terminée (fin_at) : muet", (await vR()) === false);
 }
 
+// 48. Un renfort qui a livré puis s'est tu est « fini », pas « erreur » (0062, chantier b8a2cd53). Rejoue le cas des renforts cockpit « Base et sessions » / « Correctifs ».
+const PRF = randomUUID(), SLUG_RF = `test-verif-${rand}-rf`;
+async function controle48_renfort_fini_pas_erreur() {
+  section("48. Renfort muet : « fini » s'il n'a plus rien à faire, « erreur » honnête (avec le reste) sinon (0062)");
+  await sql(`insert into projets (id, slug, nom) values (${q(PRF)}, ${q(SLUG_RF)}, 'Projet de test renfort fini')`);
+  const S = randomUUID(), R1 = randomUUID(), R2 = randomUUID(), S2 = randomUUID(), C = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRF)}, 'RF livrée', 10), (${q(S2)}, ${q(PRF)}, 'RF restante', 20)`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, faits, vu_at, created_at) values (${q(R1)}, ${q(PRF)}, ${q(S)}, 'renfort/tt0062a', 'actif', 3, now() - interval '4 hours', now() - interval '5 hours'), (${q(R2)}, ${q(PRF)}, ${q(S2)}, 'renfort/tt0062b', 'actif', 1, now() - interval '4 hours', now() - interval '5 hours')`);
+  await sql(`insert into chantiers (id, projet_id, section_id, titre, etat) values (${q(C)}, ${q(PRF)}, ${q(S2)}, 'RF reste à faire', 'libre')`);
+  verifie("renfort_travail_restant : 0 pour la section vidée, 1 pour celle qui a un chantier libre",
+    (await une(`select renfort_travail_restant(r) as n from renforts r where id = ${q(R1)}`)).n === 0
+    && (await une(`select renfort_travail_restant(r) as n from renforts r where id = ${q(R2)}`)).n === 1);
+  await sql(`select renforts_expirer(${q(PRF)})`);
+  const a = await une(`select statut, erreur, fini_at is not null as f from renforts where id = ${q(R1)}`);
+  verifie("muet SANS travail restant : « fini » (fini_at posé), aucune erreur", a.statut === "fini" && a.f && a.erreur === null, JSON.stringify(a));
+  const b = await une(`select statut, erreur from renforts where id = ${q(R2)}`);
+  verifie("muet AVEC travail restant : « erreur » qui dit le reste (jamais « 3 h »)", b.statut === "erreur" && /il reste 1 chantier/.test(b.erreur ?? "") && !/3 h/.test(b.erreur ?? ""), JSON.stringify(b));
+}
+
 // 43. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
 const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
 async function controle45_regroupement() {
@@ -3142,7 +3161,7 @@ async function controle42_deja_livre_rien_repris() {
   };
   // 1. --termine sort un chantier de « bloqué ».
   const bl = await creerChantier(PLB, { titre: "41 Bloqué puis livré", etat: "bloque" });
-  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--sans-lien", "test", "--pas-en-ligne", "test"]);
   verifie("progression.sh --termine : un chantier « bloqué » passe « à vérifier »", r.code === 0 && (await une(`select etat from chantiers where id = ${q(bl)}`)).etat === "a_verifier", r);
   // 2. Déjà livré, sans nouveau mot de Raphaël : pas repris ; après un « Corriger » : repris.
   const livre = await creerChantier(PLB, { titre: "41 Déjà livré", etat: "libre" });
@@ -3225,6 +3244,7 @@ try {
     controle42_agent_vivant_garde,
 
     controle42_renfort_session_vivante,
+    controle48_renfort_fini_pas_erreur,
     controle43_invites,
     controle42_deja_livre_rien_repris,
     controle45_renforts_frein_erreurs,
@@ -3242,7 +3262,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -3250,7 +3270,7 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as projets,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}, ${q(PRF)}))::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
