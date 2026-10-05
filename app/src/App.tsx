@@ -7,6 +7,7 @@ import { Cockpit } from './components/Cockpit.tsx'
 import { Chargement, Erreur } from './ui/Etats.tsx'
 import { Button } from './ui/Button.tsx'
 import { NouvelleVersion } from './components/NouvelleVersion.tsx'
+import { BandeauFileAttente } from './components/BandeauFileAttente.tsx'
 
 export default function App() {
   const auth = useAuth()
@@ -20,7 +21,7 @@ export default function App() {
   else contenu = <Cockpit key={auth.moi.user_id} moi={auth.moi} theme={theme} changerTheme={changerTheme} seDeconnecter={auth.seDeconnecter} />
   return (
     <ToastProvider>
-      <ConfirmProvider>{contenu}</ConfirmProvider>
+      <ConfirmProvider>{contenu}<BandeauFileAttente /></ConfirmProvider>
       <NouvelleVersion />
     </ToastProvider>
   )

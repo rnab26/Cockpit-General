@@ -1,4 +1,5 @@
 import { CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
+import { gardeRecemment } from '../lib/fetchResilient.ts'
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 interface Toast { id: number; texte: string; type: 'succes' | 'erreur' | 'info'; action?: { libelle: string; onClick: () => void }; duree: number }
@@ -42,7 +43,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     } catch { /* popover non géré : la zone reste un simple div fixe */ }
   }, [liste])
   const api: Api = {
-    succes: (texte) => pousser({ texte, type: 'succes', duree: 3500 }),
+    // Honnêteté hors ligne : si l'écriture vient d'être GARDÉE sur l'appareil au lieu d'être envoyée,
+    // on ne dit pas « envoyé » (lib/fetchResilient.ts : la réponse de succès est fabriquée).
+    succes: (texte) => (gardeRecemment()
+      ? pousser({ texte: 'Pas de réseau : enregistré sur cet appareil, envoyé dès que possible.', type: 'info', duree: 6000 })
+      : pousser({ texte, type: 'succes', duree: 3500 })),
     erreur: (texte) => pousser({ texte, type: 'erreur', duree: 7000 }),
     info: (texte) => pousser({ texte, type: 'info', duree: 4000 }),
     avecAction: (texte, action, dureeMs = 8000) => pousser({ texte, type: 'succes', action, duree: dureeMs }),

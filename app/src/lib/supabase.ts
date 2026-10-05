@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { fetchResilient, fournirSession } from './fetchResilient.ts'
 
 // Clé PUBLIQUE (publishable) : elle part dans le bundle par conception, la
 // sécurité est dans les politiques RLS du schéma `cockpit`.
@@ -8,6 +9,13 @@ export const SUPABASE_KEY = 'sb_publishable_Ju0xC27cQ1JrN4IpWFfWxQ_Ntrd4P1U'
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   db: { schema: 'cockpit' },
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  // Écritures gardées hors ligne, lectures servies du cache (lib/fetchResilient.ts).
+  global: { fetch: fetchResilient },
+})
+
+fournirSession(async () => {
+  const { data } = await supabase.auth.getSession()
+  return data.session ? { token: data.session.access_token, uid: data.session.user.id } : null
 })
 
 /** Un message d'erreur lisible pour un toast, jamais un objet brut. */
