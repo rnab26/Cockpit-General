@@ -69,20 +69,45 @@
   //   data-mode="bouton" : panneau masqué, ouvert par un bouton. Soit
   //     data-declencheur="#lien-du-menu" (l'élément du menu du site qui l'ouvre),
   //     soit, sans lui (ou s'il est introuvable), un bouton flottant en bas à droite.
-  // Échap ou un second toucher referme. data-libelle = texte du bouton.
+  // Échap, un second toucher, un toucher à l'extérieur ou le retour du téléphone referment. data-libelle = texte du bouton.
   if ((balise.getAttribute('data-mode') || '').trim() === 'bouton') {
     const libelle = balise.getAttribute('data-libelle') || 'Demandes'
     hote.style.cssText = 'display:none;position:fixed;z-index:2147483000;right:12px;bottom:64px;' +
       'width:min(440px,calc(100vw - 24px));max-height:calc(100vh - 88px);overflow:auto;border-radius:14px;' +
       'box-shadow:0 8px 32px rgba(0,0,0,.28);background:#fff;color:#111'
+    // Même règle que l'app (app/src/ui/Modale.ts) : on ferme au toucher extérieur, avec Échap et avec le
+    // retour du téléphone. Le retour passe par UNE entrée d'historique posée à l'ouverture (même adresse,
+    // l'état du site est conservé) : le site hôte ne navigue pas, et on ne l'intercepte jamais ailleurs.
+    let declencheurEl = null
+    let ouvert = false, entree = false, ignorerPop = 0
+    const ouvrir = () => {
+      hote.style.display = 'block'; ouvert = true
+      try { history.pushState(Object.assign({}, history.state, { cockpitOuvert: 1 }), ''); entree = true } catch { entree = false }
+    }
+    const fermer = () => {
+      if (!ouvert) return
+      hote.style.display = 'none'; ouvert = false
+      if (entree) { entree = false; try { if (history.state && history.state.cockpitOuvert) { ignorerPop++; history.back() } } catch { /* rien */ } }
+    }
     const bascule = (ev) => {
       if (ev) ev.preventDefault()
-      hote.style.display = hote.style.display === 'none' ? 'block' : 'none'
+      if (ouvert) fermer(); else ouvrir()
     }
+    window.addEventListener('popstate', () => {
+      if (ignorerPop > 0) { ignorerPop--; return }
+      if (ouvert) { entree = false; hote.style.display = 'none'; ouvert = false }   // retour du téléphone : ferme le panneau
+    })
+    document.addEventListener('pointerdown', (e) => {
+      if (!ouvert) return
+      const chemin = e.composedPath ? e.composedPath() : []
+      if (chemin.includes(hote) || chemin.includes(declencheurEl)) return   // interactions internes, ou le bouton qui bascule
+      fermer()
+    }, true)
     const sel = balise.getAttribute('data-declencheur') || ''
     let decl = null
     try { decl = sel ? document.querySelector(sel) : null } catch { decl = null }
     if (decl) {
+      declencheurEl = decl
       decl.addEventListener('click', bascule)
     } else {
       const b = document.createElement('button')
@@ -94,8 +119,9 @@
         'box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer'
       b.addEventListener('click', bascule)
       document.body.appendChild(b)
+      declencheurEl = b
     }
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hote.style.display = 'none' })
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fermer() })
   }
 
   // <nettoyer-url> — COPIE de supabase/functions/cockpit-embed/reproduction.ts

@@ -42,7 +42,7 @@ def parcourir(racine, limite=4000):
 def analyser(dossier, site=None):
     dossier = os.path.abspath(dossier)
     r = {"dossier": dossier, "stack": [], "gabarits_menu": [], "gabarits_pied": [], "auth": [], "roles": [],
-         "appli_installable": False, "type": "inconnu", "site": site or "", "limites": []}
+         "appli_installable": False, "pages_serveur": 0, "type": "inconnu", "site": site or "", "limites": []}
     if not os.path.isdir(dossier):
         r["limites"].append("dossier introuvable")
     pkg = {}
@@ -77,6 +77,8 @@ def analyser(dossier, site=None):
         t = lire(chemin)
         if b.endswith(EXT_PAGE):
             pages += 1
+            if not b.endswith((".tsx", ".jsx")):
+                r["pages_serveur"] += 1
             if RE_MENU.search(t) and len(r["gabarits_menu"]) < 6:
                 r["gabarits_menu"].append(rel)
             if re.search(r"</body>", t, re.I) and re.search(r"base|layout|template|index|app", b) and len(r["gabarits_pied"]) < 4:
@@ -104,8 +106,18 @@ def analyser(dossier, site=None):
             r["site_joignable"] = False
             r["limites"].append("site non analysé (%s)" % type(e).__name__)
     a_menu = bool(r["gabarits_menu"]) or bool(r.get("site_a_menu"))
-    a_web = pages > 0 or bool(site) or any(s in r["stack"] for s in (
-        "Next.js", "React", "Vue", "Svelte", "Vite", "Flask", "Django", "FastAPI", "Express", "Jinja", "PHP", "Rails/Ruby"))
+    # Preuve d'une cible web : une page HTML/gabarit serveur (les .tsx/.jsx seuls ne prouvent rien : une
+    # appli Expo en est pleine), le site donné, un outil web distinct, ou « web » déclaré par l'appli.
+    preuve_web = bool(site) or bool(r.get("site_joignable")) or r["pages_serveur"] > 0 or any(
+        s in r["stack"] for s in ("Next.js", "Vue", "Svelte", "Vite", "Flask", "Django", "FastAPI", "Express", "Jinja", "PHP", "Rails/Ruby")
+    ) or "react-native-web" in deps or "react-dom" in deps or "@expo/webpack-config" in deps
+    app_json = lire(os.path.join(dossier, "app.json"))
+    if '"web"' in app_json:
+        preuve_web = True
+    if mobile:
+        a_web = preuve_web
+    else:
+        a_web = pages > 0 or preuve_web or "React" in r["stack"]
     a_auth = bool(r["auth"]) or bool(r.get("site_a_connexion"))
     r["type"] = "mobile" if mobile and not a_web else ("site" if a_web else "inconnu")
     options, raisons = [], {}

@@ -33,6 +33,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$slug" ] || { echo "--projet <slug> manque." >&2; exit 2; }
+CMD="${COCKPIT_EMPL_CMD:-$RACINE/scripts/emplacement.sh}"  # commande utilisable DEPUIS le projet (lanceur) ou chemin central absolu
+esc_attr() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/"/\&quot;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 ligne=$("$SQL" "select nom, coalesce(url_site,'') as url_site, cle_embed, coalesce(emplacement->>'mode','') as mode, coalesce(emplacement->>'acces','') as acces from projets where slug = '$(q "$slug")'" | jq -c '.rows[0] // empty')
 [ -n "$ligne" ] || { echo "Projet « $slug » inconnu en base." >&2; exit 1; }
@@ -52,6 +54,8 @@ reponse_a() { # $1 début de la question, $2.. libellés possibles -> valeur ré
 }
 
 # Range les réponses reçues : les DEUX sont nécessaires (regler_emplacement les valide ensemble).
+analyse() { [ -n "${AN:-}" ] || AN=$(python3 "$RACINE/scripts/analyser-depot.py" "$dossier" ${site:+--site "$site"} 2>/dev/null || echo '{"options":["appli"],"raisons":{},"acces_possibles":["moi","equipe"],"acces_recommande":"moi","recommande":"appli","type":"inconnu","stack":[],"limites":[]}'); }
+AN=""; EMPL_CHOISI=""; ACCES_CHOISI=""
 lire() {
   local r e a ve="" va=""
   r=$(reponse_a 'Où le cockpit de')
@@ -59,12 +63,19 @@ lire() {
   r=$(reponse_a 'Qui peut utiliser le cockpit de')
   for a in moi equipe utilisateurs; do [ "$r" = "$(lib_acces $a)" ] && va=$a; done
   [ -n "$ve" ] || ve=$empl; [ -n "$va" ] || va=$acces
+  # Un seul emplacement possible : rien à demander, c'est lui.
+  if [ -z "$ve" ] && [ "$(en_attente 'Où le cockpit de')" -eq 0 ]; then
+    analyse >/dev/null; an=$AN; if [ "$(jq -r '.options | length' <<<"$an")" = 1 ]; then ve=$(jq -r '.options[0]' <<<"$an"); echo "Un seul emplacement possible ($ve) : pas de question." >&2; fi
+  fi
+  # « utilisateurs du site » n'existe pas avec l'app : cette réponse-là ne vaut pas, l'accès est redemandé.
+  if [ "$ve" = appli ] && [ "$va" = utilisateurs ]; then va=""; fi
+  EMPL_CHOISI=$ve; ACCES_CHOISI=$va
   if [ -n "$ve" ] && [ -n "$va" ]; then
     if [ "$ve" != "$empl" ] || [ "$va" != "$acces" ]; then
       "$SQL" "select regler_emplacement('$(q "$slug")', jsonb_build_object('mode','$ve','acces','$va'))" >/dev/null || { echo "La base a refusé cette combinaison ($ve / $va)." >&2; return 1; }
       empl=$ve; acces=$va; echo "rangé : emplacement=$ve accès=$va"
     fi
-  else echo "pas encore tout répondu (emplacement ${ve:-?}, accès ${va:-?})"; fi
+  else EMPL_CHOISI=$ve; echo "pas encore tout répondu (emplacement ${ve:-?}, accès ${va:-?})"; fi
 }
 
 case "$mode" in
@@ -79,7 +90,7 @@ balise)
   fi
   src='<script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js" data-cle="'"$cle"'" data-utilisateur="Prénom"'
   case "$empl" in
-    menu) if [ -n "$declencheur" ]; then ouv=" data-mode=\"bouton\" data-declencheur=\"$declencheur\""; else ouv=' data-mode="bouton" data-libelle="Cockpit"'; fi
+    menu) if [ -n "$declencheur" ]; then ouv=" data-mode=\"bouton\" data-declencheur=\"$(esc_attr "$declencheur")\""; else ouv=' data-mode="bouton" data-libelle="Cockpit"'; fi
           echo "Emplacement : bouton dans le menu. Colle ceci dans le gabarit commun du site (juste avant </body>) :"
           echo "  $src$ouv></script>"
           [ -n "$declencheur" ] || echo "Pour ouvrir le cockpit depuis un lien PRÉCIS du menu, relance avec --gabarit \"#id-du-lien\" ; sinon un bouton flottant « Cockpit » est posé." ;;
@@ -96,15 +107,18 @@ balise)
 esac
 
 # --- poser le questionnaire ---
+# Une étape à la fois : d'abord OÙ ; QUI seulement une fois le « où » connu, avec des choix compatibles.
 lire >/dev/null || true
 if [ -n "$empl" ] && [ -n "$acces" ]; then echo "Déjà tranché : emplacement=$empl accès=$acces. Rien à poser. (--balise pour la balise.)"; exit 0; fi
-# Une carte n'est posée que si elle n'a ni réponse en attente de rangement, ni question déjà ouverte.
+# Une réponse n'est « acquise » que si elle est reconnue (lire() la range) : une carte retirée ou une réponse libre → carte reposée.
 pose_e=1; pose_a=1
-[ -z "$empl" ] || pose_e=0; [ "$(en_attente 'Où le cockpit de')" -eq 0 ] || pose_e=0; [ -z "$(reponse_a 'Où le cockpit de')" ] || pose_e=0
-[ -z "$acces" ] || pose_a=0; [ "$(en_attente 'Qui peut utiliser le cockpit de')" -eq 0 ] || pose_a=0; [ -z "$(reponse_a 'Qui peut utiliser le cockpit de')" ] || pose_a=0
-if [ "$pose_e" = 0 ] && [ "$pose_a" = 0 ]; then echo "Le questionnaire attend déjà ta réponse dans « À toi » : rien reposé."; exit 0; fi
+[ -z "$EMPL_CHOISI" ] || pose_e=0; [ "$(en_attente 'Où le cockpit de')" -eq 0 ] || pose_e=0
+[ -z "$acces" ] || pose_a=0; [ "$(en_attente 'Qui peut utiliser le cockpit de')" -eq 0 ] || pose_a=0
+[ -n "$EMPL_CHOISI" ] || pose_a=0
+[ -z "$ACCES_CHOISI" ] || pose_a=0
+if [ "$pose_e" = 0 ] && [ "$pose_a" = 0 ]; then echo "Le questionnaire attend ta réponse dans « À toi » (ou est complet) : rien reposé."; exit 0; fi
 
-an=$(python3 "$RACINE/scripts/analyser-depot.py" "$dossier" ${site:+--site "$site"})
+analyse; an=$AN
 reco=$(jq -r '.recommande' <<<"$an"); reco_a=$(jq -r '.acces_recommande' <<<"$an")
 echo "Analyse : $(jq -r '.type' <<<"$an"), stack : $(jq -r '.stack | join(", ")' <<<"$an"), recommandé : $reco / $reco_a"
 jq -r '.limites[]? | "  limite : " + .' <<<"$an"
@@ -112,19 +126,22 @@ jq -r '.limites[]? | "  limite : " + .' <<<"$an"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 imgs=(); optsE=()
 if [ "$pose_e" = 1 ]; then
-  for o in $(jq -r '.options[]' <<<"$an"); do
-    if node "$RACINE/scripts/apercu-emplacement.mjs" "$o" "$tmp/$o.png" "$nom" >/dev/null 2>&1; then imgs+=(--image "$tmp/$o.png"); else echo "(aperçu $o non généré, carte posée sans)" >&2; fi
-    aide=$(jq -r --arg o "$o" '.raisons[$o]' <<<"$an"); [ ${#aide} -le 135 ] || aide="${aide:0:132}..."
-    marque=""; [ "$o" != "$reco" ] || marque="|recommande"
-    optsE+=(--option "$(lib_empl "$o")|$aide$marque")
-  done
-  COCKPIT_PROJET="$slug" "$RACINE/scripts/demander.sh" "${imgs[@]}" "${optsE[@]}" \
-    --question "Où le cockpit de $nom doit-il apparaître ?" \
-    --pourquoi "Rien n'est collé dans ton site avant ta réponse. Les choix viennent de l'analyse du projet ; les aperçus montrent le résultat."
+  if true; then
+    for o in $(jq -r '.options[]' <<<"$an"); do
+      if node "$RACINE/scripts/apercu-emplacement.mjs" "$o" "$tmp/$o.png" "$nom" >/dev/null 2>&1; then imgs+=(--image "$tmp/$o.png"); else echo "(aperçu $o non généré, carte posée sans)" >&2; fi
+      aide=$(jq -r --arg o "$o" '.raisons[$o]' <<<"$an"); [ ${#aide} -le 135 ] || aide="${aide:0:132}..."
+      marque=""; [ "$o" != "$reco" ] || marque="|recommande"
+      optsE+=(--option "$(lib_empl "$o")|$aide$marque")
+    done
+    COCKPIT_PROJET="$slug" "$RACINE/scripts/demander.sh" "${imgs[@]}" "${optsE[@]}" \
+      --question "Où le cockpit de $nom doit-il apparaître ?" \
+      --pourquoi "Rien n'est collé dans ton site avant ta réponse. Les choix viennent de l'analyse du projet ; les aperçus montrent le résultat."
+  fi
 fi
-if [ "$pose_a" = 1 ]; then
+if [ "$pose_a" = 1 ] && [ -n "$EMPL_CHOISI" ]; then
   optsA=()
   for a in $(jq -r '.acces_possibles[]' <<<"$an"); do
+    [ "$EMPL_CHOISI" = appli ] && [ "$a" = utilisateurs ] && continue   # incompatible avec l'app (0049)
     case "$a" in
       moi) aide="Toi seul le vois : zone admin du site, ou l'app seulement." ;;
       equipe) aide="Les membres du projet (compte du site, et Réglages du projet › Membres pour l'app)." ;;
@@ -133,8 +150,9 @@ if [ "$pose_a" = 1 ]; then
     marque=""; [ "$a" != "$reco_a" ] || marque="|recommande"
     optsA+=(--option "$(lib_acces "$a")|$aide$marque")
   done
+  if [ ${#optsA[@]} -lt 2 ]; then echo "Moins de deux accès possibles : pas de question." >&2; exit 0; fi
   COCKPIT_PROJET="$slug" "$RACINE/scripts/demander.sh" "${optsA[@]}" \
     --question "Qui peut utiliser le cockpit de $nom ?" \
     --pourquoi "Le cockpit montre les demandes et corrections du projet : il vaut mieux décider qui les voit avant de le mettre en ligne."
 fi
-echo "Questionnaire posé dans « À toi ». Après ta réponse : scripts/emplacement.sh --projet $slug --balise"
+echo "Questionnaire posé dans « À toi ». Après ta réponse : $CMD --projet $slug --balise (la deuxième carte arrive quand la première est répondue : relance la même commande)."
