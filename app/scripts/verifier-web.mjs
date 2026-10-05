@@ -604,6 +604,21 @@ try {
   await captureUx(page, 'ux-en-ce-moment')
   await ouvrirListe()
   verifie('l’onglet du projet porte la pastille verte (quelqu’un y travaille)', (await ongletTest().getByTestId('pastille-travaillent').count()) === 1, await ongletTest().textContent())
+  // Voyants de l'en-tête (5 oct. 2026) : un toucher dit en mots ce qu'ils comptent ; le vert = le n de « Ça avance tout seul ».
+  {
+    const voyants = page.getByTestId('choix-projet-bouton').getByTestId('pastilles-onglet')
+    const vert = Number((await voyants.getByTestId('pastille-travaillent').textContent()).trim())
+    await voyants.click()
+    const leg = page.getByTestId('legende-voyants')
+    await leg.waitFor({ timeout: 5000 })
+    const t = await leg.textContent()
+    verifie('voyants : un toucher ouvre la légende en mots (chantiers qui avancent, choses qui attendent)', /chantiers? avancen?t? en ce moment/.test(t) || /chantier avance en ce moment/.test(t), t)
+    verifie('voyant vert : la légende reprend le MÊME nombre que le voyant', new RegExp(`^${vert} chantiers? avancen?t?`).test(await leg.locator('[data-voyant="travaillent"]').textContent()), t)
+    const totalSection = await page.getByTestId('ca-avance-total').count() ? Number(((await page.getByTestId('ca-avance-total').first().textContent()).match(/\d+/) || [])[0]) : null
+    verifie('voyant vert « Tout » = le n du titre « Ça avance tout seul »', totalSection === null || totalSection === vert, { vert, totalSection })
+    await page.keyboard.press('Escape')
+    verifie('la légende se ferme (Échap)', (await page.getByTestId('legende-voyants').count()) === 0)
+  }
   // Toucher la ligne : la CONVERSATION du chantier s'ouvre par-dessus, sans changer d'onglet.
   if (await page.getByTestId('liste-projets').count()) { await page.keyboard.press('Escape'); await page.waitForTimeout(300) }  // la liste des projets ouverte plus haut recouvre la ligne
   await ligneP1.locator('button').first().click()

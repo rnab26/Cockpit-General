@@ -55,6 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node app/scripts/verifier-bulle.mjs                       # bulle d'aide : visible par défaut (projet et « Tout »), message → fil du projet, réponse de session → bulle, réglage d'extinction
+node app/scripts/verifier-creation.mjs                   # « + Chantier » près d'un chantier existant : suggestion, compléter, fusionner, créer quand même (projet jetable, téléphone)
 node app/scripts/verifier-depenses.mjs                    # Coûts : prestataires, dépenses par période, factures jointes, envoi à la compta (projet jetable, téléphone)
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
 node scripts/verifier-emplacement.mjs                      # où le cockpit apparaît : analyse du dépôt (choix possibles seulement) + module en mode bouton / page
@@ -317,6 +318,8 @@ GitHub) et appelle le script pour chacune ; les cartes dont la PR n'est plus ouv
 
 **PR en conflit : visible, et sa réponse automatique n'est pas une réponse** (5 oct. 2026, migration 0059, chantier f5ad1859 ; Raphaël : « je n'ai rien pour voir qu'une branche est en conflit »). `pr-a-fusionner.sh` : PR dirty/behind = UNE carte « À toi » « PR #n en conflit : un agent la répare » (ou « à mettre à jour »), à la place de « Fusionne » ; retirée seule (réponse auto) quand la PR est propre, fermée ou fusionnée ; CI en cours ou calcul GitHub en cours : rien n'est retiré. Les réponses automatiques du script (« PR #n pas prête / propre / fusionnée ou fermée ») ne posent plus `answered_by` et `est_reponse_automatique` les écarte de `reponses_sans_suite` (elles créaient des chantiers parasites « Suite de ta réponse : Fusionne la PR… »). `verifier-base` §44. Les anciens chantiers parasites ne sont pas supprimés (accord de Raphaël requis).
 
+**« Fait » sur une carte « Fusionne la PR #n » n'est jamais reprise** (5 oct. 2026, migration 0060, chantier dfa16cd8). Parasites encore vus sur #72, #61, #28, #85. Cause PROUVÉE sur #61 : `est_accuse_action` (0041) refuse l'accusé dès qu'un message de Raphaël AVEC fichier tombe au même chantier dans les 10 min (il le croit joint à la réponse) ; la carte de PR vit dans un chantier où il écrivait (réponse 14:39, image 14:40, parasite 14:40). UNE règle, `cockpit.est_accuse_carte_pr` (corps « Fusionne la PR #n : », réponse « Fait »/« Pas encore » sans précision ni fichier SUR la carte), lue par `reponses_sans_suite` (donc `reprendre_reponse`, la chef et le hook de démarrage). Toujours servies : « Ça bloque », toute réponse avec un texte ou un fichier de la carte, toute autre action. `verifier-base` §46 (`SEUL=46`). Anciens parasites non supprimés.
+
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
 « Ce sont des correctifs généraux, peu importe le repo ou le projet que je
@@ -550,6 +553,8 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 (pas encore d'écran : SQL ou `scripts/sql.sh`). Un faux doublon constaté → un cas
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
+
+**À la création : compléter, fusionner ou créer quand même** (5 oct. 2026, migration 0060, chantier 69f1650e + doublon 7e4e615a ; Raphaël : « ça me montre ce qui existe déjà mais ne propose pas de fusionner ou d'actualiser […] est-ce que la fusion récupère précisément la demande des DEUX chantiers ? »). Preuve sur un projet jetable : `fusionner_chantiers` gardait bien les deux demandes, mais écrivait « \n » en toutes lettres (littéral sans `E`), laissait un séparateur vide sans demande et ajoutait la demande deux fois si on refusionnait ; corrigé (cible intacte, puis séparateur + demande de la source ou « (aucune demande écrite) », refus d'un doublon déjà fusionné). Dialogue « + Chantier » (`NouveauChantier.tsx`, admin) : sous un titre proche, chaque chantier ouvert proposé a « Compléter celui-ci » (`completer_chantier` : les mots tapés s'ajoutent à sa demande + une ligne dans son fil, aucun chantier créé) et « Fusionner » (création puis `fusionner_chantiers`, une seule règle) ; le bouton principal devient « Créer quand même ». Confirmation avant, toast succès/échec, la fusion qui échoue après la création le dit. UNE règle de ressemblance : `chantiers_proches_creation` (= `ressemblance_fusion` + `projets.fusion_seuil`), l'app ne recalcule plus (Jaccard retiré de la création ; ne pas confondre avec `chantiers_proches(text,…)` des sessions, 0007). Un non-admin voit la liste sans les boutons. `verifier-base` §46, `verifier-fusion.ts`, `app/scripts/verifier-creation.mjs` (parcours téléphone : compléter, fusionner, créer quand même, recherche en panne).
 
 ## Libération automatique par la base (5 oct. 2026, migration 0050, chantier 6020714d)
 
@@ -794,6 +799,7 @@ les 10 s tant qu'une réponse est attendue. Le bouton « Chantier » d'origine
 est retiré (`ouvrir_depuis_fil` est réservée aux sessions : il ne pouvait pas
 marcher) : Claude crée lui-même le chantier depuis le message.
 `app/scripts/verifier-bulle.mjs` prouve le trajet complet (projet jetable).
+**Complété le 5 oct. 2026 (chantier 607d08b1 + doublon 95042f6b « clarifier son rôle »)** : la bulle dit à quoi elle sert (encart « À quoi sert cette bulle » + état vide avec deux suggestions) ; chaque message porte nom ET heure (`auteurDe`, `heureLisible`) et son sujet en gras (`sujetDe`, UNE règle partagée avec la conversation) ; « Répondre » sous un message de Claude cite la phrase sélectionnée, sinon son début (`aCiter`, `avecCitation` : ligne « > » en tête du message, redessinée en encart) ; pièces jointes par `useMediasAJoindre` / `ecrireAvecMedias` (📎 + crayon, même brique que les fils) ; dictée par la reconnaissance vocale du NAVIGATEUR (`constructeurVoix`, fr-FR, Chrome Android/ordinateur, Safari ; micro refusé = message qui dit où l'autoriser ; navigateur sans voix = micro grisé + phrase). Limite : la vraie reconnaissance n'est pas testable dans le conteneur (le banc simule `webkitSpeechRecognition`) ; Chrome l'envoie à un serveur de Google, donc il faut internet.
 
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 

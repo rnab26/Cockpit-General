@@ -7,29 +7,45 @@ import { dateRelative } from '../lib/dates.ts'
 import { useMenuQuiSeFerme } from '../ui/Modale.ts'
 import { useGlobal } from '../contexte.ts'
 import { estBranche } from '../lib/branchement.ts'
+import { legendeVoyants } from '../lib/entonnoir.ts'
 import { BarreRecherche, BoutonLoupe } from './Recherche.tsx'
 
 export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir' | 'installer'
 
 export interface Pastilles {
-  travaillent: number; aToi: number
+  travaillent: number; aToi: number; sessions?: number
   /** Mode autonome allumé (0031) : « alerte » = allumé sans rien à prendre ni personne au travail. */
   autonome?: 'actif' | 'alerte' | null
 }
 
 /**
- * Les petites pastilles d'un onglet : n sessions au travail (point vert), n
- * choses qui t'attendent (nombre rouge). Rien quand c'est zéro. Sans pavé ni
- * emoji (29 sept. : « très coloré, ça fait mal aux yeux »).
+ * Les voyants d'un onglet : vert = chantiers qui avancent (= « Ça avance tout
+ * seul »), rouge = choses qui t'attendent, lune = mode autonome. Un toucher
+ * ouvre la légende en mots (le survol n'existe pas sur téléphone) ; le texte
+ * vient de `legendeVoyants` (lib/entonnoir.ts), jamais recalculé ici.
  */
-function PastillesOnglet({ p }: { p: Pastilles | undefined; actif?: boolean }) {
+function PastillesOnglet({ p, legende: avecLegende = false }: { p: Pastilles | undefined; actif?: boolean; legende?: boolean }) {
+  const [ouvert, setOuvert] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
   if (!p || (!p.travaillent && !p.aToi && !p.autonome)) return null
+  const legende = legendeVoyants(p)
+  const bascule = (e: { stopPropagation: () => void }) => { if (!avecLegende) return; e.stopPropagation(); setOuvert((o) => !o) }
   return (
-    <span className="flex items-center gap-1.5 text-[11px] font-semibold tabular-nums leading-5" data-testid="pastilles-onglet">
-      {p.autonome ? <span data-testid="pastille-autonome" data-alerte={p.autonome === 'alerte' ? 'oui' : 'non'} title={p.autonome === 'alerte' ? 'Autonome allumé, rien à prendre' : 'Mode autonome allumé'}
-        className={p.autonome === 'alerte' ? 'text-attention' : 'text-info'}><Moon size={12} aria-label={p.autonome === 'alerte' ? 'autonome, rien à prendre' : 'autonome'} /></span> : null}
-      {p.travaillent ? <span className="flex items-center gap-0.5 text-ok" data-testid="pastille-travaillent" title={`${p.travaillent} session(s) au travail`}><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" />{p.travaillent}</span> : null}
-      {p.aToi ? <span className="text-alerte" data-testid="pastille-a-toi" title={`${p.aToi} chose(s) t’attendent`}>{p.aToi}</span> : null}
+    <span ref={ref} className="relative inline-flex">
+      <span role={avecLegende ? 'button' : undefined} tabIndex={avecLegende ? 0 : undefined} aria-expanded={avecLegende ? ouvert : undefined} aria-label={legende.map((x) => x.texte).join(' ; ')} title={legende.map((x) => x.texte).join('\n')} data-testid="pastilles-onglet"
+        onClick={bascule} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); bascule(e) } }}
+        className="flex items-center gap-1.5 text-[11px] font-semibold tabular-nums leading-5">
+        {p.autonome ? <span data-testid="pastille-autonome" data-alerte={p.autonome === 'alerte' ? 'oui' : 'non'}
+          className={p.autonome === 'alerte' ? 'text-attention' : 'text-info'}><Moon size={12} aria-hidden /></span> : null}
+        {p.travaillent ? <span className="flex items-center gap-0.5 text-ok" data-testid="pastille-travaillent"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ok" />{p.travaillent}</span> : null}
+        {p.aToi ? <span className="text-alerte" data-testid="pastille-a-toi">{p.aToi}</span> : null}
+      </span>
+      {ouvert ? (
+        <span role="status" data-testid="legende-voyants" onClick={(e) => e.stopPropagation()} className="absolute left-0 top-full z-50 mt-1 flex w-max max-w-[16rem] flex-col gap-1 whitespace-normal rounded-xl border border-bord bg-fond p-2 text-left text-xs font-normal shadow-lg">
+          {legende.map((x) => <span key={x.code} data-voyant={x.code} className={x.code === 'aToi' ? 'text-alerte' : x.code === 'travaillent' ? 'text-ok' : 'text-info'}>{x.texte}</span>)}
+        </span>
+      ) : null}
     </span>
   )
 }
@@ -68,8 +84,8 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
             className="flex h-10 w-full min-w-0 items-center gap-2 rounded-full border border-bord bg-carte px-3 text-left text-sm font-semibold text-texte">
             {vueTout ? <Layers size={15} className="shrink-0 text-texte-2" aria-hidden /> : <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: projet?.couleur ?? '#888' }} />}
             <span className="min-w-0 flex-1 truncate">{vueTout ? 'Tout' : projet?.nom ?? 'Projets'}</span>
-            {!vueTout && projet && estBranche(projet, now) ? <Plug size={14} className="shrink-0 text-ok" aria-label="branché" /> : null}
-            <PastillesOnglet p={pastilles.get(vueTout ? VUE_TOUT : projet?.id ?? '')} />
+            {!vueTout && projet && estBranche(projet, now) ? <span title="Projet branché au cockpit : une session a démarré ici ces dernières 24 h" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
+            <PastillesOnglet p={pastilles.get(vueTout ? VUE_TOUT : projet?.id ?? '')} legende />
             <ChevronDown size={16} className={`shrink-0 text-texte-2 transition ${ouvert ? 'rotate-180' : ''}`} aria-hidden />
           </button>
           {ouvert ? (

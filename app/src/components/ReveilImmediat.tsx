@@ -94,7 +94,6 @@ export function ReveilImmediat({ projet }: { projet: Projet }) {
           <input value={jeton} onChange={(e) => setJeton(e.target.value)} placeholder="Jeton : sk-ant-…" type="password" autoComplete="off"
             className="h-10 w-full rounded-lg border border-bord bg-carte px-2 text-sm" aria-label="Jeton de la routine" data-testid="reveil-jeton" />
           <Button taille="sm" variante="primaire" chargement={envoi} disabled={!adresse.trim() || !jeton.trim()} onClick={() => void enregistrer()} data-testid="reveil-enregistrer">Enregistrer</Button>
-          <p className="text-[11px] text-texte-2">Le jeton part dans le coffre de la base : il n’est plus jamais affiché. Au plus un réveil toutes les 5 minutes.</p>
         </div>
       ) : null}
     </div>

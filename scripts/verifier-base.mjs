@@ -2060,6 +2060,33 @@ async function controle44_pr_conflit_visible() {
   verifie("témoin : une VRAIE réponse de Raphaël à la même carte reste servie", (await servis()).includes(carte.id));
 }
 
+// 46. « Fait » sur une carte « Fusionne la PR #n » : jamais reprise ; « Ça bloque » ou un texte : servie (0060).
+async function controle46_fait_carte_pr() {
+  section("46. « Fait » sur une carte PR : pas servie (même avec un fichier posé à côté) ; « Ça bloque », un texte ou un fichier de la carte : servie (0060)");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  const c = await creerChantier(P10, { titre: "Chantier où la carte PR est rangée", etat: "libre" });
+  const marche = JSON.stringify({ liens: [{ url: "https://github.com/rnab26/test-inexistant/pull/401", libelle: "Ouvrir la PR #401" }], etapes: ["Touche « Merge pull request »"] });
+  const servis = async () => (await sql(`select message_id from reponses_sans_suite(${q(P10)})`)).map((r) => r.message_id);
+  const carte = async (n, reponse, precision = null, medias = "[]") => {
+    const id = await creerMessage(P10, c, { kind: "action", corps: `Fusionne la PR #${n} : titre de test` });
+    await sql(`update messages set marche = ${q(marche)}::jsonb, medias = ${q(medias)}::jsonb, answered_at = now(), answered_by = ${q(userId)}, etat = 'fait', reponse = ${q(reponse)}, "precision" = ${precision === null ? "null" : q(precision)} where id = ${q(id)}`);
+    return id;
+  };
+  const fait = await carte(401, "Fait");
+  // Le cas réel (#61) : un message de Raphaël AVEC image au même chantier juste après sa réponse.
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, medias) values (${q(P10)}, ${q(c)}, 'raphael', 'utilisateur', 'info', 'Comment c possible ?', ${q(JSON.stringify([{ chemin: `${P10}/${c}/x-photo.png`, nom: "photo.png", type: "image/png", taille: 1 }]))}::jsonb)`);
+  verifie("« Fait » sur la carte « Fusionne la PR #n » : JAMAIS servie, même si un fichier de Raphaël suit au même chantier", !(await servis()).includes(fait));
+  const bloque = await carte(402, "Ça bloque");
+  verifie("« Ça bloque » sans texte : servie (quelque chose cloche)", (await servis()).includes(bloque));
+  const texte = await carte(403, "Pas encore", "Je veux d'abord relire le diff de la migration");
+  verifie("réponse avec un texte (« Pas encore » + précision) : servie", (await servis()).includes(texte));
+  const fichier = await carte(404, "Fait", null, JSON.stringify([{ chemin: `${P10}/${c}/y.png`, nom: "y.png", type: "image/png", taille: 1 }]));
+  verifie("« Fait » avec un fichier joint à la carte elle-même : servie", (await servis()).includes(fichier));
+  const autre = await creerMessage(P10, c, { kind: "action", corps: "Colle la clé dans les réglages" });
+  await sql(`update messages set marche = ${q(marche)}::jsonb, answered_at = now(), answered_by = ${q(userId)}, etat = 'pas_encore', reponse = 'Pas encore' where id = ${q(autre)}`);
+  verifie("une AUTRE action (pas une fusion de PR) répondue « Pas encore » reste servie : la règle ne vise que « Fusionne la PR »", (await servis()).includes(autre));
+}
+
 // 38 bis. scripts/prochaine-migration.sh : 1 + le plus grand numéro vu dans la copie ET sur les branches distantes.
 async function controle38_prochaine_migration() {
   section("38 bis. Prochaine migration : numéro libre = max des fichiers locaux et des branches distantes + 1");
@@ -2903,6 +2930,70 @@ async function controle45_regroupement() {
     && (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and corps like 'Cette livraison couvre aussi%'`)).n === 1);
 }
 
+const PFC = randomUUID(), SLUG_FC = `test-verif-${rand}-fc`;
+async function controle46_fusion_a_la_creation() {
+  section("46. Créer près d'un chantier existant (0060) : la fusion garde les DEUX demandes, chantiers_proches = la règle de la fusion suggérée, compléter");
+  await sql(`insert into projets (id, slug, nom) values (${q(PFC)}, ${q(SLUG_FC)}, 'Projet de test fusion à la création')`);
+  const A = "Je veux que le bouton Envoyer soit plus grand sur téléphone.";
+  const B = "Et il est décalé à droite quand le clavier est ouvert.\nSecond paragraphe.";
+  const garde = await creerChantier(PFC, { titre: "Ouverture de session et agents de renfort", etat: "libre", demande: A });
+  const doublon = await creerChantier(PFC, { titre: "Ouverture des sessions et des agents de renfort", etat: "libre", demande: B });
+  const vide = await creerChantier(PFC, { titre: "Ouverture session renfort agents bis", etat: "libre", demande: null });
+  const loin = await creerChantier(PFC, { titre: "Couleur du bouton d'envoi", etat: "libre" });
+
+  // (1) La fusion conserve intégralement les deux demandes, dans l'ordre, avec un vrai séparateur.
+  await sql(`select fusionner_chantiers(${q(doublon)}, ${q(garde)}, 'test', 'même sujet')`);
+  const g = await chantier(garde);
+  verifie("fusion : la demande du chantier gardé reste intacte, en tête", g.demande.startsWith(A), g.demande);
+  verifie("fusion : la demande du doublon est recopiée INTÉGRALEMENT (deux lignes comprises)", g.demande.includes(B), g.demande);
+  verifie("fusion : un séparateur lisible avec le titre du doublon, de vrais retours à la ligne (pas « \\n » écrit en toutes lettres)",
+    g.demande.includes("--- Fusion du doublon « Ouverture des sessions et des agents de renfort » ---\n") && !g.demande.includes("\\n"), g.demande);
+  verifie("fusion : la note est conservée, et chaque demande y figure UNE seule fois",
+    g.demande.includes("Note : même sujet") && g.demande.split(A).length === 2 && g.demande.split(B).length === 2, g.demande);
+  const d = await chantier(doublon);
+  verifie("fusion : le doublon est archivé, relié, et garde sa propre demande (rien n'est supprimé)", !!d.archived_at && d.doublon_de === garde && d.demande === B, d);
+  verifie("fusion : refaire la même fusion est refusé (la demande n'est pas ajoutée deux fois)", !!(await erreurDe(`select fusionner_chantiers(${q(doublon)}, ${q(garde)}, 'test', null)`)));
+  await sql(`select fusionner_chantiers(${q(vide)}, ${q(garde)}, 'test', null)`);
+  const g2 = await chantier(garde);
+  verifie("fusion : un doublon sans demande est dit « (aucune demande écrite) », jamais un séparateur vide", g2.demande.includes("---\n(aucune demande écrite)") && g2.demande.includes(A) && g2.demande.includes(B), g2.demande);
+  const nue = await creerChantier(PFC, { titre: "Chantier sans demande gardé", etat: "libre", demande: null });
+  const src = await creerChantier(PFC, { titre: "Source avec demande", etat: "libre", demande: "Ma demande source." });
+  await sql(`select fusionner_chantiers(${q(src)}, ${q(nue)}, 'test', null)`);
+  verifie("fusion : une cible sans demande ne commence pas par des lignes vides", (await chantier(nue)).demande.startsWith("--- Fusion du doublon"), (await chantier(nue)).demande);
+
+  // (2) chantiers_proches : LA règle de la fusion suggérée.
+  const aut = await creerChantier(PFC, { titre: "Notifications push du téléphone", etat: "libre" });
+  const sep = await creerChantier(PFC, { titre: "Mode sombre illisible", etat: "libre" });
+  const proches = await sql(`select id, titre, etat, score from chantiers_proches_creation(${q(PFC)}, 'Notification push sur téléphone', 3)`);
+  verifie("chantiers_proches_creation : le chantier au titre voisin est proposé, avec son état et son score", proches.length === 1 && proches[0].id === aut && proches[0].score >= 0.65, proches);
+  const memeScore = await une(`select cockpit.ressemblance_fusion('Notification push sur téléphone', 'Notifications push du téléphone') as s`);
+  verifie("chantiers_proches_creation : le score est CELUI de ressemblance_fusion (une seule règle)", Math.abs(proches[0].score - memeScore.s) < 1e-6, { proches, memeScore });
+  verifie("chantiers_proches_creation : rien de ressemblant → liste vide", (await sql(`select * from chantiers_proches_creation(${q(PFC)}, 'Zèbre quantique', 3)`)).length === 0);
+  verifie("chantiers_proches_creation : un doublon déjà fusionné (archivé) n'est plus proposé",
+    (await sql(`select * from chantiers_proches_creation(${q(PFC)}, 'Ouverture des sessions et des agents de renfort', 5)`)).every((r) => r.id !== doublon && r.id !== vide));
+  await sql(`update chantiers set etat = 'valide' where id = ${q(sep)}`);
+  verifie("chantiers_proches_creation : un chantier certifié n'est pas proposé", (await sql(`select * from chantiers_proches_creation(${q(PFC)}, 'Mode sombre illisible', 3)`)).length === 0);
+  await sql(`select regler_fusion(${q(SLUG_FC)}, true, 1)`);
+  verifie("chantiers_proches_creation : lit le seuil du projet (réglé à 1 → plus rien de proposé)", (await sql(`select * from chantiers_proches_creation(${q(PFC)}, 'Notification push sur téléphone', 3)`)).length === 0);
+  await sql(`select regler_fusion(${q(SLUG_FC)}, true, 0.65)`);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.chantiers_proches_creation(uuid,text,int)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.chantiers_proches_creation(uuid,text,int)', 'execute') as auth, has_function_privilege('anon', 'cockpit.completer_chantier(uuid,text,text,text)', 'execute') as anon2`);
+  verifie("droits : l'app (connecté) appelle chantiers_proches, pas le public", !droits.anon && droits.auth && !droits.anon2, droits);
+
+  // (3) Compléter : les mots tapés rejoignent la demande existante, sans créer de chantier.
+  const avant = (await une(`select count(*)::int as n from chantiers where projet_id = ${q(PFC)}`)).n;
+  await sql(`select completer_chantier(${q(aut)}, 'Notifications aussi sur ordinateur', 'Pareil mais sur le poste de bureau.', 'test')`);
+  const apres = (await une(`select count(*)::int as n from chantiers where projet_id = ${q(PFC)}`)).n;
+  const ca = await chantier(aut);
+  verifie("compléter : aucun nouveau chantier, la demande reçoit un « Complément » daté avec ce qui a été tapé", avant === apres && ca.demande.includes("--- Complément du") && ca.demande.includes("« Notifications aussi sur ordinateur »") && ca.demande.includes("Pareil mais sur le poste de bureau."), ca.demande);
+  verifie("compléter : le titre du chantier existant ne bouge pas", ca.titre === "Notifications push du téléphone", ca.titre);
+  verifie("compléter : une ligne le dit dans son fil", (await une(`select count(*)::int as n from messages where chantier_id = ${q(aut)} and corps like 'Complété depuis une nouvelle demande%'`)).n === 1);
+  await sql(`select completer_chantier(${q(aut)}, 'Autre', null, 'test')`);
+  verifie("compléter : un titre sans demande est dit « (titre seul) »", (await chantier(aut)).demande.includes("(titre seul)"));
+  verifie("compléter : refusé sur un chantier archivé / certifié, et quand il n'y a rien à ajouter",
+    !!(await erreurDe(`select completer_chantier(${q(doublon)}, 'x', 'y', 'test')`)) && !!(await erreurDe(`select completer_chantier(${q(sep)}, 'x', 'y', 'test')`)) && !!(await erreurDe(`select completer_chantier(${q(aut)}, '', '  ', 'test')`)));
+  void loin;
+}
+
 async function controle43_invites() {
   section("43. Invités (0058) : rôles, invitation par lien, auteur posé par le serveur, journal, rien d'interne");
   const reset = async (role) => sql(`insert into membres (projet_id, user_id, role) values (${q(P1)}, ${q(userId)}, ${q(role)}) on conflict (projet_id, user_id) do update set role = excluded.role`);
@@ -3114,6 +3205,7 @@ try {
     controle37_traite_sans_attendre,
     controle38_pr_propre,
     controle44_pr_conflit_visible,
+    controle46_fait_carte_pr,
     controle38_prochaine_migration,
     controle38_verif_sans_retour,
     controle38_filet_securite,
@@ -3128,6 +3220,7 @@ try {
     controle42_deja_livre_rien_repris,
     controle45_renforts_frein_erreurs,
     controle45_regroupement,
+    controle46_fusion_a_la_creation,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3139,7 +3232,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];

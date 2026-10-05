@@ -1,6 +1,6 @@
 // Bulle flottante d'aide : allumée par défaut, projet choisi en vue « Tout », fil libre.
 import { verifie, bilan } from './_assert.ts'
-import { bulleActive, cleBulle, filDeLaBulle, projetDeLaBulle } from '../src/lib/bulleAide.ts'
+import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, citer, cleBulle, constructeurVoix, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe } from '../src/lib/bulleAide.ts'
 import { estMessageLibre } from '../src/lib/discussion.ts'
 
 console.log('verifier-bulle-aide')
@@ -35,5 +35,16 @@ verifie('fil : 2 messages, ordre chronologique', fil.length === 2 && fil[0].id =
 
 // 4. Un message tapé dans la bulle est un message libre (la chef / la session y répond).
 verifie('message de la bulle = message libre', estMessageLibre({ ...m('1', {}), answered_at: null } as any, []))
+
+// 5. Nom, sujet, citation, voix.
+verifie('auteur : Claude / Toi / Raphaël / invité', auteurDe({ auteur_type: 'session', auteur: 'x' }, true) === 'Claude' && auteurDe({ auteur_type: 'proprietaire', auteur: 'x' }, true) === 'Toi' && auteurDe({ auteur_type: 'proprietaire', auteur: 'x' }, false) === 'Raphaël' && auteurDe({ auteur_type: 'utilisateur', auteur: 'Lea', auteur_user: 'u' }, false) === 'Lea · invité')
+verifie('sujet extrait', sujetDe('Sujet : Les coûts. Voilà la suite')?.sujet === 'Les coûts' && sujetDe('Bonjour').sujet === null)
+verifie('citation : aller-retour', citationDe(avecCitation('Veux-tu A ou B ?', 'A')).citation === 'Veux-tu A ou B ?' && citationDe(avecCitation('Veux-tu A ou B ?', 'A')).reste === 'A')
+verifie('sans citation : corps inchangé', avecCitation(null, ' ok ') === 'ok' && citationDe('salut').citation === null)
+verifie('citation longue coupée', citer('mot '.repeat(100)).length <= 160)
+verifie('on cite la sélection, sinon le message sans sa ligne Sujet', aCiter('  B  ', 'tout') === 'B' && aCiter('', 'Sujet : Choix. Veux-tu A ou B ?') === 'Veux-tu A ou B ?')
+verifie('un message cité reste un message libre', estMessageLibre({ ...m('9', {}), corps: '> Veux-tu A ?\nA', answered_at: null } as any, []))
+verifie('voix : non supportée / supportée', constructeurVoix({}) === null && constructeurVoix({ webkitSpeechRecognition: class {} }) !== null)
+verifie('voix : micro refusé dit où l’autoriser', messageVoix('not-allowed').includes('Micro') && messageVoix('aborted') === '' && messageVoix('zzz').includes('zzz'))
 
 bilan()
