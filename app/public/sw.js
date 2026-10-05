@@ -16,7 +16,8 @@ self.addEventListener('fetch', (e) => {
   if (e.request.mode !== 'navigate') return
   e.respondWith((async () => {
     try {
-      const r = await fetch(e.request)
+      // 'reload' : jamais l'index.html gardé par le cache HTTP (GitHub Pages ~10 min).
+      const r = await fetch(e.request, { cache: 'reload' })
       if (r.ok) { const c = await caches.open(CACHE); await c.put(e.request, r.clone()) }
       return r
     } catch (err) {

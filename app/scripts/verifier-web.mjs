@@ -1964,6 +1964,11 @@ try {
   await capture(page, 'reglages')
   await page.getByTestId('silence-minutes').getByRole('button', { name: `${silenceMin} min`, exact: true }).click()
   verifie('Réglages : section « Appli sur le téléphone » avec son bouton', await page.getByTestId('installer-appli-reglages').count() === 1)
+  // Version de l'application (chantier c4de4baa) : l'état, « Vérifier maintenant », le retour de la bannière, l'auto éteint par défaut.
+  verifie('Réglages : « Version de l’application » dit où on en est', await page.getByTestId('version-etat').count() === 1 && (await page.getByTestId('version-etat').textContent()).trim().length > 10)
+  verifie('Réglages : rappel de la bannière à 1 h par défaut, mise à jour automatique éteinte', (await page.getByTestId('version-rappel').getByRole('button', { name: '1 h', exact: true }).getAttribute('aria-pressed')) === 'true' && !(await page.getByTestId('version-auto').isChecked()))
+  await page.getByTestId('verifier-version').click()
+  verifie('Réglages : « Vérifier maintenant » répond par un toast', await toastAuPremierPlan(/version/i))
   await page.keyboard.press('Escape')
 
   // --- appli installable (manifeste, service worker, « Installer l'appli »)
