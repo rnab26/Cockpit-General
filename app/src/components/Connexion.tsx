@@ -2,6 +2,7 @@ import { LayoutDashboard } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button.tsx'
 import { Champ, Input } from '../ui/Champs.tsx'
+import { BandeauInvitation } from './Invitation.tsx'
 
 type Mode = 'connexion' | 'inscription' | 'oublie'
 
@@ -43,6 +44,7 @@ export function Connexion({ seConnecter, sInscrire, motDePasseOublie }: {
         <h1 className="mt-2 text-2xl font-bold">Cockpit</h1>
         <p className="text-sm text-texte-2">Les chantiers de tes projets, en direct.</p>
       </div>
+      <BandeauInvitation />
       <div className="mb-4 grid grid-cols-2 rounded-xl bg-carte-2 p-1 text-sm font-semibold">
         {(['connexion', 'inscription'] as Mode[]).map((m) => (
           <button key={m} type="button" onClick={() => { setMode(m); setErreur(null); setInfo(null) }}
