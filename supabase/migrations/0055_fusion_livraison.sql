@@ -1,4 +1,4 @@
--- 0052 (5 oct. 2026, chantier 8486b809). Raphaël : « la chef doit réfléchir à une logique de
+-- 0055 (5 oct. 2026, chantier 8486b809). Raphaël : « la chef doit réfléchir à une logique de
 -- fusion quand elle reçoit les chantiers […] regrouper ceux qui peuvent être faits ensemble […]
 -- et une fois livrés, qu'on comprenne que deux chantiers ont été fusionnés, actualisé en
 -- parallèle dans le cockpit du projet. Ça évite plusieurs correctifs séparés. »

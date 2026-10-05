@@ -2679,10 +2679,10 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
-// 42. Regroupement et livraison (0052) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
+// 42. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
 const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
 async function controle42_regroupement() {
-  section("42. Regroupement (0052) : groupes_possibles, regrouper_chantiers, « Livré avec » dans les deux fils");
+  section("42. Regroupement (0055) : groupes_possibles, regrouper_chantiers, « Livré avec » dans les deux fils");
   await sql(`insert into projets (id, slug, nom) values (${q(PGF)}, ${q(SLUG_GF)}, 'Projet de test regroupement')`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.groupes_possibles(text,uuid[])', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as srv`);
   verifie("groupes_possibles / regrouper_chantiers : réservés au service", !droits.anon && !droits.auth && droits.srv, droits);
