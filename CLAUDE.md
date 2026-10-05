@@ -578,6 +578,10 @@ hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outi
 (> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
 dans la même transaction que le choix ; la fiche est touchée, début du délai).
 
+## Un agent vivant garde son chantier (5 oct. 2026, migration 0054, chantier b95c96f9)
+
+Constaté le 30/09 : la chef relançait « Écrans en attente » et « Vérifier un chantier » alors que leurs agents travaillaient, et réattribuait le chantier à `agent/160812`. Cause PROUVÉE (banc rouge, `verifier-base` §41) : `sans_signe_de_vie` ne comptait un agent vivant que si son battement ou sa ligne avait bougé depuis `delai_signe` (3 min), alors qu'il signale une étape toutes les ~10 min ; `reserver_chantier` donnait alors le chantier à un autre nom de branche, et `ouvrir_ou_reprendre` (`chantier.sh --ouvrir`) écrasait `pris_par` sans rien vérifier. Maintenant, UNE règle `agent_tient_chantier` : ligne tâche liée au chantier, en cours, session non finie, battement < `delai_signe` OU dernière étape < `delai_signe_agent` (`projets.delai_agent_signale_min`, 20 min par défaut, 3 à 240, SQL pour l'instant). L'activité `en_cours` suit ce même délai. Lue par `chantier_abandonne`, `chantiers_prenables`, `reserver_chantier` et le balayage de 3 min. `ouvrir_ou_reprendre` ajoute la demande mais garde `pris_par` d'un chantier tenu. Limite : un agent mort garde son chantier jusqu'à 20 min au lieu de 3 ; la ligne doit être liée au chantier (`progression.sh --agent … --chantier`). `SEULEMENT=<contrôle> node scripts/verifier-base.mjs` ne rejoue qu'un contrôle.
+
 ## Renfort vivant = sa SESSION vit (5 oct. 2026, migration 0057, chantier 2bf7d90c)
 
 Cause prouvée : `renfort_vivant` ne lisait que `renforts.vu_at` (posé seulement par `renfort.sh --suivant`) et ses chantiers ; un renfort dont la session travaillait (hooks → `sessions.vu_at`) était déclaré mort après `delai_signe`, passé « erreur » par `renforts_expirer`, et la chef disait « muet depuis 3 h » (libellé faux, corrigé).
