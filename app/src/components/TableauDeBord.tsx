@@ -96,7 +96,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'enPause', libelle: 'en attente', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number; fini?: boolean }
+interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
@@ -122,7 +122,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini' })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi' })}
               className="rounded-2xl border border-bord bg-carte px-1 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-xs text-texte-2">{x.libelle}</span>
@@ -137,7 +137,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
         </button>
       </div>
       {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
-      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} />
+      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} />
     </section>
   )
 }
@@ -180,7 +180,7 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
             const n = l.nombres[c.cle]
             return n ? (
               <button key={c.cle} type="button" data-colonne={c.cle} aria-label={`${l.nom} : ${n} ${c.libelle}`}
-                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n, fini: c.cle === 'livre' })}
+                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n, fini: c.cle === 'livre', pourToi: c.cle === 'pourToi' })}
                 className={`h-8 rounded-lg text-center text-[15px] font-medium tabular-nums hover:bg-carte-2 ${TEINTE[c.cle]}`}>{n}</button>
             ) : <span key={c.cle} className="h-8 text-center leading-8 text-texte-2/40">·</span>
           })}
@@ -198,8 +198,14 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
 }
 
 /** La liste des chantiers derrière un nombre ; chacun ouvre sa conversation. */
-function ListeChantiers({ liste, onFermer, avance }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[] }) {
+function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[]; aToi: readonly ElementAToi[] }) {
   const g = useGlobal()
+  // Le nombre « pour toi » compte les CHOSES à faire ; une ligne = un chantier : on dit combien il en porte.
+  const nbParChantier = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const e of aToi) if (e.chantier) m.set(e.chantier.id, (m.get(e.chantier.id) ?? 0) + 1)
+    return m
+  }, [aToi])
   // La MÊME ligne que « Ça avance tout seul » (une seule source) : barre et % du dépliage = ceux de la ligne.
   const ligneDe = useMemo(() => new Map(avance.map((l) => [l.c.id, l])), [avance])
   const chantiers = useMemo(() => {
@@ -226,6 +232,7 @@ function ListeChantiers({ liste, onFermer, avance }: { liste: Liste | null; onFe
                     {liste?.fini && quandFini(c, g.moi.email, g.now)
                       ? <span className="truncate tabular-nums" data-testid="quand-fini" title={dateLongue(c.valide_at)}>{quandFini(c, g.moi.email, g.now)}</span>
                       : <span>{infoEtat(c.etat).court}</span>}
+                    {liste?.pourToi && (nbParChantier.get(c.id) ?? 0) > 1 ? <span className="shrink-0 font-medium text-alerte" data-testid="nb-choses">· {nbParChantier.get(c.id)} choses à faire</span> : null}
                   </span>
                   {ligneDe.get(c.id) ? <BarreDeLigne l={ligneDe.get(c.id)!} /> : null}
                 </span>
