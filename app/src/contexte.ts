@@ -57,6 +57,8 @@ export interface Global {
   recharger: () => Promise<void>
   /** Relit la liste des projets (mode autonome, dépôt…). */
   rechargerProjets: () => Promise<void>
+  /** « N chantiers prêts » par projet, lu en base (0065) ; null : pas encore reçu, l'écran retombe sur sa copie locale. */
+  prenables: Map<string, number> | null
   /** Réponses de Claude pas encore lues, par fil (lib/lecture.ts). */
   nonLus: ReadonlyMap<string, NonLus>
   /** 'tout' ou l'id du projet affiché. */

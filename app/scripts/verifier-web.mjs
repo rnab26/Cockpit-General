@@ -526,6 +526,10 @@ try {
 
   // Le projet de test n'existe qu'à partir d'ici : l'accueil réel a été capturé sans lui.
   creerProjetTest()
+  // L'app reprend l'écran où on l'a laissé (lib/etatEcran.ts) : on l'oublie pour retrouver l'accueil « Tout ».
+  // (depuis une page du même site qui n'est pas l'app : l'app réécrit son état en quittant sa page)
+  await page.goto(`${BASE}version.json`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(() => { try { localStorage.removeItem('cockpit_etat_ecran') } catch {} })
   await page.goto(`${BASE}?recharge=${Date.now()}`, { waitUntil: 'networkidle' })  // sans #projet= : l'accueil « Tout »
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
   await ouvrirListe()
@@ -1047,7 +1051,7 @@ try {
     '--copier', 'Nom du secret|RUNPOD_API_KEY', '--image', imgFichier])
   await allerCockpit()
   await actualiser()
-  await (await elementAToi(AM.id, 'question')).getByTestId('verbe-a-toi').click()
+  await (await elementAToi(AM.id, 'action')).getByTestId('verbe-a-toi').click() // une action manuelle est de type « action », pas « question »
   await attendreConv(AM.titre)
   const blocAM = conv().getByTestId('bloc-question')
   const lienAM = blocAM.getByTestId('marche-lien').first()
@@ -1246,8 +1250,11 @@ try {
   verifie('pendant que Claude vérifie, le chantier sort de « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v4.id}"]`).count() === 0)
   // Retour de Raphaël (29 sept.) : « je ne vois pas où ce chantier part ». Il se voit, sous UN nom, partout.
   const lV4 = await ligneAvance(v4.id)
-  verifie('…et se voit dans « Ça avance tout seul » : « Claude vérifie pour toi », vivant, sans « Relancer »',
-    await lV4.count() === 1 && /Claude vérifie pour toi/.test(await lV4.textContent()) && (await lV4.getAttribute('data-vivant')) === 'oui' && await lV4.getByTestId('ouvrir-relance').count() === 0)
+  // Depuis le 30 sept. (retour de Raphaël) : sans assistant ni session vivants il n'y a ni barre vive ni « travail » ;
+  // la ligne le dit (« en attente d’un assistant ») au lieu de faire croire que Claude travaille. Test : aucun assistant lancé.
+  verifie('…et se voit dans « Ça avance tout seul », honnête : pas vivante sans assistant, « en attente d’un assistant », avec « Relancer »',
+    await lV4.count() === 1 && (await lV4.getAttribute('data-vivant')) === 'non' && /Vérification demandée : en attente d’un assistant/.test(await lV4.textContent()) && await lV4.getByTestId('ouvrir-relance').count() === 1,
+    { n: await lV4.count(), vivant: await lV4.getAttribute('data-vivant').catch(() => null), texte: (await lV4.textContent().catch(() => '')).slice(0, 200), relance: await lV4.getByTestId('ouvrir-relance').count() })
   verifie('…compté dans la tuile « ça avance » (même nombre que la liste)',
     Number(await page.getByTestId('tuile-caAvance').getByTestId('nombre-tuile').textContent()) === Number(await page.getByTestId('ca-avance-total').textContent()))
   await allerCockpit()
@@ -1915,7 +1922,8 @@ try {
   verifie('création : « Rester » garde le titre et la photo', await dlgN.isVisible() && await page.getByTestId('titre').inputValue() === titrePhoto && await dlgN.getByTestId('piece-jointe').count() === 1)
   // Premier envoi : le stockage refuse (réseau coupé) → le chantier est créé, la photo reste là, avec « réessayer ».
   const routeStockage = '**/storage/v1/object/cockpit-medias/**'
-  await page.route(routeStockage, (r) => r.abort())
+  // Un REFUS du serveur (400), pas une coupure : une coupure est désormais gardée sur l'appareil et renvoyée au retour du réseau (lib/fetchResilient.ts, verifier-hors-ligne).
+  await page.route(routeStockage, (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'refus de test' }) }))
   await page.getByTestId('creer-chantier').click()
   await page.getByTestId('pieces-a-renvoyer').waitFor({ timeout: 15000 }).catch(() => {})
   const creePhoto = sql(`select id from chantiers where titre = '${esc(titrePhoto)}'`)
@@ -2159,8 +2167,8 @@ try {
   if (await conv().count()) await fermerConv()
   await capture(page, 'desktop')
 
-  // Le 403 de GitHub est provoqué exprès (simulation de la limite) : c'est son effet voulu.
-  const erreursReelles = erreursConsole.filter((t) => !estErreurWsConteneur(t) && !/status of 403/.test(t))
+  // Le 403 de GitHub et le 400 du dépôt de photo sont provoqués exprès : c'est leur effet voulu.
+  const erreursReelles = erreursConsole.filter((t) => !estErreurWsConteneur(t) && !/status of 403/.test(t) && !/status of 400.*storage\/v1\/object\/cockpit-medias/.test(t))
   verifie('aucune erreur JavaScript dans la console', erreursReelles.length === 0, erreursReelles.slice(0, 5))
 } catch (e) {
   echecs++; total++
@@ -2216,7 +2224,8 @@ async function toastAuPremierPlan(re) {
   // que la zone des toasts soit dans la top layer (popover ouvert, remonté
   // après le dialogue). La capture fait foi pour l'œil.
   const r = await page.evaluate(([x, y]) => {
-    const zone = document.querySelector('[role="status"]')
+    // La zone des toasts, pas un « Chargement… » (qui porte aussi role=status) : seule elle est un popover.
+    const zone = document.querySelector('[role="status"][popover]')
     if (document.querySelector('dialog[open]')) return { ok: !!zone && zone.matches(':popover-open'), dessus: zone && zone.matches(':popover-open') ? 'top layer (popover)' : 'sous le dialogue' }
     const e = document.elementFromPoint(x, y)
     return { ok: !!e && !!e.closest('[role="status"]'), dessus: e ? `${e.tagName.toLowerCase()}.${String(e.className).slice(0, 40)}` : null }
