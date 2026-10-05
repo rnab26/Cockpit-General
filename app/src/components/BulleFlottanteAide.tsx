@@ -1,29 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
-import { HelpCircle, Send } from 'lucide-react'
+import { HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
 import { useGlobal } from '../contexte.ts'
 import { VUE_TOUT } from '../hooks/useDonnees.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
-import { ecrireAvecMedias } from './Medias.tsx'
-import { bulleActive, filDeLaBulle, projetDeLaBulle } from '../lib/bulleAide.ts'
+import { TexteLong } from '../ui/TexteLong.tsx'
+import { BoutonJoindre, MediasMessage, VignettesPieces, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
+import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, constructeurVoix, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
+import { mediasDe, resumeMedias } from '../lib/medias.ts'
+import { heureLisible } from '../lib/dates.ts'
+import type { Message } from '../lib/types.ts'
 
 /**
  * Bulle flottante d'aide (allumée par défaut ; l'extinction est dans « Réglages
- * du projet »). Un message tapé ici est un message LIBRE du fil du projet (comme
- * « Écrire à Claude sur ce projet ») : une session y répond (progression.sh
- * --point) et la réponse s'affiche ici en direct, car la bulle lit les mêmes
- * messages que l'app (canal temps réel de useDonnees), pas une copie chargée
- * une fois. Vue « Tout » : le projet cockpit (règle : lib/bulleAide.ts).
+ * du projet »). Rôle : poser une question sur le cockpit ou le projet, demander
+ * où ça en est, dire une idée. Un message tapé ici (ou dicté, avec photos et
+ * fichiers) est un message LIBRE du fil du projet : une session y répond
+ * (progression.sh --point) et la réponse s'affiche ici en direct ; la chef le
+ * range en chantier si besoin. Chaque message dit qui et à quelle heure ; on peut
+ * répondre à une phrase précise de Claude (citation). Vue « Tout » : le projet
+ * cockpit (règle : lib/bulleAide.ts).
  */
+type Voix = { start: () => void; stop: () => void; abort: () => void; lang: string; interimResults: boolean; continuous: boolean; onresult: ((e: any) => void) | null; onerror: ((e: any) => void) | null; onend: (() => void) | null }
+
 export function BulleFlottanteAide() {
   const g = useGlobal()
   const toast = useToast()
   const [ouvert, setOuvert] = useState(false)
   const [envoi, setEnvoi] = useState(false)
   const [texte, setTexte] = useState('')
+  const [citation, setCitation] = useState<string | null>(null)
+  const [ecoute, setEcoute] = useState(false)
   const fin = useRef<HTMLDivElement>(null)
+  const zone = useRef<HTMLTextAreaElement>(null)
+  const voix = useRef<Voix | null>(null)
+  const Reco = typeof window !== 'undefined' ? constructeurVoix(window) : null
 
   const projet = projetDeLaBulle(g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
+  const pj = useMediasAJoindre(projet?.id ?? '', null)
   const fil = projet ? filDeLaBulle(g.messages, projet.id) : []
   useEffect(() => { if (ouvert) fin.current?.scrollIntoView({ block: 'end' }) }, [ouvert, fil.length])
   // Sa question attend une réponse : la bulle ouverte relit toutes les 10 s (le direct l'apporte déjà s'il est
@@ -35,18 +49,46 @@ export function BulleFlottanteAide() {
     const t = window.setInterval(() => { void recharger() }, 10_000)
     return () => window.clearInterval(t)
   }, [ouvert, attend, recharger])
+  // Fermer la bulle coupe le micro.
+  useEffect(() => { if (!ouvert) { voix.current?.abort(); setEcoute(false) } }, [ouvert])
+  useEffect(() => () => { voix.current?.abort() }, [])
 
   if (!projet || !bulleActive(g.prefs, projet.id)) return null
 
+  const vide = !texte.trim() && !pj.medias.length
+
+  const dicter = () => {
+    if (!Reco) { toast.erreur(VOIX_NON_SUPPORTEE); return }
+    if (ecoute) { voix.current?.stop(); return }
+    const r = new (Reco as unknown as new () => Voix)()
+    r.lang = 'fr-FR'; r.interimResults = true; r.continuous = false
+    const base = texte && !/\s$/.test(texte) ? `${texte} ` : texte
+    r.onresult = (e) => {
+      let dit = ''
+      for (let i = 0; i < e.results.length; i++) dit += e.results[i][0].transcript
+      setTexte(base + dit)
+    }
+    r.onerror = (e) => { const m = messageVoix(String(e?.error ?? 'inconnue')); if (m) toast.erreur(m) }
+    r.onend = () => { setEcoute(false); voix.current = null; zone.current?.focus() }
+    try { r.start(); voix.current = r; setEcoute(true) } catch { toast.erreur('Le micro n’a pas pu démarrer : réessaie.') }
+  }
+
+  const repondreA = (corps: string, selection: string) => {
+    setCitation(aCiter(selection, corps))
+    window.setTimeout(() => zone.current?.focus(), 0)
+  }
+
   const envoyer = async (e: React.FormEvent) => {
     e.preventDefault()
-    const corps = texte.trim()
-    if (!corps || envoi) return
+    if (vide || envoi) return
+    if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
+    voix.current?.stop()
     setEnvoi(true)
-    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId: null, par: g.par, admin: g.admin, corps, medias: [] })
+    const corps = avecCitation(citation, texte.trim() || resumeMedias(pj.medias))
+    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId: null, par: g.par, admin: g.admin, corps, medias: pj.medias })
     setEnvoi(false)
     if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return }
-    setTexte('')
+    setTexte(''); setCitation(null); pj.vider()
     toast.succes('Message envoyé : Claude te répondra ici.')
     await g.recharger()
   }
@@ -61,24 +103,87 @@ export function BulleFlottanteAide() {
           <HelpCircle size={22} />
         </button>
       )}
-      {ouvert ? <Dialog ouvert onFermer={() => setOuvert(false)} titre={`Aide · ${projet.nom}`} brouillon={!!texte.trim()}
+      {ouvert ? <Dialog ouvert onFermer={() => setOuvert(false)} titre={`Aide · ${projet.nom}`} brouillon={!vide || !!citation}
         pied={
-          <form onSubmit={envoyer} className="flex w-full items-end gap-2">
-            <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={2} placeholder="Pose ta question…" aria-label="Ta question" disabled={envoi} data-testid="bulle-aide-saisie"
-              className="min-h-10 flex-1 resize-none rounded-2xl border border-bord bg-fond px-3 py-2 text-[15px] text-texte focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-50" />
-            <button type="submit" disabled={envoi || !texte.trim()} aria-label="Envoyer" data-testid="bulle-aide-envoyer" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-40"><Send size={17} /></button>
+          <form onSubmit={envoyer} className="w-full space-y-2">
+            {citation ? (
+              <div data-testid="bulle-aide-citation" className="flex items-start gap-2 rounded-xl border-l-4 border-accent bg-carte-2 px-3 py-1.5 text-sm">
+                <p className="min-w-0 flex-1 break-words text-texte-2"><span className="font-medium text-texte">Tu réponds à Claude : </span>{citation}</p>
+                <button type="button" onClick={() => setCitation(null)} aria-label="Ne plus citer" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-texte-2 hover:bg-carte"><X size={15} /></button>
+              </div>
+            ) : null}
+            {pj.pieces.length ? <VignettesPieces ctrl={pj} /> : null}
+            <div className="flex items-end gap-1">
+              <BoutonJoindre ctrl={pj} icone />
+              <button type="button" onClick={dicter} data-testid="bulle-aide-micro" aria-pressed={ecoute} data-voix={Reco ? (ecoute ? 'ecoute' : 'pret') : 'non-supporte'}
+                aria-label={ecoute ? 'Arrêter la dictée' : Reco ? 'Dicter ton message' : 'Dictée vocale indisponible'}
+                title={Reco ? 'Dicter ton message' : VOIX_NON_SUPPORTEE}
+                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${ecoute ? 'animate-pulse bg-alerte text-white' : Reco ? 'text-texte-2 hover:bg-carte-2 hover:text-texte' : 'text-texte-2/40'}`}>
+                {Reco ? <Mic size={18} aria-hidden /> : <MicOff size={18} aria-hidden />}
+              </button>
+              <textarea ref={zone} value={texte} onChange={(e) => setTexte(e.target.value)} rows={2} placeholder={ecoute ? 'Je t’écoute…' : 'Pose ta question…'} aria-label="Ta question" disabled={envoi} data-testid="bulle-aide-saisie"
+                className="min-h-10 flex-1 resize-none rounded-2xl border border-bord bg-fond px-3 py-2 text-[15px] text-texte focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-50" />
+              <button type="submit" disabled={envoi || vide || pj.enCours} aria-label="Envoyer" data-testid="bulle-aide-envoyer" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-40">
+                {envoi || pj.enCours ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : <Send size={17} />}
+              </button>
+            </div>
+            {!Reco ? <p className="px-1 text-[11px] text-texte-2" data-testid="bulle-aide-voix-non">Dictée vocale indisponible ici : utilise Chrome, Safari ou le micro du clavier.</p> : null}
           </form>
         }>
         <div data-testid="bulle-aide-panneau" className="min-h-[30dvh] space-y-2">
-          {fil.length === 0 ? <p className="py-6 text-center text-sm text-texte-2" data-testid="bulle-aide-vide">Pose une question sur le cockpit ou sur ce projet. Claude te répond ici.</p> : fil.map((m) => (
-            <div key={m.id} className={`flex ${m.auteur_type === 'session' ? 'justify-start' : 'justify-end'}`}>
-              <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-[15px] ${m.auteur_type === 'session' ? 'bg-carte-2 text-texte' : 'bg-accent text-white'}`} data-testid="bulle-aide-message">{m.corps}</div>
+          <p className="rounded-xl bg-carte-2 px-3 py-2 text-xs text-texte-2" data-testid="bulle-aide-role">
+            <b className="text-texte">À quoi sert cette bulle :</b> poser une question sur le cockpit ou sur {projet.nom}, demander où ça en est, dire une idée ou un problème. Claude répond ici, en quelques minutes ; ton message est rangé en chantier si besoin. Tu peux dicter, joindre une photo ou un fichier, et répondre à une phrase précise de Claude.
+          </p>
+          {fil.length === 0 ? (
+            <div className="py-4 text-center" data-testid="bulle-aide-vide">
+              <p className="text-sm text-texte-2">Rien pour l’instant. Pose une question sur le cockpit ou sur ce projet : Claude te répond ici.</p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {['Où ça en est sur ce projet ?', 'Qu’est-ce qui attend ma réponse ?'].map((s) => (
+                  <button key={s} type="button" onClick={() => { setTexte(s); zone.current?.focus() }} data-testid="bulle-aide-suggestion"
+                    className="min-h-9 rounded-full border border-bord bg-carte px-3 text-sm text-texte hover:bg-carte-2">{s}</button>
+                ))}
+              </div>
             </div>
-          ))}
+          ) : fil.map((m) => <MessageBulle key={m.id} m={m} admin={g.admin} now={g.now} onRepondre={repondreA} />)}
           {attend ? <p className="text-center text-xs text-texte-2" data-testid="bulle-aide-attente">Claude n’a pas encore répondu : la réponse arrivera ici.</p> : null}
           <div ref={fin} />
         </div>
       </Dialog> : null}
     </>
+  )
+}
+
+/** Un message : nom + heure sur chaque bulle, sujet en gras, citation en encart, pièces jointes, « Répondre » sur ceux de Claude. */
+function MessageBulle({ m, admin, now, onRepondre }: { m: Message; admin: boolean; now: Date; onRepondre: (corps: string, selection: string) => void }) {
+  const claude = m.auteur_type === 'session'
+  const ref = useRef<HTMLDivElement>(null)
+  const { citation, reste: sansCitation } = citationDe(m.corps)
+  const { sujet, reste } = sujetDe(sansCitation)
+  const medias = mediasDe(m)
+  // La sélection est lue AVANT que le toucher du bouton ne la défasse.
+  const selection = () => {
+    const s = window.getSelection()
+    return s && ref.current && s.anchorNode && ref.current.contains(s.anchorNode) ? s.toString() : ''
+  }
+  return (
+    <div className={`flex ${claude ? 'justify-start' : 'justify-end'}`} data-testid="bulle-aide-ligne" data-cote={claude ? 'gauche' : 'droite'}>
+      <div ref={ref} className={`max-w-[85%] rounded-2xl px-3 py-2 text-[15px] ${claude ? 'rounded-bl-md bg-carte-2 text-texte' : 'rounded-br-md bg-accent text-white'}`} data-testid="bulle-aide-message">
+        <p className={`mb-0.5 flex items-baseline justify-between gap-3 text-[11px] ${claude ? 'text-texte-2' : 'text-white/80'}`} data-testid="bulle-aide-entete">
+          <span className="truncate font-semibold" data-testid="bulle-aide-auteur">{auteurDe(m, admin)}</span>
+          <span className="shrink-0" data-testid="bulle-aide-heure">{heureLisible(m.created_at, now)}</span>
+        </p>
+        {sujet ? <p className="font-bold" data-testid="bulle-aide-sujet">{sujet}</p> : null}
+        {citation ? <p className={`mb-1 rounded-lg border-l-4 px-2 py-1 text-sm ${claude ? 'border-accent bg-carte' : 'border-white/70 bg-white/15'}`} data-testid="bulle-aide-citee">{citation}</p> : null}
+        {reste ? (claude ? <TexteLong texte={reste} /> : <p className="whitespace-pre-wrap">{reste}</p>) : null}
+        {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} petit /></div> : null}
+        {claude ? (
+          <button type="button" data-testid="bulle-aide-repondre" onPointerDownCapture={(e) => { (e.currentTarget as HTMLElement).dataset.sel = selection() }}
+            onClick={(e) => onRepondre(m.corps, (e.currentTarget as HTMLElement).dataset.sel || selection())}
+            className="mt-1 -mb-0.5 inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-accent hover:bg-carte">
+            <Reply size={14} aria-hidden />Répondre
+          </button>
+        ) : null}
+      </div>
+    </div>
   )
 }
