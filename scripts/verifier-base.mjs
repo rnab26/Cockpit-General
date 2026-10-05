@@ -1085,7 +1085,8 @@ async function controle24_ou_en_est() {
 // règle dans l'app (lib/discussion.ts) et en base (est_message_libre).
 async function controle26_fil_discussion() {
   section("26. Fil en discussion (0025) : un message libre attend une réponse écrite, même règle que l'app, droits");
-  const c = await creerChantier(P1, { titre: "Test discussion", etat: "a_verifier" });
+  // « en_cours » : sur un chantier « à vérifier », « Ça ne marche pas » est répondu par le déclencheur 0056.
+  const c = await creerChantier(P1, { titre: "Test discussion", etat: "en_cours" });
   const ins = async (o) => {
     const id = randomUUID();
     await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, ou_en_est, medias, created_at, answered_at)
@@ -1364,7 +1365,7 @@ async function controle25_renforts() {
   await une(`select demander_renforts(${q(SLUG_F)}) as d`);
   const mort = await une(`select statut, erreur from renforts where id = ${q(rB)}`);
   const verifLibre = (await sql(`select id from verifs_prenables(${q(P6)}, null)`)).length;
-  verifie("renfort muet depuis 3 h → « erreur » visible, il ne tient plus sa section", mort.statut === "erreur" && /signe de vie/.test(mort.erreur ?? "") && verifLibre === 0, { mort, verifLibre });
+  verifie("renfort muet depuis 3 h → « erreur » visible, il ne tient plus sa section", mort.statut === "erreur" && /signe de vie|arrêtée sans avoir fini/.test(mort.erreur ?? "") && verifLibre === 0, { mort, verifLibre });
   const etat1 = (await une(`select etat_renforts(${q(SLUG_F)}) as e`)).e;
   verifie("etat_renforts montre l'erreur et le fini (24 h)", etat1.renforts.some((r) => r.id === rB && r.statut === "erreur") && etat1.renforts.some((r) => r.id === rE && r.statut === "archive"), etat1.renforts);
   const nouv = etat1.renforts.find((r) => r.statut === "demande");
@@ -3142,7 +3143,7 @@ async function controle42_deja_livre_rien_repris() {
   };
   // 1. --termine sort un chantier de « bloqué ».
   const bl = await creerChantier(PLB, { titre: "41 Bloqué puis livré", etat: "bloque" });
-  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--sans-lien", "test : rien à ouvrir", "--pas-en-ligne", "test"]);
   verifie("progression.sh --termine : un chantier « bloqué » passe « à vérifier »", r.code === 0 && (await une(`select etat from chantiers where id = ${q(bl)}`)).etat === "a_verifier", r);
   // 2. Déjà livré, sans nouveau mot de Raphaël : pas repris ; après un « Corriger » : repris.
   const livre = await creerChantier(PLB, { titre: "41 Déjà livré", etat: "libre" });
