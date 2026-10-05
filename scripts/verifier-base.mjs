@@ -2762,14 +2762,34 @@ async function controle43_invites() {
   const lignes = await sql(`select auteur_user from messages where projet_id = ${q(P1)} and auteur = 'Claude' and auteur_user is not null`);
   verifie("rien n'est signé « invité » sur un message de session", lignes.length === 0);
 
+  // Droits AU CAS PAR CAS (0059) : le réglage personnel écrase le modèle du rôle
+  const setDroits = (role, d) => sql(`update membres set role = ${q(role)}, droits = ${d ? q(JSON.stringify(d)) + "::jsonb" : "null"} where projet_id = ${q(P1)} and user_id = ${q(userId)}`);
+  await setDroits("lecteur", { messages: true });
+  verifie("au cas par cas : un lecteur à qui on donne « messages » peut écrire", (await msg("lecteur + messages")).status === 201);
+  verifie("…mais pas créer de demande (droit non accordé)", (await demande(`Demande refusée ${rand}`)).json?.code === "42501");
+  await setDroits("suggere", { messages: false });
+  verifie("au cas par cas : un « suggère » à qui on retire « messages » ne peut plus écrire", (await msg("suggère muet")).json?.code === "42501");
+  verifie("…mais crée toujours une demande", (await demande(`Demande droits ${rand}`)).status === 201);
+  const ch2 = await creerChantier(P1, { titre: "Chantier droits perso", etat: "a_verifier" });
+  await setDroits("utilisateur", { valider: false });
+  const certN = await rpcUtilisateur("certifier_chantier", { p_id: ch2, p_par: "x", p_mots: "" }, jwt);
+  verifie("au cas par cas : un « valide » à qui on retire « valider » ne certifie plus", certN.status >= 400 && (await chantier(ch2)).etat === "a_verifier", certN);
+  await setDroits("suggere", { valider: true });
+  const certO = await rpcUtilisateur("certifier_chantier", { p_id: ch2, p_par: "x", p_mots: "ok" }, jwt);
+  verifie("au cas par cas : un « suggère » à qui on donne « valider » certifie", certO.status < 300 && (await chantier(ch2)).etat === "valide", certO);
+  const moi = await rpcUtilisateur("moi", {}, jwt);
+  verifie("moi() dit les droits effectifs du projet", moi.json?.droits?.[P1]?.valider === true && moi.json?.droits?.[P1]?.messages === true, moi.json?.droits);
+  verifie("droits : clé inconnue ou valeur non booléenne refusée par la base", (await une(`select cockpit.droits_valides('{"supprimer": true}'::jsonb) as v`)).v === false && (await une(`select cockpit.droits_valides('{"valider": "oui"}'::jsonb) as v`)).v === false);
+  await setDroits("utilisateur", null);
+
   // Droits des fonctions : un invité ne gère ni les invitations ni les autres invités
-  for (const [fn, args] of [["inviter", { p_projet: P1, p_role: "lecteur" }], ["membres_detail", { p_projet: P1 }], ["journal_invites", { p_projet: P1 }], ["invitations_du_projet", { p_projet: P1 }], ["changer_role_membre", { p_projet: P1, p_user: userId, p_role: "lecteur" }]]) {
+  for (const [fn, args] of [["inviter", { p_projet: P1, p_role: "lecteur" }], ["changer_droits_membre", { p_projet: P1, p_user: userId, p_droits: { valider: true } }],["membres_detail", { p_projet: P1 }], ["journal_invites", { p_projet: P1 }], ["invitations_du_projet", { p_projet: P1 }], ["changer_role_membre", { p_projet: P1, p_user: userId, p_role: "lecteur" }]]) {
     const r = await rpcUtilisateur(fn, args, jwt);
     const vide = r.status === 200 && Array.isArray(r.json) && r.json.length === 0;
     verifie(`${fn} : refusé ou vide pour un invité`, r.status >= 400 || vide, r);
   }
   verifie("la table invitations n'est pas lisible par un invité", ((await rest("invitations?select=id", { jwt })).json ?? []).length === 0);
-  const droits = await une(`select has_function_privilege('anon','cockpit.inviter(uuid,text,text,int)','execute') as a1, has_function_privilege('anon','cockpit.accepter_invitation(text)','execute') as a2, has_function_privilege('anon','cockpit.invitation_info(text)','execute') as a3, has_function_privilege('authenticated','cockpit.poser_auteur()','execute') as a4`);
+  const droits = await une(`select has_function_privilege('anon','cockpit.inviter(uuid,text,text,int,jsonb)','execute') as a1, has_function_privilege('anon','cockpit.accepter_invitation(text)','execute') as a2, has_function_privilege('anon','cockpit.invitation_info(text)','execute') as a3, has_function_privilege('authenticated','cockpit.poser_auteur()','execute') as a4`);
   verifie("droits : anon n'a que invitation_info ; poser_auteur n'est appelable par personne", !droits.a1 && !droits.a2 && droits.a3 && !droits.a4, droits);
 
   // Invitation par lien : jeton haché, un seul usage, expiration, retrait
