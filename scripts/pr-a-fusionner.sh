@@ -116,8 +116,8 @@ if [ "$etat" = "open" ] || [ -z "$etat" ]; then
         if [ -n "$sha" ]; then
           runs=$(curl -fsS --max-time 10 ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$depot/commits/$sha/check-runs?per_page=100" 2>/dev/null || echo "")
           if [ -n "$runs" ]; then
-            if [ "$(printf '%s' "$runs" | jq '[.check_runs[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled")] | length')" != "0" ]; then ci=echec
-            elif [ "$(printf '%s' "$runs" | jq '[.check_runs[] | select(.status != "completed")] | length')" != "0" ]; then ci=cours
+            if [ "$(printf '%s' "$runs" | jq '[.check_runs | group_by(.name)[] | sort_by(.started_at) | last | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled")] | length')" != "0" ]; then ci=echec
+            elif [ "$(printf '%s' "$runs" | jq '[.check_runs | group_by(.name)[] | sort_by(.started_at) | last | select(.status != "completed")] | length')" != "0" ]; then ci=cours
             else ci=ok; fi
           fi
         fi
