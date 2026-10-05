@@ -3,9 +3,17 @@
 # 28 sept. : Settings → Pages → « Deploy from a branch » → gh-pages / (root).
 # URL : https://rnab26.github.io/Cockpit-General/ (+ embed/cockpit-embed.js)
 name: Déployer sur GitHub Pages
+# Seulement quand ce que Pages sert change (app, module embarqué, ce fichier) :
+# un correctif de script, de migration ou de doc ne redéploie rien. Mesuré le
+# 5 oct. 2026 : 22 pushes sur 97 sur main (7 jours) ne touchaient ni app/ ni embed/.
+# Un push doit partir en lot (une PR = une vague de correctifs), cf. CLAUDE.md.
 on:
   push:
     branches: [main]
+    paths:
+      - 'app/**'
+      - 'embed/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 permissions:
   contents: write
