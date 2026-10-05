@@ -21,3 +21,27 @@ export function texteConfirmationFusion(source: string, cible: string, nMessages
     : `Sa demande rejoint « ${cible} ».`
   return `« ${source} » est archivé comme doublon de « ${cible} », qui est gardé. ${msgs} Rien n’est supprimé.`
 }
+
+// ---- Création : « ça existe déjà » → compléter, fusionner ou créer quand même (0060)
+// La RESSEMBLANCE n'est jamais recalculée ici : elle vient de `chantiers_proches_creation`
+// (= ressemblance_fusion + seuil du projet, une seule règle en base).
+
+export interface ChantierProche { id: string; titre: string; etat: string; score: number }
+
+/** Lecture défensive de la réponse de `chantiers_proches_creation` (jamais plus de `max`, jamais sans id ni titre). */
+export function lireProches(rows: unknown, max = 3): ChantierProche[] {
+  if (!Array.isArray(rows)) return []
+  return rows
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+    .filter((r) => typeof r.id === 'string' && typeof r.titre === 'string' && r.titre !== '')
+    .map((r) => ({ id: r.id as string, titre: r.titre as string, etat: typeof r.etat === 'string' ? r.etat : '', score: Number(r.score) || 0 }))
+    .slice(0, max)
+}
+
+/** Ce que Raphaël lit avant de compléter. */
+export function texteConfirmationCompleter(cible: string): string {
+  return `Ce que tu as tapé est ajouté à la demande de « ${cible} », qui est gardé. Aucun nouveau chantier n’est créé.`
+}
+
+/** Libellé du bouton principal : « Créer » quand rien ne ressemble, « Créer quand même » sinon. */
+export function libelleCreer(nProches: number): string { return nProches > 0 ? 'Créer quand même' : 'Créer' }
