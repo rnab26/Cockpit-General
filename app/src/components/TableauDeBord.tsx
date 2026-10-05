@@ -412,7 +412,7 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
             <PastilleReponse cle={cleFil(e.projetId, e.chantier?.id ?? null)} className="mt-0.5" />
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
-              <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{e.type === 'question' && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
+              <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{(e.type === 'question' || e.type === 'action') && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
             </span>
           </span>
         </button>
