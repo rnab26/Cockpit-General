@@ -59,7 +59,7 @@ export function BarreSelection({ onQuitter }: { onQuitter: () => void }) {
   }
 
   return (
-    <div data-testid="barre-selection" className="fixed inset-x-0 bottom-0 z-40 border-t border-bord bg-carte px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 shadow-2xl">
+    <div data-testid="barre-selection" style={{ bottom: 'var(--nav-h, 0px)' }} className="fixed inset-x-0 z-40 border-t border-bord bg-carte px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 shadow-2xl">
       <div className="mx-auto flex max-w-3xl lg:max-w-5xl flex-col gap-2">
         <div className="flex items-center justify-between text-sm">
           <span className="font-semibold">{ids.length} choisi{ids.length > 1 ? 's' : ''}</span>

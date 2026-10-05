@@ -91,6 +91,14 @@
   html.vue-mobile #root { max-width: 430px; margin-inline: auto; min-height: 100dvh; box-shadow: 0 0 0 1px rgb(128 128 128 / 0.25); }
   /* Idem pour ce qui est positionné par rapport à la fenêtre : fenêtres, barre de sélection, bulle d'aide. */
   html.vue-mobile dialog { max-width: 430px !important; margin-inline: auto !important; }
-  html.vue-mobile [data-testid="barre-selection"] { max-width: 430px; margin-inline: auto; }
+  html.vue-mobile [data-testid="barre-selection"], html.vue-mobile [data-testid="barre-onglets"] { max-width: 430px; margin-inline: auto; }
   html.vue-mobile [data-testid="bulle-aide-bouton"] { right: max(12px, calc(50vw - 215px + 12px)) !important; }
+}
+
+/* Navigation « application » (05/10) : sur écran tactile, pas de zoom au double toucher, pas de flash au toucher,
+   pas de débordement horizontal, et les champs à 16 px (en dessous, iOS zoome tout seul sur la page au toucher). */
+@media (pointer: coarse) {
+  html, body { overflow-x: hidden; max-width: 100vw; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+  body { touch-action: manipulation; }
+  input, select, textarea { font-size: 16px !important; }
 }

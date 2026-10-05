@@ -55,7 +55,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      <div ref={zone} popover="manual" className="pointer-events-none fixed inset-x-0 top-auto bottom-[max(env(safe-area-inset-bottom),12px)] z-[60] m-0 flex h-auto w-auto flex-col items-center gap-2 overflow-visible border-0 bg-transparent px-3 py-0 text-texte" role="status" aria-live="polite">
+      <div ref={zone} popover="manual" className="pointer-events-none fixed inset-x-0 top-auto bottom-[max(calc(var(--nav-h,0px)+8px),env(safe-area-inset-bottom),12px)] z-[60] m-0 flex h-auto w-auto flex-col items-center gap-2 overflow-visible border-0 bg-transparent px-3 py-0 text-texte" role="status" aria-live="polite">
         {liste.map((t) => (
           <div key={t.id} className={`toast-in pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl border bg-carte px-3 py-2.5 text-[15px] shadow-xl ${STYLE[t.type]}`}>
             <span aria-hidden className="flex">{ICONE[t.type]}</span>
