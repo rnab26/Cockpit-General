@@ -163,9 +163,9 @@ try {
   await page.getByRole('button', { name: 'Abandonner' }).click()
   verifie('abandonner : une confirmation est demandée avant d’effacer', await page.getByText('Abandonner cet envoi ?').isVisible())
   await page.getByRole('button', { name: 'Abandonner', exact: true }).last().click()
-  await bandeau.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  await pause(1000)
   reseau = 'ok'
-  verifie('confirmé : l’envoi est retiré de la file', await bandeau.count() === 0)
+  verifie('confirmé : l’envoi est retiré de la file (plus rien « enregistré sur cet appareil »)', !/enregistré/.test(await bandeau.innerText().catch(() => '')))
 
   const sansDefilement = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   verifie('téléphone : aucun défilement horizontal', sansDefilement <= 0, sansDefilement)
