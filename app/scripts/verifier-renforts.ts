@@ -1,7 +1,7 @@
 // Les renforts (src/lib/renforts.ts, 0024) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
-import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
+import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, peutRelancer, erreurEffacement, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-renforts')
 const now = new Date('2026-09-29T12:00:00Z')
@@ -20,6 +20,10 @@ verifie('actif : « En route », agents au travail, chantiers pris, vu il y a', 
 verifie('fini puis archivé : « Terminé », session fermée', (() => { const l = ligneRenfort(r({ statut: 'archive', faits: 1 }), true, now); return l.code === 'termine' && /1 chantier pris/.test(l.detail) && /session fermée/.test(l.detail) })())
 verifie('erreur : le texte de la base est montré', ligneRenfort(r({ statut: 'erreur', erreur: 'create_session refusé' }), true, now).detail === 'create_session refusé')
 verifie('actif mais muet depuis 3 h (plus vivant) : erreur visible, même avant le passage de la base', ligneRenfort(r({ statut: 'actif', vivant: false }), true, now).code === 'erreur')
+verifie('0053 demande retenue par un frein d’usage : « en attente : frein d’usage jusqu’à HH h MM », jamais une erreur', (() => { const l = ligneRenfort(r({ frein_jusqu_a: '2026-09-29T14:14:00Z', created_at: '2026-09-29T08:00:00Z' }), true, now); return l.code === 'demande' && l.etat === 'En attente' && /^en attente : frein d’usage jusqu’à \d+ h 14/.test(l.detail) })())
+verifie('0053 frein terminé (date passée) : la ligne redevient une demande normale', ligneRenfort(r({ frein_jusqu_a: '2026-09-29T11:00:00Z' }), true, now).etat === 'Demande envoyée')
+verifie('0053 vraie erreur : bouton Relancer ; ligne en route ou retenue : pas de Relancer', peutRelancer(ligneRenfort(r({ statut: 'erreur', erreur: 'x' }), true, now)) && !peutRelancer(ligneRenfort(r({}), true, now)) && !peutRelancer(ligneRenfort(r({ frein_jusqu_a: '2026-09-29T14:14:00Z' }), true, now)))
+verifie('0053 délai d’effacement : 0 à 168 h, entier', erreurEffacement(0) === null && erreurEffacement(168) === null && erreurEffacement(169) !== null && erreurEffacement(2.5) !== null && erreurEffacement(-1) !== null)
 
 // Bouton
 verifie('rien n’attend : bouton inactif, « aucun renfort nécessaire »', (() => { const b = boutonRenforts(etat({})); return !b.actif && /aucun renfort/.test(b.aide) })())
@@ -54,6 +58,7 @@ verifie('bascule : plein gaz, palier montant (effort puis modèle, Haiku en dern
   && /éteinte/.test(libelleBascule({ bascule_auto: false, palier: 3 })))
 // Alerte de saturation + ouverture automatique (0040) : le niveau, la file et le seuil viennent de la base (etat.auto).
 const au = (x: Partial<EtatAuto>): EtatAuto => ({ actif: true, seuil: 3, seuil_defaut: true, file: 0, niveau: null, bloque: null, vivants: 0, max: 2, ...x })
+verifie('0053 alerte « frein » : dit jusqu’à quelle heure', /jusqu’à \d+ h 14/.test(alerteSaturation(etat({ frein_jusqu_a: '2026-09-29T14:14:00Z', auto: au({ file: 4, niveau: 'proche', bloque: 'frein' }) }))?.conseil ?? ''))
 verifie('sans « auto » (base pas à jour) ou file courte : pas d’alerte', alerteSaturation(etat({})) === null && alerteSaturation(etat({ auto: au({ file: 2 }) })) === null)
 verifie('file = seuil : « bientôt saturée », dit que la chef ouvre TOUTE SEULE', (() => { const a = alerteSaturation(etat({ auto: au({ file: 3, niveau: 'proche' }) })); return a?.niveau === 'proche' && /bientôt saturée/.test(a.titre) && /seuil 3/.test(a.titre) && /toute seule/.test(a.conseil) && a.geste === false })())
 verifie('file saturée (niveau de la base)', alerteSaturation(etat({ auto: au({ file: 6, niveau: 'sature' }) }))?.niveau === 'sature')

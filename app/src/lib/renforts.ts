@@ -31,6 +31,9 @@ export interface Renfort {
   origine?: 'manuel' | 'auto'
   file?: number | null
   seuil?: number | null
+  /** 0053 : demande en attente d'ouverture parce qu'un frein d'usage est actif (fin du frein). Le délai de 3 h ne court qu'après. */
+  frein_jusqu_a?: string | null
+  erreur_at?: string | null
   created_at: string
   vu_at: string | null
   fini_at: string | null
@@ -63,6 +66,10 @@ export interface EtatRenforts {
   relais?: string | null
   relais_passage?: string | null
   auto?: EtatAuto
+  /** 0053 : fin du frein d'usage actif (null = pas de frein). */
+  frein_jusqu_a?: string | null
+  /** 0053 : les lignes en erreur s'effacent seules après ce nombre d'heures (0 = jamais). */
+  erreurs_efface_h?: number
   chef_vu_at: string | null
   attente: AttenteSection[]
   renforts: Renfort[]
@@ -92,6 +99,10 @@ export function attenteSansChef(o: SansChef): string {
 /** Une ligne de renfort, en mots : l'état, et le détail. */
 export function ligneRenfort(r: Renfort, chef: boolean, now: Date, sansChef: SansChef = {}): { code: CodeLigne; etat: string; detail: string } {
   const pl = (n: number, un: string, plus: string) => `${n} ${n > 1 ? plus : un}`
+  // 0053 : un frein d'usage actif retient la demande ; ce n'est PAS une erreur (le délai de 3 h ne court qu'après sa fin).
+  if (r.statut === 'demande' && r.frein_jusqu_a && new Date(r.frein_jusqu_a) > now) {
+    return { code: 'demande', etat: 'En attente', detail: `en attente : frein d’usage jusqu’à ${heure(r.frein_jusqu_a)} · s’ouvre seul ensuite · ${pl(r.chantiers, 'chantier', 'chantiers')}` }
+  }
   if (r.statut === 'erreur' || ((r.statut === 'demande' || r.statut === 'actif') && !r.vivant)) {
     return {
       code: 'erreur', etat: 'Erreur',
@@ -150,17 +161,17 @@ export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; t
   if (a.bloque === 'reglage_zero') return { niveau: a.niveau, geste: true, titre: `${etat} : ${file}.`, conseil: 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour qu’ils s’ouvrent seuls.' }
   if (a.bloque === 'eteint') return { niveau: a.niveau, geste: true, titre: `${etat} : ${file}.`, conseil: 'L’ouverture automatique est éteinte (Réglages) : allume-la, ou touche « Lancer des renforts » ci-dessous.' }
   if (a.bloque === 'plein') return { niveau: a.niveau, geste: false, titre: `Maximum de renforts atteint : ${a.vivants} demandé${a.vivants > 1 ? 's' : ''} ou actif${a.vivants > 1 ? 's' : ''} sur ${a.max}.`, conseil: `${file}. Dès qu’une place se libère, un nouveau renfort s’ouvre tout seul au prochain passage de la chef. Rien à faire (pour en avoir davantage : monte le maximum dans Réglages).` }
-  if (a.bloque === 'frein') return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: 'Un frein est actif (économie d’usage) : l’ouverture automatique reprend seule à sa fin. Rien à faire.' }
+  if (a.bloque === 'frein') return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: `Un frein d’usage est actif${e.frein_jusqu_a ? ` jusqu’à ${heure(e.frein_jusqu_a)}` : ''} : l’ouverture automatique reprend seule à sa fin. Rien à faire.` }
   return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: `Automatique : la session chef ouvre un renfort toute seule à son prochain passage (${renf(a.vivants)} déjà en route sur ${a.max}). Rien à faire.` }
 }
 
 /** Une ligne de réglage lisible : ce que fait l'ouverture automatique, et pourquoi elle ne ferait rien. */
-export function libelleAuto(a: EtatAuto | undefined): string {
+export function libelleAuto(a: EtatAuto | undefined, frein?: string | null): string {
   if (!a) return 'Ouverture automatique : état indisponible.'
   if (!a.actif) return 'Ouverture automatique éteinte : les renforts ne s’ouvrent que sur ton bouton.'
   const base = `Ouverture automatique allumée : dès ${a.seuil} chantier${a.seuil > 1 ? 's' : ''} en file${a.seuil_defaut ? ' (= agents par session)' : ''}. File actuelle : ${a.file}.`
   if (a.bloque === 'reglage_zero') return `${base} Bloquée : sessions de renfort à 0.`
-  if (a.bloque === 'frein') return `${base} En pause : frein actif.`
+  if (a.bloque === 'frein') return `${base} En pause : frein d’usage actif${frein ? ` jusqu’à ${heure(frein)}` : ''}.`
   if (a.bloque === 'plein') return `${base} Maximum de renforts atteint.`
   return base
 }
@@ -265,4 +276,13 @@ export function libelleBascule(e: Pick<EtatModeles, 'bascule_auto' | 'palier' | 
 export function libelleFrein(f: EtatModeles['frein']): string {
   if (!f.actif) return 'Aucun frein : les agents travaillent normalement.'
   return `Frein posé à la main (${f.raison ?? 'sans raison'}) : 1 agent à la fois, aucune revue, aucun nouveau renfort.`
+}
+
+/** 0053 : une ligne en erreur se relance (nouvelle demande de la même section). Jamais une demande retenue par le frein. */
+export function peutRelancer(l: { code: CodeLigne }): boolean {
+  return l.code === 'erreur'
+}
+
+export function erreurEffacement(h: number): string | null {
+  return Number.isInteger(h) && h >= 0 && h <= 168 ? null : 'Effacement des erreurs : un nombre d’heures de 0 (jamais) à 168.'
 }

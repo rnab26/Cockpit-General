@@ -443,7 +443,7 @@ try {
   if (await ligne1.count()) {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
       (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
-      && ['Répondre', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
+      && ['Répondre', 'Faire', 'Tester', 'Décider', 'Débloquer', 'Trancher'].includes((await ligne1.getByTestId('verbe-a-toi').textContent()).trim()))
     verifie('une ligne « À toi » dit aussi l’heure (« · 12:17 », « · hier 23:53 »)', /^ · .*\d\d:\d\d$/.test(await ligne1.getByTestId('heure-a-toi').textContent()))
     verifie('une ligne « À toi » COMMENCE par son âge (« il y a … » / « à l’instant »)', /^(il y a|à l’instant|hier|\d)/.test((await ligne1.getByTestId('titre-a-toi').evaluate((el) => el.parentElement.innerText)).trim()))
   }
@@ -965,6 +965,28 @@ try {
   verifie('la photo s’affiche dans une bulle de la conversation (lien signé, image chargée)', await vignetteQ.count() === 1 && await vignetteQ.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false))
   await fermerConv()
   verifie('la question répondue quitte « À toi de jouer »', await page.locator(elQsel).count() === 0)
+  // Pastille « Actions » (5 oct. 2026) : un geste à faire de Raphaël seul a sa pastille, son verbe « Faire », son filtre.
+  {
+    console.log('  — à toi : pastille Actions')
+    const AC1 = creerTest('action à faire', { etat: 'libre' })
+    sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${AC1.id}', 'verifier-web', 'session', 'action', '${MARQUE} Fusionne la PR de test')`)
+    await actualiser()
+    const elA = await elementAToi(AC1.id, 'action')
+    verifie('action : la ligne dit « Claude attend un geste de toi », bouton « Faire »',
+      /Claude attend un geste de toi/.test(await elA.getByTestId('attente-a-toi').textContent()) && (await elA.getByTestId('verbe-a-toi').textContent()).trim() === 'Faire')
+    const puceA = page.locator('[data-testid="filtre-a-toi-puce"][data-type="action"]')
+    verifie('pastille « Actions » avec son compteur, à côté des autres', await puceA.count() === 1 && /^Actions\s*\d+$/.test((await puceA.textContent()).trim()), await puceA.count() ? await puceA.textContent() : null)
+    await puceA.click()
+    await page.waitForTimeout(500)
+    const typesA = await page.getByTestId('element-a-toi').evaluateAll((els) => els.map((e) => e.getAttribute('data-type')))
+    verifie('filtre « Actions » : seulement des actions (aucune question)', typesA.length > 0 && typesA.every((t) => t === 'action'), typesA)
+    verifie('pastille « Actions » : tient sur l’écran du téléphone sans débordement', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    await page.locator('[data-testid="filtre-a-toi-puce"][data-type="tout"]').click()
+    await page.waitForTimeout(300)
+    sql(`update messages set answered_at = now(), answered_by = gen_random_uuid(), reponse = 'Fait' where chantier_id = '${AC1.id}' and kind = 'action'`)
+    await actualiser()
+    verifie('action faite : elle quitte « À toi de jouer » (pastille comprise)', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC1.id}"]`).count() === 0)
+  }
 
   // ===================================================================
   // 4 bis. Claude MONTRE une image (0020) : sous une question, sous « Comment vérifier » — posées par les VRAIS scripts.

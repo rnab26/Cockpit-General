@@ -231,6 +231,8 @@ seule l'ouverture AUTOMATIQUE est freinée (le bouton reste libre) ; UNE ligne d
 fil du projet (« Renfort FacePro Objets : 2 échecs, en pause jusqu'à HHhMM ; cause : … »).
 `verifier-base` §38.
 
+**Frein d'usage ≠ erreur ; erreurs effaçables** (5 oct. 2026, migration 0053, chantier 5dbbabba ; Raphaël, capture : 4 lignes rouges « Jamais ouvert » + « Rien à faire »). Cause prouvée : un frein de 3 h interdisait l'ouverture, et les 3 h de `renfort_vivant` comptaient pendant le frein. UNE règle, `renfort_demande_depuis(r)` = max(création, `chefs.frein_jusqu_a`) : tant que le frein dure la demande reste « demande » (écran : « en attente : frein d'usage jusqu'à HH h MM », `ligneRenfort`), les 3 h ne courent qu'après sa levée. Une vraie erreur est datée (`erreur_at`, trigger), gardée avec un bouton « Relancer » (`relancer_renfort` : nouvelle demande de la même section), et s'efface seule après `chefs.erreurs_efface_h` h (6 par défaut, 0 = jamais ; Renforts › Réglages) ou d'un geste « Effacer les erreurs » (`effacer_erreurs_renforts`) : colonne `efface_at`, jamais de suppression. `verifier-base` §42, `verifier-renforts.ts`.
+
 **« Traiter ce projet »** (29 sept., Raphaël : « j'appuie sur un bouton, ça lance une
 session […] plus d'heures à ouvrir des sessions et à configurer »). Bloc au-dessus des
 renforts (`Renforts.tsx::TraiterCeProjet`, logique `lib/traiter.ts`, test
