@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useConfirmer } from '../ui/Confirm.tsx'
+import { CONFIRMER_ABANDON, aUnBrouillon } from '../ui/Modale.ts'
 import type { Chantier, Moi } from '../lib/types.ts'
 import { GlobalCtx, type Contexte, type Global } from '../contexte.ts'
 import { useDonnees, VUE_TOUT } from '../hooks/useDonnees.ts'
@@ -110,9 +112,20 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     if ((history.state as { conversation?: boolean } | null)?.conversation) history.back()
     else setConversation(null)
   }, [])
+  const confirmer = useConfirmer()
+  const confirmerRef = useRef(confirmer)
+  confirmerRef.current = confirmer
   // Lien profond d'une notification « Claude a répondu » : ouvert au chargement (appli fermée) ou par message du service worker (appli ouverte).
   useEffect(() => {
-    const aller = (hash: string) => { const c = lireLienFil(hash); if (c) { ouvrirChantier(c.projetId, c.chantierId); history.replaceState(history.state, '', location.pathname + location.search) } }
+    const aller = (hash: string) => {
+      const c = lireLienFil(hash)
+      if (!c) return
+      history.replaceState(history.state, '', location.pathname + location.search)
+      // Une conversation avec un brouillon non envoyé : même question que pour la fermer, avant de changer de fil.
+      const ouverte = document.querySelector<HTMLElement>('[data-testid="conversation"]')
+      if (!aUnBrouillon(ouverte)) { ouvrirChantier(c.projetId, c.chantierId); return }
+      void confirmerRef.current(CONFIRMER_ABANDON).then((ok) => { if (ok) ouvrirChantier(c.projetId, c.chantierId) })
+    }
     aller(location.hash)
     const surMessage = (e: MessageEvent) => { const m = e.data as { type?: string; url?: string } | null; if (m?.type === 'ouvrir-fil' && m.url) aller(m.url.slice(m.url.indexOf('#'))) }
     navigator.serviceWorker?.addEventListener('message', surMessage)
