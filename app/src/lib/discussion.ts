@@ -25,6 +25,12 @@ export const DELAI_PRISE_MS = 2 * 3600_000
 /** Sans réponse au-delà, on ne promet plus un « prochain passage » (réveil échoué). */
 export const DELAI_RETARD_MS = 30 * 60_000
 
+/**
+ * UNE définition d'« action » (geste à faire de la part de Raphaël seul : fusionner une PR, payer, régler un compte) :
+ * un message de kind 'action'. Lue par la pastille « Actions » de « À toi de jouer » (entonnoir.ts) ET par la zone
+ * « Actions déjà faites » du fil (separerChat).
+ */
+export const estAction = (m: Pick<M, 'kind'>) => m.kind === 'action'
 const estQuestion = (m: Pick<M, 'kind'>) => m.kind === 'question' || m.kind === 'action'
 
 /** Un message humain qui attend une réponse écrite de Claude (pas un bouton servi ailleurs). */
@@ -60,7 +66,7 @@ export function ordreDuFil<T extends M>(messages: readonly T[]): { historique: T
  * en sortent et vont dans le repli « Actions déjà faites » du champ d'action ; une question répondue reste au chat.
  */
 export function separerChat<T extends Pick<M, 'kind'>>(historique: readonly T[]): { chat: T[]; faites: T[] } {
-  return { chat: historique.filter((m) => m.kind !== 'action'), faites: historique.filter((m) => m.kind === 'action') }
+  return { chat: historique.filter((m) => !estAction(m)), faites: historique.filter(estAction) }
 }
 
 export type EtatAttente = 'prise' | 'recue' | 'session' | 'attente' | 'personne'

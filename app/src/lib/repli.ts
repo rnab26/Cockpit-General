@@ -34,7 +34,7 @@ export function toutBasculer(repliees: ReadonlySet<SectionAccueil>): SectionAccu
 }
 
 export const LIBELLE_FILTRE_A_TOI: Record<TypeAToi, string> = {
-  question: 'Questions', fusion: 'Fusions', a_verifier: 'À tester', a_cadrer: 'À décider', bloque: 'Bloqués',
+  question: 'Questions', action: 'Actions', fusion: 'Fusions', a_verifier: 'À tester', a_cadrer: 'À décider', bloque: 'Bloqués',
 }
 
 /** Combien d'éléments par type (seulement les types présents, dans l'ordre d'urgence habituel). */
