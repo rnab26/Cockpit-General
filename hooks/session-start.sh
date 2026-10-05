@@ -149,7 +149,7 @@ utilisateurs=$(un "select coalesce(string_agg(format('- %s | %s | %s%s', c.id, c
 
 livres=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(coalesce(c.valide_at, c.livre_at), 'DD/MM'), c.titre, case when c.etat = 'valide' then 'certifié' else 'à vérifier' end), chr(10) order by coalesce(c.valide_at, c.livre_at) desc), '(aucun)') from (select * from chantiers where etat in ('valide','a_verifier') order by coalesce(valide_at, livre_at) desc nulls last limit 8) c join projets p on p.id = c.projet_id where p.slug = $P")
 
-activite=$(un "select coalesce(string_agg(format('- %s | %s | %s %% | %s | %s', a.session, coalesce(c.titre,''), a.pourcentage, a.etape, to_char(a.updated_at, 'DD/MM HH24:MI')), chr(10) order by a.updated_at desc), '(aucune)') from activite a join projets p on p.id = a.projet_id left join chantiers c on c.id = a.chantier_id where p.slug = $P and a.statut = 'en_cours' and a.updated_at > now() - interval '12 hours'")
+activite=$(un "select coalesce(string_agg(format('- %s | %s | %s %s %% | %s | %s', a.session, coalesce(c.titre,''), repeat('█', a.pourcentage / 5) || repeat('░', 20 - a.pourcentage / 5), a.pourcentage, a.etape, to_char(a.updated_at, 'DD/MM HH24:MI')), chr(10) order by a.updated_at desc), '(aucune)') from activite a join projets p on p.id = a.projet_id left join chantiers c on c.id = a.chantier_id where p.slug = $P and a.statut = 'en_cours' and a.updated_at > now() - interval '12 hours'")
 
 # Les agents et commandes lancés en arrière-plan, suivis tout seuls par le hook
 # de suivi (29 sept. 2026) : ne relance pas ce qu'un agent fait déjà.
