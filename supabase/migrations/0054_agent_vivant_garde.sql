@@ -1,4 +1,4 @@
--- 0052 (5 oct. 2026, chantier b95c96f9). Constaté le 30/09 : à chaque passage la
+-- 0054 (5 oct. 2026, chantier b95c96f9). Constaté le 30/09 : à chaque passage la
 -- chef proposait de relancer « Écrans en attente » et « Vérifier un chantier »
 -- alors que leurs agents travaillaient, et réattribuait le chantier sous un
 -- nouveau nom de branche (agent/160812), écrasant la réservation de l'agent réel.
