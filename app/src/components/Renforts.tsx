@@ -9,8 +9,8 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
-  type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type ResultatDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, peutRelancer, erreurEffacement, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
+  type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type Renfort, type ResultatDemande,
 } from '../lib/renforts.ts'
 
 const SONDAGE_MS = 30_000
@@ -80,6 +80,24 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
     await charger()
   }
 
+  const [enCours, setEnCours] = useState<string | null>(null)
+  const relancer = async (r: Renfort) => {
+    setEnCours(r.id)
+    const { error } = await supabase.rpc('relancer_renfort', { p_renfort: r.id })
+    setEnCours(null)
+    if (error) { toast.erreur(`Renfort non relancé : ${messageErreur(error)}`); return }
+    toast.succes(`Renfort « ${r.section} » relancé : la session chef l’ouvre à son prochain passage.`)
+    await charger()
+  }
+  const effacer = async () => {
+    setEnCours('effacer')
+    const { data, error } = await supabase.rpc('effacer_erreurs_renforts', { p_projet: projet.slug })
+    setEnCours(null)
+    if (error) { toast.erreur(`Erreurs non effacées : ${messageErreur(error)}`); return }
+    toast.succes(`${data as number} ligne${(data as number) > 1 ? 's' : ''} en erreur effacée${(data as number) > 1 ? 's' : ''}.`)
+    await charger()
+  }
+
   if (disparu) return null
   if (!etat && !erreur) {
     return toujours ? <p className="px-1 text-sm text-texte-2" role="status" data-testid="renforts-chargement">Chargement des renforts…</p> : null
@@ -94,6 +112,8 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
   }
   if (!toujours && !blocUtile(etat)) return null
   const b = boutonRenforts(etat)
+  const ligneDe = (r: Renfort) => ligneRenfort(r, etat.chef, g.now, { projet: etat.projet ?? projet.nom, relais: etat.relais, relais_passage: etat.relais_passage })
+  const nErreurs = etat.renforts.filter((r) => ligneDe(r).code === 'erreur').length
   const alerte = alerteSaturation(etat)
   const nAttente = etat.attente.reduce((n, a) => n + a.n, 0)
   return (
@@ -125,12 +145,12 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
         <UsersRound size={16} aria-hidden />Lancer des renforts
       </Button>
       <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-aide">{b.aide}</p>
-      <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-auto">{libelleAuto(etat.auto)}</p>
+      <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-auto">{libelleAuto(etat.auto, etat.frein_jusqu_a)}</p>
       {dernier ? <p className={`mt-1 text-xs leading-snug ${dernier.ok ? 'text-ok' : 'text-alerte'}`} role="status" data-testid="renforts-resultat">{dernier.texte}</p> : null}
       {etat.renforts.length ? (
         <ul className="mt-2 divide-y divide-bord/70 rounded-xl border border-bord" data-testid="renforts-liste">
           {etat.renforts.map((r) => {
-            const l = ligneRenfort(r, etat.chef, g.now, { projet: etat.projet ?? projet.nom, relais: etat.relais, relais_passage: etat.relais_passage })
+            const l = ligneDe(r)
             return (
               <li key={r.id} className="px-2.5 py-2" data-testid="renfort" data-code={l.code}>
                 <p className="flex items-baseline justify-between gap-2 text-sm">
@@ -139,10 +159,17 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
                 </p>
                 <p className={`text-xs leading-snug ${l.code === 'erreur' ? 'text-alerte' : 'text-texte-2'}`}>{l.detail}</p>
                 {origineRenfort(r) ? <p className="text-xs leading-snug text-texte-2" data-testid="renfort-origine">{origineRenfort(r)}</p> : null}
+                {peutRelancer(l) ? <Button taille="sm" className="mt-1" chargement={enCours === r.id} onClick={() => void relancer(r)} data-testid="renfort-relancer">Relancer</Button> : null}
               </li>
             )
           })}
         </ul>
+      ) : null}
+      {nErreurs ? (
+        <div className="mt-1.5 flex items-center justify-between gap-2" data-testid="renforts-erreurs">
+          <p className="text-xs text-texte-2">{nErreurs} ligne{nErreurs > 1 ? 's' : ''} en erreur{etat.erreurs_efface_h ? ` (effacées seules après ${etat.erreurs_efface_h} h)` : ''}</p>
+          <Button taille="sm" chargement={enCours === 'effacer'} onClick={() => void effacer()} data-testid="renforts-effacer">Effacer les erreurs</Button>
+        </div>
       ) : null}
       <button type="button" onClick={() => setReglages(!reglages)} aria-expanded={reglages} data-testid="renforts-reglages-ouvrir"
         className="mt-2 inline-flex items-center gap-0.5 text-xs text-texte-2 underline-offset-2 hover:underline">
@@ -196,15 +223,17 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
   const [agents, setAgents] = useState(etat.agents_par_session)
   const [auto, setAuto] = useState(etat.auto?.actif ?? true)
   const [seuil, setSeuil] = useState(etat.auto && !etat.auto.seuil_defaut ? String(etat.auto.seuil) : '')
+  const [efface, setEfface] = useState(String(etat.erreurs_efface_h ?? 6))
   const [envoi, setEnvoi] = useState(false)
   const enregistrer = async () => {
-    const pb = erreurReglageRenforts(sessions, agents) ?? erreurSeuilAuto(seuil)
+    const pb = erreurReglageRenforts(sessions, agents) ?? erreurSeuilAuto(seuil) ?? erreurEffacement(Number(efface))
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
     const r1 = await supabase.rpc('regler_renforts', { p_projet: projet.slug, p_sessions: sessions, p_agents: agents })
     const r2 = r1.error ? null : await supabase.rpc('regler_renforts_auto', { p_projet: projet.slug, p_actif: auto, p_seuil: seuil.trim() === '' ? null : Number(seuil) })
     setEnvoi(false)
-    const error = r1.error ?? r2?.error
+    const r3 = r1.error || r2?.error ? null : await supabase.rpc('regler_renforts_erreurs', { p_projet: projet.slug, p_heures: Number(efface) })
+    const error = r1.error ?? r2?.error ?? r3?.error
     if (error) { toast.erreur(`Réglage non enregistré : ${messageErreur(error)}`); return }
     toast.succes(`Renforts : ${sessions} session${sessions > 1 ? 's' : ''} au plus, ${agents} agent${agents > 1 ? 's' : ''} chacune ; ouverture automatique ${auto ? 'allumée' : 'éteinte'}.`)
     onFini()
@@ -237,6 +266,10 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums disabled:opacity-50" data-testid="renforts-auto-seuil" />
         </label>
       </div>
+      <label className="block text-xs text-texte-2">Effacer les lignes en erreur après (heures, 0 = jamais)
+        <input type="number" inputMode="numeric" min={0} max={168} value={efface} onChange={(e) => setEfface(e.target.value)}
+          className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="renforts-efface-h" />
+      </label>
       <div className="flex justify-end gap-2">
         <Button taille="sm" onClick={onFini}>Annuler</Button>
         <Button taille="sm" variante="primaire" chargement={envoi} onClick={() => void enregistrer()} data-testid="renforts-enregistrer">Enregistrer</Button>

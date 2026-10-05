@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import type { Activite, Chantier, Message, Projet, Section, SessionClaude, Tache } from '../lib/types.ts'
+import { chargerEtatEcran } from '../lib/etatEcran.ts'
 import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
@@ -75,7 +76,8 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     if (!pret) return
     chargerProjets().then((liste) => {
       if (!liste.length) return
-      const voulu = slugDuHash()
+      // Lien sans projet (appli rouverte à son adresse de départ après avoir été vidée) : le projet d'avant.
+      const voulu = slugDuHash() ?? (location.hash ? null : chargerEtatEcran()?.slug ?? null)
       const p = voulu ? liste.find((x) => x.slug === voulu) : null
       setVue(p ? p.id : VUE_TOUT)
     })
