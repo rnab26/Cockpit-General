@@ -19,6 +19,7 @@
 #   (un correctif visuel / mise en page / ergonomie est rangé TOUT SEUL dans
 #    « Correctifs » à la création, migration 0021 ; --ranger corrige un faux tri)
 #   scripts/chantier.sh --suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi "…"
+#   scripts/chantier.sh --regrouper <id> --avec <id> --pourquoi "…"   deux chantiers voisins faits par UN agent (0052) ; chacun le dit dans son fil, et la livraison de l'un le dit à l'autre
 #   scripts/chantier.sh --de-cote <id> [--jusqu-au 2026-10-15] [--pourquoi "…"]   mettre de côté / reporter (0028)
 #   scripts/chantier.sh --abandonner <id> [--pourquoi "…"]                          abandonner (archivé, Désarchiver le rend)
 #   (quand Raphaël le demande dans la session : mêmes gestes que les boutons du fil)
@@ -52,7 +53,7 @@ set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 decote=""; jusqua=""; abandon=""; depuis=""; reponse=""
-projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; dans=""; pourquoi=""
+projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; regrouper=""; avec=""; dans=""; pourquoi=""
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -65,6 +66,8 @@ while [ $# -gt 0 ]; do
     --chercher) chercher="${2:-}"; shift 2 ;;
     --ranger)   ranger="${2:-}"; shift 2 ;;
     --suggerer-fusion) fusion="${2:-}"; shift 2 ;;
+    --regrouper) regrouper="${2:-}"; shift 2 ;;
+    --avec)     avec="${2:-}"; shift 2 ;;
     --dans)     dans="${2:-}"; shift 2 ;;
     --pourquoi) pourquoi="${2:-}"; shift 2 ;;
     --de-cote)  decote="${2:-}"; shift 2 ;;
@@ -99,6 +102,14 @@ fi
 if [ -n "$ranger" ]; then
   [ -n "$section" ] || { echo "--section \"<nom>\" manque. Sections existantes : $(sections)" >&2; exit 2; }
   ranger_dans "$ranger" "$section"; exit $?
+fi
+if [ -n "$regrouper" ]; then
+  [ -n "$avec" ] || { echo "--regrouper <id> --avec <id> [--pourquoi \"…\"]" >&2; exit 2; }
+  r=$("$SQL" "select regrouper_chantiers('$(q "$regrouper")'::uuid, '$(q "$avec")'::uuid, '$(q "$pourquoi")', '$(q "$session")') as ok") || { echo "Regroupement refusé." >&2; exit 1; }
+  if [ "$(printf '%s' "$r" | jq -r '.ok')" != "true" ]; then echo "Échec : $(printf '%s' "$r" | jq -r '.error // .message // .')" >&2; exit 1; fi
+  if [ "$(printf '%s' "$r" | jq -r '.rows[0].ok')" = "true" ]; then echo "Regroupés : un seul agent fait les deux ; chaque fil le dit, et la livraison sera annoncée dans les deux.";
+  else echo "Déjà regroupés (ou chantiers introuvables / de projets différents) : rien changé."; fi
+  exit 0
 fi
 if [ -n "$fusion" ]; then
   [ -n "$dans" ] || { echo "--dans <id du chantier qui reste> manque." >&2; exit 2; }

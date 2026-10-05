@@ -2869,6 +2869,40 @@ async function controle42_renfort_session_vivante() {
   verifie("session terminée (fin_at) : muet", (await vR()) === false);
 }
 
+// 43. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
+const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
+async function controle45_regroupement() {
+  section("45. Regroupement (0055) : groupes_possibles, regrouper_chantiers, « Livré avec » dans les deux fils");
+  await sql(`insert into projets (id, slug, nom) values (${q(PGF)}, ${q(SLUG_GF)}, 'Projet de test regroupement')`);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.groupes_possibles(text,uuid[])', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as srv`);
+  verifie("groupes_possibles / regrouper_chantiers : réservés au service", !droits.anon && !droits.auth && droits.srv, droits);
+  const a = await creerChantier(PGF, { titre: "Bouton valider trop petit sur téléphone", etat: "libre" });
+  const b = await creerChantier(PGF, { titre: "Bouton valider mal aligné sur téléphone", etat: "libre" });
+  const c = await creerChantier(PGF, { titre: "Export des factures en comptabilité", etat: "libre" });
+  const d = await creerChantier(PGF, { titre: "Couleur du bandeau d'accueil", etat: "libre" });
+  const paires = (await une(`select coalesce(jsonb_agg(jsonb_build_array(a, b)), '[]'::jsonb) as p from groupes_possibles(${q(SLUG_GF)}, array[${q(a)}]::uuid[])`)).p;
+  const ids = JSON.stringify(paires);
+  verifie("groupes_possibles : les deux titres voisins sont proposés ensemble", ids.includes(a) && ids.includes(b), paires);
+  verifie("groupes_possibles : un sujet sans rapport n'est pas proposé", !ids.includes(c) && !ids.includes(d), paires);
+  const ok = (await une(`select regrouper_chantiers(${q(a)}, ${q(b)}, 'même écran', 'test') as ok`)).ok;
+  const deux = (await une(`select regrouper_chantiers(${q(a)}, ${q(b)}, 'même écran', 'test') as ok`)).ok;
+  verifie("regrouper_chantiers : la première fois oui, la seconde non (idempotent)", ok === true && deux === false, { ok, deux });
+  verifie("regroupés : plus proposés, et chaque fil le dit",
+    (await une(`select count(*)::int as n from groupes_possibles(${q(SLUG_GF)}, array[${q(a)}]::uuid[])`)).n === 0
+    && (await une(`select count(*)::int as n from messages where chantier_id in (${q(a)}, ${q(b)}) and corps like 'Regroupé avec%'`)).n === 2);
+  await sql(`update chantiers set etat = 'a_verifier' where id = ${q(a)}`);
+  const fb = await une(`select count(*)::int as n from messages where chantier_id = ${q(b)} and corps like 'Livré avec « Bouton valider trop petit%'`);
+  const fa = await une(`select count(*)::int as n from messages where chantier_id = ${q(a)} and corps like 'Cette livraison couvre aussi%'`);
+  verifie("livraison : le fil du chantier regroupé dit « Livré avec », le livré dit ce qu'il couvre", fb.n === 1 && fa.n === 1, { fb, fa });
+  await sql(`update chantiers set etat = 'a_verifier' where id = ${q(a)}`);
+  verifie("livraison : les lignes de trace ne déclenchent aucune demande de vérification", (await une(`select verif_demandee_at is null as vide from chantiers where id = ${q(a)}`)).vide === true);
+  verifie("livraison : pas de seconde ligne si l'état ne change pas", (await une(`select count(*)::int as n from messages where chantier_id = ${q(b)} and corps like 'Livré avec%'`)).n === 1);
+  await sql(`select fusionner_chantiers(${q(d)}, ${q(c)}, 'test', null)`);
+  await sql(`update chantiers set etat = 'a_verifier' where id = ${q(c)}`);
+  verifie("livraison : un chantier fusionné (doublon) est prévenu aussi", (await une(`select count(*)::int as n from messages where chantier_id = ${q(d)} and corps like 'Livré avec%'`)).n === 1
+    && (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and corps like 'Cette livraison couvre aussi%'`)).n === 1);
+}
+
 async function controle43_invites() {
   section("43. Invités (0058) : rôles, invitation par lien, auteur posé par le serveur, journal, rien d'interne");
   const reset = async (role) => sql(`insert into membres (projet_id, user_id, role) values (${q(P1)}, ${q(userId)}, ${q(role)}) on conflict (projet_id, user_id) do update set role = excluded.role`);
@@ -3093,6 +3127,7 @@ try {
     controle43_invites,
     controle42_deja_livre_rien_repris,
     controle45_renforts_frein_erreurs,
+    controle45_regroupement,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3104,7 +3139,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
