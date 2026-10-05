@@ -261,7 +261,7 @@ if [ -n "$chantier" ]; then
       pid=$("$SQL" "select projet_id from chantiers where id = '$id'" | jq -r '.rows[0].projet_id // empty')
       medias=$("$RACINE/scripts/media.sh" --deposer "$pid" "$id" "${images[@]}")
     fi
-    "$SQL" "update chantiers set etat = case when etat in ('en_cours','libre','a_trier') then 'a_verifier' else etat end, comment_verifier = '$(q "$verifier")', verifier_medias = '$(q "$medias")'::jsonb, pris_par = null, pris_jusqu_a = null where id = '$id'" >/dev/null
+    "$SQL" "update chantiers set etat = case when etat in ('en_cours','libre','a_trier','bloque') then 'a_verifier' else etat end, comment_verifier = '$(q "$verifier")', verifier_medias = '$(q "$medias")'::jsonb, pris_par = null, pris_jusqu_a = null where id = '$id'" >/dev/null
     if [ ${#images[@]} -gt 0 ]; then
       nm=$("$SQL" "select jsonb_array_length(verifier_medias) as n from chantiers where id = '$id'" | jq -r '.rows[0].n // 0')
       [ "$nm" = "${#images[@]}" ] || { echo "Les images de « Comment vérifier » n'ont pas été enregistrées (relecture : $nm)." >&2; exit 1; }
