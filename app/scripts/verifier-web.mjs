@@ -491,6 +491,16 @@ try {
   const barreBasNav = await page.getByTestId('barre-onglets').boundingBox()
   verifie('barre du bas : toujours en bas après défilement, rien du contenu caché dessous', Math.abs(barreBasNav.y + barreBasNav.height - vpNav.height) <= 1 && await page.evaluate(() => { const d = document.querySelector('[data-testid="vue-projet"]').getBoundingClientRect().bottom; return d <= document.querySelector('[data-testid="barre-onglets"]').getBoundingClientRect().top + 1 }))
   await page.evaluate(() => window.scrollTo(0, 0))
+  // Défilement (05/10, « sur tablette en paysage l'écran ne défile pas dans l'appli installée ») : <body> ne doit JAMAIS être un conteneur de défilement
+  // (html ET body en overflow-x:hidden en faisaient un : overflow-y calculé « auto »), et la page doit défiler en paysage tactile à 1180 px comme en portrait.
+  for (const [lib, w, h] of [['tablette paysage 1180x820', 1180, 820], ['tablette portrait 820x1180', 820, 1180], ['téléphone 390x844', 390, 844]]) {
+    await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(300)
+    await page.evaluate(() => window.scrollTo(0, 0)); await page.mouse.move(Math.round(w / 2), Math.round(h / 2)); await page.mouse.wheel(0, 300); await page.waitForTimeout(300)
+    const dfl = await page.evaluate(() => ({ y: window.scrollY, corpsY: getComputedStyle(document.body).overflowY, corpsX: getComputedStyle(document.body).overflowX, haut: document.documentElement.scrollHeight, h: window.innerHeight }))
+    verifie(`défilement ${lib} : la page défile (molette/doigt) et <body> n’est pas un conteneur de défilement`, dfl.haut > dfl.h && dfl.y > 0 && dfl.corpsY === 'visible' && dfl.corpsX !== 'auto' && dfl.corpsX !== 'scroll', JSON.stringify(dfl))
+    await page.evaluate(() => window.scrollTo(0, 0))
+  }
+  await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300)
   verifie('zoom : viewport de l’appareil, jamais plus petit que 1, aucun débordement horizontal', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && /minimum-scale=1/.test(document.querySelector('meta[name="viewport"]').content)))
   verifie('FacePro : les réglages sont derrière la 2e icône, pas à la suite', await page.getByTestId('reglages-projet').count() === 0)
   await page.getByTestId('onglet-vue-couts').click()
