@@ -42,7 +42,8 @@ self.addEventListener('push', (e) => {
       badge: self.registration.scope + 'icon-192.png',
       tag: d.chantier_id || d.projet_id || 'cockpit',
       renotify: true,
-      data: { url: self.registration.scope },
+      // Lien profond : le fragment est lu par l'app (app/src/lib/lienNotification.ts, même format).
+      data: { url: self.registration.scope + (d.projet_id ? '#fil=' + d.projet_id + (d.chantier_id ? ':' + d.chantier_id : '') : '') },
     })
   })())
 })
@@ -53,7 +54,11 @@ self.addEventListener('notificationclick', (e) => {
   e.waitUntil((async () => {
     const fenetres = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const deja = fenetres.find((c) => c.url.startsWith(self.registration.scope))
-    if (deja) { await deja.focus(); return }
+    if (deja) {
+      // L'appli est déjà ouverte : on lui dit où aller (elle écoute 'message'), puis on la met devant.
+      try { deja.postMessage({ type: 'ouvrir-fil', url }) } catch (err) { /* ignoré */ }
+      await deja.focus(); return
+    }
     await self.clients.openWindow(url)
   })())
 })
