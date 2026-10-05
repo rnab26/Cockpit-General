@@ -111,16 +111,24 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
           {projet ? (
             <>
               <section className="rounded-xl bg-carte-2 p-3">
-                <h3 className="text-sm font-semibold">Module embarqué</h3>
-                <p className="mt-1 text-xs text-texte-2">La clé identifie le projet côté serveur ; elle ne donne aucun droit direct sur la base. À coller dans le site du projet :</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded-lg bg-carte px-2 py-1.5 text-xs">{cleVisible ? projet.cle_embed : '•'.repeat(24)}</code>
-                  <Button taille="sm" onClick={() => setCleVisible(!cleVisible)}>{cleVisible ? 'Masquer' : 'Voir'}</Button>
-                  <Button taille="sm" onClick={() => copier(projet.cle_embed, 'Clé')}>Copier</Button>
-                </div>
-                <pre className="mt-2 overflow-x-auto rounded-lg bg-carte px-2 py-1.5 text-[11px] leading-relaxed"><code>{extraitEmbed(cleVisible ? projet.cle_embed : '…')}</code></pre>
-                <div className="mt-2 flex justify-end"><Button taille="sm" onClick={() => copier(extraitEmbed(projet.cle_embed), 'Extrait')}>Copier l’extrait</Button></div>
-                <p className="mt-2 text-xs text-texte-2" data-testid="embed-confidentialite">Pour rejouer une demande, le module joint la page (sans jetons ni e-mails), l’appareil, la version du site, les 20 dernières actions (libellés seulement, jamais ce qui est tapé) et les erreurs de la page. Pour ne rien joindre : ajoute <code>data-reproduction="non"</code>.</p>
+                <h3 className="text-sm font-semibold">Boîte de demandes pour les utilisateurs du site</h3>
+                <p className="mt-1 text-xs text-texte-2">Ajoute une petite fenêtre dans le site de ce projet : tes utilisateurs y écrivent une demande ou un bug, ça arrive ici comme chantier, et ils voient où ça en est. Optionnel : sans ça, le projet marche très bien.</p>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-texte-2">
+                  <li>Touche « Copier le code ».</li>
+                  <li>Colle-le dans le code du site, juste avant la fin de la page (avant <code>&lt;/body&gt;</code>). Ou envoie-le à la personne qui s’en occupe.</li>
+                </ol>
+                <div className="mt-2 flex justify-end"><Button variante="primaire" taille="sm" onClick={() => copier(extraitEmbed(projet.cle_embed), 'Code')}>Copier le code</Button></div>
+                <details className="mt-2 text-xs text-texte-2" data-testid="embed-confidentialite">
+                  <summary className="cursor-pointer font-medium">Détails (code, clé, confidentialité)</summary>
+                  <pre className="mt-2 overflow-x-auto rounded-lg bg-carte px-2 py-1.5 text-[11px] leading-relaxed"><code>{extraitEmbed(cleVisible ? projet.cle_embed : '…')}</code></pre>
+                  <div className="mt-2 flex items-center gap-2">
+                    <code className="min-w-0 flex-1 truncate rounded-lg bg-carte px-2 py-1.5 text-xs">{cleVisible ? projet.cle_embed : '•'.repeat(24)}</code>
+                    <Button taille="sm" onClick={() => setCleVisible(!cleVisible)}>{cleVisible ? 'Masquer' : 'Voir'}</Button>
+                    <Button taille="sm" onClick={() => copier(projet.cle_embed, 'Clé')}>Copier la clé</Button>
+                  </div>
+                  <p className="mt-2">La clé sert seulement à reconnaître le projet : elle ne donne aucun accès à la base.</p>
+                  <p className="mt-2">Pour t’aider à refaire un bug, le module joint la page (sans jetons ni e-mails), l’appareil, la version du site, les 20 dernières actions (libellés seulement, jamais ce qui est tapé) et les erreurs de la page. Pour ne rien joindre : ajoute <code>data-reproduction="non"</code>.</p>
+                </details>
               </section>
               <section>
                 <h3 className="mb-2 text-sm font-semibold">Membres (utilisateurs finaux)</h3>
