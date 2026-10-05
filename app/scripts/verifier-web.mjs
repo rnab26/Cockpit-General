@@ -161,6 +161,7 @@ const prefSilenceAvant = sql(`select valeur from preferences where user_id = '${
 // rougissaient à la passe suivante (constaté le 30 sept.). Compte de test : rien à restaurer,
 // on le laisse aussi au défaut en fin de passe.
 sql(`delete from preferences where user_id = '${moiId}' and cle = 'tri_a_toi'`)
+sql(`delete from preferences where user_id = '${moiId}' and cle in ('sections_repliees_accueil', 'filtre_a_toi')`)
 const silenceMin = [5, 10, 15, 30, 60].includes(Number(prefSilenceAvant?.valeur)) ? Number(prefSilenceAvant.valeur) : 15
 // Un chantier de test : titre préfixé, id connu d'avance.
 const creerTest = (titre, extra = {}) => {
@@ -2087,6 +2088,7 @@ try {
     if (!prefSilenceAvant) sql(`delete from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)
     else sql(`update preferences set valeur = '${esc(JSON.stringify(prefSilenceAvant.valeur))}'::jsonb where user_id = '${moiId}' and cle = 'silence_minutes'`)
     sql(`delete from preferences where user_id = '${moiId}' and cle = 'tri_a_toi'`)
+    sql(`delete from preferences where user_id = '${moiId}' and cle in ('sections_repliees_accueil', 'filtre_a_toi')`)
     if (projet) purgerProjetsDeTest([projet.id])
     const reste = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where id in (${ids})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids}) or projet_id = ${monProjet}) + (select count(*) from activite where projet_id = ${monProjet}) + (select count(*) from sessions where projet_id = ${monProjet}) as n`)[0].n
     // Les restes d'un banc dans un projet RÉEL (même règle que verifier-base.mjs) : une
