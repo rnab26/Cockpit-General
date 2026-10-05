@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Monitor, Moon, Sun } from 'lucide-react'
+import { CLE_DELAI_PANNEAU, DELAIS_PANNEAU_S, DELAI_PANNEAU_DEFAUT_S, delaiPanneauDe } from '../lib/fileAttente.ts'
 import { useGlobal } from '../contexte.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -28,6 +30,12 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
     const nom = VUES.find((x) => x.valeur === v)?.libelle.toLowerCase()
     if (tient) toast.succes(`Vue ${nom} activée sur cet appareil.`)
     else toast.erreur(`Vue ${nom} activée, mais ce navigateur ne peut pas la retenir : retour à « auto » au prochain chargement.`)
+  }
+  const [delaiPanneau, setDelaiPanneau] = useState<number>(() => { try { return delaiPanneauDe(localStorage.getItem(CLE_DELAI_PANNEAU)) } catch { return DELAI_PANNEAU_DEFAUT_S } })
+  const choisirDelaiPanneau = (s: number) => {
+    setDelaiPanneau(s)
+    try { localStorage.setItem(CLE_DELAI_PANNEAU, String(s)); toast.succes(`Le panneau d’attente apparaît après ${s} s.`) }
+    catch { toast.erreur(`Délai de ${s} s valable jusqu’au prochain chargement : ce navigateur ne peut pas le retenir.`) }
   }
   const fenetre: Fenetre = estFenetre(prefs.fenetre_livre) ? prefs.fenetre_livre : FENETRE_DEFAUT
   const silenceMin = silenceMsDe(prefs[CLE_PREF_SILENCE]) / 60_000
@@ -69,6 +77,13 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
             {VUES.map((v) => <Button key={v.valeur} variante={vueAffichage === v.valeur ? 'primaire' : 'secondaire'} aria-pressed={vueAffichage === v.valeur} onClick={() => choisirVue(v.valeur)}>{v.libelle}</Button>)}
           </div>
           <p className="mt-1.5 text-xs text-texte-2" data-testid="aide-vue">{VUES.find((v) => v.valeur === vueAffichage)?.aide}</p>
+        </section>
+        <section>
+          <h3 className="mb-1 text-sm font-semibold">Panneau « envoi en attente » hors ligne</h3>
+          <p className="mb-2 text-xs text-texte-2">Une coupure brève n’affiche qu’un petit voyant. Le panneau n’apparaît que si une écriture attend depuis ce délai. Retenu sur cet appareil.</p>
+          <div className="grid grid-cols-4 gap-1.5" data-testid="delai-panneau">
+            {DELAIS_PANNEAU_S.map((s) => <Button key={s} taille="sm" variante={delaiPanneau === s ? 'primaire' : 'secondaire'} aria-pressed={delaiPanneau === s} onClick={() => choisirDelaiPanneau(s)}>{s} s</Button>)}
+          </div>
         </section>
         <SectionNotifications ouvrirAide={() => { onFermer(); onAideInstallation() }} />
         <SectionInstallation ouvrirAide={() => { onFermer(); onAideInstallation() }} />
