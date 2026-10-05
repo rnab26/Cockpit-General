@@ -18,6 +18,7 @@ import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
 import { lireLienFil } from '../lib/lienNotification.ts'
+import { chargerEtatEcran, etatCoherent, sauverEtatEcran } from '../lib/etatEcran.ts'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
 import { BulleFlottanteAide } from './BulleFlottanteAide.tsx'
 import { TousLesChantiers } from './TousLesChantiers.tsx'
@@ -54,14 +55,16 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const d = useDonnees(true, moi.email)
   const { prefs, poser, chargees } = usePreferences(moi.user_id)
   const [sectionsOuvertes, setSectionsOuvertes] = useState<Set<string>>(new Set())
-  const [conversation, setConversation] = useState<CibleConversation | null>(null)
+  // Reprise après que le navigateur a vidé la page (retour d'un lien ouvert ailleurs) : où l'on en était.
+  const reprise = useRef(etatCoherent(chargerEtatEcran(), /projet=([a-z0-9-]+)/.exec(location.hash)?.[1] ?? null))
+  const [conversation, setConversation] = useState<CibleConversation | null>(reprise.current?.conversation ?? null)
   const [dialogue, setDialogue] = useState<Dialogue>(null)
   const installation = useLancerInstallation(() => setDialogue('installer'))
   const [aModifier, setAModifier] = useState<Chantier | null>(null)
   const [doublonDe, setDoublonDe] = useState<Chantier | null>(null)
   const [selectionActive, setSelectionActive] = useState(false)
   const [selectionIds, setSelectionIds] = useState<Set<string>>(new Set())
-  const [onglet, setOnglet] = useState<OngletProjet>(ONGLET_DEFAUT)
+  const [onglet, setOnglet] = useState<OngletProjet>(reprise.current?.onglet ?? ONGLET_DEFAUT)
   const [recherche, setRecherche] = useState(false)
   const barreBas = useNavMobile()
   const dernierProjet = useRef<string | null>(null)
@@ -102,6 +105,32 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   }])), [d.projets, d.sections, d.chantiers, d.messages, d.activites, d.sessions, d.taches])
   const vue = d.vue ?? VUE_TOUT
   const vueTout = vue === VUE_TOUT
+
+  // Garde l'écran courant sur l'appareil (projet, onglet, fil ouvert, défilement) pour le reprendre au rechargement.
+  const slugCourant = vueTout ? null : d.projet?.slug ?? null
+  const etatRef = useRef({ slugCourant, onglet, conversation, pret: false })
+  etatRef.current = { slugCourant, onglet, conversation, pret: d.vue !== null }
+  useEffect(() => {
+    const garder = () => {
+      const e = etatRef.current
+      if (!e.pret) return  // rien n'est encore restauré : ne pas écraser l'état sauvé par l'écran par défaut
+      sauverEtatEcran({ slug: e.slugCourant, onglet: e.onglet, conversation: e.conversation, scrollY: window.scrollY, at: Date.now() })
+    }
+    garder()
+    const siCache = () => { if (document.visibilityState === 'hidden') garder() }
+    document.addEventListener('visibilitychange', siCache)
+    window.addEventListener('pagehide', garder)
+    return () => { document.removeEventListener('visibilitychange', siCache); window.removeEventListener('pagehide', garder) }
+  }, [slugCourant, onglet, conversation, d.vue])
+  // Fil rouvert par la reprise : une entrée d'historique, comme à l'ouverture normale (le retour du téléphone le ferme).
+  useEffect(() => { if (reprise.current?.conversation) history.pushState({ conversation: true }, '', location.href) }, [])
+  // Défilement repris une fois les données revenues (sinon la page est trop courte pour y aller).
+  useEffect(() => {
+    const y = reprise.current?.scrollY
+    if (!d.charge || !y) return
+    reprise.current = null
+    requestAnimationFrame(() => window.scrollTo({ top: y }))
+  }, [d.charge])
 
   const changerVue = useCallback((id: string) => {
     d.choisirVue(id)
