@@ -1,4 +1,4 @@
-import { CircleCheck, CircleDot, CirclePause, Clock, Compass, FlaskConical, GitMerge, HelpCircle, Hourglass, MessageCircleQuestion, OctagonAlert, type LucideIcon } from 'lucide-react'
+import { CircleCheck, CircleDot, CirclePause, Clock, Compass, FlaskConical, GitMerge, Hand, HelpCircle, Hourglass, MessageCircleQuestion, OctagonAlert, type LucideIcon } from 'lucide-react'
 import type { CodePresence } from '../lib/presence.ts'
 import type { TypeAToi } from '../lib/entonnoir.ts'
 
@@ -25,6 +25,7 @@ export const ICONE_PRESENCE: Record<CodePresence, Icone> = {
 
 export const ICONE_A_TOI: Record<TypeAToi, Icone> = {
   question: { I: MessageCircleQuestion, teinte: 'text-alerte' },
+  action: { I: Hand, teinte: 'text-alerte' },
   fusion: { I: GitMerge, teinte: 'text-info' },
   a_verifier: { I: FlaskConical, teinte: 'text-attention' },
   a_cadrer: { I: Compass, teinte: 'text-info' },
