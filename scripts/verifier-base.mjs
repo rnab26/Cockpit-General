@@ -2751,6 +2751,62 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
+// 45. Renforts : un frein d'usage ne met pas une demande en erreur (0053) ; erreurs effaçables, relançables.
+const PRE = randomUUID(), SLUG_RE = `test-verif-${rand}-re`;
+async function controle45_renforts_frein_erreurs() {
+  section("45. Renforts et frein d'usage (0053) : demande retenue sans erreur, 3 h comptées après la levée, erreurs effaçables seules ou d'un geste, relance");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRE)}, ${q(SLUG_RE)}, 'Projet de test renforts', 'rnab26/test-inexistant')`);
+  const S = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRE)}, 'Écran', 1)`);
+  const c1 = await creerChantier(PRE, { titre: "FREIN Chantier un", etat: "libre", demande: "travail" });
+  await sql(`update chantiers set section_id = ${q(S)} where id = ${q(c1)}`);
+  await sql(`select regler_renforts(${q(SLUG_RE)}, 2, 3)`);
+  const ligne = async () => (await une(`select r.statut, r.erreur, renfort_vivant(r) as vivant from renforts r where r.projet_id = ${q(PRE)} and r.efface_at is null order by r.created_at desc limit 1`));
+  const etat = async () => (await une(`select etat_renforts(${q(SLUG_RE)}) as e`)).e;
+  // frein actif 2 h, demande vieille de 4 h : ni expirée ni en erreur
+  await sql(`insert into renforts (projet_id, section_id, prefixe, statut, chantiers, created_at) values (${q(PRE)}, ${q(S)}, 'renfort/frein1', 'demande', 1, now() - interval '4 hours')`);
+  await sql(`update chefs set frein_jusqu_a = now() + interval '2 hours', frein_raison = 'test' where projet_id = ${q(PRE)}`);
+  await sql(`select renforts_expirer(${q(PRE)})`);
+  let l = await ligne();
+  verifie("frein actif : une demande de 4 h reste « demande », vivante, sans erreur", l.statut === "demande" && l.vivant === true && !l.erreur, l);
+  let e = await etat();
+  verifie("etat_renforts : la demande porte frein_jusqu_a, et l'état global aussi", !!e.renforts[0].frein_jusqu_a && !!e.frein_jusqu_a, e.renforts[0]);
+  await sql(`update chefs set frein_jusqu_a = now() - interval '1 hour' where projet_id = ${q(PRE)}`);
+  await sql(`select renforts_expirer(${q(PRE)})`);
+  l = await ligne();
+  verifie("frein levé il y a 1 h : la demande reste vivante (3 h comptées depuis la levée)", l.statut === "demande" && l.vivant === true, l);
+  await sql(`update chefs set frein_jusqu_a = now() - interval '4 hours' where projet_id = ${q(PRE)}`);
+  await sql(`select renforts_expirer(${q(PRE)})`);
+  l = await ligne();
+  verifie("3 h écoulées APRÈS la levée : vraie erreur « Jamais ouvert »", l.statut === "erreur" && /Jamais ouvert/.test(l.erreur), l);
+  const datee = await une(`select erreur_at is not null as ok from renforts where projet_id = ${q(PRE)} and prefixe = 'renfort/frein1'`);
+  verifie("l'erreur est datée (erreur_at posé par le trigger)", datee.ok === true);
+  e = await etat();
+  verifie("l'erreur récente est affichée", e.renforts.some((r) => r.statut === "erreur"), e.renforts);
+  await sql(`select regler_renforts_erreurs(${q(SLUG_RE)}, 6)`);
+  await sql(`update renforts set erreur_at = now() - interval '7 hours' where projet_id = ${q(PRE)} and statut = 'erreur'`);
+  e = await etat();
+  verifie("plus vieille que le délai réglé (6 h) : masquée seule", e.erreurs_efface_h === 6 && !e.renforts.some((r) => r.statut === "erreur"), e.renforts);
+  await sql(`select regler_renforts_erreurs(${q(SLUG_RE)}, 0)`);
+  e = await etat();
+  verifie("délai 0 = jamais effacée seule : l'erreur revient", e.renforts.some((r) => r.statut === "erreur"), e.renforts);
+  const refuse = await sql(`select regler_renforts_erreurs(${q(SLUG_RE)}, 999)`).then(() => false, () => true);
+  verifie("délai hors bornes (999) refusé", refuse === true);
+  const rel = await une(`select relancer_renfort(r.id) as r from renforts r where r.projet_id = ${q(PRE)} and r.statut = 'erreur' and r.efface_at is null limit 1`);
+  const apres = await etat();
+  verifie("Relancer : une nouvelle demande pour la section, l'ancienne n'est plus affichée", rel.r.chantiers === 1 && apres.renforts.length === 1 && apres.renforts[0].statut === "demande", apres.renforts);
+  const bad = await une(`select relancer_renfort(r.id) as r from renforts r where r.projet_id = ${q(PRE)} and r.statut = 'demande' and r.efface_at is null limit 1`).then(() => false, () => true);
+  verifie("Relancer une demande saine est refusé", bad === true);
+  await sql(`update renforts set created_at = now() - interval '9 hours' where projet_id = ${q(PRE)} and statut = 'demande'`);
+  await sql(`update chefs set frein_jusqu_a = null where projet_id = ${q(PRE)}`);
+  await sql(`select renforts_expirer(${q(PRE)})`);
+  const n = (await une(`select effacer_erreurs_renforts(${q(SLUG_RE)}) as n`)).n;
+  const total = (await une(`select count(*)::int as n from renforts where projet_id = ${q(PRE)}`)).n;
+  verifie("Effacer les erreurs : lignes masquées, aucune supprimée", n >= 1 && (await etat()).renforts.length === 0 && total >= 2, { n, total });
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.effacer_erreurs_renforts(text)', 'execute') as a1, has_function_privilege('anon', 'cockpit.relancer_renfort(uuid)', 'execute') as a2, has_function_privilege('anon', 'cockpit.renfort_demande_depuis(cockpit.renforts)', 'execute') as a3`);
+  verifie("droits : rien d'exécutable par anon", !droits.a1 && !droits.a2 && !droits.a3, droits);
+}
+
 // 42. Un agent vivant garde son chantier (0054) : sa ligne tâche vivante (étape signalée il y a 5 min, battement muet) empêche toute reprise ; morte (40 min), le chantier est repris.
 async function controle42_agent_vivant_garde() {
   section("42. Un agent vivant garde son chantier (0054) : ni reprise, ni libération, ni changement de pris_par");
@@ -3070,6 +3126,7 @@ try {
     controle42_renfort_session_vivante,
     controle43_invites,
     controle42_deja_livre_rien_repris,
+    controle45_renforts_frein_erreurs,
     controle45_regroupement,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
@@ -3082,7 +3139,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PGF, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -3090,8 +3147,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRV)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRV)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);
