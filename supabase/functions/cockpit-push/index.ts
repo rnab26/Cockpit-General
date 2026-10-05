@@ -9,8 +9,8 @@ import webpush from "npm:web-push@3.6.7"
  * par l'app. Le corps est `{message_id}` : le texte est relu en base, jamais
  * pris de l'appelant.
  *
- * Destinataires : les abonnements des admins et des membres du projet du
- * message. Un abonnement mort (404/410) est supprimé ; toute autre erreur est
+ * Destinataires : `cockpit.notif_destinataires` (réglages de chacun, migration
+ * 0052 : type voulu, projet non coupé). Un abonnement mort (404/410) est supprimé ; toute autre erreur est
  * gardée dans `derniere_erreur` (visible en base).
  * Secrets de la fonction : PUSH_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
  * VAPID_SUBJECT (posés par scripts/installer-push.mjs).
@@ -35,12 +35,10 @@ Deno.serve(async (req) => {
   ])
   if (!projet || projet.slug.startsWith("test-")) return json({ envoye: 0, raison: "projet de test" })
 
-  const [{ data: admins }, { data: membres }] = await Promise.all([
-    base.from("admins").select("user_id"),
-    base.from("membres").select("user_id").eq("projet_id", m.projet_id),
-  ])
-  const users = [...new Set([...(admins ?? []), ...(membres ?? [])].map((x: { user_id: string }) => x.user_id))]
-  if (!users.length) return json({ envoye: 0, raison: "personne" })
+  // UNE règle, en base (migration 0052) : admins et membres qui veulent ce type sur ce projet.
+  const { data: dest } = await base.rpc("notif_destinataires", { p_type: "reponse", p_projet: m.projet_id })
+  const users = [...new Set((dest ?? []).map((x: { user_id: string }) => x.user_id))]
+  if (!users.length) return json({ envoye: 0, raison: "personne ne veut cette notification" })
   const { data: abos } = await base.from("push_abonnements").select("id, endpoint, p256dh, auth").in("user_id", users)
   if (!abos?.length) return json({ envoye: 0, raison: "aucun appareil abonné" })
 

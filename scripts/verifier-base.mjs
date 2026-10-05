@@ -2679,10 +2679,10 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
-// 41. Regroupement et livraison (0052) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
+// 42. Regroupement et livraison (0052) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
 const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
-async function controle41_regroupement() {
-  section("41. Regroupement (0052) : groupes_possibles, regrouper_chantiers, « Livré avec » dans les deux fils");
+async function controle42_regroupement() {
+  section("42. Regroupement (0052) : groupes_possibles, regrouper_chantiers, « Livré avec » dans les deux fils");
   await sql(`insert into projets (id, slug, nom) values (${q(PGF)}, ${q(SLUG_GF)}, 'Projet de test regroupement')`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.groupes_possibles(text,uuid[])', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as srv`);
   verifie("groupes_possibles / regrouper_chantiers : réservés au service", !droits.anon && !droits.auth && droits.srv, droits);
@@ -2711,6 +2711,38 @@ async function controle41_regroupement() {
   await sql(`update chantiers set etat = 'a_verifier' where id = ${q(c)}`);
   verifie("livraison : un chantier fusionné (doublon) est prévenu aussi", (await une(`select count(*)::int as n from messages where chantier_id = ${q(d)} and corps like 'Livré avec%'`)).n === 1
     && (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and corps like 'Cette livraison couvre aussi%'`)).n === 1);
+}
+
+async function controle41_reglages_notifications() {
+  section("41. Réglages des notifications (0052) : types et projets par personne, filtrage serveur, une seule règle");
+  const types = await sql(`select code, defaut, emis from notif_types order by ordre`);
+  verifie("catalogue : « reponse » est émis et allumé par défaut", types.find((t) => t.code === "reponse")?.emis === true && types.find((t) => t.code === "reponse")?.defaut === true, types);
+  verifie("catalogue : seuls les types réellement émis ont un push (les autres sont « bientôt »)", types.filter((t) => t.emis).map((t) => t.code).join() === "reponse", types);
+  const droits = await une(`select has_function_privilege('authenticated', 'cockpit.notif_destinataires(text,uuid)', 'execute') as d, has_function_privilege('anon', 'cockpit.notif_veut(uuid,text,uuid)', 'execute') as v, has_function_privilege('service_role', 'cockpit.notif_destinataires(text,uuid)', 'execute') as s`);
+  verifie("notif_destinataires / notif_veut : réservées au service (revoke public)", !droits.d && !droits.v && droits.s, droits);
+  const rls = await une(`select (select relrowsecurity and relreplident = 'f' from pg_class where oid = 'cockpit.notif_reglages'::regclass) as reglages, (select relrowsecurity and relreplident = 'f' from pg_class where oid = 'cockpit.notif_types'::regclass) as catalogue`);
+  verifie("RLS activée et replica identity full sur les deux tables", rls.reglages === true && rls.catalogue === true, rls);
+  const moi = await rest("notif_reglages", { methode: "POST", jwt, prefer: "resolution=merge-duplicates,return=representation", corps: { user_id: userId, types: { reponse: false }, projets_coupes: [P2] } });
+  verifie("une personne pose SES réglages", moi.status < 300 && moi.json?.[0]?.types?.reponse === false, moi);
+  const autre = await rest("notif_reglages", { methode: "POST", jwt, corps: { user_id: randomUUID(), types: {}, projets_coupes: [] } });
+  verifie("elle ne peut pas écrire ceux d'une autre personne", autre.status >= 400, autre.status);
+  const lus = await rest("notif_reglages?select=user_id", { jwt });
+  verifie("elle ne lit que les siens", Array.isArray(lus.json) && lus.json.every((l) => l.user_id === userId), lus.json);
+  const veut = async (type, projet) => (await une(`select notif_veut(${q(userId)}, ${q(type)}, ${q(projet)}) as v`)).v;
+  verifie("règle : type coupé → ne veut pas", (await veut("reponse", P1)) === false);
+  await sql(`update notif_reglages set types = '{}', projets_coupes = array[${q(P2)}]::uuid[] where user_id = ${q(userId)}`);
+  verifie("règle : aucun choix → le défaut du catalogue (voulu)", (await veut("reponse", P1)) === true);
+  verifie("règle : projet coupé → ne veut pas, les autres oui", (await veut("reponse", P2)) === false && (await veut("reponse", P1)) === true);
+  verifie("règle : type inconnu → jamais voulu", (await veut("inconnu", P1)) === false);
+  const test = await une(`select count(*)::int as n from notif_destinataires('reponse', ${q(P1)})`);
+  verifie("destinataires : jamais pour un projet de test", test.n === 0, test);
+  const reel = await une(`select id from projets where slug not like 'test-%' limit 1`);
+  if (reel) {
+    verifie("destinataires : un type non émis n'a aucun destinataire", (await une(`select count(*)::int as n from notif_destinataires('a_toi', ${q(reel.id)})`)).n === 0);
+    await sql(`update notif_reglages set projets_coupes = array[${q(reel.id)}]::uuid[] where user_id = ${q(userId)}`);
+    verifie("destinataires : la personne qui a coupé ce projet n'y figure pas", (await une(`select count(*)::int as n from notif_destinataires('reponse', ${q(reel.id)}) where user_id = ${q(userId)}`)).n === 0);
+  }
+  await sql(`delete from notif_reglages where user_id = ${q(userId)}`);
 }
 
 try {
@@ -2768,10 +2800,11 @@ try {
     controle38_renforts_echecs,
     controle39_delai_sans_signe,
     controle40_liberation_auto,
-    controle41_regroupement,
+    controle41_reglages_notifications,
+    controle42_regroupement,
   ];
-  for (const etape of etapes) {
-    if (process.env.VERIF_SEUL && !(etape.name || '').includes(process.env.VERIF_SEUL)) continue; // VERIF_SEUL=regroupement : un seul contrôle (développement)
+  // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
+  for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
     try { await etape(); }
     catch (e) { verifie(`${etape.name || "bloc"} : s'est terminé sans planter`, false, e.message); }
   }
