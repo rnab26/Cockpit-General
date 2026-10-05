@@ -7,6 +7,7 @@ import { dateRelative } from '../lib/dates.ts'
 import { useMenuQuiSeFerme } from '../ui/Modale.ts'
 import { useGlobal } from '../contexte.ts'
 import { estBranche } from '../lib/branchement.ts'
+import { BarreRecherche, BoutonLoupe } from './Recherche.tsx'
 
 export type ActionMenu = 'sections' | 'doublons' | 'reglages' | 'projets' | 'choisir' | 'installer'
 
@@ -44,6 +45,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
   installable: boolean
 }) {
   const [menu, setMenu] = useState(false)
+  const [recherche, setRecherche] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   // Liste déroulante des projets (30 sept. : « on ne voit pas tous les projets » avec la rangée qui défile).
   const liste = useRef<HTMLDivElement>(null)
@@ -57,7 +59,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
   )
   return (
     <header className="sticky top-0 z-30 border-b border-bord bg-fond/95 backdrop-blur" style={{ borderTopColor: (!vueTout && projet?.couleur) || undefined }}>
-      <div className="mx-auto flex max-w-3xl items-center gap-1 px-3 pt-[max(env(safe-area-inset-top),6px)] pb-1.5">
+      <div className="mx-auto flex max-w-3xl lg:max-w-5xl items-center gap-1 px-3 pt-[max(env(safe-area-inset-top),6px)] pb-1.5">
         <div ref={liste} className="relative min-w-0 flex-1" data-testid="choix-projet" data-vue={vueTout ? 'tout' : projet?.slug ?? ''}>
           <button type="button" aria-haspopup="listbox" aria-expanded={ouvert} onClick={() => setOuvert(!ouvert)} data-testid="choix-projet-bouton"
             className="flex h-10 w-full min-w-0 items-center gap-2 rounded-full border border-bord bg-carte px-3 text-left text-sm font-semibold text-texte">
@@ -95,6 +97,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
         <Button variante="discret" taille="sm" aria-label="Actualiser" title={derniereMaj ? `Mis à jour ${dateRelative(derniereMaj.toISOString())}` : 'Actualiser'} onClick={onActualiser} className="px-2" data-testid="actualiser" data-chargement={chargement ? '1' : '0'} data-recharge-du={rechargeDu ?? 0}>
           <RefreshCw size={18} className={chargement ? 'animate-spin' : ''} />
         </Button>
+        <BoutonLoupe ouvert={recherche} onToggle={() => setRecherche((v) => !v)} />
         {projet && !vueTout ? <Button variante="primaire" taille="sm" onClick={onNouveau} data-testid="nouveau-chantier" className="px-2.5"><Plus size={18} /><span className="hidden sm:inline">Chantier</span></Button> : null}
         <div className="relative" ref={ref}>
           <Button variante="discret" taille="sm" aria-label="Menu" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} className="px-2" data-testid="menu"><MoreHorizontal size={20} /></Button>
@@ -110,6 +113,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
           ) : null}
         </div>
       </div>
+      {recherche ? <BarreRecherche onFermer={() => setRecherche(false)} /> : null}
       {direct === 'coupe' ? (
         <div className="border-t border-bord px-3 py-1 text-center text-xs text-texte-2" data-testid="direct-coupe">
           Direct coupé — rafraîchissement toutes les 30 s{derniereMaj ? ` · à jour ${dateRelative(derniereMaj.toISOString())}` : ''}

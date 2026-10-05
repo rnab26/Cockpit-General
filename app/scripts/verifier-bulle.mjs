@@ -110,6 +110,7 @@ try {
   await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 5000 })
 
   // --- 5. le réglage d'extinction reste dans « Réglages du projet »
+  await page.getByTestId('onglet-vue-reglages').click()
   await page.getByTestId('reglages-projet').getByRole('button').first().click()
   const caseBulle = page.getByLabel('Bulle d\'aide sur ce projet')
   await caseBulle.waitFor({ timeout: 5000 })
