@@ -114,6 +114,8 @@ export interface Message {
   chantier_id: string | null
   auteur: string
   auteur_type: AuteurType
+  /** Posé par le serveur quand l'auteur est une personne invitée (pas un admin). */
+  auteur_user?: string | null
   kind: KindMessage
   corps: string
   pourquoi: string | null
@@ -184,7 +186,13 @@ export interface Moi {
   user_id: string
   admin: boolean
   email: string
+  /** Rôle dans chaque projet où la personne est invitée (projet_id → rôle). */
+  roles?: Record<string, RoleMembre>
+  /** Droits effectifs par projet (migration 0059) : demandes, messages, valider. */
+  droits?: Record<string, Partial<Record<'demandes' | 'messages' | 'valider', boolean>>>
 }
+
+export type RoleMembre = 'lecteur' | 'suggere' | 'utilisateur'
 
 /** Une conversation Claude Code (migration 0008), suivie par les hooks. */
 export interface SessionClaude {
