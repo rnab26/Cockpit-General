@@ -49,6 +49,8 @@ case "${1:-}" in
   --suivant)
     [[ "${2:-}" =~ $uuid ]] || { echo "--suivant <id renfort>" >&2; exit 2; }
     m=$(marque) && printf '%s\n' "$2" > "$m" 2>/dev/null
+    # Lie la session des hooks (CLAUDE_CODE_SESSION_ID) au renfort : son signe de vie compte (migration 0057).
+    [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && "$SQL" "select renfort_lier('$2', '$(q "$CLAUDE_CODE_SESSION_ID")')" >/dev/null 2>&1
     r=$("$SQL" "select prochain_renfort('$2') as r" 2>/dev/null | jq -c '.rows[0].r // empty')
     [ -n "$r" ] && [ "$r" != "null" ] || { echo "ERREUR — le cockpit ne répond pas (prochain_renfort). Réessaie dans une minute ; si ça persiste, arrête-toi en une ligne."; exit 1; }
     etat=$(printf '%s' "$r" | jq -r '.etat')
