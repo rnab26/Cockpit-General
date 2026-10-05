@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ShieldCheck, ShieldAlert } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ChevronDown } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
-import { phraseFilet, type EtatFiletBase } from '../lib/filet.ts'
+import { phraseFilet, detailsFilet, ROLE_FILET, type EtatFiletBase } from '../lib/filet.ts'
 
 /**
- * FILET DE SÉCURITÉ (0044) : la base surveille toute seule (pg_cron, toutes les 3 min) ;
- * du travail attend et rien de vivant ne le traite → elle réveille Claude par le réveil
- * immédiat. Cette ligne dit où ça en est, et règle l'interrupteur et le plafond du projet.
+ * RÉVEIL AUTOMATIQUE (« filet de sécurité », 0044) : la base surveille toute seule (pg_cron,
+ * toutes les 3 min) ; du travail attend et rien de vivant ne le traite → Claude est réveillé.
+ * Premier niveau : le rôle en une phrase, UN état, l'interrupteur et, si ça bloque, le geste.
+ * Tout le reste (limite par jour, délai, dernier réveil) est dans « Détails ».
  */
-export function FiletSecurite({ projet }: { projet: Projet }) {
+export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: () => void }) {
   const toast = useToast()
   const [etat, setEtat] = useState<EtatFiletBase | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
-  const [regler, setRegler] = useState(false)
+  const [details, setDetails] = useState(false)
   const [plafond, setPlafond] = useState('')
   const [envoi, setEnvoi] = useState(false)
 
@@ -30,39 +31,76 @@ export function FiletSecurite({ projet }: { projet: Projet }) {
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_filet', { p_projet: projet.slug, ...args })
     setEnvoi(false)
-    if (error) { toast.erreur(`Filet non réglé : ${messageErreur(error)}`); return }
+    if (error) { toast.erreur(`Réveil automatique non réglé : ${messageErreur(error)}`); return }
     toast.succes(ok); await charger()
   }
 
-  if (erreur) return <p className="rounded-2xl border border-bord bg-carte px-3 py-2 text-xs text-alerte" data-testid="filet-erreur">Filet de sécurité indisponible : {erreur}</p>
-  if (!etat) return <p className="px-1 text-xs text-texte-2" role="status">Chargement du filet de sécurité…</p>
+  if (erreur) return (
+    <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5 text-xs" data-testid="filet-erreur">
+      <p className="text-alerte">Réveil automatique indisponible : {erreur}</p>
+      <Button taille="sm" className="mt-2" onClick={() => void charger()}>Réessayer</Button>
+    </section>
+  )
+  if (!etat) return <p className="px-1 text-xs text-texte-2" role="status" data-testid="filet-chargement">Chargement du réveil automatique…</p>
   const ph = phraseFilet(etat)
-  const Icone = ph.ton === 'ok' ? ShieldCheck : ShieldAlert
+  const Icone = ph.ton === 'alerte' ? ShieldAlert : ShieldCheck
+  const teinte = ph.ton === 'alerte' ? 'text-alerte' : ph.ton === 'attente' ? 'text-accent' : 'text-ok'
+  const test = etat.statut === 'test'
+  const ouvrirDetails = () => { setDetails(true); setPlafond(String(etat.plafond)) }
+  const geste = ph.action
   return (
     <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="filet-securite" data-statut={etat.statut}>
-      <div className="flex items-start gap-2">
-        <Icone size={16} className={`mt-0.5 shrink-0 ${ph.ton === 'alerte' ? 'text-alerte' : 'text-accent'}`} aria-hidden />
+      <h3 className="text-sm font-semibold">Réveil automatique</h3>
+      <p className="text-xs leading-snug text-texte-2" data-testid="filet-role">{ROLE_FILET}</p>
+      <div className="mt-2 flex items-start gap-2">
+        <Icone size={16} className={`mt-0.5 shrink-0 ${teinte}`} aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium leading-snug" data-testid="filet-titre">{ph.titre}</p>
+          <p className={`text-sm font-medium leading-snug ${ph.ton === 'alerte' ? 'text-alerte' : ''}`} data-testid="filet-titre">{ph.titre}</p>
           {ph.detail ? <p className="text-xs leading-snug text-texte-2" data-testid="filet-detail">{ph.detail}</p> : null}
         </div>
-        {etat.statut !== 'test' ? <Button taille="sm" variante="discret" onClick={() => { setRegler(!regler); setPlafond(String(etat.plafond)) }} data-testid="filet-regler">Régler</Button> : null}
       </div>
-      {regler ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="filet-formulaire">
-          <Button taille="sm" chargement={envoi} data-testid="filet-interrupteur"
-            onClick={() => void appliquer({ p_actif: !etat.projet_actif }, etat.projet_actif ? 'Filet de sécurité éteint sur ce projet.' : 'Filet de sécurité rallumé sur ce projet.')}>
-            {etat.projet_actif ? 'Éteindre' : 'Rallumer'}
-          </Button>
-          <label className="flex items-center gap-1.5 text-xs text-texte-2">
-            Réveils max par jour
-            <input value={plafond} onChange={(e) => setPlafond(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
-              className="h-9 w-14 rounded-lg border border-bord bg-fond px-2 text-sm text-texte" data-testid="filet-plafond" />
-          </label>
-          <Button taille="sm" variante="primaire" chargement={envoi} disabled={plafond === '' || Number(plafond) > 48 || Number(plafond) === etat.plafond}
-            onClick={() => void appliquer({ p_plafond: Number(plafond) }, `Plafond : ${plafond} réveil(s) par jour.`)} data-testid="filet-enregistrer">Enregistrer</Button>
-          <p className="basis-full text-[11px] text-texte-2">0 à 48. Au plus un réveil toutes les 5 minutes, jamais si une session travaille déjà.</p>
+      {geste && !test ? (
+        <div className="mt-2">
+          <Button taille="sm" variante="primaire" chargement={envoi} data-testid="filet-action"
+            onClick={() => {
+              if (geste.code === 'jeton') { onJeton?.(); return }
+              if (geste.code === 'plafond') { ouvrirDetails(); return }
+              void appliquer({ p_actif: true }, 'Réveil automatique rallumé sur ce projet.')
+            }}>{geste.libelle}</Button>
         </div>
+      ) : null}
+      {!test ? (
+        <>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <button type="button" onClick={() => (details ? setDetails(false) : ouvrirDetails())} aria-expanded={details} data-testid="filet-regler"
+              className="inline-flex items-center gap-0.5 text-xs text-texte-2 underline-offset-2 hover:underline">
+              Détails
+              <ChevronDown size={14} className={`transition ${details ? 'rotate-180' : ''}`} aria-hidden />
+            </button>
+            {etat.statut !== 'eteint' ? (
+              <Button taille="sm" variante="discret" chargement={envoi} data-testid="filet-interrupteur"
+                onClick={() => void appliquer({ p_actif: !etat.projet_actif }, etat.projet_actif ? 'Réveil automatique éteint sur ce projet.' : 'Réveil automatique rallumé sur ce projet.')}>
+                {etat.projet_actif ? 'Éteindre' : 'Rallumer'}
+              </Button>
+            ) : null}
+          </div>
+          {details ? (
+            <div className="mt-2 space-y-2 border-t border-bord pt-2" data-testid="filet-formulaire">
+              <ul className="list-disc space-y-0.5 pl-4 text-xs leading-snug text-texte-2" data-testid="filet-details">
+                {detailsFilet(etat).map((l) => <li key={l}>{l}</li>)}
+              </ul>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-texte-2">
+                  Réveils par jour au plus (0 à 48)
+                  <input value={plafond} onChange={(e) => setPlafond(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+                    className="h-9 w-14 rounded-lg border border-bord bg-fond px-2 text-sm text-texte" data-testid="filet-plafond" />
+                </label>
+                <Button taille="sm" variante="primaire" chargement={envoi} disabled={plafond === '' || Number(plafond) > 48 || Number(plafond) === etat.plafond}
+                  onClick={() => void appliquer({ p_plafond: Number(plafond) }, `Limite : ${plafond} réveil(s) par jour.`)} data-testid="filet-enregistrer">Enregistrer</Button>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </section>
   )
