@@ -2711,6 +2711,40 @@ async function controle41_reglages_notifications() {
   await sql(`delete from notif_reglages where user_id = ${q(userId)}`);
 }
 
+// 42. « Les 3 correctifs » (0051, chantier 72d09c69) : Terminé sort de « bloqué », un chantier déjà livré n'est pas repris, les réservations expirées sont rendues.
+async function controle42_deja_livre_rien_repris() {
+  section("41. Rien n'est repris à tort (0051) : Terminé sort de « bloqué », déjà livré = pas repris, réservation expirée rendue");
+  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération') on conflict do nothing`);
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_LB, COCKPIT_SESSION: "verifier-base-41" };
+  const lancer = (script, args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts", script), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  // 1. --termine sort un chantier de « bloqué ».
+  const bl = await creerChantier(PLB, { titre: "41 Bloqué puis livré", etat: "bloque" });
+  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+  verifie("progression.sh --termine : un chantier « bloqué » passe « à vérifier »", r.code === 0 && (await une(`select etat from chantiers where id = ${q(bl)}`)).etat === "a_verifier", r);
+  // 2. Déjà livré, sans nouveau mot de Raphaël : pas repris ; après un « Corriger » : repris.
+  const livre = await creerChantier(PLB, { titre: "41 Déjà livré", etat: "libre" });
+  const neuf = await creerChantier(PLB, { titre: "41 Vraiment libre", etat: "libre" });
+  await sql(`select signaler_activite(${q(SLUG_LB)}, ${q(livre)}, 'agent/test-41', 'Livré', 100, null, 'termine', null)`);
+  const prenables = async () => (await sql(`select id from chantiers_prenables(${q(PLB)}, null)`)).map((x) => x.id);
+  let l = await prenables();
+  verifie("chantier libre dont la dernière activité est « terminé » sans suite : pas repris ; un chantier libre neuf : repris", !l.includes(livre) && l.includes(neuf), l);
+  await creerMessage(PLB, livre, { kind: "constat", corps: "Ça ne marche pas", auteur_type: "proprietaire" });
+  l = await prenables();
+  verifie("après un message de Raphaël (Corriger) : le chantier redevient prenable", l.includes(livre), l);
+  // 3. Réservation expirée rendue, réservation valide gardée.
+  const exp = await creerChantier(PLB, { titre: "41 Réservation expirée", etat: "libre" });
+  const val = await creerChantier(PLB, { titre: "41 Réservation valide", etat: "libre" });
+  await sql(`update chantiers set pris_par = 'agent/vieux', pris_jusqu_a = now() - interval '1 hour' where id = ${q(exp)}`);
+  await sql(`update chantiers set pris_par = 'agent/vivant', pris_jusqu_a = now() + interval '1 hour' where id = ${q(val)}`);
+  await une(`select liberation_passe(${q(SLUG_LB)}, true) as r`);
+  const e = await une(`select (select pris_par from chantiers where id = ${q(exp)}) as exp, (select pris_par from chantiers where id = ${q(val)}) as val`);
+  verifie("la passe rend la réservation expirée (pris_par vidé) et garde la valide", e.exp === null && e.val === "agent/vivant", e);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2767,6 +2801,7 @@ try {
     controle39_delai_sans_signe,
     controle40_liberation_auto,
     controle41_reglages_notifications,
+    controle42_deja_livre_rien_repris,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
