@@ -7,7 +7,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifie, bilan } from './_assert.ts'
 import { nettoyerUrl, masquerSecrets, bornerReproduction, REPRO_MAX_OCTETS } from '../../supabase/functions/cockpit-embed/reproduction.ts'
-import { lireReproduction, actionEnMots, urlOuvrable } from '../src/lib/reproduction.ts'
+import { lireReproduction, actionEnMots, urlOuvrable, etatReproduction, testSynthetique } from '../src/lib/reproduction.ts'
 
 const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
@@ -117,5 +117,13 @@ verifie('lien, case, onglet, saisie en mots',
   && actionEnMots({ type: 'saisie', quoi: 'champ', libelle: 'Email' }) === 'Remplit le champ « Email »')
 verifie('page d’une autre origine : adresse entière', actionEnMots({ type: 'page', libelle: 'https://autre.fr/a' }, 'https://site.fr') === 'Ouvre la page https://autre.fr/a')
 verifie('double toucher = une étape', lireReproduction({ page: { url: 'https://s.fr/' }, actions: [{ type: 'clic', quoi: 'bouton', libelle: 'OK' }, { type: 'clic', quoi: 'bouton', libelle: 'OK' }] })?.etapes.length === 1)
+
+console.log('\n6. Reproduction prête : rejouable ou test synthétique')
+verifie('adresse ouvrable → rejouable', etatReproduction(vue) === 'rejouable')
+const sansUrl = lireReproduction({ page: { titre: 'App mobile' }, actions: [{ type: 'clic', quoi: 'bouton', libelle: 'Exporter' }], erreurs: [{ message: 'TypeError: x' }] })
+verifie('sans adresse mais des étapes → test synthétique', etatReproduction(sansUrl) === 'synthetique')
+verifie('rien → vide', etatReproduction(null) === 'vide')
+const texte = sansUrl ? testSynthetique(sansUrl, 'Export planté') : ''
+verifie('test synthétique : titre, départ, étape numérotée, erreur à retrouver', texte.includes('Test synthétique : Export planté') && texte.includes('« App mobile »') && texte.includes('1. Touche le bouton « Exporter »') && texte.includes('À retrouver : TypeError: x'), texte)
 
 bilan('Pour reproduire')
