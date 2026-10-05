@@ -1,5 +1,4 @@
 import { ListChecks, Settings2, Wallet, type LucideIcon } from 'lucide-react'
-import { Vide } from '../ui/Etats.tsx'
 import type { OngletProjet } from '../lib/vueProjet.ts'
 
 const ONGLETS: { cle: OngletProjet; libelle: string; Icone: LucideIcon }[] = [
@@ -19,15 +18,5 @@ export function OngletsProjet({ actif, onChoisir }: { actif: OngletProjet; onCho
         </button>
       ))}
     </div>
-  )
-}
-
-/** Coûts du projet : aucune donnée de coût n'existe dans la base du cockpit, l'écran le dit au lieu d'inventer. */
-export function CoutsProjet() {
-  return (
-    <section aria-label="Coûts du projet" data-testid="couts-projet">
-      <Vide icone={<Wallet size={28} strokeWidth={1.5} />} titre="Aucune dépense enregistrée"
-        texte="Le cockpit ne suit pas encore les coûts ni les dépenses d’un projet : aucun chiffre n’est stocké, donc rien n’est affiché. Dès qu’une source existera, elle apparaîtra ici." />
-    </section>
   )
 }
