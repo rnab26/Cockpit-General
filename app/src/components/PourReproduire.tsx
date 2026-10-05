@@ -1,8 +1,11 @@
 import { useMemo } from 'react'
-import { ExternalLink, Repeat } from 'lucide-react'
+import { useState } from 'react'
+import { ExternalLink, Repeat, ClipboardCopy } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { Repliable } from '../ui/Repliable.tsx'
-import { lireReproduction } from '../lib/reproduction.ts'
+import { lireReproduction, etatReproduction, testSynthetique } from '../lib/reproduction.ts'
+import { copierTexte } from '../lib/copier.ts'
+import { useToast } from '../ui/Toast.tsx'
 import { dateLongue } from '../lib/dates.ts'
 
 /**
@@ -13,12 +16,19 @@ import { dateLongue } from '../lib/dates.ts'
  */
 export function PourReproduire({ chantier }: { chantier: Chantier }) {
   const vue = useMemo(() => lireReproduction(chantier.reproduction), [chantier.reproduction])
+  const toast = useToast()
+  const [copie, setCopie] = useState(false)
   if (!vue) return null
+  const etat = etatReproduction(vue)
+  const copierTest = async () => {
+    if (await copierTexte(testSynthetique(vue, chantier.titre))) { setCopie(true); toast.succes('Test synthétique copié : colle-le dans une session ou envoie-le à un testeur.') }
+    else toast.erreur('Copie impossible : sélectionne le texte à la main.')
+  }
   const ligne = (etiquette: string, valeur: string | null | undefined, testId?: string) => valeur
     ? <p className="text-sm" data-testid={testId}><span className="text-texte-2">{etiquette} : </span><span className="break-words">{valeur}</span></p>
     : null
   return (
-    <Repliable testId="pour-reproduire" titre={<span className="flex items-center gap-1.5 text-sm font-medium"><Repeat size={16} className="text-texte-2" aria-hidden />Pour reproduire</span>}>
+    <Repliable testId="pour-reproduire" titre={<span className="flex items-center gap-1.5 text-sm font-medium"><Repeat size={16} className="text-texte-2" aria-hidden />Pour reproduire<span className="rounded-full bg-carte-2 px-2 py-0.5 text-xs font-normal text-texte-2" data-testid="repro-etat">{etat === 'rejouable' ? 'prête · rejouable' : 'prête · test synthétique'}</span></span>}>
       <div className="space-y-1">
         <p className="text-xs text-texte-2">{vue.moment}{vue.heure ? `, ${dateLongue(vue.heure)}` : ''}</p>
         {ligne('Page', vue.pageTitre || vue.url, 'repro-page')}
@@ -53,6 +63,13 @@ export function PourReproduire({ chantier }: { chantier: Chantier }) {
             <ExternalLink size={16} aria-hidden />Rejouer : ouvrir la page
           </a>
           <p className="text-xs text-texte-2">Ouvre la page d’origine ; refais ensuite les étapes ci-dessus.</p>
+        </>) : null}
+        {etat === 'synthetique' ? (<>
+          <button type="button" onClick={() => void copierTest()} data-testid="test-synthetique"
+            className="mt-2 inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-bord bg-carte px-3.5 text-[15px] font-medium text-texte hover:bg-carte-2">
+            <ClipboardCopy size={16} aria-hidden />{copie ? 'Copié' : 'Copier le test synthétique'}
+          </button>
+          <p className="text-xs text-texte-2">Pas d’adresse à rouvrir pour ce projet : le scénario écrit sert de test.</p>
         </>) : null}
       </div>
     </Repliable>
