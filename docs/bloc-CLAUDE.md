@@ -186,7 +186,8 @@ demandes des utilisateurs, progression des autres sessions.
   embarqué joint à chaque demande et correction la page, l'appareil, la
   version servie, ses 20 dernières actions et les erreurs JavaScript.
   `scripts/cockpit-reproduction.sh --chantier <id>` l'affiche ; ouvre la page,
-  refais les étapes, constate le problème AVANT de corriger (et rejoue après).
+  refais les étapes, constate le problème AVANT de corriger (et rejoue après). Sans adresse à
+  rouvrir, l'app propose « Copier le test synthétique » (le scénario écrit).
 - **Le cycle** est une colonne `etat` : à trier → à cadrer → libre → en cours →
   à vérifier → validé (+ bloqué, reporté). **Seul un humain pose « validé »**
   (bouton « Ça fonctionne, je certifie » ; « Corriger » complète la demande sur
