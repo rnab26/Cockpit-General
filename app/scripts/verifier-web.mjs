@@ -373,6 +373,22 @@ try {
     await page.keyboard.press('Escape')
     await dlgT.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
+  // « En attente » (chantier 37405805) : chaque ligne dit ce qui se passe, ce qui va être fait, et « rien à faire » ou le geste.
+  if (await nTuile('enPause')) {
+    await page.getByTestId('tuile-enPause').click()
+    const dlgE = page.getByRole('dialog').filter({ hasText: 'En attente' })
+    await dlgE.waitFor({ timeout: 5000 })
+    const lignesE = dlgE.getByTestId('ligne-en-attente')
+    const nE = await lignesE.count()
+    const textesE = await lignesE.evaluateAll((els) => els.map((e) => [...e.querySelectorAll('[data-testid="attente-quoi"],[data-testid="attente-suite"]')].map((x) => x.textContent).join(' ')))
+    verifie('tuile « en attente » : chaque ligne dit ce qui se passe et ce qui va être fait, sans jargon',
+      nE >= 1 && (await dlgE.getByTestId('attente-quoi').count()) === nE && (await dlgE.getByTestId('attente-suite').count()) === nE
+      && textesE.every((t) => !/renfort\/|réservé|abandonné/.test(t) && /(Rien à faire|Lancer|repris|prend|prendra|relance)/.test(t)), textesE)
+    verifie('…titre entier (pas tronqué) et pas de débordement horizontal',
+      !(await dlgE.getByTestId('ligne-en-attente').first().locator('span.truncate').count()) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    await page.keyboard.press('Escape')
+    await dlgE.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
   // « Fini » (chantier 3cea6ae9) : chaque ligne dit quand et par qui, le plus récemment certifié en haut.
   if (await nTuile('fini')) {
     await page.getByTestId('tuile-fini').click()
@@ -671,7 +687,7 @@ try {
   // Cas signalé le 30 sept. (chantier fb19d6a8) : « relancer encore alors que c'est déjà relancé ? » — l'écran dit le geste.
   const sit = conv().getByTestId('situation-silence')
   verifie('silencieux : dit qui le tient, depuis quand, et LE geste (abandonné, sans chef programmée → « À faire »)',
-    await sit.count() === 1 && /signe de vie/.test(await sit.getByTestId('silence-quoi').textContent()) && /^À faire/.test(await sit.getByTestId('silence-geste').textContent()) && await sit.getAttribute('data-geste') === 'relancer', await sit.textContent())
+    await sit.count() === 1 && /s’est arrêté/.test(await sit.getByTestId('silence-quoi').textContent()) && /^À faire/.test(await sit.getByTestId('silence-geste').textContent()) && await sit.getAttribute('data-geste') === 'relancer', await sit.textContent())
   verifie('…les boutons de relance restent visibles quand c’est le geste', await conv().getByTestId('bulle-relance').getByTestId('copier-consigne').isVisible())
   await fermerConv()
 
