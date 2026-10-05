@@ -28,6 +28,8 @@ import { Doublons, DoublonDe } from './Doublons.tsx'
 import { BarreSelection } from './BarreSelection.tsx'
 import { Reglages } from './Reglages.tsx'
 import { ProjetsMembres } from './ProjetsMembres.tsx'
+import { OngletsProjet, CoutsProjet } from './OngletsProjet.tsx'
+import { ONGLET_DEFAUT, type OngletProjet } from '../lib/vueProjet.ts'
 import { Chargement, Erreur, Vide } from '../ui/Etats.tsx'
 import { Button } from '../ui/Button.tsx'
 
@@ -55,6 +57,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const [doublonDe, setDoublonDe] = useState<Chantier | null>(null)
   const [selectionActive, setSelectionActive] = useState(false)
   const [selectionIds, setSelectionIds] = useState<Set<string>>(new Set())
+  const [onglet, setOnglet] = useState<OngletProjet>(ONGLET_DEFAUT)
   const [now, setNow] = useState(() => new Date())
   const admin = moi.admin
 
@@ -95,6 +98,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const changerVue = useCallback((id: string) => {
     d.choisirVue(id)
+    setOnglet(ONGLET_DEFAUT)  // on arrive toujours sur la zone chantiers
     setSelectionActive(false); setSelectionIds(new Set())
     window.scrollTo({ top: 0 })
   }, [d.choisirVue]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -222,10 +226,13 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           ) : (
             <AvecProjet projetId={d.projet.id}>
               <div className="space-y-5" data-testid="vue-projet">
-                <TableauDeBord projetId={d.projet.id} />
-                <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
-                  deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />
-                <ReglagesProjet projetId={d.projet.id} />
+                <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={<OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                {onglet === 'travail' ? (
+                  <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
+                    deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />
+                ) : null}
+                {onglet === 'reglages' ? <ReglagesProjet projetId={d.projet.id} /> : null}
+                {onglet === 'couts' ? <CoutsProjet /> : null}
               </div>
             </AvecProjet>
           )}

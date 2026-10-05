@@ -462,7 +462,28 @@ try {
   verifie('FacePro : aucune barre colorée sans preuve de vie (la capture du 29/09)',
     await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vivant="oui"] [data-vive="oui"]').count())
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
-  verifie('FacePro : « Réglages du projet » replié en bas', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
+  // Vue du projet réorganisée (9cc71872) : chiffres, trois icônes, discussion, « Ça avance », « Prêt à lancer », puis la liste des chantiers.
+  const ysVue = await page.evaluate(() => ['tuiles', 'onglets-projet', 'ecrire-projet', 'en-ce-moment', 'a-lancer', 'tous-les-chantiers'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().top ?? -1))
+  verifie('FacePro : ordre des blocs = chiffres, 3 icônes, discussion, « Ça avance », « Prêt à lancer », chantiers', ysVue.every((y, i) => y >= 0 && (i === 0 || y > ysVue[i - 1])), ysVue)
+  const bOnglets = await page.getByTestId('onglets-projet').boundingBox()
+  const bTabs = await page.getByTestId('onglets-projet').getByRole('tab').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  verifie('FacePro : les trois icônes tiennent sur la même ligne, dans l’écran', new Set(bTabs).size === 1 && bOnglets.width <= (page.viewportSize()?.width ?? 9999))
+  verifie('FacePro : les réglages sont derrière la 2e icône, pas à la suite', await page.getByTestId('reglages-projet').count() === 0)
+  await page.getByTestId('onglet-vue-couts').click()
+  verifie('FacePro : Coûts = état vide honnête (aucune donnée de coût), les 4 chiffres restent en haut', await page.getByTestId('couts-projet').count() === 1 && /Aucune dépense enregistrée/.test(await page.getByTestId('couts-projet').textContent()) && await page.getByTestId('tuiles').count() === 1 && await page.getByTestId('tous-les-chantiers').count() === 0)
+  await page.getByTestId('onglet-vue-reglages').click()
+  verifie('FacePro : « Réglages du projet » replié, dans l’onglet Réglages', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
+  await page.getByTestId('onglet-vue-travail').click()
+  // La loupe : entre « Actualiser » et « + Chantier ».
+  const xsLoupe = await page.evaluate(() => ['actualiser', 'loupe', 'nouveau-chantier'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().left ?? -1))
+  verifie('loupe en haut, juste après « Actualiser »', xsLoupe.every((x, i) => x >= 0 && (i === 0 || x > xsLoupe[i - 1])), xsLoupe)
+  await page.getByTestId('loupe').click()
+  await page.getByTestId('recherche-champ').fill('zzzqqqintrouvable')
+  verifie('recherche sans résultat : le dit', await page.getByTestId('recherche-aucun').isVisible())
+  await page.getByTestId('recherche-effacer').click()
+  verifie('recherche : « effacer » vide le champ et remet le mode d’emploi', (await page.getByTestId('recherche-champ').inputValue()) === '' && await page.getByTestId('recherche-aide').isVisible())
+  await page.keyboard.press('Escape')
+  verifie('recherche : Échap la ferme', await page.getByTestId('barre-recherche').count() === 0)
   // « Personne ne travaille sur ce projet » se vérifie sur le projet de test (plus bas), jamais sur FacePro :
   // ses vrais chantiers réservés à des agents ou ses « où ça en est » en attente le faisaient rougir (30/09, chantier e0974112).
   verifie('FacePro : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
@@ -1447,6 +1468,9 @@ try {
   // ===================================================================
   // 7 bis. Mise en ligne (GitHub simulé) et mode autonome, dans « Réglages du projet » (replié)
   console.log('  — mise en ligne et mode autonome')
+  // Vue du projet (9cc71872) : on arrive sur « travail » ; les réglages sont derrière la 2e icône.
+  verifie('vue projet : trois icônes sur une ligne, on arrive sur « travail »', await page.getByTestId('onglets-projet').getByRole('tab').count() === 3 && (await page.getByTestId('onglets-projet').getAttribute('data-actif')) === 'travail' && await page.getByTestId('autonome-projet').count() === 0)
+  await page.getByTestId('onglet-vue-reglages').click()
   const reglagesP = page.getByTestId('reglages-projet')
   await reglagesP.locator('> button').click()
   const dep = reglagesP.getByTestId('barre-projet').getByTestId('deploiement')
@@ -1468,7 +1492,7 @@ try {
   const inter = () => zoneAuto().getByTestId('autonome-interrupteur')
   const enBase = () => sql(`select autonome_toujours, autonome_jusqu_a, autonome_max, autonome_arret_vide_h from projets where id = '${projet.id}'`)[0]
   const pastilleAuto = () => page.getByTestId('choix-projet').getByTestId('pastille-autonome')
-  verifie('mode autonome : l’interrupteur est visible sans ouvrir « Réglages du projet », éteint', await inter().isVisible() && (await inter().getAttribute('aria-checked')) === 'false')
+  verifie('mode autonome : l’interrupteur est visible dans l’onglet Réglages sans ouvrir le repli, éteint', await inter().isVisible() && (await inter().getAttribute('aria-checked')) === 'false')
   verifie('mode autonome éteint : pas de lune sur l’onglet du projet', await pastilleAuto().count() === 0)
   await inter().click()
   verifie('un toucher allume : toast « Autonome tout le temps »', await toastAuPremierPlan(/Autonome tout le temps/), { auPremierPlan: dernierDessus })
