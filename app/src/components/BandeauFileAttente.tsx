@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { CloudOff, RefreshCw, TriangleAlert, ChevronUp, ChevronDown } from 'lucide-react'
-import { abandonnerElement, abonner, etatFile, reessayerElement, renvoyerMaintenant } from '../lib/fetchResilient.ts'
-import { phraseBandeau } from '../lib/fileAttente.ts'
+import { abandonnerElement, abonner, etatFile, plusAncienAttente, reessayerElement, renvoyerMaintenant } from '../lib/fetchResilient.ts'
+import { CLE_DELAI_PANNEAU, delaiPanneauDe, niveauAffichage, phraseBandeau } from '../lib/fileAttente.ts'
 import { copierTexte } from '../lib/copier.ts'
 import { Button } from '../ui/Button.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
@@ -31,6 +31,26 @@ export function BandeauFileAttente() {
     return () => window.removeEventListener('cockpit-file-envoyee', f)
   }, [toast])
 
+  // Le panneau n'arrive qu'après le délai (réglable) : on repasse chaque seconde tant qu'une écriture attend.
+  const [, rebattre] = useState(0)
+  useEffect(() => {
+    if (e.attente === 0) return
+    const t = window.setInterval(() => rebattre((n) => n + 1), 1000)
+    return () => window.clearInterval(t)
+  }, [e.attente])
+  let delaiS = delaiPanneauDe(null)
+  try { delaiS = delaiPanneauDe(localStorage.getItem(CLE_DELAI_PANNEAU)) } catch { /* défaut */ }
+  const niveau = niveauAffichage({ attente: e.attente, refuses: e.refuses, horsLigne: e.horsLigne, plusAncienAttente: plusAncienAttente(), maintenant: Date.now(), delaiS })
+  if (niveau === 'rien') return null
+  if (niveau === 'voyant') {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 top-[max(env(safe-area-inset-top),4px)] z-40 flex justify-center" data-testid="voyant-hors-ligne">
+        <span className="inline-flex items-center gap-1 rounded-full border border-bord bg-carte/90 px-2 py-0.5 text-[11px] text-texte-2 shadow" role="status">
+          <CloudOff size={12} aria-hidden /> Hors ligne
+        </span>
+      </div>
+    )
+  }
   const p = phraseBandeau({ attente: e.attente, refuses: e.refuses, horsLigne: e.horsLigne, envoi: e.envoi })
   if (!p) return null
   const couleur = p.niveau === 'erreur' ? 'border-alerte/60' : p.niveau === 'attention' ? 'border-attention/60' : 'border-info/40'

@@ -2061,6 +2061,15 @@ async function controle44_pr_conflit_visible() {
 }
 
 // 46. « Fait » sur une carte « Fusionne la PR #n » : jamais reprise ; « Ça bloque » ou un texte : servie (0060).
+async function controle47_index_cles_etrangeres() {
+  section("47. Chaque clé étrangère vers projets / chantiers a son index (0063) : sinon supprimer un projet parcourt des tables entières et fait expirer la base");
+  const sans = await sql(`select c.conrelid::regclass::text || '.' || a.attname as col
+    from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+   where c.contype = 'f' and c.connamespace = 'cockpit'::regnamespace
+     and c.confrelid in ('cockpit.projets'::regclass, 'cockpit.chantiers'::regclass)
+     and not exists (select 1 from pg_index i where i.indrelid = c.conrelid and i.indkey[0] = a.attnum)`);
+  verifie("aucune clé étrangère vers projets / chantiers sans index", sans.length === 0, sans.map((r) => r.col));
+}
 async function controle46_fait_carte_pr() {
   section("46. « Fait » sur une carte PR : pas servie (même avec un fichier posé à côté) ; « Ça bloque », un texte ou un fichier de la carte : servie (0060)");
   await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
@@ -2778,6 +2787,46 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
+// 47. Agents finis (0061) : une ligne « en cours » sans signe, dont la session est morte, passe « arrêtée » toute seule.
+const PAF = randomUUID(), SLUG_AF = `test-verif-${rand}-af`;
+async function controle47_agents_finis() {
+  section("47. Agents finis (0061) : tache_morte fermée par pg_cron, jamais un agent vivant, une session vivante ni un projet test");
+  await sql(`insert into projets (id, slug, nom) values (${q(PAF)}, ${q(SLUG_AF)}, 'Projet de test agents finis')`);
+  const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-taches-mortes'`).catch(() => null);
+  verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.tache_morte(cockpit.taches)', 'execute') as regle, has_function_privilege('service_role', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as srv`);
+  verifie("clore_taches_mortes / tache_morte : réservées au service", !droits.anon && !droits.regle && droits.srv, droits);
+  const SM = `sess-mort-${rand}`, SV = `sess-vivante-${rand}`;
+  await sql(`insert into sessions (id, projet_id, vu_at) values (${q(SM)}, ${q(PAF)}, now() - interval '10 hours'), (${q(SV)}, ${q(PAF)}, now())`);
+  const ligne = async (sid, tid, desc, vieux) => sql(`insert into taches (session_id, projet_id, tache_id, type, description, vu_at, demarre_at, progres_at)
+    values (${q(sid)}, ${q(PAF)}, ${q(tid)}, 'agent', ${q(desc)}, now() - interval '${vieux}', now() - interval '${vieux}', null)`);
+  await ligne(SM, "reel-mort", "Répondre : test", "5 hours");        // agent mort, session morte
+  await ligne(SM, "prov:Point : test", "Point : test", "2 hours");    // provisoire d'une session morte (45 min)
+  await ligne(SM, "reel-recent", "Vérifier : test", "30 minutes");    // session morte mais signe récent : gardé
+  await ligne(SV, "reel-vivant", "Coder : test", "5 hours");          // session VIVANTE : jamais touchée
+  const statut = async (tid) => (await une(`select statut, fini_at is not null as fini from taches where projet_id = ${q(PAF)} and tache_id = ${q(tid)}`));
+  const vraie = await une(`select clore_taches_mortes() as n`);
+  verifie("clore_taches_mortes() sans argument : le projet de test n'est pas touché", (await statut("reel-mort")).statut === "en_cours", vraie);
+  const n = (await une(`select clore_taches_mortes(${q(SLUG_AF)}, true) as n`)).n;
+  const a = await statut("reel-mort"), b = await statut("prov:Point : test");
+  verifie("agent mort (5 h sans signe, session morte) : « arrêté » + fini_at", a.statut === "arrete" && a.fini === true && n === 2, { a, n });
+  verifie("ligne provisoire d'une session morte (2 h) : « arrêtée »", b.statut === "arrete", b);
+  verifie("signe récent (30 min) : jamais touché", (await statut("reel-recent")).statut === "en_cours");
+  verifie("session vivante : sa ligne n'est jamais touchée, même vieille de 5 h", (await statut("reel-vivant")).statut === "en_cours");
+  await sql(`update projets set delai_tache_agent_h = 0 where id = ${q(PAF)}`);
+  await ligne(SM, "reel-mort2", "Répondre : bis", "9 hours");
+  await sql(`select clore_taches_mortes(${q(SLUG_AF)}, true)`);
+  verifie("délai 0 = jamais fermé seul", (await statut("reel-mort2")).statut === "en_cours");
+  await sql(`update projets set delai_tache_agent_h = 3 where id = ${q(PAF)}`);
+  // Fin d'un agent : sa ligne provisoire de même description se ferme avec lui
+  await ligne(SV, "reel-fin", "Résoudre le conflit : x", "1 minute");
+  await ligne(SV, "prov:Résoudre le conflit : x", "Résoudre le conflit : x", "1 minute");
+  await sql(`update taches set statut = 'termine', fini_at = now() where projet_id = ${q(PAF)} and tache_id = 'reel-fin'`);
+  verifie("SubagentStop : la ligne provisoire de même description se ferme avec l'agent", (await statut("prov:Résoudre le conflit : x")).statut === "termine");
+  const refus = await rpcUtilisateur("regler_delai_tache_agent", { p_projet: SLUG_AF, p_heures: 5 }, jwt);
+  verifie("regler_delai_tache_agent : refusé à un membre sans droit admin", refus.status >= 400, refus.status);
+}
+
 // 45. Renforts : un frein d'usage ne met pas une demande en erreur (0053) ; erreurs effaçables, relançables.
 const PRE = randomUUID(), SLUG_RE = `test-verif-${rand}-re`;
 async function controle45_renforts_frein_erreurs() {
@@ -2894,6 +2943,25 @@ async function controle42_renfort_session_vivante() {
   verifie("session liée muette depuis plus que le délai du projet : muet", (await vR()) === false);
   await sql(`update sessions set vu_at = now(), fin_at = now() where id = ${q(SID)}`);
   verifie("session terminée (fin_at) : muet", (await vR()) === false);
+}
+
+// 48. Un renfort qui a livré puis s'est tu est « fini », pas « erreur » (0062, chantier b8a2cd53). Rejoue le cas des renforts cockpit « Base et sessions » / « Correctifs ».
+const PRF = randomUUID(), SLUG_RF = `test-verif-${rand}-rf`;
+async function controle48_renfort_fini_pas_erreur() {
+  section("48. Renfort muet : « fini » s'il n'a plus rien à faire, « erreur » honnête (avec le reste) sinon (0062)");
+  await sql(`insert into projets (id, slug, nom) values (${q(PRF)}, ${q(SLUG_RF)}, 'Projet de test renfort fini')`);
+  const S = randomUUID(), R1 = randomUUID(), R2 = randomUUID(), S2 = randomUUID(), C = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRF)}, 'RF livrée', 10), (${q(S2)}, ${q(PRF)}, 'RF restante', 20)`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, faits, vu_at, created_at) values (${q(R1)}, ${q(PRF)}, ${q(S)}, 'renfort/tt0062a', 'actif', 3, now() - interval '4 hours', now() - interval '5 hours'), (${q(R2)}, ${q(PRF)}, ${q(S2)}, 'renfort/tt0062b', 'actif', 1, now() - interval '4 hours', now() - interval '5 hours')`);
+  await sql(`insert into chantiers (id, projet_id, section_id, titre, etat) values (${q(C)}, ${q(PRF)}, ${q(S2)}, 'RF reste à faire', 'libre')`);
+  verifie("renfort_travail_restant : 0 pour la section vidée, 1 pour celle qui a un chantier libre",
+    (await une(`select renfort_travail_restant(r) as n from renforts r where id = ${q(R1)}`)).n === 0
+    && (await une(`select renfort_travail_restant(r) as n from renforts r where id = ${q(R2)}`)).n === 1);
+  await sql(`select renforts_expirer(${q(PRF)})`);
+  const a = await une(`select statut, erreur, fini_at is not null as f from renforts where id = ${q(R1)}`);
+  verifie("muet SANS travail restant : « fini » (fini_at posé), aucune erreur", a.statut === "fini" && a.f && a.erreur === null, JSON.stringify(a));
+  const b = await une(`select statut, erreur from renforts where id = ${q(R2)}`);
+  verifie("muet AVEC travail restant : « erreur » qui dit le reste (jamais « 3 h »)", b.statut === "erreur" && /il reste 1 chantier/.test(b.erreur ?? "") && !/3 h/.test(b.erreur ?? ""), JSON.stringify(b));
 }
 
 // 43. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
@@ -3133,7 +3201,7 @@ async function controle42_deja_livre_rien_repris() {
   };
   // 1. --termine sort un chantier de « bloqué ».
   const bl = await creerChantier(PLB, { titre: "41 Bloqué puis livré", etat: "bloque" });
-  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+  const r = lancer("progression.sh", ["--chantier", bl, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte.", "--sans-lien", "test", "--pas-en-ligne", "test"]);
   verifie("progression.sh --termine : un chantier « bloqué » passe « à vérifier »", r.code === 0 && (await une(`select etat from chantiers where id = ${q(bl)}`)).etat === "a_verifier", r);
   // 2. Déjà livré, sans nouveau mot de Raphaël : pas repris ; après un « Corriger » : repris.
   const livre = await creerChantier(PLB, { titre: "41 Déjà livré", etat: "libre" });
@@ -3216,11 +3284,14 @@ try {
     controle42_agent_vivant_garde,
 
     controle42_renfort_session_vivante,
+    controle48_renfort_fini_pas_erreur,
     controle43_invites,
     controle42_deja_livre_rien_repris,
     controle45_renforts_frein_erreurs,
+    controle47_agents_finis,
     controle45_regroupement,
     controle46_fusion_a_la_creation,
+    controle47_index_cles_etrangeres,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3232,7 +3303,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -3240,7 +3311,7 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as projets,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}, ${q(PRF)}))::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
