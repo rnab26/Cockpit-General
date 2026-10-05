@@ -25,6 +25,8 @@ export function estVue(v: unknown): v is Vue {
 export function lireVue(brut: unknown): Vue {
   return estVue(brut) ? brut : VUE_DEFAUT
 }
+/** Vue mobile = comportement d'appli : pas de pincement-zoom (maximum-scale=1). */
+export const VIEWPORT_MOBILE = `${VIEWPORT_BASE}, maximum-scale=1`
 export function viewportDe(v: Vue): string {
-  return v === 'ordinateur' ? `width=${LARGEUR_ORDINATEUR}, viewport-fit=cover` : VIEWPORT_BASE
+  return v === 'ordinateur' ? `width=${LARGEUR_ORDINATEUR}, viewport-fit=cover` : v === 'mobile' ? VIEWPORT_MOBILE : VIEWPORT_BASE
 }

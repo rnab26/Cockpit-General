@@ -29,6 +29,7 @@ import { BarreSelection } from './BarreSelection.tsx'
 import { Reglages } from './Reglages.tsx'
 import { ProjetsMembres } from './ProjetsMembres.tsx'
 import { OngletsProjet, CoutsProjet } from './OngletsProjet.tsx'
+import { BarreNavigation } from './BarreNavigation.tsx'
 import { ONGLET_DEFAUT, type OngletProjet } from '../lib/vueProjet.ts'
 import { Chargement, Erreur, Vide } from '../ui/Etats.tsx'
 import { Button } from '../ui/Button.tsx'
@@ -238,6 +239,11 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           )}
         </main>
 
+        <BarreNavigation actif={vueTout || !d.projet ? 'accueil' : onglet} onChoisir={(c) => {
+          if (c === 'accueil') { if (!vueTout) changerVue(VUE_TOUT); else window.scrollTo({ top: 0 }); return }
+          if (vueTout || !d.projet) { const p = d.projets[0]; if (!p) return; changerVue(p.id) }
+          setOnglet(c); window.scrollTo({ top: 0 })
+        }} />
         {!vueTout && d.projet ? (
           <AvecProjet projetId={d.projet.id}>
             <NouveauChantier ouvert={dialogue === 'nouveau'} onFermer={() => setDialogue(null)} />
