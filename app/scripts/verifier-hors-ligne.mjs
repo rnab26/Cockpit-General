@@ -38,6 +38,7 @@ await new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('vite
 // Mode du « réseau » vu par le navigateur : ok | coupe | refus (le serveur répond 400 aux écritures) | perdue (la requête
 // ARRIVE au serveur mais la réponse se perd — le cas qui doublerait une ligne sans identifiant fixé côté appareil).
 let reseau = 'ok'
+let appelsProjets = 0
 const compte = () => sql(`select count(*)::int as n from messages where projet_id = '${projetId}'`)[0].n
 let projetId = null, moiId = null, navigateur = null
 try {
@@ -53,10 +54,13 @@ try {
   navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
   const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR' })
   await ctx.addInitScript(([k, v]) => { try { if (!localStorage.getItem(k)) localStorage.setItem(k, v) } catch {} }, [`sb-${REF}-auth-token`, JSON.stringify(ses)])
+  // Délai du panneau réglé court pour le banc (le défaut de l'appli est 10 s) : même mécanisme que Réglages.
+  await ctx.addInitScript(() => { try { if (!localStorage.getItem('cockpit_delai_panneau_s')) localStorage.setItem('cockpit_delai_panneau_s', '3') } catch {} })
   // Le Chromium du conteneur ne fait pas confiance au proxy : les requêtes https passent par Node (certificat vérifié).
   await ctx.route(/^https:\/\//, async (route) => {
     const r = route.request()
-    const ecriture = r.method() !== 'GET' && r.method() !== 'HEAD' && /\/rest\/v1\//.test(r.url()) && !/\/rpc\/(etat_|moi|prochain_)/.test(r.url())
+    const ecriture = r.method() !== 'GET' && r.method() !== 'HEAD' && /\/rest\/v1\//.test(r.url()) && !/\/rpc\/(etat_|moi|prochain_|projets_visibles|journal_invites|membres_)/.test(r.url())
+    if (r.method() === 'POST' && /\/rpc\/projets_visibles/.test(r.url())) appelsProjets++
     if (reseau === 'coupe') { await route.abort('internetdisconnected'); return }
     try {
       if (reseau === 'refus' && ecriture) { await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'refus de test' }) }); return }
@@ -94,12 +98,73 @@ try {
   await page.getByTestId('vue-projet').waitFor({ timeout: 90000 }).catch(() => {})
   verifie('hors ligne : l’écran du projet s’ouvre avec les dernières données reçues', await page.getByTestId('vue-projet').count() === 1)
   await bandeau.waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('hors ligne : le bandeau le dit', /Hors ligne/.test(await bandeau.innerText().catch(() => '')))
+  const voyant = page.getByTestId('voyant-hors-ligne')
+  await voyant.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('hors ligne : un petit voyant « Hors ligne », pas de panneau', /Hors ligne/.test(await voyant.innerText().catch(() => '')) && await bandeau.count() === 0)
+  verifie('hors ligne : jamais « Aucun projet » (dernières données gardées)', !(await page.innerText('body')).includes('Aucun projet'))
   await page.screenshot({ path: `${CAPTURES}/hors-ligne-lecture.png` })
+
+  // --- 2 bis. régression PR #72 : une LECTURE n'est jamais mise en file, une coupure brève ne vide pas l'écran
+  reseau = 'ok'
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('vue-projet').waitFor({ timeout: 90000 })
+  reseau = 'coupe'
+  await page.getByTestId('actualiser').click().catch(() => {})
+  await pause(2500)
+  verifie('coupure brève : l’écran du projet reste tel quel', await page.getByTestId('vue-projet').count() === 1)
+  verifie('coupure brève : jamais « Aucun projet »', !(await page.innerText('body')).includes('Aucun projet'))
+  verifie('coupure brève : aucun panneau (lecture ≠ écriture en attente)', await bandeau.count() === 0)
+  await pause(3500) // plus que le délai du panneau (3 s)
+  verifie('même après le délai : aucun panneau, la lecture n’est pas en file', await bandeau.count() === 0)
+  const enFile = () => page.evaluate(() => new Promise((res) => { const o = indexedDB.open('cockpit-hors-ligne'); o.onsuccess = () => { const q = o.result.transaction('file').objectStore('file').getAll(); q.onsuccess = () => res(q.result.map((e) => ({ id: e.id, url: e.url, m: e.methode, statut: e.statut, raison: e.raison }))); q.onerror = () => res([]) }; o.onerror = () => res([]) }))
+  verifie('IndexedDB : rien en file', (await enFile()).length === 0, await enFile())
+  // migration : une lecture déjà en file (ancienne règle) est retirée, une vraie écriture est gardée et envoyée
+  const tMig = 'Écriture gardée avant le correctif — ' + randomUUID().slice(0, 6)
+  const idMig = randomUUID()
+  await page.evaluate(([api, projet, id, texte, cle]) => new Promise((res) => {
+    const o = indexedDB.open('cockpit-hors-ligne'); o.onsuccess = () => {
+      const t = o.result.transaction('file', 'readwrite'); const s = t.objectStore('file')
+      s.put({ id: 'lecture-' + id, ajoute: Date.now() - 60000, uid: null, methode: 'POST', url: api + '/rest/v1/rpc/projets_visibles', entetes: [['content-type', 'application/json'], ['content-profile', 'cockpit'], ['accept-profile', 'cockpit']], corps: { type: 'texte', v: '{}' }, essais: 2, statut: 'attente', resume: 'Action « projets visibles »', apercu: '{}' })
+      s.put({ id: 'ecriture-' + id, ajoute: Date.now() - 50000, uid: null, methode: 'POST', url: api + '/rest/v1/messages', entetes: [['content-type', 'application/json'], ['content-profile', 'cockpit'], ['accept-profile', 'cockpit'], ['prefer', 'return=minimal'], ['apikey', cle]], corps: { type: 'texte', v: JSON.stringify({ id, projet_id: projet, kind: 'info', auteur: 'Test', auteur_type: 'proprietaire', corps: texte }) }, essais: 1, statut: 'attente', resume: 'Message dans un fil (ajout)', apercu: texte })
+      t.oncomplete = () => res(true)
+    }
+  }), [API, projetId, idMig, tMig, CLE_PUBLIQUE])
+  reseau = 'coupe'
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('vue-projet').waitFor({ timeout: 90000 }).catch(() => {})
+  await pause(1500)
+  const apres = await enFile()
+  verifie('migration : la lecture « projets visibles » est retirée de la file', !apres.some((e) => /projets_visibles/.test(e.url)), apres)
+  verifie('migration : la vraie écriture est conservée', apres.some((e) => e.id === 'ecriture-' + idMig), apres)
+  reseau = 'ok'
+  await page.getByTestId('renvoyer-maintenant').click().catch(() => {})
+  for (let i = 0; i < 30 && sql(`select count(*)::int as n from messages where id = '${idMig}'`)[0].n < 1; i++) { await pause(500); await page.evaluate(() => window.dispatchEvent(new Event('online'))) }
+  verifie('migration : l’écriture conservée arrive en base', sql(`select count(*)::int as n from messages where id = '${idMig}'`)[0].n === 1, await enFile())
+  await bandeau.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  sql(`delete from messages where id = '${idMig}'`) // la suite compte les messages du projet jetable
+  // retour sur l'appli : un aller-retour bref ne relit rien
+  const avant = appelsProjets
+  await page.evaluate(() => { for (const v of ['hidden', 'visible']) { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v }); document.dispatchEvent(new Event('visibilitychange')) } })
+  await pause(2000)
+  verifie('aller-retour de moins de 20 s : aucun rechargement', appelsProjets === avant, appelsProjets - avant)
+  reseau = 'coupe'
+  // lecture sans aucun cache : une erreur claire, jamais « Aucun projet »
+  await page.evaluate(() => new Promise((res) => { const o = indexedDB.open('cockpit-hors-ligne'); o.onsuccess = () => { const t = o.result.transaction('cache', 'readwrite'); t.objectStore('cache').clear(); t.oncomplete = () => res(true) } }))
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await pause(4000)
+  const corpsSansCache = await page.innerText('body')
+  verifie('sans réseau ni cache : une erreur lisible, jamais « Aucun projet »', !corpsSansCache.includes('Aucun projet') && /Pas de réseau|injoignable|Réessayer/.test(corpsSansCache), corpsSansCache.slice(0, 200))
+  reseau = 'ok'
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('vue-projet').waitFor({ timeout: 90000 })
+  reseau = 'coupe'
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('vue-projet').waitFor({ timeout: 90000 }).catch(() => {})
 
   // --- 3. écrire hors ligne : gardé, dit, pas encore en base
   const t1 = 'Message écrit sans réseau — ' + randomUUID().slice(0, 6)
   await envoyer(t1)
+  verifie('écriture à l’instant : voyant seulement, panneau pas encore (délai)', await bandeau.count() === 0 && await page.getByTestId('voyant-hors-ligne').count() === 1)
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
   verifie('le bandeau dit « 1 élément enregistré sur cet appareil »', /1 élément enregistré sur cet appareil/.test(await page.getByTestId('bandeau-texte').innerText().catch(() => '')))
   verifie('rien en base pour l’instant (honnête : pas de faux succès)', compte() === 0)
