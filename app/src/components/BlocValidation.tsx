@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, FlaskConical, HelpCircle, MessageCircleQuestion, Pencil } from 'lucide-react'
+import { Check, FlaskConical, HelpCircle, MessageCircleQuestion, X } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
@@ -15,8 +15,8 @@ import { BlocQuestion } from './BlocQuestion.tsx'
 import { questionsOuvertesDe } from '../lib/entonnoir.ts'
 
 /**
- * Chantier « à vérifier » : certifier, ou corriger (mots obligatoires). Une
- * capture de ce qui ne marche pas (ou de ce qui marche) part dans le fil.
+ * Chantier « à vérifier » : « Ça marche » (certifie), « Ça ne marche pas » ou « Je ne
+ * peux pas vérifier » (Claude vérifie, mots facultatifs). Une capture part dans le fil.
  */
 export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffichees }: {
   chantier: Chantier; sansEntete?: boolean
@@ -25,7 +25,7 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
 }) {
   const { par, admin, projet, recharger, now, messages } = useCockpit()
   const toast = useToast()
-  const [modeChoisi, setMode] = useState<'choix' | 'questions' | 'certifier' | 'corriger' | 'verifier'>('choix')
+  const [modeChoisi, setMode] = useState<'choix' | 'questions' | 'certifier' | 'probleme' | 'verifier'>('choix')
   // Certifier ne ferme pas une question ouverte (migration 0026) : « Ça marche »
   // la montre d'abord ; une fois toutes répondues, on passe seul à la certification.
   const questions = useMemo(() => questionsOuvertesDe(chantier.id, messages), [chantier.id, messages])
@@ -53,15 +53,16 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
     if (ok) toast.succes(`« ${chantier.titre} » certifié. Il passe dans « Fini ».`)
     await recharger()
   }
-  const corriger = async () => {
-    if (!mots.trim()) { toast.erreur('Dis ce qui ne marche pas : c’est ce que la session lira.'); return }
+  // « Ça ne marche pas » : sans correctif à donner (Raphaël, 30 sept.). Ses mots sont facultatifs ;
+  // Claude rejoue le cas puis rend son verdict (pas bon → le chantier repart en correction).
+  const signalerProbleme = async () => {
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     setEnCours(true)
-    const { error } = await supabase.rpc('corriger_chantier', { p_id: chantier.id, p_par: par, p_mots: mots.trim() })
+    const { error } = await supabase.rpc('signaler_ne_marche_pas', { p_id: chantier.id, p_par: par, p_mots: mots.trim() || null })
     if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
     const ok = await joindre('Ce qui ne marche pas, en image')
     setEnCours(false)
-    if (ok) toast.succes('Correction envoyée : le chantier revient à la session.')
+    if (ok) toast.succes('Noté : Claude vérifie ce qui ne marche pas et te dit ce qu’il trouve.')
     setMots(''); setMode('choix')
     await recharger()
   }
@@ -102,12 +103,11 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
       {enVerification ? null : mode === 'choix' ? (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button variante="ok" taille="lg" onClick={() => setMode(questions.length ? 'questions' : 'certifier')} data-testid="btn-certifier"><Check size={18} aria-hidden />Ça marche</Button>
-          <Button variante="attention" taille="lg" onClick={() => setMode('corriger')} data-testid="btn-corriger"><Pencil size={18} aria-hidden />Corriger</Button>
-          {enVerification ? null : (
-            <Button taille="lg" onClick={() => setMode('verifier')} data-testid="btn-verifie-pour-moi" className="sm:col-span-2">
-              <HelpCircle size={18} aria-hidden />Je ne sais pas : vérifie pour moi
-            </Button>
-          )}
+          <Button variante="attention" taille="lg" onClick={() => setMode('probleme')} data-testid="btn-ne-marche-pas"><X size={18} aria-hidden />Ça ne marche pas</Button>
+          <Button taille="lg" onClick={() => setMode('verifier')} data-testid="btn-verifie-pour-moi" className="sm:col-span-2">
+            <HelpCircle size={18} aria-hidden />Je ne peux pas vérifier : Claude vérifie
+          </Button>
+          <p className="text-sm text-texte-2 sm:col-span-2" data-testid="aide-choix-verification">Rien à cocher d’autre : tu peux aussi écrire dans le fil, ça compte comme « ça ne marche pas ». Dans les deux cas Claude vérifie et te répond ici.</p>
         </div>
       ) : mode === 'questions' ? (
         <div className="mt-2 space-y-2" data-testid="certifier-questions">
@@ -127,7 +127,7 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
           <Textarea autoFocus rows={3} value={mots} onChange={(e) => setMots(e.target.value)}
             placeholder={mode === 'certifier' ? 'Tes mots (facultatif) : « testé sur mon téléphone, nickel »'
               : mode === 'verifier' ? 'Colle ici ce que tu as vu (réponse, message…), ou joins une capture. Claude jugera.'
-              : 'Ce qui ne marche pas, précisément (obligatoire)'} />
+              : 'Ce que tu as vu (facultatif) : Claude vérifie, tu n’as pas de correction à écrire.'} />
           <ChoisirMedias ctrl={pj} testId="medias-validation" />
           <div className="flex justify-end gap-2">
             <Button onClick={() => { setMode('choix'); setMots(''); pj.vider() }}>Annuler</Button>
@@ -135,7 +135,7 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
               ? <Button variante="ok" chargement={enCours || pj.enCours} onClick={certifier}><Check size={16} aria-hidden />Je certifie</Button>
               : mode === 'verifier'
                 ? <Button variante="primaire" chargement={enCours || pj.enCours} onClick={demanderVerification} data-testid="envoyer-verification"><HelpCircle size={16} aria-hidden />Demander à Claude</Button>
-                : <Button variante="attention" chargement={enCours || pj.enCours} onClick={corriger}><Pencil size={16} aria-hidden />Envoyer la correction</Button>}
+                : <Button variante="attention" chargement={enCours || pj.enCours} onClick={signalerProbleme} data-testid="envoyer-probleme"><X size={16} aria-hidden />Dire que ça ne marche pas</Button>}
           </div>
         </div>
       )}

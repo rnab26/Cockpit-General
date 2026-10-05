@@ -350,6 +350,10 @@ Raphaël : « Les 3 options me plaisent, ça laisse le choix au client. »
 Un chemin de commande peut donc être ABSOLU (`COCKPIT_*_CMD`) : ne jamais
 écrire `"$RACINE/$CMD"` sans `case "$CMD" in /*)`. `verifier-greffe.mjs`.
 
+## Vérifier un chantier livré : lien exact, trois issues claires (5 oct. 2026, migration 0056, chantier 2d21c64f)
+
+Raphaël (30/09) : on lui demandait de tester « sans le lien exact », et « Corriger » exigeait un correctif qu'il n'a pas ; il écrivait dans le fil « ça ne marche pas », sans savoir si c'était pris en compte. (1) `progression.sh --verifier` refuse une étape sans lien https (`--sans-lien "pourquoi"` si rien à ouvrir). (2) Le bloc « à vérifier » offre « Ça marche » (certifie), « Ça ne marche pas » (mots FACULTATIFS) et « Je ne peux pas vérifier » : les deux derniers = `signaler_ne_marche_pas` / `demander_verification` (une règle, `poser_verification` ; `verif_motif` = `ne_marche_pas` / `ne_sait_pas`) ; Claude (agent « Vérifier » de `chef.sh`, consigne selon le motif) rejoue le cas puis `verdict.sh` : `--pas-bon` → le chantier repart en correction, `--bon` → retour à lui avec la preuve. « Corriger » (mots obligatoires) n'existe plus sur un chantier à vérifier ; `corriger_chantier` reste pour « Signaler un problème » d'un chantier certifié. (3) Un message TAPÉ dans le fil d'un chantier « à vérifier » vaut « ça ne marche pas » : le déclencheur `verif_sur_message` pose la vérification (ou l'ajoute à celle en cours) et répond « Reçu… » dans le fil. Le constat s'écrit « Ça ne marche pas (je ne sais pas pourquoi)… » (jamais « Ça ne marche pas : », message libre à réponse écrite). La migration 0056 est aussi la trace d'objets qu'une session précédente avait posés en base sans la versionner. `verifier-base` §17, `verifier-web` (Ça ne marche pas).
+
 ## « Je ne sais pas : vérifie pour moi » (29 sept. 2026, migration 0016)
 
 Troisième bouton sous « Ça marche / Corriger » : Raphaël colle ce qu'il a vu
