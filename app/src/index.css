@@ -84,3 +84,10 @@
 }
 @keyframes cockpit-toast { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }
 .toast-in { animation: cockpit-toast .18s ease-out; }
+
+/* Vue « mobile » forcée (Réglages › Vue) : colonne étroite centrée sur grand écran. */
+html.vue-mobile #root { max-width: 430px; margin-inline: auto; min-height: 100dvh; box-shadow: 0 0 0 1px rgb(128 128 128 / 0.25); }
+/* Idem pour ce qui est positionné par rapport à la fenêtre (les variantes sm: restent actives sur grand écran) : fenêtres, barre de sélection, bulle d'aide. */
+html.vue-mobile dialog { max-width: 430px !important; margin-inline: auto !important; }
+html.vue-mobile [data-testid="barre-selection"] { max-width: 430px; margin-inline: auto; }
+html.vue-mobile [data-testid="bulle-aide-bouton"] { right: max(12px, calc(50vw - 215px + 12px)) !important; }
