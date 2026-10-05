@@ -2652,6 +2652,33 @@ async function controle38_filet_securite() {
   verifie("aucun réveil simulé sur un vrai projet", reel.n === 0, reel);
 }
 
+// 40. Libération automatique (0050) : le job pg_cron libère seul un chantier tenu par une session morte, jamais un vivant, jamais un projet de test au vrai cron.
+const PLB = randomUUID(), SLUG_LB = `test-verif-${rand}-lb`;
+async function controle40_liberation_auto() {
+  section("40. Libération automatique (0050) : pg_cron toutes les 3 min libère le chantier d'une session morte, une seule règle");
+  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération')`);
+  const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-liberation-auto'`).catch(() => null);
+  verifie("pg_cron : le job cockpit-liberation-auto existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.liberation_passe(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.liberer_silencieux_coeur(text)', 'execute') as coeur, has_function_privilege('service_role', 'cockpit.liberation_passe(text,boolean)', 'execute') as srv`);
+  verifie("liberation_passe / liberer_silencieux_coeur : réservés au service", !droits.anon && !droits.coeur && droits.srv, droits);
+  const mort = await creerChantier(PLB, { titre: "LIBÉRATION Session morte", etat: "en_cours" });
+  const frais = await creerChantier(PLB, { titre: "LIBÉRATION Réservation fraîche", etat: "en_cours" });
+  await sql(`update chantiers set pris_par = 'agent/mort', pris_jusqu_a = now() + interval '60 minutes' where id in (${q(mort)}, ${q(frais)})`);
+  await sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '45 minutes' where id = ${q(mort)}`);
+  const tenu = async (id) => (await une(`select pris_jusqu_a > now() as encore from chantiers where id = ${q(id)}`)).encore;
+  const vraie = await une(`select liberation_passe() as r`);
+  verifie("liberation_passe() sans argument : le projet de test n'est pas touché", await tenu(mort) === true && !JSON.stringify(vraie.r).includes(SLUG_LB), vraie.r);
+  await sql(`update projets set liberation_auto = false where id = ${q(PLB)}`);
+  const eteint = (await une(`select liberation_passe(${q(SLUG_LB)}, true) as r`)).r[0]?.resultat;
+  verifie("interrupteur du projet éteint : rien n'est libéré", eteint === "eteint" && await tenu(mort) === true, eteint);
+  await sql(`update projets set liberation_auto = true where id = ${q(PLB)}`);
+  const r = (await une(`select liberation_passe(${q(SLUG_LB)}, true) as r`)).r[0];
+  verifie("passe : le chantier de la session morte est libéré, la réservation fraîche reste tenue", r?.resultat === "libere" && r.n === 1 && await tenu(mort) === false && await tenu(frais) === true, r);
+  verifie("la fiche dit qui (libere_de)", (await une(`select libere_de from chantiers where id = ${q(mort)}`)).libere_de === "agent/mort");
+  const refus = await rpcUtilisateur("liberation_passe", { p_slug: SLUG_LB, p_test: true }, jwt);
+  verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -2706,6 +2733,7 @@ try {
     controle38_filet_securite,
     controle38_renforts_echecs,
     controle39_delai_sans_signe,
+    controle40_liberation_auto,
   ];
   for (const etape of etapes) {
     try { await etape(); }
@@ -2716,7 +2744,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2724,8 +2752,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);
