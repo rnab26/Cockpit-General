@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { verifie, bilan } from './_assert.ts'
-import { aGarder, aMettreEnCache, avecIdentifiant, classerReponse, cibleDe, delaiReessai, estPanneServeur, phraseBandeau, reponseGardee, resumeDe } from '../src/lib/fileAttente.ts'
+import { aGarder, aMettreEnCache, avecIdentifiant, classerReponse, cibleDe, delaiPanneauDe, delaiReessai, estLectureEnFile, estPanneServeur, niveauAffichage, phraseBandeau, reponseGardee, resumeDe } from '../src/lib/fileAttente.ts'
 
 const B = 'https://x.supabase.co'
 console.log('ce qu’on garde')
@@ -12,6 +12,27 @@ verifie('modification de chantier', aGarder('PATCH', `${B}/rest/v1/chantiers?id=
 verifie('suppression', aGarder('DELETE', `${B}/rest/v1/chantiers?id=in.(1,2)`))
 verifie('RPC d’écriture (repondre_message)', aGarder('POST', `${B}/rest/v1/rpc/repondre_message`))
 verifie('RPC de lecture : non', !aGarder('POST', `${B}/rest/v1/rpc/etat_renforts`) && !aGarder('POST', `${B}/rest/v1/rpc/moi`) && !aGarder('POST', `${B}/rest/v1/rpc/prochain_passage_chef`))
+console.log('une LECTURE n’est jamais mise en file (régression PR #72 : « projets visibles {} » en attente)')
+for (const n of ['projets_visibles', 'moi', 'etat_filet', 'journal_invites', 'invitations_du_projet', 'membres_detail', 'a_toi_a_revoir', 'prochain_passage_chef', 'reveiller_reportes', 'fonction_inconnue'])
+  verifie(`${n} : pas gardée`, !aGarder('POST', `${B}/rest/v1/rpc/${n}`))
+for (const n of ['repondre_message', 'certifier_chantier', 'corriger_chantier', 'regler_filet', 'mettre_de_cote', 'abandonner_chantier', 'signaler_ne_marche_pas', 'trancher_fusion', 'accepter_invitation'])
+  verifie(`${n} : écriture gardée`, aGarder('POST', `${B}/rest/v1/rpc/${n}`))
+verifie('projets_visibles : lecture mise en cache', aMettreEnCache('POST', `${B}/rest/v1/rpc/projets_visibles`))
+verifie('inviter (jeton) : jamais en cache', !aMettreEnCache('POST', `${B}/rest/v1/rpc/inviter`))
+console.log('migration de la file')
+verifie('élément « projets_visibles » déjà en file : retiré', estLectureEnFile('POST', `${B}/rest/v1/rpc/projets_visibles`))
+verifie('un GET en file : retiré', estLectureEnFile('GET', `${B}/rest/v1/messages`))
+verifie('vraie écriture : conservée', !estLectureEnFile('POST', `${B}/rest/v1/messages`) && !estLectureEnFile('POST', `${B}/rest/v1/rpc/repondre_message`) && !estLectureEnFile('PATCH', `${B}/rest/v1/chantiers?id=eq.1`))
+verifie('RPC inconnue déjà en file : conservée (jamais perdre une écriture)', !estLectureEnFile('POST', `${B}/rest/v1/rpc/fonction_inconnue`))
+console.log('quand le panneau apparaît')
+const base = { attente: 0, refuses: 0, horsLigne: false, plusAncienAttente: null as number | null, maintenant: 100_000, delaiS: 10 }
+verifie('rien : rien', niveauAffichage(base) === 'rien')
+verifie('coupure brève sans écriture : voyant seulement', niveauAffichage({ ...base, horsLigne: true }) === 'voyant')
+verifie('écriture en attente depuis 3 s : voyant, pas de panneau', niveauAffichage({ ...base, attente: 1, horsLigne: true, plusAncienAttente: 97_000 }) === 'voyant')
+verifie('écriture en attente depuis 10 s : panneau', niveauAffichage({ ...base, attente: 1, horsLigne: true, plusAncienAttente: 90_000 }) === 'panneau')
+verifie('délai réglé à 60 s : toujours voyant à 30 s', niveauAffichage({ ...base, delaiS: 60, attente: 1, horsLigne: true, plusAncienAttente: 70_000 }) === 'voyant')
+verifie('refus du serveur : panneau tout de suite', niveauAffichage({ ...base, refuses: 1 }) === 'panneau')
+verifie('délai : défaut 10, valeur lue, valeur absurde ignorée', delaiPanneauDe(null) === 10 && delaiPanneauDe('30') === 30 && delaiPanneauDe('x') === 10 && delaiPanneauDe('-5') === 10)
 verifie('RPC à secret (jeton) : jamais gardée', !aGarder('POST', `${B}/rest/v1/rpc/regler_reveil_immediat`))
 verifie('abonnement push : non', !aGarder('POST', `${B}/rest/v1/push_abonnements`))
 verifie('dépôt de fichier', aGarder('POST', `${B}/storage/v1/object/cockpit-medias/a/b.png`))
@@ -57,12 +78,12 @@ verifie('délai croissant plafonné', delaiReessai(1) === 30_000 && delaiReessai
 console.log('chaque RPC de l’app est classée : lecture (cache) ou écriture (file)')
 // Régression 0058 : projets_visibles (lecture) était prise pour une écriture, donc gardée hors ligne avec une
 // réponse fabriquée au lieu d'être servie du cache. Une RPC neuve doit être rangée ici EXPRESSÉMENT.
-const ECRITURES = new Set(['fusionner_chantiers', 'trancher_fusion', 'signaler_ne_marche_pas', 'revoquer_invitation', 'retirer_reveil_immediat', 'restaurer_champ', 'repondre_message', 'relancer_renfort', 'regler_sans_signe', 'regler_renforts_erreurs', 'regler_renforts_auto', 'regler_renforts', 'regler_modeles', 'regler_filet', 'regler_fermeture', 'regler_bascule_seuils', 'regler_bascule', 'regler_autonome', 'mettre_de_cote', 'liberer_chantier', 'inviter', 'freiner', 'effacer_erreurs_renforts', 'deplacer_chantier', 'demander_verification', 'demander_renforts', 'demander_ou_en_est', 'corriger_chantier', 'completer_chantier', 'changer_role_membre', 'changer_droits_membre', 'certifier_chantier', 'accepter_invitation', 'abandonner_chantier'])
+const ECRITURES = new Set(['fusionner_chantiers', 'trancher_fusion', 'signaler_ne_marche_pas', 'revoquer_invitation', 'retirer_reveil_immediat', 'restaurer_champ', 'repondre_message', 'relancer_renfort', 'regler_sans_signe', 'regler_renforts_erreurs', 'regler_renforts_auto', 'regler_renforts', 'regler_modeles', 'regler_filet', 'regler_fermeture', 'regler_bascule_seuils', 'regler_bascule', 'regler_autonome', 'mettre_de_cote', 'liberer_chantier', 'inviter', 'effacer_erreurs_renforts', 'deplacer_chantier', 'demander_verification', 'demander_renforts', 'demander_ou_en_est', 'corriger_chantier', 'changer_role_membre', 'changer_droits_membre', 'certifier_chantier', 'accepter_invitation', 'abandonner_chantier'])
 const noms = new Set<string>()
 const parcourir = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) parcourir(p); else if (/\.tsx?$/.test(f)) for (const m of readFileSync(p, 'utf8').matchAll(/rpc\('([a-z_0-9]+)'/g)) noms.add(m[1]) } }
 parcourir(new URL('../src', import.meta.url).pathname)
-// Cas à part, voulus : ni gardée ni mise en cache (jeton secret ; écrit un peu mais jamais rejouée).
-const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes'])
+// Cas à part, voulus : ni gardée ni mise en cache (jeton secret ou rendu ; un rejeu doublerait le texte ajouté ; simple suggestion). Hors ligne elles échouent VISIBLEMENT.
+const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes', 'inviter', 'completer_chantier', 'freiner', 'chantiers_proches_creation'])
 for (const n of [...noms].sort()) {
   const url = `${B}/rest/v1/rpc/${n}`
   const lecture = aMettreEnCache('POST', url) && !aGarder('POST', url)
@@ -70,5 +91,5 @@ for (const n of [...noms].sort()) {
   if (NI_L_UN_NI_L_AUTRE.has(n)) { verifie(`${n} : ni gardée ni en cache (voulu)`, !aGarder('POST', url) && !aMettreEnCache('POST', url)); continue }
   verifie(`${n} : ${ECRITURES.has(n) ? 'écriture' : 'lecture'}`, ECRITURES.has(n) ? ecriture : lecture)
 }
-for (const n of ['projets_visibles', 'invitation_info', 'invitations_du_projet', 'journal_invites', 'chantiers_proches_creation']) verifie(`${n} servie du cache hors ligne`, aMettreEnCache('POST', `${B}/rest/v1/rpc/${n}`))
+for (const n of ['projets_visibles', 'invitation_info', 'invitations_du_projet', 'journal_invites']) verifie(`${n} servie du cache hors ligne`, aMettreEnCache('POST', `${B}/rest/v1/rpc/${n}`))
 bilan('verifier-file-attente')

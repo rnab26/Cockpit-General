@@ -30,6 +30,8 @@ export interface Contexte {
   /** Le délai de silence (réglage `silence_minutes`), en ms. */
   silenceMs: number
   recharger: () => Promise<void>
+  /** Écriture sans rechargement complet (lib/reponseCarte.ts) : une ligne posée à l'écran, puis relue seule en base. */
+  messagesLocal: MessagesLocal
   prefs: Preferences
   poser: (cle: string, valeur: unknown) => Promise<void>
   selection: { actif: boolean; ids: Set<string>; basculer: (id: string) => void }
@@ -37,6 +39,12 @@ export interface Contexte {
   ouvrirDoublonDe: (c: Chantier) => void
   /** Ouvre la conversation d'un chantier (null : les questions du projet), sans changer d'onglet. */
   ouvrirChantier: (chantierId: string | null) => void
+}
+
+export interface MessagesLocal {
+  poser: (m: Message) => void
+  retirer: (id: string) => void
+  relire: (id: string) => Promise<Message | null>
 }
 
 export interface Global {

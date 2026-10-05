@@ -181,6 +181,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     return new Set([...s, ...cles])
   }), [vue])
   const recharger = useCallback(() => d.recharger(true), [d.recharger]) // eslint-disable-line react-hooks/exhaustive-deps
+  const messagesLocal = useMemo(() => ({ poser: d.poserMessage, retirer: d.retirerMessage, relire: d.relireMessage }), [d.poserMessage, d.retirerMessage, d.relireMessage])
   const selection = useMemo(() => ({
     actif: selectionActive, ids: selectionIds,
     basculer: (id: string) => setSelectionIds((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }),
@@ -191,10 +192,10 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     const x = parProjet.get(projetId)
     if (!projet || !x) return null
     return {
-      moi, admin, par: moi.email, projet, ...x, enAttente, now, silenceMs, recharger, prefs, poser, selection,
+      moi, admin, par: moi.email, projet, ...x, enAttente, now, silenceMs, recharger, messagesLocal, prefs, poser, selection,
       ouvrirModifier: setAModifier, ouvrirDoublonDe: setDoublonDe, ouvrirChantier: (id: string | null) => ouvrirChantier(projetId, id),
     }
-  }, [d.projets, parProjet, moi, admin, enAttente, now, silenceMs, recharger, prefs, poser, selection, ouvrirChantier])
+  }, [d.projets, parProjet, moi, admin, enAttente, now, silenceMs, recharger, messagesLocal, prefs, poser, selection, ouvrirChantier])
 
   const prenables = usePrenables(admin, d.derniereMaj)
   const global: Global = {

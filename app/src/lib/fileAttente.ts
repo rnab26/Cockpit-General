@@ -41,9 +41,15 @@ export type CorpsStocke =
   | { type: 'formdata'; v: [string, string | Blob][] }
 
 /** RPC qui LISENT (ou qui n'ont aucun sens hors ligne) : jamais mises en file. */
-// Toute RPC de LECTURE appelée par l'app doit figurer ici : sinon elle serait prise pour une écriture
-// (gardée hors ligne, réponse fabriquée) au lieu d'être servie du cache (regression 0058 : projets_visibles).
-const RPC_LECTURE = /^(etat_|prochain_|membres_|moi$|est_|peut_|chef_|file_|ressemblance|candidat_|reveiller_reportes$|a_toi_a_revoir$|projets_visibles$|invitations_du_projet$|invitation_info$|journal_invites$|chantiers_proches_creation$)/
+const RPC_LECTURE = /^(etat_|prochain_|membres_|moi$|est_|peut_|chef_|file_|ressemblance|candidat_|a_toi_a_revoir$|projets_visibles$|invitations_du_projet$|invitation_info$|journal_invites$)/
+/**
+ * LISTE BLANCHE des RPC qui ÉCRIVENT : seules celles-là sont gardées hors ligne. Une RPC inconnue
+ * n'est jamais mise en file (elle échoue visiblement) : mieux vaut une erreur qu'une lecture rejouée.
+ * (6 oct. 2026 : `projets_visibles`, une lecture, était « enregistrée » comme une écriture et sa
+ * réponse fabriquée `null` vidait l'écran : « Aucun projet ».) `inviter` (rend un jeton) et
+ * `reveiller_reportes` n'y sont pas : il leur faut leur réponse réelle.
+ */
+const RPC_ECRITURE = /^(abandonner|accepter|certifier|changer|corriger|demander|deplacer|desarchiver|archiver|effacer|freiner|fusionner|liberer|marquer|mettre|ranger|regler|relancer|renommer|reporter|repondre|restaurer|retirer|revoquer|signaler|trancher)_/
 /** RPC dont les arguments sont un secret : jamais écrits sur l'appareil. */
 const RPC_SECRETES = new Set(['regler_reveil_immediat'])
 /** Tables sans valeur à rejouer (appareil, préférence jetable). */
@@ -66,7 +72,7 @@ export function aGarder(methode: string, url: string): boolean {
   const m = methode.toUpperCase()
   if (m !== 'POST' && m !== 'PATCH' && m !== 'PUT' && m !== 'DELETE') return false
   const c = cibleDe(url)
-  if (c.genre === 'rpc') return !RPC_LECTURE.test(c.nom) && !RPC_SECRETES.has(c.nom)
+  if (c.genre === 'rpc') return RPC_ECRITURE.test(c.nom) && !RPC_LECTURE.test(c.nom) && !RPC_SECRETES.has(c.nom)
   if (c.genre === 'table') return !TABLES_IGNOREES.has(c.nom)
   if (c.genre === 'stockage') return m === 'POST' || m === 'PUT'
   return false
@@ -75,13 +81,25 @@ export function aGarder(methode: string, url: string): boolean {
 /**
  * Une requête de lecture dont on garde la dernière réponse pour le hors ligne :
  * lecture d'une table, ou RPC de LECTURE (le profil `moi`, les états d'écran).
- * `reveiller_reportes` écrit un peu : jamais servi du cache.
+ * Jamais servis du cache : `reveiller_reportes` (écrit un peu), `inviter` (jeton), toute RPC inconnue.
  */
 export function aMettreEnCache(methode: string, url: string): boolean {
   const m = methode.toUpperCase()
   const c = cibleDe(url)
   if (m === 'GET') return c.genre === 'table'
-  return m === 'POST' && c.genre === 'rpc' && RPC_LECTURE.test(c.nom) && c.nom !== 'reveiller_reportes'
+  return m === 'POST' && c.genre === 'rpc' && RPC_LECTURE.test(c.nom)
+}
+
+/**
+ * Migration de la file : un élément gardé par erreur AVANT ce correctif et qui est sûrement une
+ * LECTURE (GET, ou RPC de lecture connue) est retiré. Une RPC inconnue reste : on ne perd jamais
+ * une vraie écriture.
+ */
+export function estLectureEnFile(methode: string, url: string): boolean {
+  const m = methode.toUpperCase()
+  if (m === 'GET' || m === 'HEAD') return true
+  const c = cibleDe(url)
+  return c.genre === 'rpc' && RPC_LECTURE.test(c.nom)
 }
 
 const LIBELLES_TABLES: Record<string, string> = {
@@ -175,4 +193,24 @@ export function phraseBandeau(o: { attente: number; refuses: number; horsLigne: 
 /** Pause entre deux tentatives d'envoi (ms), croissante, plafonnée. */
 export function delaiReessai(essais: number): number {
   return Math.min(30_000 * Math.pow(2, Math.max(0, essais - 1)), 15 * 60_000)
+}
+
+/** Délai avant d'afficher le panneau d'une écriture en attente (s). Réglable dans Réglages, par appareil. */
+export const DELAI_PANNEAU_DEFAUT_S = 10
+export const DELAIS_PANNEAU_S = [10, 30, 60, 120] as const
+export const CLE_DELAI_PANNEAU = 'cockpit_delai_panneau_s'
+export function delaiPanneauDe(brut: string | null | undefined): number {
+  const n = Number(brut)
+  return brut != null && brut !== '' && Number.isFinite(n) && n >= 0 && n <= 600 ? n : DELAI_PANNEAU_DEFAUT_S
+}
+
+/**
+ * Que montrer ? UNE règle. Le panneau n'apparaît que pour une vraie écriture en attente depuis plus que
+ * le délai, ou un refus du serveur ; une simple coupure (appli en arrière-plan) ne donne qu'un petit voyant.
+ */
+export function niveauAffichage(o: { attente: number; refuses: number; horsLigne: boolean; plusAncienAttente: number | null; maintenant: number; delaiS: number }): 'rien' | 'voyant' | 'panneau' {
+  if (o.refuses > 0) return 'panneau'
+  if (o.attente > 0 && o.plusAncienAttente != null && o.maintenant - o.plusAncienAttente >= o.delaiS * 1000) return 'panneau'
+  if (o.horsLigne || o.attente > 0) return 'voyant'
+  return 'rien'
 }

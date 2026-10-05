@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { File, FileText, Film, Image, Mic, Paperclip, PenLine, X, type LucideIcon } from 'lucide-react'
 import type { Media } from '../lib/types.ts'
+import type { MessagesLocal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { BUCKET_MEDIAS, cheminMedia, genreMedia, refusMedias, type GenreMedia, tailleLisible } from '../lib/medias.ts'
 import { useToast } from '../ui/Toast.tsx'
@@ -308,10 +309,16 @@ export function MediasMessage({ medias, petit = false, onAnnote, apercu = false,
  * d'une réponse, d'une correction ou d'un constat (les RPC de réponse ne
  * portent pas de fichiers : les médias arrivent juste en dessous, dans le fil).
  */
-export async function ecrireAvecMedias(o: { projetId: string; chantierId: string | null; par: string; admin: boolean; corps: string; medias: Media[] }): Promise<string | null> {
-  const { error } = await supabase.from('messages').insert({
-    projet_id: o.projetId, chantier_id: o.chantierId, auteur: o.par,
-    auteur_type: o.admin ? 'proprietaire' : 'utilisateur', kind: 'info', corps: o.corps, medias: o.medias,
-  })
-  return error ? messageErreur(error) : null
+export async function ecrireAvecMedias(o: { projetId: string; chantierId: string | null; par: string; admin: boolean; corps: string; medias: Media[]; local?: MessagesLocal }): Promise<string | null> {
+  // L'identifiant est fixé ICI : le message apparaît tout de suite à l'écran (lib/reponseCarte.ts), est relu seul après
+  // l'écriture, et un renvoi ne peut pas le doubler. Échec : on le retire, le message n'a jamais existé.
+  const ligne = {
+    id: crypto.randomUUID(), projet_id: o.projetId, chantier_id: o.chantierId, auteur: o.par,
+    auteur_type: o.admin ? 'proprietaire' as const : 'utilisateur' as const, kind: 'info' as const, corps: o.corps, medias: o.medias,
+  }
+  o.local?.poser({ pourquoi: null, options: null, reponse: null, precision: null, repond_a: null, etat: null, answered_at: null, answered_by: null, created_at: new Date().toISOString(), ...ligne })
+  const { error } = await supabase.from('messages').insert(ligne)
+  if (error) { o.local?.retirer(ligne.id); return messageErreur(error) }
+  void o.local?.relire(ligne.id).then((m) => { if (m) o.local?.poser(m) })
+  return null
 }

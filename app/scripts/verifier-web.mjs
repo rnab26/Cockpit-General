@@ -526,11 +526,7 @@ try {
 
   // Le projet de test n'existe qu'à partir d'ici : l'accueil réel a été capturé sans lui.
   creerProjetTest()
-  // L'app reprend l'écran où on l'a laissé (lib/etatEcran.ts) : on l'oublie pour retrouver l'accueil « Tout ».
-  // (depuis une page du même site qui n'est pas l'app : l'app réécrit son état en quittant sa page)
-  await page.goto(`${BASE}version.json`, { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => { try { localStorage.removeItem('cockpit_etat_ecran') } catch {} })
-  await page.goto(`${BASE}?recharge=${Date.now()}`, { waitUntil: 'networkidle' })  // sans #projet= : l'accueil « Tout »
+  await page.goto(`${BASE}?recharge=${Date.now()}#tout`, { waitUntil: 'networkidle' })  // sans #projet= : l'accueil « Tout »
   await page.getByTestId('vue-tout').waitFor({ timeout: 30000 })
   await ouvrirListe()
   await ongletTest().waitFor({ timeout: 15000 })
@@ -624,6 +620,7 @@ try {
     verifie('la légende se ferme (Échap)', (await page.getByTestId('legende-voyants').count()) === 0)
   }
   // Toucher la ligne : la CONVERSATION du chantier s'ouvre par-dessus, sans changer d'onglet.
+  if (await page.getByTestId('liste-projets').count()) { await page.keyboard.press('Escape'); await page.waitForTimeout(300) }  // la liste des projets ouverte plus haut recouvre la ligne
   await ligneP1.locator('button').first().click()
   await attendreConv(P1.titre)
   verifie('toucher une ligne → la conversation du chantier, par-dessus « Tout » (onglet inchangé)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
@@ -1005,6 +1002,16 @@ try {
     sql(`update messages set answered_at = now(), answered_by = gen_random_uuid(), reponse = 'Fait' where chantier_id = '${AC1.id}' and kind = 'action'`)
     await actualiser()
     verifie('action faite : elle quitte « À toi de jouer » (pastille comprise)', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC1.id}"]`).count() === 0)
+    // Traitée DIRECTEMENT depuis « À toi de jouer » : Fait sur la ligne, sans ouvrir de fil, avec retour visible.
+    const AC2 = creerTest('action directe', { etat: 'libre' })
+    sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${AC2.id}', 'verifier-web', 'session', 'action', '${MARQUE} Fusionne la PR directe')`)
+    await actualiser()
+    const elA2 = await elementAToi(AC2.id, 'action')
+    verifie('action : « Fait / Pas encore / Ça bloque » directement sur la ligne, sans ouvrir de fil', await elA2.getByTestId('action-fait').count() === 1 && await elA2.getByTestId('action-pas-encore').count() === 1 && await elA2.getByTestId('action-bloque').count() === 1)
+    await elA2.getByTestId('action-fait').click()
+    await page.waitForTimeout(1500)
+    const repA = sql(`select answered_at is not null as repondu, etat from messages where chantier_id = '${AC2.id}' and kind = 'action'`)[0]
+    verifie('action faite sur la ligne : réponse enregistrée (fait), sans fil ouvert, la ligne quitte « À toi »', repA?.repondu === true && repA?.etat === 'fait' && await page.locator('[data-testid="conversation"]').count() === 0 && await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC2.id}"]`).count() === 0, repA)
   }
 
   // ===================================================================
@@ -1051,7 +1058,7 @@ try {
     '--copier', 'Nom du secret|RUNPOD_API_KEY', '--image', imgFichier])
   await allerCockpit()
   await actualiser()
-  await (await elementAToi(AM.id, 'action')).getByTestId('verbe-a-toi').click() // une action manuelle est de type « action », pas « question »
+  await (await elementAToi(AM.id, 'action')).getByTestId('verbe-a-toi').click()
   await attendreConv(AM.titre)
   const blocAM = conv().getByTestId('bloc-question')
   const lienAM = blocAM.getByTestId('marche-lien').first()
@@ -1071,6 +1078,58 @@ try {
     await blocAM.locator('[data-testid="images-question"] [data-testid="media"]').count() === 1 && /Fait/.test(await blocAM.textContent()) && /Ça bloque/.test(await blocAM.textContent()))
   verifie('action : pas de défilement horizontal (téléphone)', (await scrollX()) <= 0, await scrollX())
   await capture(page, 'action-marche-a-suivre')
+  await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
+  // Chantier b287e60a : répondre à une carte se voit TOUT DE SUITE et ne se pose qu'UNE fois (lib/reponseCarte.ts).
+  console.log('  — répondre à une carte : immédiat, une seule réponse')
+  const AR = creerTest('action reponse immediate', { etat: 'libre' })
+  script('demander.sh', ['--action', '--chantier', AR.id, '--question', 'Fais le geste de test', '--pourquoi', 'Pour mesurer la réponse immédiate.', '--sans-lien', 'test', '--etape', 'Touche Fait'])
+  const msgAR = sql(`select id from messages where chantier_id = '${AR.id}' and kind = 'action'`)[0].id
+  await allerCockpit()
+  await actualiser()
+  await (await elementAToi(AR.id, 'action')).getByTestId('verbe-a-toi').click()
+  await attendreConv(AR.titre)
+  const blocAR = conv().getByTestId('bloc-question')
+  await blocAR.waitFor({ timeout: 10000 })
+  const appelsRepondre = []
+  const surRequete = (r) => { if (/\/rpc\/repondre_message/.test(r.url())) appelsRepondre.push(Date.now()) }
+  page.on('request', surRequete)
+  // « Pas encore » touché trois fois d'affilée : UN seul appel, et l'écran dit ce qui se passe.
+  const boutonPE = blocAR.getByRole('button', { name: /Pas encore/ })
+  await blocAR.getByTestId('precision-action').fill('un mot pour Claude')
+  await boutonPE.click()
+  await boutonPE.click({ force: true, timeout: 500 }).catch(() => {})
+  await boutonPE.click({ force: true, timeout: 500 }).catch(() => {})
+  await page.waitForTimeout(500)
+  verifie('« Pas encore » touché 3 fois : UNE seule réponse partie vers la base', appelsRepondre.length === 1, appelsRepondre.length)
+  verifie('« Pas encore » : l\'écran montre l\'état tout de suite (« Dernier état : pas encore »)', /Dernier état : pas encore/.test(await blocAR.textContent().catch(() => '')))
+  await blocAR.getByText(/Enregistré en base/).waitFor({ timeout: 25000 }).catch(() => {})
+  verifie('« Pas encore » : la carte dit « Enregistré en base » (relu en base, pas supposé)', /Enregistré en base/.test(await blocAR.getByTestId('envoi-confirmation').textContent().catch(() => '')))
+  verifie('« Pas encore » envoyé : plus de brouillon (pas de « Quitter sans envoyer ? » ensuite)', (await blocAR.getByTestId('precision-action').inputValue().catch(() => 'x')) === '')
+  // « Fait » : la carte disparaît de l'écran dès le toucher (mesuré), sans attendre le rechargement complet.
+  const avantFait = appelsRepondre.length
+  const t0 = Date.now()
+  await blocAR.getByRole('button', { name: /^Fait/ }).click()
+  await blocAR.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
+  const delaiFait = Date.now() - t0
+  console.log(`    délai « Fait » → carte disparue : ${delaiFait} ms`)
+  verifie('« Fait » : la carte quitte l\'écran tout de suite (moins d’1 s)', await blocAR.count() === 0 && delaiFait < 1000, delaiFait)
+  verifie('« Fait » touché : UN seul appel de plus', appelsRepondre.length === avantFait + 1, appelsRepondre.length - avantFait)
+  for (let i = 0; i < 20 && sql(`select answered_at from messages where id = '${msgAR}'`)[0].answered_at === null; i++) await page.waitForTimeout(1000)
+  const repAR = sql(`select etat, reponse, answered_at is not null as repondue from messages where id = '${msgAR}'`)[0]
+  verifie('« Fait » : la base a bien la réponse', repAR.etat === 'fait' && repAR.repondue === true, repAR)
+  verifie('« Fait » : la carte n\'est pas revenue après la relecture ciblée', await conv().getByTestId('bloc-question').count() === 0)
+  // Message avec pièce jointe : « Envoi… » puis « Envoyé ✓ », un seul message dans le fil.
+  const avantMsg = Number(sql(`select count(*) as n from messages where chantier_id = '${AR.id}' and kind = 'info'`)[0].n)
+  await conv().getByTestId('ecrire-a-claude').locator('textarea').fill('Message de test immédiat')
+  await conv().getByTestId('envoyer-message').dblclick()
+  await conv().getByTestId('envoi-etat').waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('message : l\'écran dit « Envoi… » ou « Envoyé ✓ » (jamais muet)', /Envoi|Envoyé/.test(await conv().getByTestId('envoi-etat').textContent().catch(() => '')))
+  await conv().getByText('Message de test immédiat').first().waitFor({ timeout: 3000 }).catch(() => {})
+  verifie('message : il apparaît tout de suite dans le fil', await conv().getByText('Message de test immédiat').count() >= 1)
+  for (let i = 0; i < 20 && Number(sql(`select count(*) as n from messages where chantier_id = '${AR.id}' and corps = 'Message de test immédiat'`)[0].n) === 0; i++) await page.waitForTimeout(1000)
+  const apresMsg = Number(sql(`select count(*) as n from messages where chantier_id = '${AR.id}' and kind = 'info' and corps = 'Message de test immédiat'`)[0].n)
+  verifie('message touché deux fois : UN seul message en base', apresMsg === 1 && avantMsg >= 0, { apresMsg })
+  page.off('request', surRequete)
   await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
   // « Comment vérifier » avec « Ce que tu dois voir ».
   const VI = creerTest('verif avec image', { etat: 'en_cours' })
@@ -1987,6 +2046,11 @@ try {
   await capture(page, 'reglages')
   await page.getByTestId('silence-minutes').getByRole('button', { name: `${silenceMin} min`, exact: true }).click()
   verifie('Réglages : section « Appli sur le téléphone » avec son bouton', await page.getByTestId('installer-appli-reglages').count() === 1)
+  // Version de l'application (chantier c4de4baa) : l'état, « Vérifier maintenant », le retour de la bannière, l'auto éteint par défaut.
+  verifie('Réglages : « Version de l’application » dit où on en est', await page.getByTestId('version-etat').count() === 1 && (await page.getByTestId('version-etat').textContent()).trim().length > 10)
+  verifie('Réglages : rappel de la bannière à 1 h par défaut, mise à jour automatique éteinte', (await page.getByTestId('version-rappel').getByRole('button', { name: '1 h', exact: true }).getAttribute('aria-pressed')) === 'true' && !(await page.getByTestId('version-auto').isChecked()))
+  await page.getByTestId('verifier-version').click()
+  verifie('Réglages : « Vérifier maintenant » répond par un toast', await toastAuPremierPlan(/version/i))
   await page.keyboard.press('Escape')
 
   // --- appli installable (manifeste, service worker, « Installer l'appli »)
