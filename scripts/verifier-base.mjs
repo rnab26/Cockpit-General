@@ -2060,6 +2060,33 @@ async function controle44_pr_conflit_visible() {
   verifie("témoin : une VRAIE réponse de Raphaël à la même carte reste servie", (await servis()).includes(carte.id));
 }
 
+// 46. « Fait » sur une carte « Fusionne la PR #n » : jamais reprise ; « Ça bloque » ou un texte : servie (0060).
+async function controle46_fait_carte_pr() {
+  section("46. « Fait » sur une carte PR : pas servie (même avec un fichier posé à côté) ; « Ça bloque », un texte ou un fichier de la carte : servie (0060)");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  const c = await creerChantier(P10, { titre: "Chantier où la carte PR est rangée", etat: "libre" });
+  const marche = JSON.stringify({ liens: [{ url: "https://github.com/rnab26/test-inexistant/pull/401", libelle: "Ouvrir la PR #401" }], etapes: ["Touche « Merge pull request »"] });
+  const servis = async () => (await sql(`select message_id from reponses_sans_suite(${q(P10)})`)).map((r) => r.message_id);
+  const carte = async (n, reponse, precision = null, medias = "[]") => {
+    const id = await creerMessage(P10, c, { kind: "action", corps: `Fusionne la PR #${n} : titre de test` });
+    await sql(`update messages set marche = ${q(marche)}::jsonb, medias = ${q(medias)}::jsonb, answered_at = now(), answered_by = ${q(userId)}, etat = 'fait', reponse = ${q(reponse)}, "precision" = ${precision === null ? "null" : q(precision)} where id = ${q(id)}`);
+    return id;
+  };
+  const fait = await carte(401, "Fait");
+  // Le cas réel (#61) : un message de Raphaël AVEC image au même chantier juste après sa réponse.
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, medias) values (${q(P10)}, ${q(c)}, 'raphael', 'utilisateur', 'info', 'Comment c possible ?', ${q(JSON.stringify([{ chemin: `${P10}/${c}/x-photo.png`, nom: "photo.png", type: "image/png", taille: 1 }]))}::jsonb)`);
+  verifie("« Fait » sur la carte « Fusionne la PR #n » : JAMAIS servie, même si un fichier de Raphaël suit au même chantier", !(await servis()).includes(fait));
+  const bloque = await carte(402, "Ça bloque");
+  verifie("« Ça bloque » sans texte : servie (quelque chose cloche)", (await servis()).includes(bloque));
+  const texte = await carte(403, "Pas encore", "Je veux d'abord relire le diff de la migration");
+  verifie("réponse avec un texte (« Pas encore » + précision) : servie", (await servis()).includes(texte));
+  const fichier = await carte(404, "Fait", null, JSON.stringify([{ chemin: `${P10}/${c}/y.png`, nom: "y.png", type: "image/png", taille: 1 }]));
+  verifie("« Fait » avec un fichier joint à la carte elle-même : servie", (await servis()).includes(fichier));
+  const autre = await creerMessage(P10, c, { kind: "action", corps: "Colle la clé dans les réglages" });
+  await sql(`update messages set marche = ${q(marche)}::jsonb, answered_at = now(), answered_by = ${q(userId)}, etat = 'pas_encore', reponse = 'Pas encore' where id = ${q(autre)}`);
+  verifie("une AUTRE action (pas une fusion de PR) répondue « Pas encore » reste servie : la règle ne vise que « Fusionne la PR »", (await servis()).includes(autre));
+}
+
 // 38 bis. scripts/prochaine-migration.sh : 1 + le plus grand numéro vu dans la copie ET sur les branches distantes.
 async function controle38_prochaine_migration() {
   section("38 bis. Prochaine migration : numéro libre = max des fichiers locaux et des branches distantes + 1");
@@ -3058,6 +3085,7 @@ try {
     controle37_traite_sans_attendre,
     controle38_pr_propre,
     controle44_pr_conflit_visible,
+    controle46_fait_carte_pr,
     controle38_prochaine_migration,
     controle38_verif_sans_retour,
     controle38_filet_securite,
