@@ -1,7 +1,7 @@
 // Le fil = une discussion (0025) : ordre, carte à choisir en dernier, réponse attendue.
 // node --experimental-strip-types app/scripts/verifier-discussion.ts
 import { verifie, bilan } from './_assert.ts'
-import { attenteReponse, derniereAction, estMessageLibre, filLie, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
+import { separerChat, attenteReponse, derniereAction, estMessageLibre, filLie, ordreDuFil, DELAI_PRISE_MS } from '../src/lib/discussion.ts'
 import type { Message } from '../src/lib/types.ts'
 
 const T0 = Date.parse('2026-09-29T14:00:00Z')
@@ -74,5 +74,9 @@ const da = derniereAction('C', [claude(3, 'Sujet : tri. Fait.'), moi(9, 'Et moi'
   [{ chantier_id: 'C', etape: 'Tests en cours', updated_at: t(7) }, { chantier_id: 'X', etape: 'Autre', updated_at: t(30) }], [{ chantier_id: 'C', etape: null, progres_at: t(40) }])
 verifie('la plus récente action de Claude sur CE chantier (étape > message ancien ; ni ma parole, ni une question, ni un autre chantier)', da?.texte === 'Tests en cours' && da.quand === t(7), da)
 verifie('sans rien de réel : null, jamais inventé', derniereAction('C', [moi(1)], [], []) === null)
+
+// Champ d'action : les actions déjà faites sortent du chat, les autres messages y restent.
+const sc = separerChat([{ kind: 'action' }, { kind: 'question' }, { kind: 'info' }, { kind: 'action' }])
+verifie('séparer le chat : 2 actions faites hors du chat, 2 messages gardés', sc.faites.length === 2 && sc.chat.length === 2 && sc.chat.every((x) => x.kind !== 'action'))
 
 bilan('verifier-discussion')

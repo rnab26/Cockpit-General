@@ -64,6 +64,8 @@ node scripts/verifier-reponses.mjs                         # ses réponses arriv
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
 node scripts/verifier-fusion.mjs                           # règle de ressemblance de la fusion suggérée sur une table de cas (lecture seule)
 node scripts/verifier-push.mjs                            # notifications push : fonction déployée (401 sans secret, chiffrement, abonnement mort retiré), coffre, trigger, droits
+node app/scripts/verifier-hors-ligne.mjs                    # survie des données côté app : écriture sans réseau gardée, survit au rechargement, repart dans l'ordre, pas de doublon si la réponse se perd, refus visible/réessayable, lecture hors ligne
+node scripts/verifier-file-sessions.mjs                    # survie des données côté sessions : sql.sh garde les écritures base injoignable, les rejoue dans l'ordre, un SQL refusé n'est pas jeté
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
 bash -n scripts/*.sh hooks/*.sh
 ```
@@ -578,6 +580,10 @@ hook de démarrage → `brancher --maj`). Limite : un long texte sans aucun outi
 (> délai) reste muet. Le cadenas est posé À L'ATTRIBUTION (`reserver_chantier`
 dans la même transaction que le choix ; la fiche est touchée, début du délai).
 
+## Un agent vivant garde son chantier (5 oct. 2026, migration 0054, chantier b95c96f9)
+
+Constaté le 30/09 : la chef relançait « Écrans en attente » et « Vérifier un chantier » alors que leurs agents travaillaient, et réattribuait le chantier à `agent/160812`. Cause PROUVÉE (banc rouge, `verifier-base` §41) : `sans_signe_de_vie` ne comptait un agent vivant que si son battement ou sa ligne avait bougé depuis `delai_signe` (3 min), alors qu'il signale une étape toutes les ~10 min ; `reserver_chantier` donnait alors le chantier à un autre nom de branche, et `ouvrir_ou_reprendre` (`chantier.sh --ouvrir`) écrasait `pris_par` sans rien vérifier. Maintenant, UNE règle `agent_tient_chantier` : ligne tâche liée au chantier, en cours, session non finie, battement < `delai_signe` OU dernière étape < `delai_signe_agent` (`projets.delai_agent_signale_min`, 20 min par défaut, 3 à 240, SQL pour l'instant). L'activité `en_cours` suit ce même délai. Lue par `chantier_abandonne`, `chantiers_prenables`, `reserver_chantier` et le balayage de 3 min. `ouvrir_ou_reprendre` ajoute la demande mais garde `pris_par` d'un chantier tenu. Limite : un agent mort garde son chantier jusqu'à 20 min au lieu de 3 ; la ligne doit être liée au chantier (`progression.sh --agent … --chantier`). `SEULEMENT=<contrôle> node scripts/verifier-base.mjs` ne rejoue qu'un contrôle.
+
 ## Renfort vivant = sa SESSION vit (5 oct. 2026, migration 0057, chantier 2bf7d90c)
 
 Cause prouvée : `renfort_vivant` ne lisait que `renforts.vu_at` (posé seulement par `renfort.sh --suivant`) et ses chantiers ; un renfort dont la session travaillait (hooks → `sessions.vu_at`) était déclaré mort après `delai_signe`, passé « erreur » par `renforts_expirer`, et la chef disait « muet depuis 3 h » (libellé faux, corrigé).
@@ -727,6 +733,13 @@ Raphaël : « à chaque fois il y a des conflits sur les branches […] envoie-m
 2. Les agents fusionnent `origin/main` dans leur branche JUSTE avant d'ouvrir la PR ; la passe de `chef.sh` lance un agent léger « Résoudre le conflit de la PR n » sur toute PR dirty/behind, puis rappelle le script ; quand une PR est fusionnée, les autres sont mises à jour avant d'être proposées.
 3. À la source : la liste des contrôles de `verifier-base.mjs` est UN contrôle par ligne (en ajouter un = une ligne, à côté de son sujet), et `scripts/prochaine-migration.sh` donne le numéro libre (max des fichiers locaux et des branches distantes + 1 ; la base n'a pas de journal des migrations cockpit) : à appeler au moment d'écrire le fichier.
 4. `verifier-base` §38 (carte selon la propreté) et §38 bis (numéro de migration).
+
+## Survie des données : rien ne se perd, même hors ligne (5 oct. 2026, chantier 5b68a493)
+
+Raphaël : « toutes les données survivent, même sans wifi, plus de crédit Claude, cache vidé : enregistrées et récupérées à la prochaine connexion ». Deux files, une règle chacune.
+- **App** (`lib/fetchResilient.ts`, branché comme `global.fetch` du client Supabase ; règle pure `lib/fileAttente.ts`, stockage IndexedDB `lib/fileAttenteStockage.ts`). Une ÉCRITURE (insert/update/delete, RPC d'écriture, dépôt de fichier) qui ne part pas (réseau coupé, 502/503/504) est gardée sur l'appareil (fichiers compris), l'appelant reçoit un succès fabriqué, et le bandeau `BandeauFileAttente` dit « N éléments enregistrés sur cet appareil, envoyés au retour du réseau » ; les toasts « envoyé » le disent aussi (`gardeRecemment`). Renvoi dans l'ORDRE (événement `online`, retour sur l'onglet, minuterie croissante, bouton « Envoyer »). L'identifiant d'un ajout dans `messages` / `chantiers` est fixé AVANT la première tentative : une réponse perdue ne crée pas de doublon (409 = déjà fait). Un REFUS du serveur (4xx) n'est jamais jeté : visible, Copier / Réessayer / Abandonner (confirmation). Lecture : dernière réponse de chaque table et RPC de lecture gardée, servie sans réseau (« Données de HH:MM »). Jamais gardées : connexion, RPC de lecture, `regler_reveil_immediat` (jeton) et `push_abonnements`. Le navigateur est prié de rendre le stockage persistant.
+- **Sessions** (`scripts/sql.sh`) : base injoignable (curl 6/7/35 : la requête n'est pas partie) → une écriture (`insert/update/delete` ou `select fonction(…)` sans `from`) est gardée dans `~/.cockpit/file-attente/` et rejouée dans l'ordre au premier appel qui passe (`sql.sh --rejouer`) ; un SQL refusé va dans `refuses/`. Un script qui attend une valeur en retour (un identifiant) ne l'a pas : le relancer en ligne.
+- **Limites dites** : vider les données du site AVANT le retour du réseau efface ce qui n'est pas parti (le bandeau l'écrit, et on demande le stockage persistant) ; un conteneur de session recyclé perd sa file locale ; un texte tapé mais pas envoyé n'est pas gardé (pas de brouillon persistant) ; plus de crédit Claude ne perd rien : tout est en base, la chef le reprend au retour du crédit. `verifier-file-attente.ts` (règle), `app/scripts/verifier-hors-ligne.mjs` (parcours réel), `scripts/verifier-file-sessions.mjs`.
 
 ## Navigation type application : barre d'onglets en bas (5 oct. 2026, chantier 313b3d95)
 

@@ -9,6 +9,7 @@ import { Button } from './ui/Button.tsx'
 import { AccepteInvitation } from './components/Invitation.tsx'
 import { capterInvitation } from './lib/invitation.ts'
 import { NouvelleVersion } from './components/NouvelleVersion.tsx'
+import { BandeauFileAttente } from './components/BandeauFileAttente.tsx'
 
 capterInvitation()
 
@@ -24,7 +25,7 @@ export default function App() {
   else contenu = <Cockpit key={auth.moi.user_id} moi={auth.moi} theme={theme} changerTheme={changerTheme} seDeconnecter={auth.seDeconnecter} />
   return (
     <ToastProvider>
-      <ConfirmProvider>{contenu}</ConfirmProvider>
+      <ConfirmProvider>{contenu}<BandeauFileAttente /></ConfirmProvider>
       {auth.moi ? <AccepteInvitation recharger={auth.rechargerMoi} /> : null}
       <NouvelleVersion />
     </ToastProvider>
