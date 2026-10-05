@@ -196,8 +196,20 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     const id = vueTout ? projetCourant() : d.projet?.id ?? null
     if (!id) return
     if (vueTout) changerVue(id)
-    setOnglet(o === 'couts' ? 'couts' : o === 'reglages' ? 'reglages' : 'travail')
+    const cible: OngletProjet = o === 'couts' ? 'couts' : o === 'reglages' ? 'reglages' : 'travail'
+    // Retour du téléphone : revient à l'onglet précédent (une entrée d'historique par changement), puis quitte.
+    if (cible !== onglet) history.pushState({ onglet: cible }, '', location.href)
+    setOnglet(cible)
   }
+  useEffect(() => {
+    const retour = (e: PopStateEvent) => {
+      const s = e.state as { onglet?: OngletProjet; conversation?: boolean } | null
+      if (s?.conversation) return
+      setOnglet(s?.onglet ?? ONGLET_DEFAUT); setRecherche(false)
+    }
+    window.addEventListener('popstate', retour)
+    return () => window.removeEventListener('popstate', retour)
+  }, [])
   const aToiTotal = pastilles.get(VUE_TOUT)?.aToi ?? 0
 
   const onMenu = (a: ActionMenu) => {
