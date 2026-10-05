@@ -280,18 +280,37 @@ export function enCoursSansNouvelles(
 // ---------------------------------------------------------------- onglets
 
 /**
- * Les pastilles d'un onglet : sessions qui travaillent (🟢 n : sessions
- * suivies actives + barres vivantes sans session suivie) et choses qui
- * t'attendent (🔴 n).
+ * Les voyants d'un onglet. Vert = le « n » de « Ça avance tout seul » (5 oct.
+ * 2026, Raphaël : « le compteur n'est pas bon ») : les CHANTIERS qui
+ * avancent vraiment, par la MÊME fonction `caAvanceToutSeul` que la section ;
+ * le nombre de sessions de Claude est compté à part, pour la légende.
+ * Rouge = les éléments « À toi ». Aucun recalcul dans le composant.
  */
 export function pastillesProjet(
   chantiers: readonly ChantierE[], messages: readonly MessageE[], activites: readonly Activite[],
   sessions: readonly SessionClaude[], taches: readonly Tache[], now: Date, silenceMs: number, projetId: string | null,
-): { travaillent: number; aToi: number } {
+): { travaillent: number; sessions: number; aToi: number } {
   return {
-    travaillent: resumeTravail(quiTravaille(sessions, taches, activites, chantiers, now, silenceMs, [], projetId)).sessions,
+    travaillent: caAvanceToutSeul(chantiers, activites, messages, sessions, taches, now, silenceMs, projetId).filter((l) => l.vivant).length,
+    sessions: resumeTravail(quiTravaille(sessions, taches, activites, chantiers, now, silenceMs, [], projetId)).sessions,
     aToi: aToi(chantiers, messages, projetId).length,
   }
+}
+
+const pluriel = (n: number, un: string, plus: string) => `${n} ${n > 1 ? plus : un}`
+
+/** La légende des voyants d'un onglet, en mots (une ligne par voyant allumé) : un seul endroit pour le texte (info-bulle ET toucher). */
+export function legendeVoyants(
+  p: { travaillent: number; sessions?: number; aToi: number; autonome?: 'actif' | 'alerte' | null },
+): { code: 'autonome' | 'travaillent' | 'aToi'; texte: string }[] {
+  const l: { code: 'autonome' | 'travaillent' | 'aToi'; texte: string }[] = []
+  if (p.autonome) l.push({ code: 'autonome', texte: p.autonome === 'alerte' ? 'Mode autonome allumé, mais rien à prendre' : 'Mode autonome allumé : Claude enchaîne les chantiers seul' })
+  if (p.travaillent) {
+    const s = p.sessions ? ` (${pluriel(p.sessions, 'session', 'sessions')} de Claude)` : ''
+    l.push({ code: 'travaillent', texte: `${pluriel(p.travaillent, 'chantier avance', 'chantiers avancent')} en ce moment${s}` })
+  }
+  if (p.aToi) l.push({ code: 'aToi', texte: `${pluriel(p.aToi, 'chose attend', 'choses attendent')} ta réponse` })
+  return l
 }
 
 // ---------------------------------------------------------------- tableau de bord (modèle A, 29 sept. 2026)

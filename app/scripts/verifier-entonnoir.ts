@@ -2,7 +2,7 @@
 // sur deux projets à la fois. Le premier cas rejoue la capture de Raphaël du
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
-import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
+import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST, etatVerification } from '../src/lib/presence.ts'
 
@@ -142,9 +142,17 @@ console.log('verifier-entonnoir')
     c.map((x) => `${x.code}${x.n}`).join(' ') === 'travaille1 attend_toi1 personne2', c)
   verifie('compteurs : vide → rien', compteursPresence([]).length === 0)
   const p = pastillesProjet(chantiers, messages, activites, [], [], now, SILENCE, 'fp')
-  verifie('pastilles FacePro : 1 session vivante, 1 chose à toi', p.travaillent === 1 && p.aToi === 1, p)
+  verifie('pastilles FacePro : 1 chantier qui avance, 1 chose à toi', p.travaillent === 1 && p.aToi === 1, p)
   const tout = pastillesProjet(chantiers, messages, activites, [], [], now, SILENCE, null)
-  verifie('pastilles « Tout » : additionne les projets', tout.travaillent === 2 && tout.aToi === aToi(chantiers, messages).length, tout)
+  const nSection = caAvanceToutSeul(chantiers, activites, messages, [], [], now, SILENCE, null).filter((l) => l.vivant).length
+  verifie('voyant vert « Tout » = le n de « Ça avance tout seul » (une seule source), pas le nombre de sessions',
+    tout.travaillent === nSection && tout.travaillent === 1 && tout.sessions === 2 && tout.aToi === aToi(chantiers, messages).length, { tout, nSection })
+  const leg = legendeVoyants({ ...tout, autonome: 'actif' })
+  verifie('légende : un libellé en mots par voyant allumé',
+    leg.length === 3 && leg.some((x) => x.code === 'travaillent' && x.texte === '1 chantier avance en ce moment (2 sessions de Claude)')
+    && leg.some((x) => x.code === 'aToi' && /^7 choses attendent ta réponse$/.test(x.texte)) && leg.some((x) => x.code === 'autonome' && /autonome allumé/.test(x.texte)), leg)
+  verifie('légende : rien d’allumé → aucune ligne ; singulier correct',
+    legendeVoyants({ travaillent: 0, aToi: 0 }).length === 0 && legendeVoyants({ travaillent: 0, aToi: 1 })[0].texte === '1 chose attend ta réponse')
 }
 
 // 5. Tri d'une liste de section par présence
