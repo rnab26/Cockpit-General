@@ -18,6 +18,7 @@ import { syntheseMiseEnLigne } from './jalons.ts'
 import { etatOuEnEst, chantierTenu, ouEnEstVisible, type EtatOuEnEst } from './ouEnEst.ts'
 import { extrait, nomCourtSession } from './texte.ts'
 import { dateRelative } from './dates.ts'
+import { estAction } from './discussion.ts'
 
 type ChantierE = Chantier
 type MessageE = Message
@@ -92,11 +93,11 @@ export function enCeMoment(
 
 // ---------------------------------------------------------------- 2. À toi
 
-export type TypeAToi = 'question' | 'fusion' | 'a_verifier' | 'a_cadrer' | 'bloque'
-export const ORDRE_A_TOI: readonly TypeAToi[] = ['question', 'fusion', 'a_verifier', 'a_cadrer', 'bloque']
+export type TypeAToi = 'question' | 'action' | 'fusion' | 'a_verifier' | 'a_cadrer' | 'bloque'
+export const ORDRE_A_TOI: readonly TypeAToi[] = ['question', 'action', 'fusion', 'a_verifier', 'a_cadrer', 'bloque']
 /** Le geste attendu, en UN verbe : le bouton de la ligne (modèle A, 29 sept. 2026). */
 export const VERBE_A_TOI: Record<TypeAToi, string> = {
-  question: 'Répondre', fusion: 'Trancher', a_verifier: 'Tester', a_cadrer: 'Décider', bloque: 'Débloquer',
+  question: 'Répondre', action: 'Faire', fusion: 'Trancher', a_verifier: 'Tester', a_cadrer: 'Décider', bloque: 'Débloquer',
 }
 
 export interface ElementAToi {
@@ -105,7 +106,7 @@ export interface ElementAToi {
   cle: string
   projetId: string
   chantier: Chantier | null
-  /** La question/action pour « question » ; la suggestion pour « fusion » ; le dernier « blocage » pour « bloque ». */
+  /** La question pour « question », l'action pour « action » ; la suggestion pour « fusion » ; le dernier « blocage » pour « bloque ». */
   message: Message | null
   /**
    * Depuis quand ça t'attend (ISO) : posée, livrée, bloquée… ou reconfirmée
@@ -177,7 +178,7 @@ export function aToi(chantiers: readonly ChantierE[], messages: readonly Message
     .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && (!c.archived_at || c.etat === 'valide')) })
     .map((m) => {
       const depuis = plusTard(m.created_at, m.confirmee_at)
-      return { type: 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis, avanceDepuis: avance(m.chantier_id, depuis) }
+      return { type: estAction(m) ? 'action' as const : 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis, avanceDepuis: avance(m.chantier_id, depuis) }
     })
 
   // Une suggestion de fusion (0008) : Claude a trouvé deux chantiers qui sont le même sujet.
@@ -323,7 +324,8 @@ export function attenteAToi(e: Pick<ElementAToi, 'type' | 'chantier' | 'message'
   // Claude a travaillé dessus depuis (0015, généralisé 0022) : peut-être déjà réglé, la chef le fait revoir.
   if (e.avanceDepuis) return `Claude a travaillé dessus ${dateRelative(e.avanceDepuis, now)} : peut-être déjà réglé, il vérifie`
   switch (e.type) {
-    case 'question': return e.message?.kind === 'action' ? 'Claude attend un geste de toi' : 'Claude te pose une question'
+    case 'action': return 'Claude attend un geste de toi'
+    case 'question': return 'Claude te pose une question'
     case 'fusion': return 'Claude propose de fusionner deux chantiers'
     case 'a_verifier': {
       if (e.chantier?.verdict_at && e.chantier.verdict_ok) return 'Claude a vérifié : c’est bon, confirme d’un toucher'

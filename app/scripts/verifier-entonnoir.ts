@@ -2,6 +2,7 @@
 // sur deux projets à la fois. Le premier cas rejoue la capture de Raphaël du
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
+import { estAction, separerChat } from '../src/lib/discussion.ts'
 import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST, etatVerification } from '../src/lib/presence.ts'
@@ -102,6 +103,12 @@ console.log('verifier-entonnoir')
   const g = grouperAToi(aToi(chantiers, messages, 'fp'))
   verifie('à toi groupé : seuls les groupes non vides', g.length === 1 && g[0].type === 'a_verifier')
   verifie('à toi : vide → rien', aToi([], []).length === 0 && grouperAToi([]).length === 0)
+  // Pastille « Actions » (5 oct. 2026) : un message kind 'action' ouvert est de type 'action', jamais 'question'.
+  const avecAction = aToi(chantiers, [...messages, M('act1', 'ck', 'ck-libre', 'action', 25), M('act-ok', 'ck', 'ck-libre', 'action', 26, { answered_at: il(20) })])
+  verifie('à toi : une action ouverte est classée « action », pas « question »', avecAction.filter((e) => e.type === 'action').length === 2 && avecAction.find((e) => e.message?.id === 'act1')?.type === 'action')
+  verifie('à toi : une action répondue n’y est plus', !avecAction.some((e) => e.message?.id === 'act-ok'))
+  verifie('à toi : les questions restent des questions', avecAction.filter((e) => e.type === 'question').length === t.filter((e) => e.type === 'question').length)
+  verifie('à toi : action = même définition que le fil (estAction / separerChat)', estAction({ kind: 'action' }) && !estAction({ kind: 'question' }) && separerChat([{ kind: 'action' }, { kind: 'question' }]).faites.length === 1)
   // Suggestion de fusion (0008) : après les questions, avant « à vérifier » ; une fois tranchée, elle disparaît.
   const avecFusion = aToi(chantiers, [...messages, M('fu', 'ck', 'ck-libre', 'fusion', 30), M('fu-ok', 'ck', 'ck-libre', 'fusion', 40, { answered_at: il(35) })])
   const ordreF = [...new Set(avecFusion.map((e) => e.type))]
