@@ -7,6 +7,8 @@ import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
 export const INTERVALLE_SONDAGE_MS = 30_000
+/** Absence minimale avant de tout relire au retour sur l'appli. */
+export const RETOUR_MIN_MS = 20_000
 type Table = 'sections' | 'chantiers' | 'messages' | 'activite' | 'sessions' | 'taches'
 const TABLES: Table[] = ['sections', 'chantiers', 'messages', 'activite', 'sessions', 'taches']
 
@@ -35,6 +37,9 @@ export const VUE_TOUT = 'tout'
 /** Les projets passent par `projets_visibles` : un membre n'y reçoit ni la clé embed ni les réglages comptables. */
 async function lireProjets() {
   const { data, error } = await supabase.rpc('projets_visibles')
+  // Une réponse qui n'est pas une liste (vide fabriquée, page d'erreur) n'est JAMAIS « zéro projet » :
+  // c'est un échec de lecture, l'écran garde ses dernières données (« Aucun projet » = lecture réussie qui rend []).
+  if (!error && !Array.isArray(data)) return { data: null, error: new Error('Réponse illisible : les projets n’ont pas pu être lus.') }
   const liste = ((data ?? []) as Projet[]).slice().sort((a, b) => Number(b.actif) - Number(a.actif) || a.nom.localeCompare(b.nom, 'fr'))
   return { data: error ? null : liste, error }
 }
@@ -141,7 +146,12 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     if (!error && data) setProjets(data as Projet[])
   }, [])
 
-  const recharger = useCallback(async (silencieux = false) => {
+  // Un seul rechargement à la fois : retour sur l'appli, direct rétabli, sondage et bouton partagent le même passage.
+  const enCours = useRef<Promise<void> | null>(null)
+  const dejaCharge = useRef(false)
+  const recharger = useCallback((silencieux = false): Promise<void> => {
+    if (enCours.current) return enCours.current
+    const p = (async () => {
     if (!silencieux) setChargement(true)
     const debut = Date.now()
     try {
@@ -150,11 +160,17 @@ export function useDonnees(pret: boolean, email: string | null = null) {
       setDerniereMaj(new Date())
       setRechargeDu((avant) => Math.max(avant ?? 0, debut))
       setCharge(true)
+      dejaCharge.current = true
     } catch (e) {
-      setErreur(messageErreur(e))
+      // Une lecture silencieuse qui échoue (coupure brève, appli en arrière-plan) ne remplace rien et n'affiche rien :
+      // les dernières données restent à l'écran.
+      if (!(silencieux && dejaCharge.current)) setErreur(messageErreur(e))
     } finally {
       setChargement(false)
     }
+    })().finally(() => { enCours.current = null })
+    enCours.current = p
+    return p
   }, [chargerTable, rechargerProjets])
 
   const rechargerCible = useCallback((table: Table) => {
@@ -191,7 +207,14 @@ export function useDonnees(pret: boolean, email: string | null = null) {
 
   // Retour au premier plan (téléphone) : on recharge, ce qui a bougé pendant la veille est passé à côté.
   useEffect(() => {
-    const onVis = () => { if (document.visibilityState === 'visible') void recharger(true) }
+    // Pas de rechargement pour un aller-retour de quelques secondes ni sans réseau (le direct rattrape).
+    let cacheDepuis = 0
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') { cacheDepuis = Date.now(); return }
+      if (navigator.onLine === false) return
+      if (cacheDepuis && Date.now() - cacheDepuis < RETOUR_MIN_MS) return
+      void recharger(true)
+    }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [recharger])

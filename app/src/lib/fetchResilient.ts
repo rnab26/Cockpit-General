@@ -12,7 +12,7 @@
  * - Tout le reste (connexion, jetons) passe sans y toucher.
  */
 import {
-  aGarder, aMettreEnCache, apercuDe, avecIdentifiant, cibleDe, classerReponse, delaiReessai, estPanneServeur,
+  aGarder, aMettreEnCache, apercuDe, avecIdentifiant, cibleDe, classerReponse, delaiReessai, estLectureEnFile, estPanneServeur,
   reponseGardee, resumeDe, type CorpsStocke, type ElementFile,
 } from './fileAttente.ts'
 import * as stock from './fileAttenteStockage.ts'
@@ -57,6 +57,8 @@ function changer() {
 }
 export const abonner = (f: () => void) => { ecouteurs.add(f); return () => { ecouteurs.delete(f) } }
 export const etatFile = () => instantane
+/** Heure d'ajout de la plus ancienne écriture en attente (hors refus), sinon null. */
+export const plusAncienAttente = (): number | null => elements.reduce<number | null>((m, e) => (e.statut === 'attente' && (m == null || e.ajoute < m) ? e.ajoute : m), null)
 
 /** À appeler une fois, après la création du client : comment obtenir le jeton courant. */
 export function fournirSession(f: () => Promise<{ token: string; uid: string } | null>) {
@@ -66,7 +68,13 @@ export function fournirSession(f: () => Promise<{ token: string; uid: string } |
 
 function chargerFile(): Promise<void> {
   if (!charge) {
-    charge = stock.tout<ElementFile>('file').then((l) => {
+    charge = stock.tout<ElementFile>('file').then(async (l0) => {
+      // Migration : une lecture gardée par erreur (ancienne règle) n'est jamais rejouée, elle est retirée.
+      const l: ElementFile[] = []
+      for (const e of l0) {
+        if (estLectureEnFile(e.methode, e.url)) await stock.retirer('file', e.id)
+        else l.push(e)
+      }
       const ids = new Set(elements.map((e) => e.id))
       elements = [...l.filter((e) => !ids.has(e.id)), ...elements].sort((a, b) => a.ajoute - b.ajoute)
       changer()
