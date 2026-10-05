@@ -30,8 +30,10 @@ import { Reglages } from './Reglages.tsx'
 import { ProjetsMembres } from './ProjetsMembres.tsx'
 import { OngletsProjet } from './OngletsProjet.tsx'
 import { CoutsProjet } from './Depenses.tsx'
-import { BarreNavigation } from './BarreNavigation.tsx'
 import { ONGLET_DEFAUT, type OngletProjet } from '../lib/vueProjet.ts'
+import { BarreOnglets } from './BarreOnglets.tsx'
+import { useNavMobile } from '../hooks/useNavMobile.ts'
+import { ongletBarreActif, type OngletBarre } from '../lib/navMobile.ts'
 import { Chargement, Erreur, Vide } from '../ui/Etats.tsx'
 import { Button } from '../ui/Button.tsx'
 
@@ -60,6 +62,9 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const [selectionActive, setSelectionActive] = useState(false)
   const [selectionIds, setSelectionIds] = useState<Set<string>>(new Set())
   const [onglet, setOnglet] = useState<OngletProjet>(ONGLET_DEFAUT)
+  const [recherche, setRecherche] = useState(false)
+  const barreBas = useNavMobile()
+  const dernierProjet = useRef<string | null>(null)
   const [now, setNow] = useState(() => new Date())
   const admin = moi.admin
 
@@ -101,6 +106,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const changerVue = useCallback((id: string) => {
     d.choisirVue(id)
     setOnglet(ONGLET_DEFAUT)  // on arrive toujours sur la zone chantiers
+    setRecherche(false)
     setSelectionActive(false); setSelectionIds(new Set())
     window.scrollTo({ top: 0 })
   }, [d.choisirVue]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -178,6 +184,34 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     return m
   }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin])
 
+  // Barre du bas : chaque onglet change d'écran, jamais de fenêtre par-dessus (sauf Réglages de l'appli depuis l'accueil).
+  if (!vueTout && d.projet) dernierProjet.current = d.projet.id
+  const projetCourant = (): string | null => dernierProjet.current && d.projets.some((p) => p.id === dernierProjet.current) ? dernierProjet.current : (d.projets.find((p) => p.actif)?.id ?? d.projets[0]?.id ?? null)
+  const surBarre = (o: OngletBarre) => {
+    if (o === 'recherche') { setRecherche((v) => !v); return }
+    setRecherche(false)
+    window.scrollTo({ top: 0 })
+    if (o === 'accueil') { changerVue(VUE_TOUT); return }
+    if (o === 'reglages' && vueTout) { setDialogue('reglages'); return }
+    const id = vueTout ? projetCourant() : d.projet?.id ?? null
+    if (!id) return
+    if (vueTout) changerVue(id)
+    const cible: OngletProjet = o === 'couts' ? 'couts' : o === 'reglages' ? 'reglages' : 'travail'
+    // Retour du téléphone : revient à l'onglet précédent (une entrée d'historique par changement), puis quitte.
+    if (cible !== onglet) history.pushState({ onglet: cible }, '', location.href)
+    setOnglet(cible)
+  }
+  useEffect(() => {
+    const retour = (e: PopStateEvent) => {
+      const s = e.state as { onglet?: OngletProjet; conversation?: boolean } | null
+      if (s?.conversation) return
+      setOnglet(s?.onglet ?? ONGLET_DEFAUT); setRecherche(false)
+    }
+    window.addEventListener('popstate', retour)
+    return () => window.removeEventListener('popstate', retour)
+  }, [])
+  const aToiTotal = pastilles.get(VUE_TOUT)?.aToi ?? 0
+
   const onMenu = (a: ActionMenu) => {
     if (a === 'choisir') { setSelectionActive((v) => !v); setSelectionIds(new Set()); return }
     if (a === 'installer') { void installation.lancer(); return }
@@ -189,7 +223,8 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const entete = (
     <EnTete projets={d.projets} projet={d.projet} vueTout={vueTout} choisirVue={changerVue} pastilles={pastilles} admin={admin} chargement={d.chargement} direct={d.direct}
-      derniereMaj={d.derniereMaj} rechargeDu={d.rechargeDu} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'} />
+      derniereMaj={d.derniereMaj} rechargeDu={d.rechargeDu} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'}
+      recherche={recherche} onRecherche={setRecherche} barreBas={barreBas} />
   )
   const reglages = <Reglages ouvert={dialogue === 'reglages'} onFermer={() => setDialogue(null)} theme={theme} changerTheme={changerTheme} onProjets={() => setDialogue('projets')} seDeconnecter={seDeconnecter} onAideInstallation={() => setDialogue('installer')} />
   const aideInstallation = <AideInstallation ouvert={dialogue === 'installer'} onFermer={() => setDialogue(null)} />
@@ -216,7 +251,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const pretAffichage = d.charge || !!d.erreur
   return (
     <GlobalCtx.Provider value={global}>
-      <div className={`min-h-dvh ${selectionActive && !vueTout ? 'pb-40' : 'pb-8'}`}>
+      <div className={`min-h-dvh ${selectionActive && !vueTout ? 'pb-40' : barreBas ? 'pb-24' : 'pb-8'}`}>
         {entete}
         <main className="mx-auto max-w-3xl lg:max-w-5xl space-y-3 px-3 pt-4">
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}
@@ -228,7 +263,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           ) : (
             <AvecProjet projetId={d.projet.id}>
               <div className="space-y-5" data-testid="vue-projet">
-                <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={<OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
                 {onglet === 'travail' ? (
                   <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
                     deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />
@@ -240,11 +275,6 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           )}
         </main>
 
-        <BarreNavigation actif={vueTout || !d.projet ? 'accueil' : onglet} onChoisir={(c) => {
-          if (c === 'accueil') { if (!vueTout) changerVue(VUE_TOUT); else window.scrollTo({ top: 0 }); return }
-          if (vueTout || !d.projet) { const p = d.projets[0]; if (!p) return; changerVue(p.id) }
-          setOnglet(c); window.scrollTo({ top: 0 })
-        }} />
         {!vueTout && d.projet ? (
           <AvecProjet projetId={d.projet.id}>
             <NouveauChantier ouvert={dialogue === 'nouveau'} onFermer={() => setDialogue(null)} />
@@ -269,6 +299,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {aideInstallation}
         {projetsMembres}
         <BulleFlottanteAide />
+        {barreBas ? <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche)} onChoisir={surBarre} aToi={aToiTotal} /> : null}
       </div>
     </GlobalCtx.Provider>
   )

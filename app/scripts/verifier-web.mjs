@@ -373,6 +373,22 @@ try {
     await page.keyboard.press('Escape')
     await dlgT.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
+  // « En attente » (chantier 37405805) : chaque ligne dit ce qui se passe, ce qui va être fait, et « rien à faire » ou le geste.
+  if (await nTuile('enPause')) {
+    await page.getByTestId('tuile-enPause').click()
+    const dlgE = page.getByRole('dialog').filter({ hasText: 'En attente' })
+    await dlgE.waitFor({ timeout: 5000 })
+    const lignesE = dlgE.getByTestId('ligne-en-attente')
+    const nE = await lignesE.count()
+    const textesE = await lignesE.evaluateAll((els) => els.map((e) => [...e.querySelectorAll('[data-testid="attente-quoi"],[data-testid="attente-suite"]')].map((x) => x.textContent).join(' ')))
+    verifie('tuile « en attente » : chaque ligne dit ce qui se passe et ce qui va être fait, sans jargon',
+      nE >= 1 && (await dlgE.getByTestId('attente-quoi').count()) === nE && (await dlgE.getByTestId('attente-suite').count()) === nE
+      && textesE.every((t) => !/renfort\/|réservé|abandonné/.test(t) && /(Rien à faire|Lancer|repris|prend|prendra|relance)/.test(t)), textesE)
+    verifie('…titre entier (pas tronqué) et pas de débordement horizontal',
+      !(await dlgE.getByTestId('ligne-en-attente').first().locator('span.truncate').count()) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    await page.keyboard.press('Escape')
+    await dlgE.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
   // « Fini » (chantier 3cea6ae9) : chaque ligne dit quand et par qui, le plus récemment certifié en haut.
   if (await nTuile('fini')) {
     await page.getByTestId('tuile-fini').click()
@@ -464,21 +480,27 @@ try {
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
   // Vue du projet réorganisée (9cc71872) : chiffres, trois icônes, discussion, « Ça avance », « Prêt à lancer », puis la liste des chantiers.
   const ysVue = await page.evaluate(() => ['tuiles', 'ecrire-projet', 'en-ce-moment', 'a-lancer', 'tous-les-chantiers'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().top ?? -1))
-  verifie('FacePro : ordre des blocs = chiffres, discussion, « Ça avance », « Prêt à lancer », chantiers', ysVue.every((y, i) => y >= 0 && (i === 0 || y > ysVue[i - 1])), ysVue)
-  // Sur téléphone (tactile étroit) les trois menus sont dans la barre d'onglets du BAS (navigation d'appli) : celle du haut est masquée.
-  const bOnglets = await page.getByTestId('barre-navigation').boundingBox()
-  const bTabs = await page.getByTestId('barre-navigation').getByRole('button').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
-  verifie('FacePro : navigation en barre d’onglets en bas (4 entrées, même ligne, collée au bas de l’écran, onglets du haut masqués)', new Set(bTabs).size === 1 && bTabs.length === 4 && bOnglets.width <= (page.viewportSize()?.width ?? 9999) && Math.abs(bOnglets.y + bOnglets.height - (page.viewportSize()?.height ?? 0)) < 2 && !(await page.getByTestId('onglets-projet').isVisible()))
+  verifie('FacePro : ordre des blocs = chiffres, 3 icônes, discussion, « Ça avance », « Prêt à lancer », chantiers', ysVue.every((y, i) => y >= 0 && (i === 0 || y > ysVue[i - 1])), ysVue)
+  // Navigation « application » (05/10) : barre d'onglets FIXE en bas ; les trois icônes de la page et la loupe de l'en-tête n'existent plus.
+  const vpNav = page.viewportSize()
+  const barreNav = await page.getByTestId('barre-onglets').boundingBox()
+  const bTabsNav = await page.getByTestId('barre-onglets').getByRole('tab').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  verifie('barre du bas : 5 onglets sur une ligne, collée en bas de l’écran, dans la largeur', bTabsNav.length === 5 && new Set(bTabsNav).size === 1 && Math.abs(barreNav.y + barreNav.height - vpNav.height) <= 1 && barreNav.width <= vpNav.width, [bTabsNav, barreNav, vpNav])
+  verifie('barre du bas : onglet « Projet » allumé, les trois icônes de la page et la loupe d’en-tête n’existent plus', (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('onglets-projet').count() === 0 && await page.locator('header [data-testid="loupe"]').count() === 0)
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  const barreBasNav = await page.getByTestId('barre-onglets').boundingBox()
+  verifie('barre du bas : toujours en bas après défilement, rien du contenu caché dessous', Math.abs(barreBasNav.y + barreBasNav.height - vpNav.height) <= 1 && await page.evaluate(() => { const d = document.querySelector('[data-testid="vue-projet"]').getBoundingClientRect().bottom; return d <= document.querySelector('[data-testid="barre-onglets"]').getBoundingClientRect().top + 1 }))
+  await page.evaluate(() => window.scrollTo(0, 0))
+  verifie('zoom : viewport de l’appareil, jamais plus petit que 1, aucun débordement horizontal', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && /minimum-scale=1/.test(document.querySelector('meta[name="viewport"]').content)))
   verifie('FacePro : les réglages sont derrière la 2e icône, pas à la suite', await page.getByTestId('reglages-projet').count() === 0)
-  await page.getByTestId('nav-couts').click()
+  await page.getByTestId('onglet-vue-couts').click()
   await page.getByTestId('couts-projet').waitFor({ timeout: 15000 }).catch(() => {})
   verifie('FacePro : Coûts = état vide honnête (aucune donnée de coût), les 4 chiffres restent en haut', await page.getByTestId('couts-projet').count() === 1 && /Aucune dépense enregistrée/.test(await page.getByTestId('couts-projet').textContent()) && await page.getByTestId('tuiles').count() === 1 && await page.getByTestId('tous-les-chantiers').count() === 0)
-  await page.getByTestId('nav-reglages').click()
+  await page.getByTestId('onglet-vue-reglages').click()
   verifie('FacePro : « Réglages du projet » replié, dans l’onglet Réglages', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
-  await page.getByTestId('nav-travail').click()
+  await page.getByTestId('onglet-vue-travail').click()
   // La loupe : entre « Actualiser » et « + Chantier ».
-  const xsLoupe = await page.evaluate(() => ['actualiser', 'loupe', 'nouveau-chantier'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().left ?? -1))
-  verifie('loupe en haut, juste après « Actualiser »', xsLoupe.every((x, i) => x >= 0 && (i === 0 || x > xsLoupe[i - 1])), xsLoupe)
+  // Recherche = 3e onglet de la barre du bas.
   await page.getByTestId('loupe').click()
   await page.getByTestId('recherche-champ').fill('zzzqqqintrouvable')
   verifie('recherche sans résultat : le dit', await page.getByTestId('recherche-aucun').isVisible())
@@ -673,7 +695,7 @@ try {
   // Cas signalé le 30 sept. (chantier fb19d6a8) : « relancer encore alors que c'est déjà relancé ? » — l'écran dit le geste.
   const sit = conv().getByTestId('situation-silence')
   verifie('silencieux : dit qui le tient, depuis quand, et LE geste (abandonné, sans chef programmée → « À faire »)',
-    await sit.count() === 1 && /signe de vie/.test(await sit.getByTestId('silence-quoi').textContent()) && /^À faire/.test(await sit.getByTestId('silence-geste').textContent()) && await sit.getAttribute('data-geste') === 'relancer', await sit.textContent())
+    await sit.count() === 1 && /s’est arrêté/.test(await sit.getByTestId('silence-quoi').textContent()) && /^À faire/.test(await sit.getByTestId('silence-geste').textContent()) && await sit.getAttribute('data-geste') === 'relancer', await sit.textContent())
   verifie('…les boutons de relance restent visibles quand c’est le geste', await conv().getByTestId('bulle-relance').getByTestId('copier-consigne').isVisible())
   await fermerConv()
 
@@ -1000,7 +1022,7 @@ try {
   await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
   // « Comment vérifier » avec « Ce que tu dois voir ».
   const VI = creerTest('verif avec image', { etat: 'en_cours' })
-  script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--pas-en-ligne', 'test', '--image', imgFichier])
+  script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--sans-lien', 'test', '--pas-en-ligne', 'test', '--image', imgFichier])
   await allerTout()
   await actualiser()
   await (await elementAToi(VI.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
@@ -1141,18 +1163,19 @@ try {
   const etatsV3 = await blocV3.getByTestId('etape-en-ligne').evaluateAll((l) => l.map((e) => e.getAttribute('data-etat')))
   verifie('seulement « envoyé » : « Pas encore en ligne : attends avant de vérifier »', /Pas encore en ligne/.test(await blocV3.getByTestId('phrase-en-ligne').textContent()))
   verifie('…et les étapes suivantes sont grises', etatsV3.join(',') === 'fait,fait,attente,attente', etatsV3)
-  await blocV3.getByTestId('btn-corriger').click()
-  await blocV3.getByRole('button', { name: /Envoyer la correction/ }).click()
-  verifie('« Corriger » sans mots : refusé en clair (c’est ce que Claude lira)', await toastAuPremierPlan(/Dis ce qui ne marche pas/))
+  verifie('plus de bouton « Corriger » : « Ça marche », « Ça ne marche pas », « Je ne peux pas vérifier »',
+    await blocV3.getByTestId('btn-corriger').count() === 0 && await blocV3.getByTestId('btn-ne-marche-pas').isVisible() && await blocV3.getByTestId('btn-verifie-pour-moi').isVisible() && await blocV3.getByTestId('btn-certifier').isVisible())
+  await blocV3.getByTestId('btn-ne-marche-pas').click()
+  verifie('« Ça ne marche pas » : les mots sont FACULTATIFS (rien d’obligatoire à écrire)', /facultatif/.test(await blocV3.locator('textarea').getAttribute('placeholder')))
   await blocV3.locator('textarea').fill(`${MARQUE2} le bouton ne répond pas`)
   await blocV3.getByTestId('entree-medias').setInputFiles({ name: 'bug.png', mimeType: 'image/png', buffer: PNG_TEST })
   await blocV3.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
-  await blocV3.getByRole('button', { name: /Envoyer la correction/ }).click()
-  verifie('« Corriger » : toast visible', await toastAuPremierPlan(/Correction envoyée/), { auPremierPlan: dernierDessus })
-  const v3Base = sql(`select etat from chantiers where id = '${v3.id}'`)[0]
+  await blocV3.getByTestId('envoyer-probleme').click()
+  verifie('« Ça ne marche pas » : toast visible, « Claude vérifie »', await toastAuPremierPlan(/Claude vérifie ce qui ne marche pas/), { auPremierPlan: dernierDessus })
+  const v3Base = sql(`select etat, verif_demandee_at, verif_motif from chantiers where id = '${v3.id}'`)[0]
   const v3Msgs = sql(`select corps, medias from messages where chantier_id = '${v3.id}' order by created_at`)
-  verifie('« Corriger » : en base, le chantier revient à Claude (libre), ses mots et la photo dans le fil',
-    v3Base?.etat === 'libre' && v3Msgs.some((m) => m.corps.includes('le bouton ne répond pas')) && v3Msgs.some((m) => (m.medias ?? []).length === 1), { v3Base, v3Msgs })
+  verifie('« Ça ne marche pas » : en base, Claude est chargé de vérifier (motif ne_marche_pas), ses mots et la photo dans le fil',
+    v3Base?.etat === 'a_verifier' && !!v3Base.verif_demandee_at && v3Base.verif_motif === 'ne_marche_pas' && v3Msgs.some((m) => m.corps.includes('le bouton ne répond pas')) && v3Msgs.some((m) => (m.medias ?? []).length === 1), { v3Base, v3Msgs })
   await fermerConv()
 
   // « Je ne sais pas : vérifie pour moi » (0016) : Raphaël colle ce qu'il a vu, Claude juge.
@@ -1161,7 +1184,7 @@ try {
   await (await elementAToi(v4.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
   await attendreConv(v4.titre)
   const blocV4 = conv().getByTestId('bloc-validation')
-  verifie('« Je ne sais pas : vérifie pour moi » est proposé à côté de « Ça marche » / « Corriger »', await blocV4.getByTestId('btn-verifie-pour-moi').isVisible())
+  verifie('« Je ne sais pas : vérifie pour moi » est proposé à côté de « Ça marche » / « Ça ne marche pas »', await blocV4.getByTestId('btn-verifie-pour-moi').isVisible())
   await blocV4.getByTestId('btn-verifie-pour-moi').click()
   await blocV4.locator('textarea').fill(`${MARQUE2} voici la réponse de la session : 13 chantiers`)
   await blocV4.getByTestId('envoyer-verification').click()
@@ -1170,7 +1193,7 @@ try {
   const v4Msg = sql(`select corps from messages where chantier_id = '${v4.id}' and kind = 'constat'`)[0]
   verifie('« Vérifie pour moi » : en base, la demande est posée avec ce qu’il a collé', !!v4Base?.verif_demandee_at && /13 chantiers/.test(v4Msg?.corps ?? ''), { v4Base, v4Msg })
   await blocV4.getByTestId('verification-en-cours').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('en attente de Claude : plus AUCUN bouton (ni « Ça marche », ni « Corriger »), seulement « En attente de Claude »', await blocV4.getByTestId('verification-en-cours').count() === 1 && await blocV4.getByTestId('btn-verifie-pour-moi').count() === 0 && await blocV4.getByTestId('btn-certifier').count() === 0 && await blocV4.getByTestId('btn-corriger').count() === 0)
+  verifie('en attente de Claude : plus AUCUN bouton (ni « Ça marche », ni « Ça ne marche pas »), seulement « En attente de Claude »', await blocV4.getByTestId('verification-en-cours').count() === 1 && await blocV4.getByTestId('btn-verifie-pour-moi').count() === 0 && await blocV4.getByTestId('btn-certifier').count() === 0 && await blocV4.getByTestId('btn-ne-marche-pas').count() === 0)
   await fermerConv()
   verifie('pendant que Claude vérifie, le chantier sort de « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v4.id}"]`).count() === 0)
   // Retour de Raphaël (29 sept.) : « je ne vois pas où ce chantier part ». Il se voit, sous UN nom, partout.
@@ -1472,8 +1495,8 @@ try {
   // 7 bis. Mise en ligne (GitHub simulé) et mode autonome, dans « Réglages du projet » (replié)
   console.log('  — mise en ligne et mode autonome')
   // Vue du projet (9cc71872) : on arrive sur « travail » ; les réglages sont derrière la 2e icône.
-  verifie('vue projet : barre d’onglets en bas, on arrive sur « travail »', await page.getByTestId('barre-navigation').getByRole('button').count() === 4 && (await page.getByTestId('onglets-projet').getAttribute('data-actif')) === 'travail' && await page.getByTestId('autonome-projet').count() === 0)
-  await page.getByTestId('nav-reglages').click()
+  verifie('vue projet : barre du bas, on arrive sur « travail »', await page.getByTestId('barre-onglets').getByRole('tab').count() === 5 && (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('autonome-projet').count() === 0)
+  await page.getByTestId('onglet-vue-reglages').click()
   const reglagesP = page.getByTestId('reglages-projet')
   await reglagesP.locator('> button').click()
   const dep = reglagesP.getByTestId('barre-projet').getByTestId('deploiement')
@@ -2135,7 +2158,7 @@ process.exit(echecs ? 1 : 0)
 var dernierDessus = null
 async function toastAuPremierPlan(re) {
   const t = page.getByRole('status').getByText(re).last()
-  await t.waitFor({ timeout: 10000 })
+  await t.waitFor({ timeout: 10000 }).catch(async (e) => { console.log('    toasts à l’écran :', JSON.stringify(await page.getByRole('status').allTextContents())); throw e })
   const b = await t.boundingBox()
   if (!b) return false
   // Sans dialogue ouvert : le toast est l'élément touché à son centre. Avec

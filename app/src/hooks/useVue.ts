@@ -6,9 +6,12 @@ const CLE = 'cockpit_vue'
 function lire(): Vue {
   try { return lireVue(localStorage.getItem(CLE)) } catch { return VUE_DEFAUT }
 }
+function tactile(): boolean { try { return matchMedia('(pointer: coarse)').matches } catch { return false } }
 export function appliquerVue(v: Vue) {
-  document.querySelector('meta[name="viewport"]')?.setAttribute('content', viewportDe(v))
+  document.querySelector('meta[name="viewport"]')?.setAttribute('content', viewportDe(v, tactile()))
   document.documentElement.classList.toggle('vue-mobile', v === 'mobile')
+  document.documentElement.dataset.vue = v
+  window.dispatchEvent(new Event('cockpit-vue'))
 }
 /** Appelé avant le premier rendu (main.tsx) : pas de flash de la mauvaise vue. */
 export function preparerVue() { appliquerVue(lire()) }

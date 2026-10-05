@@ -63,7 +63,7 @@ try {
   await page.goto(BASE + `#projet=${SLUG}`, { waitUntil: 'domcontentloaded' })
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByTestId('vue-projet').waitFor({ timeout: 20000 })
-  await page.getByTestId('nav-couts').click()
+  await page.getByTestId('onglet-vue-couts').click()
   await page.getByTestId('couts-projet').waitFor({ timeout: 15000 })
 
   // --- 1. état vide

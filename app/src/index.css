@@ -85,20 +85,9 @@
 @keyframes cockpit-toast { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }
 .toast-in { animation: cockpit-toast .18s ease-out; }
 
-/* Navigation « appli » (chantier c6e4ea77) : barre d'onglets en bas, écrans plein cadre, pas de zoom. Active en vue Mobile, et en Auto sur écran tactile étroit. */
-.nav-bas { display: none; }
-html.vue-mobile .nav-bas { display: grid; }
-html.vue-mobile .onglets-haut { display: none; }
-html.vue-mobile body { overscroll-behavior: none; touch-action: manipulation; padding-bottom: calc(3.5rem + env(safe-area-inset-bottom)); }
+/* Conversation plein écran en vue Mobile (apport de la PR 75, c6e4ea77). */
 html.vue-mobile dialog[data-testid="conversation"] { height: 100dvh !important; }
 html.vue-mobile dialog[data-testid="conversation"] > div { border-radius: 0 !important; }
-html.vue-mobile [data-testid="barre-selection"] { bottom: calc(3.5rem + env(safe-area-inset-bottom)); }
-@media (pointer: coarse) and (max-width: 640px) {
-  html:not(.vue-mobile) .nav-bas { display: grid; }
-  html:not(.vue-mobile) .onglets-haut { display: none; }
-  html:not(.vue-mobile) body { padding-bottom: calc(3.5rem + env(safe-area-inset-bottom)); }
-  html:not(.vue-mobile) [data-testid="barre-selection"] { bottom: calc(3.5rem + env(safe-area-inset-bottom)); }
-}
 
 /* Vue « mobile » forcée (Réglages › Vue) : sur un écran tactile (téléphone, tablette) l'app prend TOUTE la largeur, aucune colonne étroite (cause du 05/10 : la colonne de 430 px s'appliquait aussi aux téléphones plus larges, aux tablettes et aux pliables). La colonne centrée n'existe que sur un écran à souris (PC), pour simuler un téléphone. */
 @media (pointer: fine) and (min-width: 431px) {
@@ -106,6 +95,14 @@ html.vue-mobile [data-testid="barre-selection"] { bottom: calc(3.5rem + env(safe
   html.vue-mobile #root { max-width: 430px; margin-inline: auto; min-height: 100dvh; box-shadow: 0 0 0 1px rgb(128 128 128 / 0.25); }
   /* Idem pour ce qui est positionné par rapport à la fenêtre : fenêtres, barre de sélection, bulle d'aide. */
   html.vue-mobile dialog { max-width: 430px !important; margin-inline: auto !important; }
-  html.vue-mobile [data-testid="barre-selection"] { max-width: 430px; margin-inline: auto; }
+  html.vue-mobile [data-testid="barre-selection"], html.vue-mobile [data-testid="barre-onglets"] { max-width: 430px; margin-inline: auto; }
   html.vue-mobile [data-testid="bulle-aide-bouton"] { right: max(12px, calc(50vw - 215px + 12px)) !important; }
+}
+
+/* Navigation « application » (05/10) : sur écran tactile, pas de zoom au double toucher, pas de flash au toucher,
+   pas de débordement horizontal, et les champs à 16 px (en dessous, iOS zoome tout seul sur la page au toucher). */
+@media (pointer: coarse) {
+  html, body { overflow-x: hidden; max-width: 100vw; overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+  body { touch-action: manipulation; }
+  input, select, textarea { font-size: 16px !important; }
 }

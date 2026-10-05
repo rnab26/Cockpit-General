@@ -56,7 +56,7 @@ export function BulleFlottanteAide() {
       {/* À droite, au-dessus de la barre système et du bas de page : ne cache aucun bouton. */}
       {!ouvert && (
         <button type="button" onClick={() => setOuvert(true)} aria-label="Ouvrir l’aide" data-testid="bulle-aide-bouton" title={`Aide · ${projet.nom}`}
-          style={{ bottom: 'calc(env(safe-area-inset-bottom) + 76px)', right: 'calc(env(safe-area-inset-right) + 12px)' }}
+          style={{ bottom: 'calc(max(var(--nav-h, 0px), env(safe-area-inset-bottom)) + 76px)', right: 'calc(env(safe-area-inset-right) + 12px)' }}
           className="fixed z-30 flex h-11 w-11 items-center justify-center rounded-full border border-bord bg-carte text-texte shadow-lg hover:bg-carte-2 focus:outline-none focus:ring-2 focus:ring-accent/40">
           <HelpCircle size={22} />
         </button>

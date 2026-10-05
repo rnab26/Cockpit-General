@@ -8,7 +8,7 @@
 // signe de vie depuis DELAI_ABANDON_MIN, la passe de la chef le reprend seule.
 import type { Activite, Chantier } from './types.ts'
 import { heureLisible, dateRelative } from './dates.ts'
-import { nomCourtSession } from './texte.ts'
+import { nomQui } from './enAttente.ts'
 
 /**
  * Délai « sans signe de vie » PAR DÉFAUT (min) : au-delà, un chantier réservé est « abandonné » et la chef le
@@ -67,7 +67,7 @@ export function situationSilence(
   const now = ctx.now.getTime()
   const abandonMs = (ctx.abandonMin ?? DELAI_ABANDON_MIN) * 60_000
   const dernier = t(activite?.updated_at)
-  const qui = c.pris_par ? nomCourtSession(c.pris_par) : 'une session'
+  const qui = nomQui(c.pris_par)
   const depuis = dernier !== null ? (dateRelative(activite!.updated_at, ctx.now) || 'à l’instant') : 'aucun signe depuis la réservation'
   // Sans étape signalée, on compte depuis la dernière modification de la fiche.
   const reference = dernier ?? t(c.updated_at)
@@ -81,17 +81,17 @@ export function situationSilence(
     ceQuiSePasse: 'Tu as déjà demandé où ça en est : un assistant regarde.',
     consigne: 'Rien à faire : la réponse arrive ici toute seule. Ne relance pas encore.' }
   if (abandonne && repriseA) return { ...base, geste: 'rien',
-    ceQuiSePasse: `${qui} n’a plus donné signe de vie (${depuis}) : le chantier est considéré comme abandonné.`,
-    consigne: `Rien à faire : la chef du projet le reprend seule vers ${repriseA}.` }
+    ceQuiSePasse: `${qui} s’est arrêté (dernier signe : ${depuis}) : le chantier n’avance plus.`,
+    consigne: `Rien à faire : il sera repris tout seul vers ${repriseA}.` }
   if (abandonne) return { ...base, geste: 'relancer',
-    ceQuiSePasse: `${qui} n’a plus donné signe de vie (${depuis}) et aucune chef n’est programmée pour le reprendre.`,
-    consigne: 'À faire : copie la consigne et colle-la dans une session Claude du projet, ou demande où ça en est.' }
+    ceQuiSePasse: `${qui} s’est arrêté (dernier signe : ${depuis}) et rien n’est programmé pour le reprendre.`,
+    consigne: 'À faire : touche « Relancer maintenant » ci-dessous (copie la consigne à coller dans Claude Code, ou demande où ça en est).' }
   const finAttente = abandonneA !== null ? heureLisible(new Date(abandonneA).toISOString(), ctx.now) : null
   return { ...base, geste: 'attendre',
-    ceQuiSePasse: `${qui} a réservé le chantier, mais rien de nouveau (${depuis}) : elle réfléchit peut-être encore.`,
+    ceQuiSePasse: `${qui} l’a pris, mais rien de nouveau (${depuis}) : il travaille peut-être encore.`,
     consigne: repriseA && finAttente
-      ? `Rien à faire pour l’instant : sans nouvelle d’ici ${finAttente}, il est repris seul vers ${repriseA}.`
-      : `Rien à faire avant ${finAttente ?? `${DELAI_ABANDON_MIN} min sans nouvelle`} : passé ce délai, relance-le (aucune reprise seule programmée).` }
+      ? `Rien à faire pour l’instant : sans nouvelle d’ici ${finAttente}, il est repris tout seul vers ${repriseA}.`
+      : `Rien à faire avant ${finAttente ?? `${DELAI_ABANDON_MIN} min sans nouvelle`} : passé ce délai, relance-le toi-même (aucune reprise automatique n’est programmée).` }
 }
 
 /**
@@ -107,7 +107,7 @@ export function phraseLiberee(
   const now = ctx.now.getTime()
   const jusqua = t(c.pris_jusqu_a)
   if (jusqua !== null && jusqua > now) return null
-  const qui = c.libere_de ? nomCourtSession(c.libere_de) : 'une session'
+  const qui = c.libere_de ? nomQui(c.libere_de).toLowerCase() : 'une session'
   const passage = passageApres(ctx.prochainPassage, now, now)
   const reprise = passage !== null ? `repris seul vers ${heureLisible(new Date(passage).toISOString(), ctx.now)}` : 'repris seul à la prochaine passe de la chef'
   return `Pris par ${qui}, sans signe de vie depuis ${c.libere_apres_min ?? DELAI_ABANDON_MIN} min : libéré à ${heureLisible(c.libere_at!, ctx.now)}, ${reprise}. Rien à faire de ton côté.`
