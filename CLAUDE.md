@@ -544,6 +544,10 @@ dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 
 Raphaël : « libérer automatiquement les chantiers bloqués par des sessions le plus rapidement possible ». Cause : `liberer_silencieux` (0043) n'était appelée qu'au passage de `chef.sh` / `passe.sh` / `autonome.sh` ; sans passage, un chantier tenu par une session morte restait « en_cours » jusqu'à la fin de sa réservation. Un job pg_cron (`cockpit-liberation-auto`, toutes les 3 min, visible dans `cron.job`) appelle `liberation_passe()` : le MÊME balayage (`liberer_silencieux_coeur`, corps unique ; `liberer_silencieux` des sessions le délègue après son contrôle d'appelant) et la même règle `sans_signe_de_vie` / `delai_signe`. Jamais un projet `test-…`. Interrupteurs : `projets.liberation_auto` (par projet) et `filet_reglage.liberation_actif` (global, coupe aussi le job), `regler_liberation(slug|null, actif)`. Pas d'écran (SQL). `verifier-base` §40.
 
+## Rien repris à tort : « Terminé » sort de bloqué, déjà livré = pas repris (5 oct. 2026, migration 0051, chantier 72d09c69)
+
+Raphaël (réponse « Les 3 correctifs ») : (1) `progression.sh --termine` passe aussi un chantier « bloqué » à « à vérifier » (avant : seulement en cours / libre / à trier, le chantier livré restait « bloqué » — l'ancienne mise en garde du bloc FacePro tombe) ; (2) UNE règle `cockpit.livre_sans_suite(c)` (dernière activité « terminé » et aucun message de Raphaël / d'un utilisateur depuis) lue par `chantiers_prenables` : un chantier libre / à trier déjà livré n'est pas repris par le mode autonome, un « Corriger » ou une réponse le rouvre ; déjà pris = réservation valide (0036) ; (3) la passe de libération rend les réservations EXPIRÉES (`pris_par` vidé, sauf chantier « en_cours » dont `chantier_abandonne` a besoin). `verifier-base` §41.
+
 ## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0046)
 
 Raphaël : « Pourquoi attendre 30 minutes ? […] zéro chantier tenu pour rien. »
