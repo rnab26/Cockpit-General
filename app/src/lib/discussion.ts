@@ -55,6 +55,14 @@ export function ordreDuFil<T extends M>(messages: readonly T[]): { historique: T
   return { historique: tri.filter((m) => !attendUnChoix(m)), aChoisir: tri.filter(attendUnChoix) }
 }
 
+/**
+ * Le chat ne garde que la discussion (5 oct. 2026) : les actions DÉJÀ FAITES (carte « Fusionne la PR… » répondue)
+ * en sortent et vont dans le repli « Actions déjà faites » du champ d'action ; une question répondue reste au chat.
+ */
+export function separerChat<T extends Pick<M, 'kind'>>(historique: readonly T[]): { chat: T[]; faites: T[] } {
+  return { chat: historique.filter((m) => m.kind !== 'action'), faites: historique.filter((m) => m.kind === 'action') }
+}
+
 export type EtatAttente = 'prise' | 'recue' | 'session' | 'attente' | 'personne'
 export interface AttenteReponse {
   etat: EtatAttente
