@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowDownUp, ChevronDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
+import { ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
@@ -26,6 +26,7 @@ import { FiletSecurite } from './FiletSecurite.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
 import { bulleActive, cleBulle } from '../lib/bulleAide.ts'
+import { basculerRepli, comptesAToi, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -47,15 +48,29 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
     { chantiers: g.chantiers, messages: g.messages, activites: g.activites, sessions: g.sessions, taches: g.taches },
     g.now, g.silenceMs, fenetre, ordre, projetId,
   ), [g.chantiers, g.messages, g.activites, g.sessions, g.taches, g.now, g.silenceMs, fenetre, ordre, projetId])
+  const toast = useToast()
+  // Sections repliées : retenu par personne (préférences), un seul geste « Tout replier / Tout déplier ».
+  const repliees = useMemo(() => lireRepliees(g.prefs[PREF_REPLIEES]), [g.prefs])
+  const retenir = async (liste: SectionAccueil[]) => {
+    try { await g.poser(PREF_REPLIEES, liste) }
+    catch (err) { toast.erreur(`Repli non retenu : ${err instanceof Error ? err.message : String(err)}`) }
+  }
+  const repli = (cle: SectionAccueil) => ({ replie: repliees.has(cle), onToggle: () => void retenir(basculerRepli(repliees, cle)) })
+  const tout = toutEstReplie(repliees)
   return (
     <div className="space-y-5">
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
-      <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
-      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} />
+      <div className="-mb-3 flex justify-end">
+        <Button taille="sm" variante="discret" onClick={() => void retenir(toutBasculer(repliees))} data-testid="tout-replier-accueil" data-replie={tout ? '1' : ''}>
+          {tout ? <ChevronsUpDown size={15} aria-hidden /> : <ChevronsDownUp size={15} aria-hidden />}{tout ? 'Tout déplier' : 'Tout replier'}
+        </Button>
+      </div>
+      <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} {...repli('ca-avance')} />
+      <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} {...repli('a-toi')} />
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
-      <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} />
+      <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} {...repli('a-lancer')} />
     </div>
   )
 }
@@ -249,10 +264,17 @@ function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null
 
 // ---------------------------------------------------------------- blocs communs
 
-function TitreSection({ numero, titre, n, testId }: { numero: number; titre: string; n: number; testId: string }) {
+interface Repli { replie: boolean; onToggle: () => void }
+
+/** Titre d'une section de l'accueil : un toucher la replie (le compteur reste visible). */
+function TitreSection({ numero, titre, n, testId, replie, onToggle }: { numero: number; titre: string; n: number; testId: string } & Repli) {
   return (
-    <h2 className="mb-1.5 flex items-baseline justify-between px-1 text-[13px] font-medium uppercase tracking-wide text-texte-2">
-      <span><span className="mr-1.5 tabular-nums">{numero}</span>{titre}</span><span className="tabular-nums" data-testid={testId}>{n}</span>
+    <h2 className="mb-1.5 text-[13px] font-medium uppercase tracking-wide text-texte-2">
+      <button type="button" onClick={onToggle} aria-expanded={!replie} data-testid={`${testId}-repli`}
+        className="flex min-h-9 w-full items-center justify-between gap-2 px-1 text-left uppercase tracking-wide">
+        <span><span className="mr-1.5 tabular-nums">{numero}</span>{titre}</span>
+        <span className="flex items-center gap-1.5"><span className="tabular-nums" data-testid={testId}>{n}</span><ChevronDown size={16} className={`transition ${replie ? '' : 'rotate-180'}`} aria-hidden /></span>
+      </button>
     </h2>
   )
 }
@@ -284,26 +306,44 @@ function Projet({ projetId }: { projetId: string }) {
 
 export const A_TOI_VISIBLES = 4
 
-function SectionAToi({ elements, avecProjet }: { elements: ElementAToi[]; avecProjet: boolean }) {
+function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: ElementAToi[]; avecProjet: boolean } & Repli) {
   const g = useGlobal()
   const toast = useToast()
   const [tout, setTout] = useState(false)
   // Le plus récent en haut par défaut (Raphaël, 29 sept. : « je ne sais pas quelles sont les plus récentes ») ; réglable, retenu.
   const tri: TriAToi = g.prefs.tri_a_toi === 'anciens' ? 'anciens' : 'recents'
-  const tries = useMemo(() => trierAToi(elements, tri), [elements, tri])
+  // Filtre par geste attendu (Questions, À tester…) : retenu par personne, jamais une liste vide cachée.
+  const filtre = filtreEffectif(g.prefs[PREF_FILTRE_A_TOI], elements)
+  const comptes = useMemo(() => comptesAToi(elements), [elements])
+  const tries = useMemo(() => trierAToi(filtrerAToi(elements, filtre), tri), [elements, filtre, tri])
   const visibles = tout ? tries : tries.slice(0, A_TOI_VISIBLES)
   const nDepasses = elements.filter((e) => e.avanceDepuis).length
-  const basculer = async () => {
-    try { await g.poser('tri_a_toi', tri === 'recents' ? 'anciens' : 'recents') }
-    catch (err) { toast.erreur(`Tri non retenu : ${err instanceof Error ? err.message : String(err)}`) }
+  const retenir = async (cle: string, valeur: unknown, quoi: string) => {
+    try { await g.poser(cle, valeur) }
+    catch (err) { toast.erreur(`${quoi} non retenu : ${err instanceof Error ? err.message : String(err)}`) }
   }
+  const basculer = () => retenir('tri_a_toi', tri === 'recents' ? 'anciens' : 'recents', 'Tri')
   return (
     <section aria-label="À toi de jouer" data-testid="a-toi">
-      <TitreSection numero={2} titre="À toi de jouer" n={elements.length} testId="a-toi-total" />
-      {elements.length === 0 ? (
+      <TitreSection numero={2} titre="À toi de jouer" n={elements.length} testId="a-toi-total" replie={replie} onToggle={onToggle} />
+      {replie ? null : elements.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
         <>
+          {comptes.length > 1 ? (
+            <div className="-mx-1 mb-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Filtrer par geste attendu" data-testid="filtre-a-toi">
+              {[{ type: null as null, n: elements.length }, ...comptes].map((x) => {
+                const actif = filtre === x.type
+                return (
+                  <button key={x.type ?? 'tout'} type="button" aria-pressed={actif} data-testid="filtre-a-toi-puce" data-type={x.type ?? 'tout'}
+                    onClick={() => { setTout(false); void retenir(PREF_FILTRE_A_TOI, x.type ?? 'tout', 'Filtre') }}
+                    className={`inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-sm ${actif ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-bord text-texte-2'}`}>
+                    {x.type ? LIBELLE_FILTRE_A_TOI[x.type] : 'Tout'}<span className="tabular-nums">{x.n}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
           {elements.length > 1 ? (
             <div className="mb-1 flex items-center justify-between gap-2 px-1 text-xs text-texte-2">
               <span data-testid="a-toi-depasses">{nDepasses ? `${nDepasses} peut-être plus à jour, en bas : Claude les revoit` : ''}</span>
@@ -353,7 +393,7 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
 
 export const CA_AVANCE_VISIBLES = 5
 
-function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: boolean; projetId: string | null }) {
+function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tableau; avecProjet: boolean; projetId: string | null } & Repli) {
   const [tout, setTout] = useState(false)
   const [detail, setDetail] = useState(false)
   const [aide, setAide] = useState(false)
@@ -365,8 +405,8 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
   const nSessions = t.travail.reduce((n, gr) => n + gr.sessions.length, 0)
   return (
     <section aria-label="Ça avance tout seul" data-testid="en-ce-moment">
-      <TitreSection numero={1} titre="Ça avance tout seul" n={lignes.length} testId="ca-avance-total" />
-      {rien ? (
+      <TitreSection numero={1} titre="Ça avance tout seul" n={lignes.length} testId="ca-avance-total" replie={replie} onToggle={onToggle} />
+      {replie ? null : rien ? (
         <div className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center" data-testid="personne-ne-travaille">
           <p className="text-[15px] text-texte-2">Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.</p>
           <p className="mt-0.5 text-xs text-texte-2">Pour faire avancer un chantier : « Lancer », dans « Prêt à lancer ».</p>
@@ -384,7 +424,7 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
           ))}
         </Liste>
       )}
-      {sans.length ? (
+      {!replie && sans.length ? (
         <div className="mt-1.5 px-1" data-testid="sans-session">
           <button type="button" onClick={() => setVoirSans(!voirSans)} aria-expanded={voirSans} data-testid="voir-sans-session"
             className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
@@ -393,7 +433,7 @@ function SectionCaAvance({ t, avecProjet, projetId }: { t: Tableau; avecProjet: 
           {voirSans ? <div className="mt-1.5"><Liste>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</Liste></div> : null}
         </div>
       ) : null}
-      {nSessions ? (
+      {!replie && nSessions ? (
         <div className="mt-1.5 px-1">
           <div className="flex items-center justify-between gap-2 text-xs text-texte-2">
             <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-sessions" className="inline-flex min-w-0 items-center gap-0.5 underline-offset-2 hover:underline">
@@ -511,13 +551,13 @@ function resumeSimple(r: Tableau['resume']): string {
 
 export const A_LANCER_VISIBLES = 5
 
-function SectionPretALancer({ lignes, avecProjet }: { lignes: LigneALancer[]; avecProjet: boolean }) {
+function SectionPretALancer({ lignes, avecProjet, replie, onToggle }: { lignes: LigneALancer[]; avecProjet: boolean } & Repli) {
   const [tout, setTout] = useState(false)
   const visibles = tout ? lignes : lignes.slice(0, A_LANCER_VISIBLES)
   return (
     <section aria-label="Prêt à lancer" data-testid="a-lancer">
-      <TitreSection numero={3} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" />
-      {lignes.length === 0 ? (
+      <TitreSection numero={3} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
+      {replie ? null : lignes.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien en attente : tout ce qui est prêt est déjà en route.</p>
       ) : (
         <Liste>

@@ -161,6 +161,7 @@ const prefSilenceAvant = sql(`select valeur from preferences where user_id = '${
 // rougissaient à la passe suivante (constaté le 30 sept.). Compte de test : rien à restaurer,
 // on le laisse aussi au défaut en fin de passe.
 sql(`delete from preferences where user_id = '${moiId}' and cle = 'tri_a_toi'`)
+sql(`delete from preferences where user_id = '${moiId}' and cle in ('sections_repliees_accueil', 'filtre_a_toi')`)
 const silenceMin = [5, 10, 15, 30, 60].includes(Number(prefSilenceAvant?.valeur)) ? Number(prefSilenceAvant.valeur) : 15
 // Un chantier de test : titre préfixé, id connu d'avance.
 const creerTest = (titre, extra = {}) => {
@@ -385,6 +386,42 @@ try {
   const bOrdre = [await page.getByTestId('a-toi').boundingBox(), await page.getByTestId('en-ce-moment').boundingBox(), await page.getByTestId('a-lancer').boundingBox()]
   verifie('ordre : Ça avance tout seul, puis À toi de jouer, puis Prêt à lancer', bOrdre.every(Boolean) && bOrdre[1].y < bOrdre[0].y && bOrdre[0].y < bOrdre[2].y)
   verifie('« À toi de jouer » : 4 lignes au plus avant « Voir les N autres »', await page.getByTestId('element-a-toi').count() <= 4)
+  // Replier / déplier tout (un seul geste), retenu par personne, sur écran de téléphone.
+  {
+    const btn = page.getByTestId('tout-replier-accueil')
+    verifie('« Tout replier » : un bouton unique, visible, sans débordement horizontal', await btn.count() === 1 && await btn.isVisible()
+      && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    const nChips = await page.getByTestId('filtre-a-toi-puce').count()
+    if (nChips) {
+      const premier = page.getByTestId('filtre-a-toi-puce').nth(1)
+      const type = await premier.getAttribute('data-type')
+      await premier.click()
+      await page.waitForTimeout(500)
+      const types = await page.getByTestId('element-a-toi').evaluateAll((els) => els.map((e) => e.getAttribute('data-type')))
+      verifie('filtre « À toi » : ne montre que le geste choisi', types.length > 0 && types.every((t) => t === type), types)
+      await page.getByTestId('filtre-a-toi-puce').first().click()
+      await page.waitForTimeout(500)
+    }
+    await btn.click()
+    await page.waitForTimeout(600)
+    verifie('« Tout replier » : plus aucune ligne, les trois titres et leurs compteurs restent',
+      await page.getByTestId('element-a-toi').count() === 0 && await page.getByTestId('ligne-en-ce-moment').count() === 0
+      && await page.getByTestId('a-toi-total').isVisible() && await page.getByTestId('ca-avance-total').isVisible() && await page.getByTestId('a-lancer-total').isVisible()
+      && (await btn.textContent()).includes('Tout déplier'))
+    await page.reload()
+    await page.getByTestId('a-toi').waitFor({ timeout: 30000 })
+    await page.waitForTimeout(1500)
+    verifie('replié : retenu après rechargement (par personne)', await page.getByTestId('element-a-toi').count() === 0
+      && (await page.getByTestId('tout-replier-accueil').getAttribute('data-replie')) === '1')
+    await page.getByTestId('a-toi-total-repli').click()
+    await page.waitForTimeout(500)
+    verifie('une section se déplie seule', await page.getByTestId('a-toi-total-repli').getAttribute('aria-expanded') === 'true')
+    await page.getByTestId('tout-replier-accueil').click()
+    await page.getByTestId('tout-replier-accueil').click()
+    await page.waitForTimeout(600)
+    verifie('« Tout déplier » : tout revient', await page.getByTestId('a-toi-total-repli').getAttribute('aria-expanded') === 'true'
+      && await page.getByTestId('ca-avance-total-repli').getAttribute('aria-expanded') === 'true' && await page.getByTestId('a-lancer-total-repli').getAttribute('aria-expanded') === 'true')
+  }
   const ligne1 = page.getByTestId('element-a-toi').first()
   if (await ligne1.count()) {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
@@ -2051,6 +2088,7 @@ try {
     if (!prefSilenceAvant) sql(`delete from preferences where user_id = '${moiId}' and cle = 'silence_minutes'`)
     else sql(`update preferences set valeur = '${esc(JSON.stringify(prefSilenceAvant.valeur))}'::jsonb where user_id = '${moiId}' and cle = 'silence_minutes'`)
     sql(`delete from preferences where user_id = '${moiId}' and cle = 'tri_a_toi'`)
+    sql(`delete from preferences where user_id = '${moiId}' and cle in ('sections_repliees_accueil', 'filtre_a_toi')`)
     if (projet) purgerProjetsDeTest([projet.id])
     const reste = sql(`select (select count(*) from projets where slug = '${SLUG}') + (select count(*) from chantiers where id in (${ids})) + (select count(*) from historique where chantier_id in (${ids})) + (select count(*) from supprimes where chantier_id in (${ids}) or projet_id = ${monProjet}) + (select count(*) from activite where projet_id = ${monProjet}) + (select count(*) from sessions where projet_id = ${monProjet}) as n`)[0].n
     // Les restes d'un banc dans un projet RÉEL (même règle que verifier-base.mjs) : une

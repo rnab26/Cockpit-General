@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 
 export type Preferences = Record<string, unknown>
@@ -24,12 +24,20 @@ export function usePreferences(userId: string | null) {
     return () => { vivant = false }
   }, [userId])
 
-  const poser = useCallback(async (cle: string, valeur: unknown) => {
-    if (!userId) return
+  // Écritures sérialisées PAR CLÉ : deux gestes rapides ne lancent pas deux upsert concurrents
+  // (la première requête pouvait finir après la seconde et rétablir l'ancien état). Ordre respecté, la dernière valeur gagne.
+  const files = useRef(new Map<string, Promise<unknown>>())
+  const poser = useCallback((cle: string, valeur: unknown): Promise<void> => {
+    if (!userId) return Promise.resolve()
     setPrefs((p) => ({ ...p, [cle]: valeur }))
-    const { error } = await supabase.from('preferences')
-      .upsert({ user_id: userId, cle, valeur, updated_at: new Date().toISOString() }, { onConflict: 'user_id,cle' })
-    if (error) throw new Error(messageErreur(error))
+    const ecrire = async () => {
+      const { error } = await supabase.from('preferences')
+        .upsert({ user_id: userId, cle, valeur, updated_at: new Date().toISOString() }, { onConflict: 'user_id,cle' })
+      if (error) throw new Error(messageErreur(error))
+    }
+    const suite = (files.current.get(cle) ?? Promise.resolve()).catch(() => {}).then(ecrire)
+    files.current.set(cle, suite)
+    return suite
   }, [userId])
 
   return { prefs, poser, chargees }
