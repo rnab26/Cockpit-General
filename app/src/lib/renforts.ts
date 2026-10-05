@@ -137,20 +137,21 @@ export type NiveauSaturation = 'proche' | 'sature'
 
 /**
  * Alerte « une session approche la saturation ». Le niveau, la file et le seuil viennent de la base
- * (etat_renforts.auto, migration 0040) : une seule règle, celle que la chef applique pour ouvrir. Le texte
- * dit ce qui va se passer (ouverture automatique) ou ce qui l'empêche (éteinte, frein, maximum, renforts à 0).
+ * (etat_renforts.auto, migration 0040) : une seule règle, celle que la chef applique pour ouvrir.
+ * `geste` = Raphaël doit agir (auto éteinte, ou renforts à 0). Sinon c'est une INFORMATION : l'automatisme
+ * est en route, ou tout est déjà ouvert (« plein ») : on le dit, on ne demande rien.
  */
-export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; titre: string; conseil: string } | null {
+export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; titre: string; conseil: string; geste: boolean } | null {
   const a = e.auto
   if (!a || !a.niveau) return null
-  const titre = `${a.niveau === 'sature' ? 'Session saturée' : 'Session bientôt saturée'} : ${a.file} chantier${a.file > 1 ? 's' : ''} en file (seuil ${a.seuil}).`
-  let conseil: string
-  if (a.bloque === 'reglage_zero') conseil = 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour en ouvrir.'
-  else if (a.bloque === 'plein') conseil = `Déjà ${a.vivants} renfort${a.vivants > 1 ? 's' : ''} en route (maximum) : patiente, ou monte le maximum (Réglages).`
-  else if (a.bloque === 'frein') conseil = 'Un frein est actif : aucun renfort ne s’ouvre tant qu’il dure. Tu peux quand même en lancer un à la main ci-dessous.'
-  else if (a.bloque === 'eteint') conseil = 'L’ouverture automatique est éteinte (Réglages) : touche « Lancer des renforts » ci-dessous.'
-  else conseil = 'La session chef ouvre un renfort toute seule à son prochain passage.'
-  return { niveau: a.niveau, titre, conseil }
+  const file = `${a.file} chantier${a.file > 1 ? 's' : ''} en file (seuil ${a.seuil})`
+  const etat = a.niveau === 'sature' ? 'Session saturée' : 'Session bientôt saturée'
+  const renf = (n: number) => `${n} renfort${n > 1 ? 's' : ''}`
+  if (a.bloque === 'reglage_zero') return { niveau: a.niveau, geste: true, titre: `${etat} : ${file}.`, conseil: 'Les renforts sont éteints : règle le nombre de sessions (Réglages) pour qu’ils s’ouvrent seuls.' }
+  if (a.bloque === 'eteint') return { niveau: a.niveau, geste: true, titre: `${etat} : ${file}.`, conseil: 'L’ouverture automatique est éteinte (Réglages) : allume-la, ou touche « Lancer des renforts » ci-dessous.' }
+  if (a.bloque === 'plein') return { niveau: a.niveau, geste: false, titre: `Maximum de renforts atteint : ${a.vivants} demandé${a.vivants > 1 ? 's' : ''} ou actif${a.vivants > 1 ? 's' : ''} sur ${a.max}.`, conseil: `${file}. Dès qu’une place se libère, un nouveau renfort s’ouvre tout seul au prochain passage de la chef. Rien à faire (pour en avoir davantage : monte le maximum dans Réglages).` }
+  if (a.bloque === 'frein') return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: 'Un frein est actif (économie d’usage) : l’ouverture automatique reprend seule à sa fin. Rien à faire.' }
+  return { niveau: a.niveau, geste: false, titre: `${etat} : ${file}.`, conseil: `Automatique : la session chef ouvre un renfort toute seule à son prochain passage (${renf(a.vivants)} déjà en route sur ${a.max}). Rien à faire.` }
 }
 
 /** Une ligne de réglage lisible : ce que fait l'ouverture automatique, et pourquoi elle ne ferait rien. */

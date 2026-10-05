@@ -115,8 +115,8 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
         </div>
       </div>
       {alerte ? (
-        <div role="alert" data-testid="renforts-alerte" data-niveau={alerte.niveau}
-          className={`mt-2.5 rounded-xl border border-l-4 px-2.5 py-2 text-xs leading-snug ${alerte.niveau === 'sature' ? 'border-alerte' : 'border-accent'}`}>
+        <div role={alerte.geste ? 'alert' : 'status'} data-testid="renforts-alerte" data-niveau={alerte.niveau} data-geste={alerte.geste ? 'oui' : 'non'}
+          className={`mt-2.5 rounded-xl border border-l-4 px-2.5 py-2 text-xs leading-snug ${alerte.geste ? (alerte.niveau === 'sature' ? 'border-alerte' : 'border-accent') : 'border-ok'}`}>
           <p className="font-medium">{alerte.titre}</p>
           <p className="text-texte-2">{alerte.conseil}</p>
         </div>
