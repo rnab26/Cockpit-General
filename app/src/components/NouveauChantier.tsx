@@ -1,5 +1,5 @@
 import { TriangleAlert } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
@@ -7,7 +7,7 @@ import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Champ, Input, Select, Textarea } from '../ui/Champs.tsx'
 import { ETATS, PRIORITES, infoEtat } from '../lib/etats.ts'
-import { titresProches } from '../lib/doublons.ts'
+import { lireProches, libelleCreer, texteConfirmationCompleter, texteConfirmationFusion, type ChantierProche } from '../lib/fusion.ts'
 import { MEDIAS_MAX_PAR_MESSAGE, TAILLE_MAX_MEDIA, resumeMedias } from '../lib/medias.ts'
 import type { Etat, Priorite } from '../lib/types.ts'
 import { useConfirmer } from '../ui/Confirm.tsx'
@@ -23,7 +23,7 @@ import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx
  * ouverte sur les pièces non parties, avec « réessayer ».
  */
 export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFermer: () => void }) {
-  const { admin, projet, sections, chantiers, recharger, moi, par } = useCockpit()
+  const { admin, projet, sections, recharger, moi, par } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
   const pj = useMediasAJoindre(projet.id, null, { differe: true })
@@ -35,7 +35,22 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
   const [priorite, setPriorite] = useState<Priorite>('normale')
   const [etat, setEtat] = useState<Etat>('a_trier')
   const [enCours, setEnCours] = useState(false)
-  const proches = useMemo(() => titresProches(titre, chantiers).slice(0, 3), [titre, chantiers])
+  // « Ça existe déjà » : la règle est en base (chantiers_proches_creation = ressemblance_fusion + seuil du projet).
+  const [proches, setProches] = useState<ChantierProche[]>([])
+  const [rechercheErreur, setRechercheErreur] = useState(false)
+  const [action, setAction] = useState<string | null>(null)
+  useEffect(() => {
+    const t = titre.trim()
+    if (!ouvert || t.length < 4) { setProches([]); setRechercheErreur(false); return }
+    let vivant = true
+    const minuteur = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('chantiers_proches_creation', { p_projet: projet.id, p_titre: t, p_limite: 3 })
+      if (!vivant) return
+      if (error) { setProches([]); setRechercheErreur(true); return }
+      setRechercheErreur(false); setProches(lireProches(data))
+    }, 400)
+    return () => { vivant = false; clearTimeout(minuteur) }
+  }, [titre, ouvert, projet.id])
 
   const { vider } = pj
   const reinitialiser = useCallback(() => { setTitre(''); setDemande(''); setSectionId(''); setPriorite('normale'); setEtat('a_trier'); setCree(null); vider() }, [vider])
@@ -58,20 +73,71 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
     return r.echecs === 0
   }
 
-  const creer = async () => {
-    if (!titre.trim()) { toast.erreur('Donne un titre.'); return }
-    setEnCours(true)
-    // L'id est choisi ici : les pièces savent où aller sans relire la ligne (un non-admin ne relit pas toujours ce qu'il crée).
+  /** Insère le chantier (id choisi ici : les pièces savent où aller sans relire la ligne, un non-admin ne relit pas toujours ce qu'il crée) ; rend l'id, ou null après avoir dit l'échec. */
+  const inserer = async (): Promise<string | null> => {
     const id = crypto.randomUUID()
     const { error } = await supabase.from('chantiers').insert({
       id, projet_id: projet.id, titre: titre.trim(), demande: demande.trim() || null,
       section_id: sectionId || null, priorite,
       etat: admin ? etat : 'a_trier', origine: admin ? 'proprietaire' : 'utilisateur', created_by: moi.user_id,
     })
-    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    if (error) { toast.erreur(messageErreur(error)); return null }
+    return id
+  }
+
+  /** « Compléter celui-ci » : pas de nouveau chantier, ce qui est tapé rejoint la demande de l'existant. */
+  const completer = async (p: ChantierProche) => {
+    if (!titre.trim()) { toast.erreur('Donne un titre.'); return }
+    if (!(await confirmer({ titre: 'Compléter ce chantier ?', libelleOk: 'Compléter', texte: <p>{texteConfirmationCompleter(p.titre)}</p> }))) return
+    setEnCours(true); setAction(`completer:${p.id}`)
+    const { error } = await supabase.rpc('completer_chantier', { p_cible: p.id, p_titre: titre.trim(), p_demande: demande.trim() || null, p_par: par })
+    if (error) { setEnCours(false); setAction(null); toast.erreur(`Compléter impossible : ${messageErreur(error)}`); return }
+    const nb = pj.pieces.length
+    const complet = nb ? await envoyerPieces(p.id) : true
+    setEnCours(false); setAction(null)
+    void recharger()
+    if (!complet) {
+      setCree({ id: p.id, titre: p.titre })
+      toast.erreur(`« ${p.titre} » est complété, mais des pièces jointes ne sont pas parties : touche « Envoyer les pièces ».`)
+      return
+    }
+    toast.succes(`« ${p.titre} » complété : ta demande y est ajoutée.`)
+    fermer()
+  }
+
+  /** « Fusionner » : le chantier est créé puis archivé comme doublon de l'existant (fusionner_chantiers, une seule règle) ; les deux demandes sont gardées. */
+  const fusionner = async (p: ChantierProche) => {
+    if (!titre.trim()) { toast.erreur('Donne un titre.'); return }
+    if (!(await confirmer({ titre: 'Fusionner avec ce chantier ?', libelleOk: 'Fusionner', texte: <p>{texteConfirmationFusion(titre.trim(), p.titre, 0)}</p> }))) return
+    setEnCours(true); setAction(`fusionner:${p.id}`)
+    const id = await inserer()
+    if (!id) { setEnCours(false); setAction(null); return }
     const nb = pj.pieces.length
     const complet = nb ? await envoyerPieces(id) : true
-    setEnCours(false)
+    const { error } = await supabase.rpc('fusionner_chantiers', { p_source: id, p_cible: p.id, p_par: par, p_note: 'créé depuis « + Chantier »' })
+    setEnCours(false); setAction(null)
+    void recharger()
+    if (error) {
+      toast.erreur(`« ${titre.trim()} » est créé mais la fusion a échoué : ${messageErreur(error)}. Fusionne-le depuis son menu ⋯ « Fusionner avec… ».`)
+      fermer(); return
+    }
+    if (!complet) {
+      setCree({ id: p.id, titre: p.titre })
+      toast.erreur(`« ${titre.trim()} » est fusionné dans « ${p.titre} », mais des pièces jointes ne sont pas parties.`)
+      return
+    }
+    toast.succes(`« ${titre.trim()} » fusionné dans « ${p.titre} » : les deux demandes sont gardées.`)
+    fermer()
+  }
+
+  const creer = async () => {
+    if (!titre.trim()) { toast.erreur('Donne un titre.'); return }
+    setEnCours(true); setAction('creer')
+    const id = await inserer()
+    if (!id) { setEnCours(false); setAction(null); return }
+    const nb = pj.pieces.length
+    const complet = nb ? await envoyerPieces(id) : true
+    setEnCours(false); setAction(null)
     void recharger()
     if (!complet) {
       setCree({ id, titre: titre.trim() })
@@ -112,17 +178,29 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
 
   return (
     <Dialog ouvert={ouvert} onFermer={fermer} brouillon={brouillon} titre={admin ? '+ Nouveau chantier' : '+ Nouvelle demande'}
-      pied={<><Button onClick={() => { void annuler() }}>Annuler</Button><Button variante="primaire" chargement={envoiEnCours} onClick={creer} data-testid="creer-chantier">Créer</Button></>}>
+      pied={<><Button onClick={() => { void annuler() }}>Annuler</Button><Button variante="primaire" chargement={envoiEnCours && action === 'creer'} disabled={envoiEnCours && action !== 'creer'} onClick={creer} data-testid="creer-chantier">{libelleCreer(proches.length)}</Button></>}>
       <div className="space-y-3">
         <Champ label="Titre"><Input autoFocus value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="En une phrase : ce qu’il faut faire" data-testid="titre" /></Champ>
         {proches.length ? (
           <div className="rounded-xl border border-l-4 border-bord border-l-attention bg-carte px-3 py-2 text-sm" data-testid="ca-existe-deja">
             <p className="flex items-center gap-1.5 font-medium text-attention"><TriangleAlert size={15} aria-hidden />Ça existe déjà, peut-être :</p>
-            <ul className="mt-1 space-y-0.5">
-              {proches.map((p) => <li key={p.id}>• {p.titre} <span className="text-texte-2">({infoEtat(p.etat).libelle}{p.archived_at ? ', archivé' : ''})</span></li>)}
+            <ul className="mt-1.5 space-y-2">
+              {proches.map((p) => (
+                <li key={p.id} data-testid="proche">
+                  <div>• {p.titre} <span className="text-texte-2">({infoEtat(p.etat as Etat).libelle})</span></div>
+                  {admin ? (
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Button taille="sm" chargement={action === `completer:${p.id}`} disabled={envoiEnCours && action !== `completer:${p.id}`} onClick={() => { void completer(p) }} data-testid="completer-proche">Compléter celui-ci</Button>
+                      <Button taille="sm" chargement={action === `fusionner:${p.id}`} disabled={envoiEnCours && action !== `fusionner:${p.id}`} onClick={() => { void fusionner(p) }} data-testid="fusionner-proche">Fusionner</Button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
             </ul>
-            <p className="mt-1 text-xs text-texte-2">Tu peux créer quand même.</p>
+            <p className="mt-1.5 text-xs text-texte-2">{admin ? 'Compléter ajoute ce que tu tapes à ce chantier ; Fusionner garde les deux demandes en un seul. Ou « Créer quand même ».' : 'Tu peux créer quand même.'}</p>
           </div>
+        ) : rechercheErreur ? (
+          <p className="text-xs text-texte-2" data-testid="proches-erreur">La recherche de chantiers proches n’a pas répondu : tu peux créer quand même.</p>
         ) : null}
         <Champ label="Demande" aide="Tes mots : ce que tu veux, ce qui ne va pas, comment le reproduire.">
           <Textarea rows={4} value={demande} onChange={(e) => setDemande(e.target.value)} data-testid="demande" />

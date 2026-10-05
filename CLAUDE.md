@@ -55,6 +55,7 @@ cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node app/scripts/verifier-bulle.mjs                       # bulle d'aide : visible par défaut (projet et « Tout »), message → fil du projet, réponse de session → bulle, réglage d'extinction
+node app/scripts/verifier-creation.mjs                   # « + Chantier » près d'un chantier existant : suggestion, compléter, fusionner, créer quand même (projet jetable, téléphone)
 node app/scripts/verifier-depenses.mjs                    # Coûts : prestataires, dépenses par période, factures jointes, envoi à la compta (projet jetable, téléphone)
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
 node scripts/verifier-emplacement.mjs                      # où le cockpit apparaît : analyse du dépôt (choix possibles seulement) + module en mode bouton / page
@@ -552,6 +553,8 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 (pas encore d'écran : SQL ou `scripts/sql.sh`). Un faux doublon constaté → un cas
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
+
+**À la création : compléter, fusionner ou créer quand même** (5 oct. 2026, migration 0060, chantier 69f1650e + doublon 7e4e615a ; Raphaël : « ça me montre ce qui existe déjà mais ne propose pas de fusionner ou d'actualiser […] est-ce que la fusion récupère précisément la demande des DEUX chantiers ? »). Preuve sur un projet jetable : `fusionner_chantiers` gardait bien les deux demandes, mais écrivait « \n » en toutes lettres (littéral sans `E`), laissait un séparateur vide sans demande et ajoutait la demande deux fois si on refusionnait ; corrigé (cible intacte, puis séparateur + demande de la source ou « (aucune demande écrite) », refus d'un doublon déjà fusionné). Dialogue « + Chantier » (`NouveauChantier.tsx`, admin) : sous un titre proche, chaque chantier ouvert proposé a « Compléter celui-ci » (`completer_chantier` : les mots tapés s'ajoutent à sa demande + une ligne dans son fil, aucun chantier créé) et « Fusionner » (création puis `fusionner_chantiers`, une seule règle) ; le bouton principal devient « Créer quand même ». Confirmation avant, toast succès/échec, la fusion qui échoue après la création le dit. UNE règle de ressemblance : `chantiers_proches_creation` (= `ressemblance_fusion` + `projets.fusion_seuil`), l'app ne recalcule plus (Jaccard retiré de la création ; ne pas confondre avec `chantiers_proches(text,…)` des sessions, 0007). Un non-admin voit la liste sans les boutons. `verifier-base` §46, `verifier-fusion.ts`, `app/scripts/verifier-creation.mjs` (parcours téléphone : compléter, fusionner, créer quand même, recherche en panne).
 
 ## Libération automatique par la base (5 oct. 2026, migration 0050, chantier 6020714d)
 
