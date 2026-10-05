@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, Copy, Ellipsis, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, Copy, Ellipsis, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit, useGlobal } from '../contexte.ts'
 import { useMarquerLu } from './PastilleReponse.tsx'
@@ -8,6 +8,7 @@ import { projetsCibles, texteConfirmationDeplacement } from '../lib/deplacer.ts'
 import { Select } from '../ui/Champs.tsx'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useProchainPassage } from '../hooks/useProchainPassage.ts'
+import { useEnvoi } from '../hooks/useEnvoi.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
 import { CONFIRMER_ABANDON, aUnBrouillon, useMenuQuiSeFerme, useToucherLeFond } from '../ui/Modale.ts'
@@ -334,10 +335,11 @@ function BulleAttente({ attente }: { attente: AttenteReponse }) {
  * (0013) — la seule façon d'écrire à Claude dans l'app.
  */
 function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | null; placeholder: string; onEnvoye: () => void }) {
-  const { par, admin, projet, recharger } = useCockpit()
+  const { par, admin, projet, messagesLocal } = useCockpit()
   const toast = useToast()
   const [texte, setTexte] = useState('')
-  const [enCours, setEnCours] = useState(false)
+  const envoi = useEnvoi()
+  const enCours = envoi.occupe
   const pj = useMediasAJoindre(projet.id, chantierId)
   const zone = useRef<HTMLTextAreaElement>(null)
   const vide = !texte.trim() && !pj.medias.length
@@ -357,15 +359,16 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
   const envoyer = async () => {
     if (vide) return
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
-    setEnCours(true)
-    const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId, par, admin, corps: texte.trim() || resumeMedias(pj.medias), medias: pj.medias })
-    setEnCours(false)
-    if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return }
-    toast.succes('Message envoyé : Claude te répondra ici, dans ce fil.')
-    setTexte('')
-    pj.vider()
-    await recharger()
-    onEnvoye()
+    await envoi.lancer(async () => {
+      // Le message apparaît tout de suite dans le fil ; le texte n'est vidé qu'une fois l'envoi réussi (rien de perdu si ça échoue).
+      const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId, par, admin, corps: texte.trim() || resumeMedias(pj.medias), medias: pj.medias, local: messagesLocal })
+      if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return false }
+      toast.succes('Message envoyé ✓ Claude te répondra ici, dans ce fil.')
+      setTexte('')
+      pj.vider()
+      onEnvoye()
+      return true
+    })
   }
 
   return (
@@ -377,10 +380,12 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
           className="min-h-10 flex-1 resize-none rounded-2xl border border-bord bg-fond px-3 py-2 text-[15px] leading-snug text-texte placeholder:text-texte-2/70 focus:outline-none focus:ring-2 focus:ring-accent/40" />
         <button type="button" onClick={envoyer} disabled={vide || enCours || pj.enCours} aria-label="Envoyer" data-testid="envoyer-message"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition disabled:opacity-35">
-          {enCours || pj.enCours ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : <SendHorizontal size={18} />}
+          {enCours || pj.enCours ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : envoi.etat === 'envoye' ? <Check size={18} aria-hidden /> : <SendHorizontal size={18} />}
         </button>
       </div>
-      {texte.trim() ? <p className="px-2 pt-1 text-[11px] text-texte-2">Claude te répondra ici, dans ce fil.</p> : null}
+      {enCours || pj.enCours ? <p role="status" data-testid="envoi-etat" className="px-2 pt-1 text-[11px] text-texte-2">{pj.enCours ? 'Envoi du fichier…' : 'Envoi…'}</p>
+        : envoi.etat === 'envoye' ? <p role="status" data-testid="envoi-etat" className="px-2 pt-1 text-[11px] text-ok">Envoyé ✓</p>
+        : texte.trim() ? <p className="px-2 pt-1 text-[11px] text-texte-2">Claude te répondra ici, dans ce fil.</p> : null}
     </div>
   )
 }
