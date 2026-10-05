@@ -187,8 +187,8 @@ function AFaire({ children, testId }: { children: ReactNode; testId?: string }) 
   return <div className="max-w-[96%]" data-a-faire="oui" data-testid={testId}>{children}</div>
 }
 
-const auteurDe = (m: Pick<Message, 'auteur_type' | 'auteur'>, admin: boolean) =>
-  m.auteur_type === 'session' ? 'Claude' : m.auteur_type === 'proprietaire' ? (admin ? 'Toi' : 'Raphaël') : m.auteur
+const auteurDe = (m: Pick<Message, 'auteur_type' | 'auteur'> & { auteur_user?: string | null }, admin: boolean) =>
+  m.auteur_type === 'session' ? 'Claude' : m.auteur_type === 'proprietaire' ? (admin ? 'Toi' : 'Raphaël') : m.auteur_user ? `${m.auteur} · invité` : m.auteur
 /** « Sujet : … » en tête d'un message : extrait pour l'afficher en gras sur la ligne de l'expéditeur. */
 const sujetDe = (corps: string | null) => {
   const r = corps?.match(/^\s*Sujet\s*:\s*([^\n.]{1,80}?)\s*(?:\.\s*|\n|$)/i)
