@@ -303,8 +303,9 @@ const ligneALancer = async (chantierId) => {
   return l
 }
 // Un bloc visible dans la zone qui défile de la conversation (on y arrive « positionné sur ce qu'il faut faire »).
+// (5 oct. 2026 : les cartes sont dans le champ d'action, sous le fil : on compare à toute la conversation.)
 const dansLaVue = async (loc) => {
-  const [b, z] = [await loc.boundingBox(), await conv().getByTestId('fil-conversation').boundingBox()]
+  const [b, z] = [await loc.boundingBox(), await conv().boundingBox()]
   return !!b && !!z && b.y >= z.y - 2 && b.y < z.y + z.height
 }
 
@@ -1262,10 +1263,11 @@ try {
     verifie('discussion : chronologique, le plus récent EN BAS (échanges 1 → 10)', ordreD.map((x) => x[0]).join(',') === '1,2,3,4,5,6,7,8,9,10', ordreD.map((x) => x[0]))
     verifie('discussion : toi à droite, Claude à gauche', ordreD.every(([n, c]) => c === (Number(n) % 2 ? 'droite' : 'gauche')), ordreD)
     const enfantsD = () => filD.evaluate((el) => [...el.children].map((c) => c.getAttribute('data-testid') ?? (c.getAttribute('data-a-faire') ? 'a-faire' : c.tagName)))
-    const derniersD = await filD.evaluate((el) => { const k = [...el.children]; return { dernier: k.at(-1)?.getAttribute('data-a-faire'), question: !!k.at(-1)?.querySelector('[data-testid="bloc-question"]') } })
-    verifie('la question ouverte (cartes), posée en premier, est rendue TOUT EN BAS', derniersD.dernier === 'oui' && derniersD.question, { derniersD, enfants: await enfantsD() })
+    // 5 oct. 2026 : les cartes (ce que Raphaël doit faire) sont dans le champ d'action, SOUS le chat, pas dans le chat.
+    verifie('la question ouverte (cartes) est dans le champ d’action, pas dans le chat',
+      await conv().getByTestId('zone-actions').getByTestId('bloc-question').count() === 1 && await filD.getByTestId('bloc-question').count() === 0 && await filD.locator('[data-a-faire="oui"]').count() === 0)
     const basD = await filD.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
-    verifie('la conversation s’ouvre EN BAS (dernier échange et cartes)', basD < 8 && await dansLaVue(conv().getByTestId('bloc-question')), basD)
+    verifie('la conversation s’ouvre EN BAS (dernier échange) ; le champ d’action est visible', basD < 8 && await conv().getByTestId('bloc-question').isVisible(), basD)
     verifie('Claude a répondu en dernier : rien « en attente »', await conv().getByTestId('attente-reponse').count() === 0)
     // Il écrit « je n'ai pas compris » : sa bulle, puis « réponse en attente » et quand, PUIS les cartes.
     const barreD = conv().getByTestId('ecrire-a-claude')
@@ -1279,8 +1281,8 @@ try {
       await att.count() ? await att.textContent() : 'absent')
     const ordreApres = await enfantsD()
     const iMoi = await filD.evaluate((el) => [...el.children].findIndex((c) => c.textContent.includes('pas compris ta demande')))
-    verifie('ordre : sa bulle → « en attente » → les cartes, en dernier', iMoi >= 0 && ordreApres[iMoi + 1] === 'attente-reponse' && ordreApres.at(-1) === 'a-faire' && iMoi + 2 === ordreApres.length - 1, { iMoi, ordreApres })
-    verifie('après l’envoi, on reste EN BAS (sa bulle et les cartes visibles)', await dansLaVue(conv().getByTestId('bloc-question')) && await dansLaVue(att))
+    verifie('ordre : sa bulle → « en attente » en dernier dans le chat ; les cartes restent dans le champ d’action', iMoi >= 0 && ordreApres[iMoi + 1] === 'attente-reponse' && iMoi + 2 === ordreApres.length && await conv().getByTestId('zone-actions').getByTestId('bloc-question').count() === 1, { iMoi, ordreApres })
+    verifie('après l’envoi, on reste EN BAS (sa bulle et « en attente » visibles, cartes visibles)', await dansLaVue(att) && await conv().getByTestId('bloc-question').isVisible())
     const msgD = sql(`select id, auteur_type, kind from messages where chantier_id = '${D.id}' and corps like '%pas compris ta demande'`)[0]
     verifie('en base : un message libre à qui une réponse est due (messages_sans_reponse)', msgD?.auteur_type === 'proprietaire'
       && sql(`select message_id from messages_sans_reponse('${projet.id}', null)`).some((r) => r.message_id === msgD.id), msgD)
@@ -1300,8 +1302,8 @@ try {
     const finD = await enfantsD()
     const iRep = await filD.evaluate((el) => [...el.children].findIndex((c) => c.dataset.testid !== 'infos-chantier' && c.textContent.includes('Je parlais de la version courte')))
     const iMoi2 = await filD.evaluate((el) => [...el.children].findIndex((c) => c.dataset.testid !== 'infos-chantier' && c.textContent.includes('pas compris ta demande')))
-    verifie('Claude a répondu : plus d’attente, sa réponse (à gauche) sous ta bulle, les cartes toujours en dernier',
-      await conv().getByTestId('attente-reponse').count() === 0 && iRep === iMoi2 + 1 && finD.at(-1) === 'a-faire'
+    verifie('Claude a répondu : plus d’attente, sa réponse (à gauche) sous ta bulle, les cartes toujours dans le champ d’action',
+      await conv().getByTestId('attente-reponse').count() === 0 && iRep === iMoi2 + 1 && await conv().getByTestId('zone-actions').getByTestId('bloc-question').count() === 1
         && (await filD.locator('[data-testid="bulle"]', { hasText: 'Je parlais de la version courte' }).getAttribute('data-cote')) === 'gauche', { finD, iRep, iMoi2 })
     verifie('discussion : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
     await capture(page, 'discussion-repondu')
