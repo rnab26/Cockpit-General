@@ -188,6 +188,8 @@ export interface Moi {
   email: string
   /** Rôle dans chaque projet où la personne est invitée (projet_id → rôle). */
   roles?: Record<string, RoleMembre>
+  /** Droits effectifs par projet (migration 0059) : demandes, messages, valider. */
+  droits?: Record<string, Partial<Record<'demandes' | 'messages' | 'valider', boolean>>>
 }
 
 export type RoleMembre = 'lecteur' | 'suggere' | 'utilisateur'
