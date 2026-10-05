@@ -23,6 +23,17 @@
 #    carte déjà posée pour une PR devenue non propre est retirée (réponse « PR #n
 #    pas prête », qui n'empêche pas de la reposer quand la PR redevient propre).
 #    Propreté inconnue (API injoignable) : on pose, comme pour l'état.
+#  - CONFLIT VISIBLE (5 oct. 2026, chantier f5ad1859 ; Raphaël : « je n'ai rien pour voir
+#    qu'une branche est en conflit ») : PR en conflit (dirty) ou en retard (behind) =
+#    UNE carte « PR #n en conflit : un agent la répare » (clé : « PR #n en conflit : » ou
+#    « PR #n à mettre à jour : », une seule ouverte à la fois), à la place de la carte
+#    « Fusionne » ; elle se retire seule (réponse automatique « PR #n propre… ») dès que la
+#    PR est propre, fermée ou fusionnée. Rien à faire de ton côté : c'est un état.
+#    Les réponses automatiques du script (« PR #n pas prête… », « …fusionnée ou fermée… »,
+#    « …propre… ») ne sont JAMAIS une réponse de Raphaël : answered_by reste vide et la
+#    base les écarte de reponses_sans_suite (est_reponse_automatique, migration 0059).
+#  - CI en cours : une carte « Fusionne » déjà posée est GARDÉE (la CI finit, rien ne change
+#    pour Raphaël) ; seule une PR pas propre pour de bon la retire.
 # Appelé par : tout agent qui ouvre une PR (consignes de chef.sh / renfort.sh),
 # et la passe de chef.sh, qui réconcilie avec la liste des PR ouvertes.
 set -euo pipefail
@@ -39,7 +50,7 @@ while [ $# -gt 0 ]; do
     --fermee) fermee=1; shift ;;
     --merge-state) mstate="${2:-}"; shift 2 ;;
     --ci)     ci="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
     -*) echo "Argument inconnu : $1" >&2; exit 2 ;;
     *) n="$1"; shift ;;
   esac
@@ -68,15 +79,25 @@ if [ -z "$etat" ] || { [ -z "$mstate" ] && [ "$fermee" != "1" ] && [ "$etat" = "
 fi
 
 cle="Fusionne la PR #$n :"; pre="PR #$n pas prête"
+# La carte d'état « en conflit » : une seule ouverte à la fois, retrouvée par son début (deux libellés possibles).
+re_conf="^PR #$n (en conflit|à mettre à jour) :"
 existe=$("$SQL" "select count(*) filter (where answered_at is null) as ouvertes, count(*) filter (where reponse is null or reponse not like '$(q "$pre")%') as toutes from messages where projet_id = '$pid' and kind = 'action' and left(corps, ${#cle}) = '$(q "$cle")'" | jq -c '.rows[0]')
 ouvertes=$(printf '%s' "$existe" | jq -r '.ouvertes'); toutes=$(printf '%s' "$existe" | jq -r '.toutes')
 
+# Retire la carte d'état « en conflit » (réponse AUTOMATIQUE : answered_by reste vide, jamais une réponse de Raphaël).
+retirer_conflit() {
+  "$SQL" "update messages set answered_at = now(), answered_by = null, reponse = 'PR #$n $(q "$1") : carte « en conflit » retirée.' where projet_id = '$pid' and kind = 'action' and answered_at is null and corps ~ '$(q "$re_conf")'" >/dev/null \
+    || { echo "La base a refusé le retrait de la carte « en conflit » de la PR #$n." >&2; exit 1; }
+}
+conflit_ouvert() { "$SQL" "select count(*) as n from messages where projet_id = '$pid' and kind = 'action' and answered_at is null and corps ~ '$(q "$re_conf")'" | jq -r '.rows[0].n'; }
+
 if [ "$etat" = "closed" ] || [ "$etat" = "merged" ]; then
   if [ "$ouvertes" != "0" ]; then
-    "$SQL" "update messages set answered_at = now(), reponse = 'PR #$n fusionnée ou fermée : carte retirée.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
+    "$SQL" "update messages set answered_at = now(), answered_by = null, reponse = 'PR #$n fusionnée ou fermée : carte retirée.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
       || { echo "La base a refusé le retrait de la carte PR #$n." >&2; exit 1; }
     echo "Carte PR #$n retirée (PR $etat)."
   else echo "PR #$n $etat : aucune carte à retirer."; fi
+  [ "$(conflit_ouvert)" = "0" ] || { retirer_conflit "fusionnée ou fermée"; echo "Carte « en conflit » de la PR #$n retirée."; }
   exit 0
 fi
 
@@ -108,13 +129,35 @@ if [ "$etat" = "open" ] || [ -z "$etat" ]; then
   esac
 fi
 if [ -n "$pas_prete" ]; then
-  if [ "$ouvertes" != "0" ]; then
-    "$SQL" "update messages set answered_at = now(), reponse = 'PR #$n pas prête ($(q "$pas_prete")) : carte retirée, elle reviendra quand la PR sera propre.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
-      || { echo "La base a refusé le retrait de la carte PR #$n." >&2; exit 1; }
-    echo "PAS PRÊTE : PR #$n $pas_prete. Carte retirée."
-  else echo "PAS PRÊTE : PR #$n $pas_prete. Pas de carte."; fi
+  case "$mstate:$ci" in
+    dirty:*|behind:*)   # Conflit : la carte « Fusionne » cède la place à UNE carte d'état visible.
+      if [ "$ouvertes" != "0" ]; then
+        "$SQL" "update messages set answered_at = now(), answered_by = null, reponse = 'PR #$n pas prête ($(q "$pas_prete")) : carte retirée, elle reviendra quand la PR sera propre.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
+          || { echo "La base a refusé le retrait de la carte PR #$n." >&2; exit 1; }
+      fi
+      if [ "$mstate" = "dirty" ]; then quoi="en conflit"; txt="un agent la répare"; else quoi="à mettre à jour"; txt="un agent la met à jour"; fi
+      if [ "$(conflit_ouvert)" = "0" ]; then
+        COCKPIT_PROJET="$projet" "$DEM" --action --question "PR #$n $quoi : $txt" \
+          --pourquoi "main a avancé : la PR ne peut plus être fusionnée telle quelle. Rien à faire de ton côté : la carte « Fusionne la PR #$n » revient toute seule quand elle est propre." \
+          --lien "https://github.com/$depot/pull/$n|Voir la PR #$n" \
+          --etape "Rien à faire : attends la carte « Fusionne la PR #$n »" >/dev/null || { echo "La carte « $quoi » de la PR #$n n'a pas pu être posée." >&2; exit 1; }
+        echo "PAS PRÊTE : PR #$n $pas_prete. Carte « $quoi » posée dans « À toi »."
+      else echo "PAS PRÊTE : PR #$n $pas_prete. Carte « $quoi » déjà posée."; fi ;;
+    *:cours|unknown:*)   # Calcul ou CI en cours : on ne touche à rien (une carte « Fusionne » déjà posée est gardée).
+      echo "PAS PRÊTE : PR #$n $pas_prete. Rien n'est changé." ;;
+    *)                   # Brouillon, CI en échec : carte « Fusionne » retirée ; ce n'est pas (ou plus) un conflit.
+      if [ "$ouvertes" != "0" ]; then
+        "$SQL" "update messages set answered_at = now(), answered_by = null, reponse = 'PR #$n pas prête ($(q "$pas_prete")) : carte retirée, elle reviendra quand la PR sera propre.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
+          || { echo "La base a refusé le retrait de la carte PR #$n." >&2; exit 1; }
+        echo "PAS PRÊTE : PR #$n $pas_prete. Carte retirée."
+      else echo "PAS PRÊTE : PR #$n $pas_prete. Pas de carte."; fi
+      [ "$(conflit_ouvert)" = "0" ] || retirer_conflit "n'est plus en conflit ($pas_prete)" ;;
+  esac
   exit 0
 fi
+
+# PR propre : la carte d'état « en conflit » n'a plus lieu d'être.
+[ "$(conflit_ouvert)" = "0" ] || { retirer_conflit "propre"; echo "Carte « en conflit » de la PR #$n retirée (PR propre)."; }
 
 if [ "$toutes" != "0" ]; then echo "PR #$n : carte déjà posée ($ouvertes ouverte, $toutes au total), rien à faire."; exit 0; fi
 
