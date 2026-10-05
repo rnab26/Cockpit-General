@@ -311,6 +311,8 @@ agent qui ouvre une PR l'appelle juste après (consignes de `chef.sh` / `renfort
 `chef.sh` réconcilie (au plus 30 min par projet, jamais un projet de test) : la chef liste les PR ouvertes (un appel
 GitHub) et appelle le script pour chacune ; les cartes dont la PR n'est plus ouverte : `--fermee`. `verifier-base` §37.
 
+**PR en conflit : visible, et sa réponse automatique n'est pas une réponse** (5 oct. 2026, migration 0059, chantier f5ad1859 ; Raphaël : « je n'ai rien pour voir qu'une branche est en conflit »). `pr-a-fusionner.sh` : PR dirty/behind = UNE carte « À toi » « PR #n en conflit : un agent la répare » (ou « à mettre à jour »), à la place de « Fusionne » ; retirée seule (réponse auto) quand la PR est propre, fermée ou fusionnée ; CI en cours ou calcul GitHub en cours : rien n'est retiré. Les réponses automatiques du script (« PR #n pas prête / propre / fusionnée ou fermée ») ne posent plus `answered_by` et `est_reponse_automatique` les écarte de `reponses_sans_suite` (elles créaient des chantiers parasites « Suite de ta réponse : Fusionne la PR… »). `verifier-base` §44. Les anciens chantiers parasites ne sont pas supprimés (accord de Raphaël requis).
+
 ## Correctifs GÉNÉRAUX, jamais par projet (Raphaël, 29 sept. 2026)
 
 « Ce sont des correctifs généraux, peu importe le repo ou le projet que je

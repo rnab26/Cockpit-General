@@ -2014,6 +2014,52 @@ async function controle38_pr_propre() {
   verifie("--ci invalide refusé", mauvaisCi.code === 2, mauvaisCi);
 }
 
+// 44. PR en conflit VISIBLE (carte d'état « en conflit », retirée seule) ; réponse automatique du script jamais prise pour une réponse de Raphaël (0059).
+async function controle44_pr_conflit_visible() {
+  section("44. PR en conflit : une carte d'état visible, retirée seule ; ses réponses automatiques ne sont jamais servies à la chef (0059)");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const motif = (n) => `^PR #${n} (en conflit|à mettre à jour) :`;
+  const conflits = async (n) => await sql(`select id, corps, answered_at, answered_by, reponse from messages where projet_id = ${q(P10)} and kind = 'action' and corps ~ ${q(motif(n))}`);
+  const fusionne = async (n) => await sql(`select id, answered_at, reponse from messages where projet_id = ${q(P10)} and kind = 'action' and left(corps, ${`Fusionne la PR #${n} :`.length}) = ${q(`Fusionne la PR #${n} :`)}`);
+  const ouverts = (l) => l.filter((c) => c.answered_at === null).length;
+
+  const dirty = lancer(["301", "--etat", "open", "--merge-state", "dirty", "--titre", "PR en conflit"]);
+  const c1 = await conflits(301);
+  verifie("PR en conflit : UNE carte visible « PR #n en conflit : un agent la répare », sans carte « Fusionne »", dirty.code === 0 && ouverts(c1) === 1 && /en conflit : un agent la répare/.test(c1[0]?.corps ?? "") && (await fusionne(301)).length === 0, { dirty, c1 });
+  const encore = lancer(["301", "--etat", "open", "--merge-state", "dirty"]);
+  verifie("PR toujours en conflit : pas de doublon de carte d'état", encore.code === 0 && (await conflits(301)).length === 1, encore);
+  const propre = lancer(["301", "--etat", "open", "--merge-state", "clean", "--titre", "PR réparée"]);
+  const c2 = await conflits(301);
+  verifie("PR redevenue propre : la carte d'état se retire SEULE (réponse automatique, answered_by vide) et la carte « Fusionne » est posée",
+    propre.code === 0 && ouverts(c2) === 0 && c2[0].answered_by === null && /^PR #301 propre/.test(c2[0].reponse ?? "") && ouverts(await fusionne(301)) === 1, { propre, c2 });
+  const retard = lancer(["302", "--etat", "open", "--merge-state", "behind"]);
+  const c3 = await conflits(302);
+  verifie("PR en retard sur main (behind) : carte « à mettre à jour »", retard.code === 0 && ouverts(c3) === 1 && /à mettre à jour : un agent la met à jour/.test(c3[0]?.corps ?? ""), { retard, c3 });
+  const fermee = lancer(["302", "--fermee"]);
+  verifie("PR fermée ou fusionnée : la carte d'état se retire aussi", fermee.code === 0 && ouverts(await conflits(302)) === 0, fermee);
+  // CI en cours : une carte « Fusionne » déjà posée est gardée, pas retirée.
+  lancer(["303", "--etat", "open", "--merge-state", "clean", "--titre", "PR avec CI"]);
+  const cours = lancer(["303", "--etat", "open", "--merge-state", "unstable", "--ci", "cours"]);
+  verifie("CI en cours : la carte « Fusionne » déjà posée est GARDÉE, aucune carte d'état", cours.code === 0 && ouverts(await fusionne(303)) === 1 && (await conflits(303)).length === 0, cours);
+
+  // La réponse automatique n'est jamais une réponse de Raphaël, même si answered_by est posé (ancienne version, autre chemin).
+  lancer(["305", "--etat", "open", "--merge-state", "dirty"]);
+  const carte = (await conflits(305))[0];
+  const servis = async () => (await sql(`select message_id from reponses_sans_suite(${q(P10)})`)).map((r) => r.message_id);
+  await sql(`update messages set answered_at = now(), answered_by = ${q(userId)}, reponse = 'PR #305 pas prête (en conflit avec main) : carte retirée, elle reviendra quand la PR sera propre.' where id = ${q(carte.id)}`);
+  verifie("réponse automatique « PR #n pas prête… » (même avec answered_by posé) : JAMAIS servie par reponses_sans_suite", !(await servis()).includes(carte.id));
+  await sql(`update messages set reponse = 'PR #305 propre : carte « en conflit » retirée.' where id = ${q(carte.id)}`);
+  verifie("réponse automatique « PR #n propre… » : jamais servie non plus", !(await servis()).includes(carte.id));
+  await sql(`update messages set reponse = 'Oui, fais-le plutôt demain' where id = ${q(carte.id)}`);
+  verifie("témoin : une VRAIE réponse de Raphaël à la même carte reste servie", (await servis()).includes(carte.id));
+}
+
 // 38 bis. scripts/prochaine-migration.sh : 1 + le plus grand numéro vu dans la copie ET sur les branches distantes.
 async function controle38_prochaine_migration() {
   section("38 bis. Prochaine migration : numéro libre = max des fichiers locaux et des branches distantes + 1");
@@ -2895,6 +2941,7 @@ try {
     controle37_fusion_auto,
     controle37_traite_sans_attendre,
     controle38_pr_propre,
+    controle44_pr_conflit_visible,
     controle38_prochaine_migration,
     controle38_verif_sans_retour,
     controle38_filet_securite,
