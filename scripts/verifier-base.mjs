@@ -2061,6 +2061,15 @@ async function controle44_pr_conflit_visible() {
 }
 
 // 46. « Fait » sur une carte « Fusionne la PR #n » : jamais reprise ; « Ça bloque » ou un texte : servie (0060).
+async function controle47_index_cles_etrangeres() {
+  section("47. Chaque clé étrangère vers projets / chantiers a son index (0063) : sinon supprimer un projet parcourt des tables entières et fait expirer la base");
+  const sans = await sql(`select c.conrelid::regclass::text || '.' || a.attname as col
+    from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+   where c.contype = 'f' and c.connamespace = 'cockpit'::regnamespace
+     and c.confrelid in ('cockpit.projets'::regclass, 'cockpit.chantiers'::regclass)
+     and not exists (select 1 from pg_index i where i.indrelid = c.conrelid and i.indkey[0] = a.attnum)`);
+  verifie("aucune clé étrangère vers projets / chantiers sans index", sans.length === 0, sans.map((r) => r.col));
+}
 async function controle46_fait_carte_pr() {
   section("46. « Fait » sur une carte PR : pas servie (même avec un fichier posé à côté) ; « Ça bloque », un texte ou un fichier de la carte : servie (0060)");
   await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
@@ -3221,6 +3230,7 @@ try {
     controle45_renforts_frein_erreurs,
     controle45_regroupement,
     controle46_fusion_a_la_creation,
+    controle47_index_cles_etrangeres,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
