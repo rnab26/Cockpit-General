@@ -130,7 +130,8 @@ demandes des utilisateurs, progression des autres sessions.
   `--jalon ci-ok`, `--jalon en-ligne --detail <adresse vérifiée>` (ou
   `--jalon pas-en-ligne --detail <raison>`), puis `--termine "…" --verifier "1. … 2. … 3. Tu dois voir …"` (le chantier
   passe « à vérifier » ; `--verifier` est obligatoire : où aller, quoi faire,
-  ce que Raphaël doit voir, sans jargon) ou `--echec "…"`.
+  ce que Raphaël doit voir, sans jargon, avec le LIEN EXACT https://… à ouvrir
+  dans l'étape 1 ; rien à ouvrir : `--sans-lien "pourquoi"`) ou `--echec "…"`.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
 - **« Où ça en est ? »** (Raphaël le demande d'un bouton ; le hook te le met
   sous les yeux) : réponds TOUT DE SUITE dans le fil, 3 lignes au plus (fait /

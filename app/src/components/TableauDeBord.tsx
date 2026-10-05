@@ -7,6 +7,9 @@ import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, ty
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
+import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
+import { DELAI_ABANDON_MIN } from '../lib/silence.ts'
+import { useProchainPassage } from '../hooks/useProchainPassage.ts'
 import { etaLisible, dateRelative, dateLongue, heureLisible } from '../lib/dates.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
@@ -115,7 +118,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'enPause', libelle: 'en attente', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean }
+interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; enAttente?: boolean }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
@@ -141,7 +144,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi' })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', enAttente: x.cle === 'enPause' })}
               className="rounded-2xl border border-bord bg-carte px-1 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-xs text-texte-2">{x.libelle}</span>
@@ -216,6 +219,31 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
   )
 }
 
+/**
+ * Une ligne de « En attente » : le titre en entier (sur plusieurs lignes), puis une phrase qui dit ce qui se passe,
+ * ce qui va être fait et quand, et si tu as quelque chose à faire (sinon « rien à faire »). Règle : lib/enAttente.ts.
+ */
+function LigneEnAttente({ c, onOuvrir }: { c: Chantier; onOuvrir: () => void }) {
+  const g = useGlobal()
+  const projet = g.projets.find((p) => p.id === c.projet_id)
+  const prochainPassage = useProchainPassage(c.projet_id)
+  const activite = useMemo(() => g.activites.filter((a) => a.chantier_id === c.id).sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null, [g.activites, c.id])
+  const p = phraseAttente(c, activite, { now: g.now, abandonMin: projet?.delai_sans_signe_min ?? DELAI_ABANDON_MIN, prochainPassage, autonome: projetAutonome(projet, g.now) })
+  return (
+    <li>
+      <button type="button" className="flex w-full items-start gap-2 py-2.5 text-left" data-testid="ligne-en-attente" data-a-faire={p.aFaire ? 'oui' : 'non'} onClick={onOuvrir}>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-medium leading-snug">{c.titre}</span>
+          {g.projets.length > 1 ? <span className="flex items-center gap-1.5 text-xs text-texte-2"><PointProjet couleur={projet?.couleur} /><span>{projet?.nom}</span></span> : null}
+          <span className="mt-0.5 block text-sm leading-snug text-texte-2" data-testid="attente-quoi">{p.quoi}</span>
+          <span className={`block text-sm leading-snug ${p.aFaire ? 'font-medium text-attention' : 'text-ok'}`} data-testid="attente-suite">{p.suite}{p.aFaire ? '' : ' Rien à faire de ton côté.'}</span>
+        </span>
+        <ChevronRight size={16} className="mt-1 shrink-0 text-texte-2" aria-hidden />
+      </button>
+    </li>
+  )
+}
+
 /** La liste des chantiers derrière un nombre ; chacun ouvre sa conversation. */
 function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[]; aToi: readonly ElementAToi[] }) {
   const g = useGlobal()
@@ -240,6 +268,7 @@ function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null
       <ul className="divide-y divide-bord" data-testid="liste-ou-jen-suis">
         {chantiers.map((c: Chantier) => {
           const projet = g.projets.find((p) => p.id === c.projet_id)
+          if (liste?.enAttente) return <LigneEnAttente key={c.id} c={c} onOuvrir={() => { onFermer(); g.ouvrirChantier(c.projet_id, c.id) }} />
           return (
             <li key={c.id}>
               <button type="button" className="flex w-full items-center gap-2 py-2.5 text-left" data-testid="ligne-liste-ou-jen-suis"
