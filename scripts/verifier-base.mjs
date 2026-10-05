@@ -2705,6 +2705,30 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
+// 42. Renfort dont la SESSION travaille (0057) : jamais « muet » tant que sa session vit ; muet seulement pour un vrai silence.
+const PRV = randomUUID(), SLUG_RV = `test-verif-${rand}-rv`;
+async function controle42_renfort_session_vivante() {
+  section("42. Renfort vivant (0057) : la session liée (hooks) compte, une seule règle renfort_vivant");
+  await sql(`insert into projets (id, slug, nom) values (${q(PRV)}, ${q(SLUG_RV)}, 'Projet de test renfort vivant')`);
+  const S = randomUUID(), R = randomUUID(), SID = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRV)}, 'RV Section', 10)`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at, created_at) values (${q(R)}, ${q(PRV)}, ${q(S)}, 'renfort/tt0057', 'actif', now() - interval '30 minutes', now() - interval '40 minutes')`);
+  const vR = async () => (await une(`select renfort_vivant(r) as v from renforts r where id = ${q(R)}`)).v;
+  verifie("renfort vu il y a 30 min, sans session liée ni chantier : muet (vrai silence)", (await vR()) === false);
+  await sql(`insert into sessions (id, projet_id, vu_at) values (${q(SID)}, ${q(PRV)}, now())`);
+  verifie("session pas encore liée : toujours muet", (await vR()) === false);
+  verifie("renfort_lier : fermée à anon et aux membres connectés", (await une(`select has_function_privilege('anon', 'cockpit.renfort_lier(uuid,text)', 'execute') as a, has_function_privilege('authenticated', 'cockpit.renfort_lier(uuid,text)', 'execute') as b`)).a === false);
+  await sql(`select renfort_lier(${q(R)}, ${q(SID)})`);
+  verifie("session liée qui bat (hooks) : le renfort est vivant malgré renforts.vu_at ancien", (await vR()) === true);
+  await sql(`update renforts set statut = 'actif' where id = ${q(R)}`);
+  await sql(`select renforts_expirer(${q(PRV)})`);
+  verifie("renforts_expirer : le renfort à session vivante reste « actif »", (await une(`select statut from renforts where id = ${q(R)}`)).statut === "actif");
+  await sql(`update sessions set vu_at = now() - interval '10 minutes' where id = ${q(SID)}`);
+  verifie("session liée muette depuis plus que le délai du projet : muet", (await vR()) === false);
+  await sql(`update sessions set vu_at = now(), fin_at = now() where id = ${q(SID)}`);
+  verifie("session terminée (fin_at) : muet", (await vR()) === false);
+}
+
 async function controle43_invites() {
   section("43. Invités (0058) : rôles, invitation par lien, auteur posé par le serveur, journal, rien d'interne");
   const reset = async (role) => sql(`insert into membres (projet_id, user_id, role) values (${q(P1)}, ${q(userId)}, ${q(role)}) on conflict (projet_id, user_id) do update set role = excluded.role`);
@@ -2902,6 +2926,7 @@ try {
     controle39_delai_sans_signe,
     controle40_liberation_auto,
     controle41_reglages_notifications,
+    controle42_renfort_session_vivante,
     controle43_invites,
     controle42_deja_livre_rien_repris,
   ];
@@ -2915,7 +2940,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2923,8 +2948,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRV)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);
