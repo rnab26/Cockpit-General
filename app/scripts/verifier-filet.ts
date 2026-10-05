@@ -1,19 +1,31 @@
-// Filet de sécurité (src/lib/filet.ts, 0044) : la phrase de l'écran pour chaque état.
+// Filet de sécurité (src/lib/filet.ts, 0044) : les mots de l'écran pour chaque état.
 import { verifie, bilan } from './_assert.ts'
-import { phraseFilet, type EtatFiletBase } from '../src/lib/filet.ts'
+import { phraseFilet, detailsFilet, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
 
 console.log('verifier-filet')
 const base: EtatFiletBase = { statut: 'actif', projet_actif: true, plafond: 6, delai_min: 10, aujourdhui: 1, dernier_at: '2026-09-30T10:05:00Z',
   dernier_pourquoi: '2 message(s) sans réponse', attente: { n: 0, raisons: [] }, vivant: false }
+const att = { n: 2, raisons: ['2 chantier(s) prenable(s)'] }
+verifie('rôle : une phrase en français courant, sans jargon', /réveillé tout seul/.test(ROLE_FILET) && !/jeton|plafond|délai/i.test(ROLE_FILET))
 const a = phraseFilet(base)
-verifie('actif : dit « actif », l’heure et le pourquoi', a.ton === 'ok' && /actif/.test(a.titre) && /13:05/.test(a.titre) && /2 message/.test(a.titre), a)
-verifie('actif sans réveil : « aucun réveil pour l’instant »', /aucun réveil pour l’instant/.test(phraseFilet({ ...base, dernier_at: null, dernier_pourquoi: null }).titre))
-verifie('travail en attente, personne dessus : le dit', /personne dessus/.test(phraseFilet({ ...base, attente: { n: 2, raisons: ['2 chantier(s) prenable(s)'] } }).detail))
-verifie('travail en attente, session vivante : le dit', /session s’en occupe/.test(phraseFilet({ ...base, vivant: true, attente: { n: 1, raisons: ['1 message(s) sans réponse'] } }).detail))
+verifie('rien n’attend : « Tout est en ordre » + heure du dernier réveil', a.ton === 'ok' && a.titre === 'Tout est en ordre' && /13:05/.test(a.detail), a)
+verifie('rien n’attend, jamais réveillé : pas d’heure', !/réveil à/.test(phraseFilet({ ...base, dernier_at: null, dernier_pourquoi: null }).detail))
+const w = phraseFilet({ ...base, attente: att })
+verifie('travail en attente, personne dessus : « En attente » et le délai', w.ton === 'attente' && /^En attente/.test(w.titre) && /après 10 min/.test(w.detail), w)
+verifie('travail en attente, session vivante : le dit', /session s’en occupe/.test(phraseFilet({ ...base, vivant: true, attente: att }).titre))
 const s = phraseFilet({ ...base, statut: 'sans_jeton' })
-verifie('sans jeton : « colle le jeton dans Réglages »', s.ton === 'alerte' && /colle le jeton dans Réglages/.test(s.titre), s)
-verifie('plafond : dit le compte', /plafond atteint \(6\/6/.test(phraseFilet({ ...base, statut: 'plafond', aujourdhui: 6 }).titre))
-verifie('éteint : alerte', phraseFilet({ ...base, statut: 'eteint' }).ton === 'alerte')
-verifie('cron absent : alerte', /pg_cron/.test(phraseFilet({ ...base, statut: 'cron_absent' }).detail))
+verifie('sans jeton : bloqué + bouton « Coller le jeton »', s.ton === 'alerte' && /^Bloqué/.test(s.titre) && s.action?.code === 'jeton' && /Coller le jeton/.test(s.action.libelle), s)
+const p = phraseFilet({ ...base, statut: 'plafond', aujourdhui: 6 })
+verifie('plafond : « Bloqué : 6 réveils » + bouton limite', /^Bloqué : 6 réveils/.test(p.titre) && p.action?.code === 'plafond', p)
+const e = phraseFilet({ ...base, statut: 'eteint' })
+verifie('éteint : alerte + bouton Rallumer', e.ton === 'alerte' && e.action?.code === 'rallumer', e)
+verifie('cron absent : bloqué, sans bouton', /^Bloqué/.test(phraseFilet({ ...base, statut: 'cron_absent' }).titre) && !phraseFilet({ ...base, statut: 'cron_absent' }).action)
+verifie('coupé pour tous : bloqué, dit la commande', /filet-global oui/.test(phraseFilet({ ...base, statut: 'global_eteint' }).detail))
 verifie('projet de test : neutre', phraseFilet({ ...base, statut: 'test' }).ton === 'neutre')
+for (const st of ['actif', 'eteint', 'global_eteint', 'cron_absent', 'sans_jeton', 'plafond'] as const) {
+  const ph = phraseFilet({ ...base, statut: st, attente: att })
+  verifie(`premier niveau sans jargon (${st})`, !/pg_cron|plafond atteint|délai/i.test(ph.titre), ph.titre)
+}
+const d = detailsFilet({ ...base, attente: att }).join(' | ')
+verifie('détails : dernier réveil, ce qui attend, compte du jour, délai', /Dernier réveil : 13:05/.test(d) && /Ce qui attend/.test(d) && /1 sur 6/.test(d) && /10 min/.test(d), d)
 bilan('verifier-filet')

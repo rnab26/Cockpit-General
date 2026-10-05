@@ -404,7 +404,6 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
           <input type="number" inputMode="numeric" min={DELAI_ABANDON_MIN_BORNES.min} max={DELAI_ABANDON_MIN_BORNES.max} value={sansSigne} onChange={(e) => setSansSigne(Number(e.target.value))}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="sans-signe-delai" />
         </label>
-        <p className="mt-0.5 text-[11px] leading-snug text-texte-2">Un agent vivant donne un signe au moins toutes les minutes, même pendant une longue commande ; la chef reprend le chantier dès que le délai passe.</p>
       </div>
       <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>
       <p className={`text-xs leading-snug ${(etat.palier ?? 0) > 0 && etat.bascule_auto !== false ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-bascule">{libelleBascule(etat)}</p>
@@ -417,7 +416,6 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
           : <Button taille="sm" chargement={envoi} onClick={() => void frein(3)} data-testid="frein-poser">Freiner 3 h</Button>}
         <Button taille="sm" variante="primaire" chargement={envoi} onClick={() => void enregistrer()} data-testid="modeles-enregistrer">Enregistrer</Button>
       </div>
-      <p className="text-[11px] leading-snug text-texte-2">L’effort est une consigne donnée à chaque agent, pas un réglage forcé de Claude Code.</p>
     </div>
   )
 }
