@@ -63,6 +63,41 @@
   }
   const racine = hote.attachShadow({ mode: 'open' })
 
+  // OÙ LE COCKPIT APPARAÎT (5 oct. 2026, chantier dec7fb3c) — choisi au
+  // branchement (scripts/emplacement.sh) :
+  //   data-mode="page"   (défaut) : affiché là où est la balise (page à part).
+  //   data-mode="bouton" : panneau masqué, ouvert par un bouton. Soit
+  //     data-declencheur="#lien-du-menu" (l'élément du menu du site qui l'ouvre),
+  //     soit, sans lui (ou s'il est introuvable), un bouton flottant en bas à droite.
+  // Échap ou un second toucher referme. data-libelle = texte du bouton.
+  if ((balise.getAttribute('data-mode') || '').trim() === 'bouton') {
+    const libelle = balise.getAttribute('data-libelle') || 'Demandes'
+    hote.style.cssText = 'display:none;position:fixed;z-index:2147483000;right:12px;bottom:64px;' +
+      'width:min(440px,calc(100vw - 24px));max-height:calc(100vh - 88px);overflow:auto;border-radius:14px;' +
+      'box-shadow:0 8px 32px rgba(0,0,0,.28);background:#fff;color:#111'
+    const bascule = (ev) => {
+      if (ev) ev.preventDefault()
+      hote.style.display = hote.style.display === 'none' ? 'block' : 'none'
+    }
+    const sel = balise.getAttribute('data-declencheur') || ''
+    let decl = null
+    try { decl = sel ? document.querySelector(sel) : null } catch { decl = null }
+    if (decl) {
+      decl.addEventListener('click', bascule)
+    } else {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.textContent = libelle
+      b.setAttribute('aria-label', libelle)
+      b.style.cssText = 'position:fixed;z-index:2147483000;right:12px;bottom:12px;padding:12px 18px;border:0;' +
+        'border-radius:999px;background:#111;color:#fff;font:600 14px system-ui,sans-serif;' +
+        'box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer'
+      b.addEventListener('click', bascule)
+      document.body.appendChild(b)
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hote.style.display = 'none' })
+  }
+
   // <nettoyer-url> — COPIE de supabase/functions/cockpit-embed/reproduction.ts
   // (nettoyerUrl, masquerSecrets) : le module n'a pas d'étape de build, et la
   // fonction serveur refait le même nettoyage (on ne fait pas confiance au

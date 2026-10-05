@@ -322,11 +322,18 @@ if [ "$maj" = 1 ]; then
   rm -f /tmp/cockpit-brancher-$$.log
   exit 0
 fi
+# 5. OÙ le cockpit apparaît et QUI l'utilise : demandé AVANT de rien coller
+# (chantier dec7fb3c, 5 oct. 2026). Le dépôt (et le site, si --site) est analysé,
+# deux cartes avec aperçu arrivent dans « À toi » ; la balise n'est donnée qu'après
+# la réponse (scripts/emplacement.sh --projet <slug> --balise).
+echo
+echo "5. Emplacement du cockpit (questionnaire posé avant tout déploiement)"
+COCKPIT_PROJET="$slug" "$ICI/scripts/emplacement.sh" --projet "$slug" --dossier "$dossier" ${url_site:+--site "$url_site"} 2>&1 | sed 's/^/   /' || echo "   (questionnaire non posé : relance scripts/emplacement.sh --projet $slug)"
 cat <<FIN
 
-5. Module embarqué — à coller dans une page du site (la clé est propre à ce projet) :
-   <script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js" data-cle="$cle" data-utilisateur="Prénom"></script>
-   Il joint à chaque demande de quoi la rejouer (page sans jetons, appareil, version, 20 dernières
+   La balise du module embarqué (data-cle propre à ce projet) s'obtient APRÈS ta réponse aux cartes :
+     scripts/emplacement.sh --projet $slug --balise
+   Elle joint à chaque demande de quoi la rejouer (page sans jetons, appareil, version, 20 dernières
    actions par leur libellé — jamais ce qui est tapé —, erreurs JS) ; data-reproduction="non" pour rien joindre.
 
 Terminé. Vérifie : cd $dossier && COCKPIT_PROJET=$slug bash .claude/hooks/cockpit-session-start.sh | jq -r .hookSpecificOutput.additionalContext | head -30
