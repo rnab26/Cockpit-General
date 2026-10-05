@@ -11,6 +11,7 @@ import type { Theme } from '../hooks/useTheme.ts'
 import { useVue } from '../hooks/useVue.ts'
 import { VUES, type Vue } from '../lib/vue.ts'
 import { SectionInstallation } from './InstallerAppli.tsx'
+import { SectionVersion } from './SectionVersion.tsx'
 import { SectionNotifications } from './NotificationsPush.tsx'
 
 const THEMES: { valeur: Theme; libelle: string; I: typeof Sun }[] = [
@@ -86,6 +87,7 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
           </div>
         </section>
         <SectionNotifications ouvrirAide={() => { onFermer(); onAideInstallation() }} />
+        <SectionVersion />
         <SectionInstallation ouvrirAide={() => { onFermer(); onAideInstallation() }} />
         {admin ? (
           <section>
