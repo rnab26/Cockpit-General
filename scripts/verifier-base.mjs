@@ -2014,6 +2014,52 @@ async function controle38_pr_propre() {
   verifie("--ci invalide refusé", mauvaisCi.code === 2, mauvaisCi);
 }
 
+// 44. PR en conflit VISIBLE (carte d'état « en conflit », retirée seule) ; réponse automatique du script jamais prise pour une réponse de Raphaël (0059).
+async function controle44_pr_conflit_visible() {
+  section("44. PR en conflit : une carte d'état visible, retirée seule ; ses réponses automatiques ne sont jamais servies à la chef (0059)");
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
+  const lancer = (args) => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const motif = (n) => `^PR #${n} (en conflit|à mettre à jour) :`;
+  const conflits = async (n) => await sql(`select id, corps, answered_at, answered_by, reponse from messages where projet_id = ${q(P10)} and kind = 'action' and corps ~ ${q(motif(n))}`);
+  const fusionne = async (n) => await sql(`select id, answered_at, reponse from messages where projet_id = ${q(P10)} and kind = 'action' and left(corps, ${`Fusionne la PR #${n} :`.length}) = ${q(`Fusionne la PR #${n} :`)}`);
+  const ouverts = (l) => l.filter((c) => c.answered_at === null).length;
+
+  const dirty = lancer(["301", "--etat", "open", "--merge-state", "dirty", "--titre", "PR en conflit"]);
+  const c1 = await conflits(301);
+  verifie("PR en conflit : UNE carte visible « PR #n en conflit : un agent la répare », sans carte « Fusionne »", dirty.code === 0 && ouverts(c1) === 1 && /en conflit : un agent la répare/.test(c1[0]?.corps ?? "") && (await fusionne(301)).length === 0, { dirty, c1 });
+  const encore = lancer(["301", "--etat", "open", "--merge-state", "dirty"]);
+  verifie("PR toujours en conflit : pas de doublon de carte d'état", encore.code === 0 && (await conflits(301)).length === 1, encore);
+  const propre = lancer(["301", "--etat", "open", "--merge-state", "clean", "--titre", "PR réparée"]);
+  const c2 = await conflits(301);
+  verifie("PR redevenue propre : la carte d'état se retire SEULE (réponse automatique, answered_by vide) et la carte « Fusionne » est posée",
+    propre.code === 0 && ouverts(c2) === 0 && c2[0].answered_by === null && /^PR #301 propre/.test(c2[0].reponse ?? "") && ouverts(await fusionne(301)) === 1, { propre, c2 });
+  const retard = lancer(["302", "--etat", "open", "--merge-state", "behind"]);
+  const c3 = await conflits(302);
+  verifie("PR en retard sur main (behind) : carte « à mettre à jour »", retard.code === 0 && ouverts(c3) === 1 && /à mettre à jour : un agent la met à jour/.test(c3[0]?.corps ?? ""), { retard, c3 });
+  const fermee = lancer(["302", "--fermee"]);
+  verifie("PR fermée ou fusionnée : la carte d'état se retire aussi", fermee.code === 0 && ouverts(await conflits(302)) === 0, fermee);
+  // CI en cours : une carte « Fusionne » déjà posée est gardée, pas retirée.
+  lancer(["303", "--etat", "open", "--merge-state", "clean", "--titre", "PR avec CI"]);
+  const cours = lancer(["303", "--etat", "open", "--merge-state", "unstable", "--ci", "cours"]);
+  verifie("CI en cours : la carte « Fusionne » déjà posée est GARDÉE, aucune carte d'état", cours.code === 0 && ouverts(await fusionne(303)) === 1 && (await conflits(303)).length === 0, cours);
+
+  // La réponse automatique n'est jamais une réponse de Raphaël, même si answered_by est posé (ancienne version, autre chemin).
+  lancer(["305", "--etat", "open", "--merge-state", "dirty"]);
+  const carte = (await conflits(305))[0];
+  const servis = async () => (await sql(`select message_id from reponses_sans_suite(${q(P10)})`)).map((r) => r.message_id);
+  await sql(`update messages set answered_at = now(), answered_by = ${q(userId)}, reponse = 'PR #305 pas prête (en conflit avec main) : carte retirée, elle reviendra quand la PR sera propre.' where id = ${q(carte.id)}`);
+  verifie("réponse automatique « PR #n pas prête… » (même avec answered_by posé) : JAMAIS servie par reponses_sans_suite", !(await servis()).includes(carte.id));
+  await sql(`update messages set reponse = 'PR #305 propre : carte « en conflit » retirée.' where id = ${q(carte.id)}`);
+  verifie("réponse automatique « PR #n propre… » : jamais servie non plus", !(await servis()).includes(carte.id));
+  await sql(`update messages set reponse = 'Oui, fais-le plutôt demain' where id = ${q(carte.id)}`);
+  verifie("témoin : une VRAIE réponse de Raphaël à la même carte reste servie", (await servis()).includes(carte.id));
+}
+
 // 38 bis. scripts/prochaine-migration.sh : 1 + le plus grand numéro vu dans la copie ET sur les branches distantes.
 async function controle38_prochaine_migration() {
   section("38 bis. Prochaine migration : numéro libre = max des fichiers locaux et des branches distantes + 1");
@@ -2742,6 +2788,31 @@ async function controle42_agent_vivant_garde() {
 }
 
 // 41 (notifications, d'une autre branche) garde sa place ci-dessous.
+
+// 42. Renfort dont la SESSION travaille (0057) : jamais « muet » tant que sa session vit ; muet seulement pour un vrai silence.
+const PRV = randomUUID(), SLUG_RV = `test-verif-${rand}-rv`;
+async function controle42_renfort_session_vivante() {
+  section("42. Renfort vivant (0057) : la session liée (hooks) compte, une seule règle renfort_vivant");
+  await sql(`insert into projets (id, slug, nom) values (${q(PRV)}, ${q(SLUG_RV)}, 'Projet de test renfort vivant')`);
+  const S = randomUUID(), R = randomUUID(), SID = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRV)}, 'RV Section', 10)`);
+  await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at, created_at) values (${q(R)}, ${q(PRV)}, ${q(S)}, 'renfort/tt0057', 'actif', now() - interval '30 minutes', now() - interval '40 minutes')`);
+  const vR = async () => (await une(`select renfort_vivant(r) as v from renforts r where id = ${q(R)}`)).v;
+  verifie("renfort vu il y a 30 min, sans session liée ni chantier : muet (vrai silence)", (await vR()) === false);
+  await sql(`insert into sessions (id, projet_id, vu_at) values (${q(SID)}, ${q(PRV)}, now())`);
+  verifie("session pas encore liée : toujours muet", (await vR()) === false);
+  verifie("renfort_lier : fermée à anon et aux membres connectés", (await une(`select has_function_privilege('anon', 'cockpit.renfort_lier(uuid,text)', 'execute') as a, has_function_privilege('authenticated', 'cockpit.renfort_lier(uuid,text)', 'execute') as b`)).a === false);
+  await sql(`select renfort_lier(${q(R)}, ${q(SID)})`);
+  verifie("session liée qui bat (hooks) : le renfort est vivant malgré renforts.vu_at ancien", (await vR()) === true);
+  await sql(`update renforts set statut = 'actif' where id = ${q(R)}`);
+  await sql(`select renforts_expirer(${q(PRV)})`);
+  verifie("renforts_expirer : le renfort à session vivante reste « actif »", (await une(`select statut from renforts where id = ${q(R)}`)).statut === "actif");
+  await sql(`update sessions set vu_at = now() - interval '10 minutes' where id = ${q(SID)}`);
+  verifie("session liée muette depuis plus que le délai du projet : muet", (await vR()) === false);
+  await sql(`update sessions set vu_at = now(), fin_at = now() where id = ${q(SID)}`);
+  verifie("session terminée (fin_at) : muet", (await vR()) === false);
+}
+
 async function controle43_invites() {
   section("43. Invités (0058) : rôles, invitation par lien, auteur posé par le serveur, journal, rien d'interne");
   const reset = async (role) => sql(`insert into membres (projet_id, user_id, role) values (${q(P1)}, ${q(userId)}, ${q(role)}) on conflict (projet_id, user_id) do update set role = excluded.role`);
@@ -2775,14 +2846,34 @@ async function controle43_invites() {
   const lignes = await sql(`select auteur_user from messages where projet_id = ${q(P1)} and auteur = 'Claude' and auteur_user is not null`);
   verifie("rien n'est signé « invité » sur un message de session", lignes.length === 0);
 
+  // Droits AU CAS PAR CAS (0059) : le réglage personnel écrase le modèle du rôle
+  const setDroits = (role, d) => sql(`update membres set role = ${q(role)}, droits = ${d ? q(JSON.stringify(d)) + "::jsonb" : "null"} where projet_id = ${q(P1)} and user_id = ${q(userId)}`);
+  await setDroits("lecteur", { messages: true });
+  verifie("au cas par cas : un lecteur à qui on donne « messages » peut écrire", (await msg("lecteur + messages")).status === 201);
+  verifie("…mais pas créer de demande (droit non accordé)", (await demande(`Demande refusée ${rand}`)).json?.code === "42501");
+  await setDroits("suggere", { messages: false });
+  verifie("au cas par cas : un « suggère » à qui on retire « messages » ne peut plus écrire", (await msg("suggère muet")).json?.code === "42501");
+  verifie("…mais crée toujours une demande", (await demande(`Demande droits ${rand}`)).status === 201);
+  const ch2 = await creerChantier(P1, { titre: "Chantier droits perso", etat: "a_verifier" });
+  await setDroits("utilisateur", { valider: false });
+  const certN = await rpcUtilisateur("certifier_chantier", { p_id: ch2, p_par: "x", p_mots: "" }, jwt);
+  verifie("au cas par cas : un « valide » à qui on retire « valider » ne certifie plus", certN.status >= 400 && (await chantier(ch2)).etat === "a_verifier", certN);
+  await setDroits("suggere", { valider: true });
+  const certO = await rpcUtilisateur("certifier_chantier", { p_id: ch2, p_par: "x", p_mots: "ok" }, jwt);
+  verifie("au cas par cas : un « suggère » à qui on donne « valider » certifie", certO.status < 300 && (await chantier(ch2)).etat === "valide", certO);
+  const moi = await rpcUtilisateur("moi", {}, jwt);
+  verifie("moi() dit les droits effectifs du projet", moi.json?.droits?.[P1]?.valider === true && moi.json?.droits?.[P1]?.messages === true, moi.json?.droits);
+  verifie("droits : clé inconnue ou valeur non booléenne refusée par la base", (await une(`select cockpit.droits_valides('{"supprimer": true}'::jsonb) as v`)).v === false && (await une(`select cockpit.droits_valides('{"valider": "oui"}'::jsonb) as v`)).v === false);
+  await setDroits("utilisateur", null);
+
   // Droits des fonctions : un invité ne gère ni les invitations ni les autres invités
-  for (const [fn, args] of [["inviter", { p_projet: P1, p_role: "lecteur" }], ["membres_detail", { p_projet: P1 }], ["journal_invites", { p_projet: P1 }], ["invitations_du_projet", { p_projet: P1 }], ["changer_role_membre", { p_projet: P1, p_user: userId, p_role: "lecteur" }]]) {
+  for (const [fn, args] of [["inviter", { p_projet: P1, p_role: "lecteur" }], ["changer_droits_membre", { p_projet: P1, p_user: userId, p_droits: { valider: true } }],["membres_detail", { p_projet: P1 }], ["journal_invites", { p_projet: P1 }], ["invitations_du_projet", { p_projet: P1 }], ["changer_role_membre", { p_projet: P1, p_user: userId, p_role: "lecteur" }]]) {
     const r = await rpcUtilisateur(fn, args, jwt);
     const vide = r.status === 200 && Array.isArray(r.json) && r.json.length === 0;
     verifie(`${fn} : refusé ou vide pour un invité`, r.status >= 400 || vide, r);
   }
   verifie("la table invitations n'est pas lisible par un invité", ((await rest("invitations?select=id", { jwt })).json ?? []).length === 0);
-  const droits = await une(`select has_function_privilege('anon','cockpit.inviter(uuid,text,text,int)','execute') as a1, has_function_privilege('anon','cockpit.accepter_invitation(text)','execute') as a2, has_function_privilege('anon','cockpit.invitation_info(text)','execute') as a3, has_function_privilege('authenticated','cockpit.poser_auteur()','execute') as a4`);
+  const droits = await une(`select has_function_privilege('anon','cockpit.inviter(uuid,text,text,int,jsonb)','execute') as a1, has_function_privilege('anon','cockpit.accepter_invitation(text)','execute') as a2, has_function_privilege('anon','cockpit.invitation_info(text)','execute') as a3, has_function_privilege('authenticated','cockpit.poser_auteur()','execute') as a4`);
   verifie("droits : anon n'a que invitation_info ; poser_auteur n'est appelable par personne", !droits.a1 && !droits.a2 && droits.a3 && !droits.a4, droits);
 
   // Invitation par lien : jeton haché, un seul usage, expiration, retrait
@@ -2932,6 +3023,7 @@ try {
     controle37_fusion_auto,
     controle37_traite_sans_attendre,
     controle38_pr_propre,
+    controle44_pr_conflit_visible,
     controle38_prochaine_migration,
     controle38_verif_sans_retour,
     controle38_filet_securite,
@@ -2940,6 +3032,8 @@ try {
     controle40_liberation_auto,
     controle41_reglages_notifications,
     controle42_agent_vivant_garde,
+
+    controle42_renfort_session_vivante,
     controle43_invites,
     controle42_deja_livre_rien_repris,
   ];
@@ -2953,7 +3047,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRV]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -2961,8 +3055,8 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}))::int as projets,
-                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}))::int as supprimes,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRV)}))::int as projets,
+                                   (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);
   const compteReste = (compte?.json?.users ?? []).some((u) => u.email === EMAIL);
