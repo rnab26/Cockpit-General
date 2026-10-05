@@ -6,8 +6,12 @@ import { Connexion, NouveauMotDePasse } from './components/Connexion.tsx'
 import { Cockpit } from './components/Cockpit.tsx'
 import { Chargement, Erreur } from './ui/Etats.tsx'
 import { Button } from './ui/Button.tsx'
+import { AccepteInvitation } from './components/Invitation.tsx'
+import { capterInvitation } from './lib/invitation.ts'
 import { NouvelleVersion } from './components/NouvelleVersion.tsx'
 import { BandeauFileAttente } from './components/BandeauFileAttente.tsx'
+
+capterInvitation()
 
 export default function App() {
   const auth = useAuth()
@@ -22,6 +26,7 @@ export default function App() {
   return (
     <ToastProvider>
       <ConfirmProvider>{contenu}<BandeauFileAttente /></ConfirmProvider>
+      {auth.moi ? <AccepteInvitation recharger={auth.rechargerMoi} /> : null}
       <NouvelleVersion />
     </ToastProvider>
   )

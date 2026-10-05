@@ -96,7 +96,14 @@ export function BlocQuestion({ message }: { message: Message }) {
           <Button variante="primaire" taille="lg" pleine className="mt-2" chargement={enCours || pj.enCours} onClick={valider} data-testid="valider-reponse">Valider cette réponse</Button>
         </>
       )}
-      {estAction ? <div className="mt-2"><ChoisirMedias ctrl={pj} testId="medias-reponse" /></div> : null}
+      {/* Un geste qui bloque (PR en conflit…) : on peut dire pourquoi, avec une pièce jointe ; le texte part avec « Fait / Pas encore / Ça bloque ». */}
+      {estAction ? (
+        <>
+          <Textarea className="mt-2" rows={2} value={precision} onChange={(e) => setPrecision(e.target.value)}
+            placeholder="Un mot pour Claude, si tu veux (ex. pourquoi ça bloque)" data-testid="precision-action" />
+          <div className="mt-2"><ChoisirMedias ctrl={pj} testId="medias-reponse" /></div>
+        </>
+      ) : null}
       {estAction && message.etat ? <p className="mt-2 text-xs text-texte-2">Dernier état : {message.etat === 'pas_encore' ? 'pas encore' : message.etat}{message.answered_at ? '' : ' — la session attend « fait »'}</p> : null}
     </div>
   )
