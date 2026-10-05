@@ -31,6 +31,13 @@ export const VUE_TOUT = 'tout'
  * pendant que l'app est ouverte (on ne garde que les lignes des projets
  * visibles). Seul un compte de test les voit (lib/projetsDeTest.ts).
  */
+/** Les projets passent par `projets_visibles` : un membre n'y reçoit ni la clé embed ni les réglages comptables. */
+async function lireProjets() {
+  const { data, error } = await supabase.rpc('projets_visibles')
+  const liste = ((data ?? []) as Projet[]).slice().sort((a, b) => Number(b.actif) - Number(a.actif) || a.nom.localeCompare(b.nom, 'fr'))
+  return { data: error ? null : liste, error }
+}
+
 export function useDonnees(pret: boolean, email: string | null = null) {
   const [tousProjets, setProjets] = useState<Projet[]>([])
   const projets = useMemo(() => projetsVisibles(tousProjets, email), [tousProjets, email])
@@ -54,7 +61,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
 
   const chargerProjets = useCallback(async () => {
     setChargementProjets(true)
-    const { data, error } = await supabase.from('projets').select('*').order('actif', { ascending: false }).order('nom')
+    const { data, error } = await lireProjets()
     if (error) { setErreur(messageErreur(error)); setChargementProjets(false); return [] as Projet[] }
     const liste = (data ?? []) as Projet[]
     setProjets(liste)
@@ -128,7 +135,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
 
   /** Relit les projets sans l'écran de chargement (mode autonome réglé ailleurs, dépôt modifié…). */
   const rechargerProjets = useCallback(async () => {
-    const { data, error } = await supabase.from('projets').select('*').order('actif', { ascending: false }).order('nom')
+    const { data, error } = await lireProjets()
     if (!error && data) setProjets(data as Projet[])
   }, [])
 
