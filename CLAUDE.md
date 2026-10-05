@@ -540,6 +540,10 @@ proposait des cousins) et `fusion_auto`, `regler_fusion(slug, auto, seuil)`
 dans `scripts/verifier-fusion.mjs` d'abord. `verifier-base` §37,
 `verifier-fusion.ts` (menu).
 
+## Libération automatique par la base (5 oct. 2026, migration 0050, chantier 6020714d)
+
+Raphaël : « libérer automatiquement les chantiers bloqués par des sessions le plus rapidement possible ». Cause : `liberer_silencieux` (0043) n'était appelée qu'au passage de `chef.sh` / `passe.sh` / `autonome.sh` ; sans passage, un chantier tenu par une session morte restait « en_cours » jusqu'à la fin de sa réservation. Un job pg_cron (`cockpit-liberation-auto`, toutes les 3 min, visible dans `cron.job`) appelle `liberation_passe()` : le MÊME balayage (`liberer_silencieux_coeur`, corps unique ; `liberer_silencieux` des sessions le délègue après son contrôle d'appelant) et la même règle `sans_signe_de_vie` / `delai_signe`. Jamais un projet `test-…`. Interrupteurs : `projets.liberation_auto` (par projet) et `filet_reglage.liberation_actif` (global, coupe aussi le job), `regler_liberation(slug|null, actif)`. Pas d'écran (SQL). `verifier-base` §40.
+
 ## Délai « sans signe de vie » : 3 min, réglable par projet (30 sept. 2026, migration 0046)
 
 Raphaël : « Pourquoi attendre 30 minutes ? […] zéro chantier tenu pour rien. »
