@@ -21,6 +21,7 @@ import { situationSilence, phraseLiberee, DELAI_ABANDON_MIN } from '../lib/silen
 import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
+import { auteurDe, sujetDe } from '../lib/bulleAide.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, separerChat, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -189,13 +190,6 @@ function AFaire({ children, testId }: { children: ReactNode; testId?: string }) 
   return <div className="max-w-[96%]" data-a-faire="oui" data-testid={testId}>{children}</div>
 }
 
-const auteurDe = (m: Pick<Message, 'auteur_type' | 'auteur'> & { auteur_user?: string | null }, admin: boolean) =>
-  m.auteur_type === 'session' ? 'Claude' : m.auteur_type === 'proprietaire' ? (admin ? 'Toi' : 'Raphaël') : m.auteur_user ? `${m.auteur} · invité` : m.auteur
-/** « Sujet : … » en tête d'un message : extrait pour l'afficher en gras sur la ligne de l'expéditeur. */
-const sujetDe = (corps: string | null) => {
-  const r = corps?.match(/^\s*Sujet\s*:\s*([^\n.]{1,80}?)\s*(?:\.\s*|\n|$)/i)
-  return r ? { sujet: r[1], reste: corps!.slice(r[0].length) } : { sujet: null, reste: corps }
-}
 const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session' ? 'gauche' : 'droite') as 'gauche' | 'droite'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */

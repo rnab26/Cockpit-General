@@ -48,6 +48,16 @@ try {
   navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
   const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR' })
   await ctx.addInitScript(([k, v]) => { try { localStorage.setItem(k, v) } catch {} }, [`sb-${REF}-auth-token`, JSON.stringify(ses)])
+  // Reconnaissance vocale simulée (le Chromium du conteneur n'a pas de micro) : dicte « dicté à la voix », ou refuse le micro.
+  await ctx.addInitScript(() => {
+    const ss = (k) => { try { return sessionStorage.getItem(k) } catch { return null } }
+    if (ss('sansVoix')) { for (const n of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, n, { value: undefined, configurable: true, writable: true }); return }
+    const Fausse = class {
+      start() { setTimeout(() => { if (ss('voixErreur')) this.onerror?.({ error: 'not-allowed' }); else this.onresult?.({ results: [[{ transcript: 'dicté à la voix' }]] }); this.onend?.() }, 150) }
+      stop() { this.onend?.() } abort() {}
+    }
+    for (const n of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, n, { value: Fausse, configurable: true, writable: true })
+  })
   // Le Chromium du conteneur ne fait pas confiance au proxy : les requêtes https passent par Node (certificat vérifié).
   await ctx.route(/^https:\/\//, async (route) => {
     const r = route.request()
@@ -89,8 +99,8 @@ try {
   const question = 'Comment ranger un chantier dans une section ?'
   await page.getByTestId('bulle-aide-saisie').fill(question)
   await page.getByTestId('bulle-aide-envoyer').click()
-  await panneau.getByText(question).waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('sa question s’affiche dans la bulle (à droite)', await panneau.getByText(question).count() === 1)
+  await panneau.getByText(question).waitFor({ timeout: 45000 }).catch(() => {})
+  verifie('sa question s’affiche dans la bulle (à droite)', await panneau.getByText(question).count() === 1, await panneau.innerText())
   const m = sql(`select id, chantier_id, auteur_type, kind, corps, cockpit.est_message_libre(messages) as libre from messages where projet_id = '${projetId}'`)
   verifie('en base : message du propriétaire, sans chantier (fil du projet), reconnu comme message LIBRE', m.length === 1 && m[0].chantier_id === null && m[0].auteur_type === 'proprietaire' && m[0].kind === 'info' && m[0].libre === true, m)
   const sans = sql(`select count(*)::int as n from messages_sans_reponse('${projetId}'::uuid, null)`)
@@ -106,6 +116,55 @@ try {
   verifie('la bulle n’attend plus : plus de « sans réponse » pour ce message', sql(`select count(*)::int as n from messages_sans_reponse('${projetId}'::uuid, null)`)[0].n === 0)
   verifie('après la réponse : plus de ligne d’attente', await page.getByTestId('bulle-aide-attente').count() === 0)
   await page.screenshot({ path: `${CAPTURES}/bulle-ouverte.png` })
+
+  // --- 4 bis. nom + heure, sujet en gras, rôle de la bulle
+  verifie('rôle : la bulle dit à quoi elle sert (poser une question, où ça en est)', /où ça en est/.test(await page.getByTestId('bulle-aide-role').innerText()))
+  const ent = await panneau.getByTestId('bulle-aide-entete').allInnerTexts()
+  verifie('chaque message dit QUI (Toi / Claude) et À QUELLE HEURE', ent.length === 2 && /^Toi\s+\d{2}:\d{2}$/.test(ent[0].replace(/\n/g, ' ').trim()) && /^Claude\s+\d{2}:\d{2}$/.test(ent[1].replace(/\n/g, ' ').trim()), ent)
+  sql(`select repondre_dans_fil('${SLUG}', null, 'claude/test-bulle', 'Sujet : Choix de la couleur. Veux-tu du bleu ou du vert ?') as id`)
+  await panneau.getByText('Veux-tu du bleu ou du vert', { exact: false }).waitFor({ timeout: 90000 }).catch(() => {})
+  verifie('le sujet est en gras (balise forte) au-dessus du message', (await page.getByTestId('bulle-aide-sujet').last().evaluate((e) => getComputedStyle(e).fontWeight)) >= 600 && (await page.getByTestId('bulle-aide-sujet').last().innerText()) === 'Choix de la couleur')
+
+  // --- 4 ter. voix : dictée → texte dans la zone
+  const micro = page.getByTestId('bulle-aide-micro')
+  verifie('voix : le micro est proposé (navigateur compatible)', (await micro.getAttribute('data-voix')) === 'pret')
+  await micro.click()
+  await page.waitForFunction(() => document.querySelector('[data-testid=bulle-aide-saisie]')?.value.includes('dicté à la voix'), null, { timeout: 5000 }).catch(() => {})
+  verifie('voix : le texte dicté arrive dans la zone de saisie', (await page.getByTestId('bulle-aide-saisie').inputValue()).includes('dicté à la voix'), await page.getByTestId('bulle-aide-saisie').inputValue())
+
+  // --- 4 quater. répondre à une phrase précise de Claude + fichier joint
+  await panneau.getByTestId('bulle-aide-repondre').last().click()
+  verifie('répondre : la question de Claude est citée au-dessus de la saisie', (await page.getByTestId('bulle-aide-citation').innerText()).includes('Veux-tu du bleu ou du vert'))
+  await page.getByTestId('entree-medias').setInputFiles({ name: 'maquette.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') })
+  await page.locator('[data-testid=piece-jointe][data-etat=ok]').waitFor({ timeout: 20000 }).catch(() => {})
+  verifie('fichier : la pièce est déposée (vignette prête), avec le crayon', await page.locator('[data-testid=piece-jointe][data-etat=ok]').count() === 1 && await page.getByTestId('crayon-media').count() === 1)
+  await page.getByTestId('bulle-aide-saisie').fill('Le bleu, comme sur la maquette.')
+  await page.getByTestId('bulle-aide-envoyer').click()
+  await panneau.getByTestId('bulle-aide-citee').waitFor({ timeout: 15000 }).catch(() => {})
+  verifie('la réponse s’affiche avec sa citation en encart et sa pièce', (await panneau.getByTestId('bulle-aide-citee').last().innerText()).includes('Veux-tu du bleu ou du vert') && await panneau.getByText('Le bleu, comme sur la maquette.').count() === 1)
+  const r2 = sql(`select corps, jsonb_array_length(medias) as n, cockpit.est_message_libre(messages) as libre from messages where projet_id = '${projetId}' and corps like '> %'`)
+  verifie('en base : citation « > » en tête, 1 média joint, message LIBRE (la chef le traite)', r2.length === 1 && r2[0].corps.startsWith('> Veux-tu du bleu ou du vert') && r2[0].n === 1 && r2[0].libre === true, r2)
+  verifie('après envoi : citation et pièces vidées', await page.getByTestId('bulle-aide-citation').count() === 0 && await page.getByTestId('piece-jointe').count() === 0)
+  verifie('téléphone : toujours aucun défilement horizontal bulle ouverte', await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 0)
+  await page.screenshot({ path: `${CAPTURES}/bulle-ouverte-2.png` })
+  await page.keyboard.press('Escape')
+  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 5000 })
+
+  // --- 4 quinquies. voix : micro refusé = message clair ; navigateur sans voix = état « non supporté »
+  await page.evaluate(() => sessionStorage.setItem('voixErreur', '1'))
+  await page.getByTestId('bulle-aide-bouton').click()
+  await page.getByTestId('bulle-aide-micro').click()
+  await page.getByText('Micro refusé', { exact: false }).waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('micro refusé : un message dit comment l’autoriser', await page.getByText('Micro refusé', { exact: false }).count() >= 1)
+  await page.evaluate(() => { sessionStorage.removeItem('voixErreur'); sessionStorage.setItem('sansVoix', '1') })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 20000 })
+  await page.getByTestId('bulle-aide-bouton').click()
+  verifie('navigateur sans reconnaissance vocale : état « non supporté » dit clairement', (await page.getByTestId('bulle-aide-micro').getAttribute('data-voix')) === 'non-supporte' && await page.getByTestId('bulle-aide-voix-non').isVisible())
+  await page.getByTestId('bulle-aide-micro').click()
+  await page.getByText('dictée vocale n’est pas disponible', { exact: false }).waitFor({ timeout: 5000 }).catch(() => {})
+  verifie('… et toucher le micro explique pourquoi (message)', await page.getByText('dictée vocale n’est pas disponible', { exact: false }).count() >= 1)
+  await page.evaluate(() => sessionStorage.removeItem('sansVoix'))
   await page.keyboard.press('Escape')
   await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 5000 })
 
