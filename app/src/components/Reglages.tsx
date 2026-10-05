@@ -6,6 +6,8 @@ import { Button } from '../ui/Button.tsx'
 import { FENETRES, FENETRE_DEFAUT, estFenetre, type Fenetre } from '../lib/fenetre.ts'
 import { CLE_PREF_SILENCE, SILENCES_MIN, silenceMsDe } from '../lib/presence.ts'
 import type { Theme } from '../hooks/useTheme.ts'
+import { useVue } from '../hooks/useVue.ts'
+import { VUES, type Vue } from '../lib/vue.ts'
 import { SectionInstallation } from './InstallerAppli.tsx'
 import { SectionNotifications } from './NotificationsPush.tsx'
 
@@ -20,6 +22,13 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
   const { prefs, poser, admin, moi, projets, vue } = useGlobal()
   const projet = projets.find((p) => p.id === vue) ?? null
   const toast = useToast()
+  const [vueAffichage, changerVue] = useVue()
+  const choisirVue = (v: Vue) => {
+    const tient = changerVue(v)
+    const nom = VUES.find((x) => x.valeur === v)?.libelle.toLowerCase()
+    if (tient) toast.succes(`Vue ${nom} activée sur cet appareil.`)
+    else toast.erreur(`Vue ${nom} activée, mais ce navigateur ne peut pas la retenir : retour à « auto » au prochain chargement.`)
+  }
   const fenetre: Fenetre = estFenetre(prefs.fenetre_livre) ? prefs.fenetre_livre : FENETRE_DEFAUT
   const silenceMin = silenceMsDe(prefs[CLE_PREF_SILENCE]) / 60_000
   const choisirSilence = async (m: number) => {
@@ -52,6 +61,14 @@ export function Reglages({ ouvert, onFermer, theme, changerTheme, onProjets, seD
           <div className="grid grid-cols-3 gap-2">
             {THEMES.map((t) => <Button key={t.valeur} variante={theme === t.valeur ? 'primaire' : 'secondaire'} onClick={() => changerTheme(t.valeur)}><t.I size={16} aria-hidden />{t.libelle}</Button>)}
           </div>
+        </section>
+        <section>
+          <h3 className="mb-1 text-sm font-semibold">Vue</h3>
+          <p className="mb-2 text-xs text-texte-2">Mobile ou ordinateur, quel que soit l’appareil. Retenu sur cet appareil seulement.</p>
+          <div className="grid grid-cols-3 gap-2" data-testid="choix-vue">
+            {VUES.map((v) => <Button key={v.valeur} variante={vueAffichage === v.valeur ? 'primaire' : 'secondaire'} aria-pressed={vueAffichage === v.valeur} onClick={() => choisirVue(v.valeur)}>{v.libelle}</Button>)}
+          </div>
+          <p className="mt-1.5 text-xs text-texte-2" data-testid="aide-vue">{VUES.find((v) => v.valeur === vueAffichage)?.aide}</p>
         </section>
         <SectionNotifications ouvrirAide={() => { onFermer(); onAideInstallation() }} />
         <SectionInstallation ouvrirAide={() => { onFermer(); onAideInstallation() }} />

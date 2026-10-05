@@ -84,3 +84,6 @@
 }
 @keyframes cockpit-toast { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }
 .toast-in { animation: cockpit-toast .18s ease-out; }
+
+/* Vue « mobile » forcée (Réglages › Vue) : colonne étroite centrée sur grand écran. */
+html.vue-mobile #root { max-width: 430px; margin-inline: auto; min-height: 100dvh; box-shadow: 0 0 0 1px rgb(128 128 128 / 0.25); }
