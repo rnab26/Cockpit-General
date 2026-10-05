@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 # Le tableau de progression (appelé par progression.sh, JSON de sql.sh sur stdin).
 
-import json, sys
+import json, os, sys
+
+# Les codes couleur ANSI s'affichent en clair (« [31m ») dans la sortie d'une
+# session Claude (ce n'est pas un terminal) : couleur seulement sur un vrai
+# terminal ou si FORCE_COLOR est posé. La barre en blocs, elle, reste toujours.
+if not (sys.stdout.isatty() or os.environ.get("FORCE_COLOR")) or os.environ.get("NO_COLOR"):
+    _nu = lambda t: t
+else:
+    _nu = None
+def c(code):
+    return "" if _nu else code
 rows = json.load(sys.stdin).get("rows") or []
 
 def duree(sec):
@@ -28,12 +38,12 @@ if len(sys.argv) > 2 and sys.argv[2] == "--taches":
                 print(f"   ✅ {ico} : {nom} — fini il y a {duree(r['depuis_fin'])}"); continue
             ligne = f"   {ico} : {nom} — tourne depuis {duree(r['ecoule'])}"
             if r["progres"] is None:
-                print(ligne + " — \033[90mavancement non signalé\033[0m")
+                print(ligne + " — " + c("\033[90m") + "avancement non signalé" + c("\033[0m"))
             else:
                 p = r["pourcentage"] if r["pourcentage"] is not None else 0
                 reste = "durée inconnue" if r["eta_secondes"] is None else f"reste ~{duree(max(r['eta_secondes'] - r['progres'], 0))}"
                 print(ligne)
-                print(f"      \033[33m{'█' * (p // 5)}{'░' * (20 - p // 5)} {p:3d} %\033[0m  {r['etape'] or ''} · {reste}")
+                print(f"      {c(chr(27) + '[33m')}{'█' * (p // 5)}{'░' * (20 - p // 5)} {p:3d} %{c(chr(27) + '[0m')}  {r['etape'] or ''} · {reste}")
         print()
     sys.exit()
 
@@ -50,14 +60,14 @@ for r in rows:
     st = r["statut"]
     p = r["pourcentage"] if r["pourcentage"] is not None else (100 if r["etat"] in ("a_verifier", "valide") else 0)
     if r["etat"] in ("a_verifier", "valide") and st != "en_cours": p = 100
-    if st == "termine" or r["etat"] in ("valide", "a_verifier"): couleur = "\033[32m"
-    elif st == "echec" or r["etat"] == "bloque": couleur = "\033[31m"
-    elif p < 30: couleur = "\033[31m"
-    else: couleur = "\033[33m"
+    if st == "termine" or r["etat"] in ("valide", "a_verifier"): couleur = c("\033[32m")
+    elif st == "echec" or r["etat"] == "bloque": couleur = c("\033[31m")
+    elif p < 30: couleur = c("\033[31m")
+    else: couleur = c("\033[33m")
     barre = "█" * (p // 4) + "░" * (25 - p // 4)
     titre = r["titre"][:60]
     ligne2 = " · ".join(x for x in [r.get("etape"), etats.get(r["etat"], r["etat"]),
               (eta(r["eta_secondes"]) if st == "en_cours" else None),
               (f"{r['session']} ({age(r['age'])})" if r.get("session") else None)] if x)
-    print(f"{titre}\n  {couleur}{barre} {p:3d} %\033[0m  {ligne2}")
+    print(f"{titre}\n  {couleur}{barre} {p:3d} %{c(chr(27) + '[0m')}  {ligne2}")
 print()
