@@ -1326,6 +1326,7 @@ try {
   const bRej = await rejouer.boundingBox()
   verifie('« Rejouer » : visible, entier sur l’écran du téléphone, nouvel onglet sans lien avec le cockpit',
     await rejouer.isVisible() && bRej && bRej.x >= 0 && bRej.x + bRej.width <= 390 && (await rejouer.getAttribute('target')) === '_blank' && /noopener/.test(await rejouer.getAttribute('rel')), bRej)
+  verifie('« prête · rejouable » affiché, pas de test synthétique quand une adresse existe', /prête · rejouable/.test(await repro.getByTestId('repro-etat').textContent()) && await repro.getByTestId('test-synthetique').count() === 0)
   verifie('conversation avec « Pour reproduire » : pas de défilement horizontal', (await scrollX()) <= 0, await scrollX())
   await repro.evaluate((e) => e.scrollIntoView({ block: 'center' }))
   await capture(page, 'pour-reproduire')
