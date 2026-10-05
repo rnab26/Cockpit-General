@@ -58,7 +58,7 @@ export interface CibleConversation { projetId: string; chantierId: string | null
 const PLACEHOLDER: Record<string, string> = {
   a_cadrer: 'Ta décision : ce que tu veux, ce que tu ne veux pas…',
   bloque: 'Ta réponse : ce que tu as fait, ou ce qu’il faut faire…',
-  a_verifier: 'Ce que tu as constaté, une correction…',
+  a_verifier: 'Écris ce qui ne va pas : Claude vérifie (rien à cocher)…',
 }
 
 export function Conversation({ cible, onFermer, onRetour }: { cible: CibleConversation; onFermer: () => void; onRetour: () => void }) {

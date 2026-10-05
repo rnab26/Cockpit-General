@@ -6,6 +6,8 @@
 #   scripts/progression.sh --chantier 6f2c… --etape "Build vert, parcours navigateur" --pct 90
 #   scripts/progression.sh --chantier "Écran central" --termine "Livré" \
 #       --verifier "1. Ouvre le cockpit, projet X. 2. Touche « … ». 3. Tu dois voir …"
+#   --verifier DOIT contenir le lien EXACT à ouvrir (https://…) : Raphaël ne doit jamais chercher
+#   ce qu'on lui demande de tester. Rien à ouvrir (script, base…) : --sans-lien "pourquoi".
 #   scripts/progression.sh --chantier "Écran central" --echec "Le build casse sur X"
 #   scripts/progression.sh                       # affiche seulement le tableau du projet
 #
@@ -76,7 +78,7 @@ RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
 
 projet="${COCKPIT_PROJET:-}"
-chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""; point=""; images=()
+chantier=""; etape=""; pct=""; eta=""; statut="en_cours"; detail=""; verifier=""; sans_lien=""; jalon=""; en_ligne=""; pas_en_ligne=""; agent=""; point=""; images=()
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 
 while [ $# -gt 0 ]; do
@@ -94,6 +96,7 @@ while [ $# -gt 0 ]; do
     --eta)      eta="${2:-}"; shift 2 ;;
     --detail)   detail="${2:-}"; shift 2 ;;
     --verifier) verifier="${2:-}"; shift 2 ;;
+    --sans-lien) sans_lien="${2:-}"; shift 2 ;;
     --image)    images+=("${2:-}"); shift 2 ;;
     --jalon)    jalon="${2:-}"; shift 2 ;;
     --en-ligne) en_ligne="${2:-}"; shift 2 ;;
@@ -128,6 +131,11 @@ if [ -n "${verifier//[[:space:]]/}" ]; then
     echo "Refusé (règle de clarté) : --verifier = 5 étapes au plus, numérotées « 1. 2. 3. », 500 caractères au plus ($nv ici, $ne étapes). Où aller, quoi toucher, ce qu'il doit voir ; en mots simples, sans jargon." >&2
     exit 2
   fi
+fi
+# Le lien exact de ce qu'il doit ouvrir (Raphaël, 30 sept. 2026 : « sans le lien exact de ce que je dois ouvrir »).
+if [ -n "${verifier//[[:space:]]/}" ] && ! printf '%s' "$verifier" | grep -qE 'https?://[^[:space:]]+[^[:space:].,;)]' && [ -z "${sans_lien//[[:space:]]/}" ]; then
+  echo "Refusé : --verifier n'a aucun lien. Mets l'adresse EXACTE à ouvrir (https://…) dans l'étape 1, pour que Raphaël n'ait rien à chercher. Rien à ouvrir (un script, la base) : ajoute --sans-lien \"pourquoi\"." >&2
+  exit 2
 fi
 if [ "$statut" = "termine" ] && [ -z "$agent" ]; then
   nt=$(printf '%s' "$etape" | python3 -c 'import sys; print(len(sys.stdin.read()))')

@@ -998,7 +998,7 @@ try {
   await fermerConv().catch(async () => { await page.keyboard.press('Escape'); await fermerConv() })
   // « Comment vérifier » avec « Ce que tu dois voir ».
   const VI = creerTest('verif avec image', { etat: 'en_cours' })
-  script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--pas-en-ligne', 'test', '--image', imgFichier])
+  script('progression.sh', ['--chantier', VI.id, '--termine', 'Livré (test)', '--verifier', '1. Ouvre le cockpit. 2. Tu dois voir l’écran ci-dessous.', '--sans-lien', 'test', '--pas-en-ligne', 'test', '--image', imgFichier])
   await allerTout()
   await actualiser()
   await (await elementAToi(VI.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
@@ -1139,18 +1139,19 @@ try {
   const etatsV3 = await blocV3.getByTestId('etape-en-ligne').evaluateAll((l) => l.map((e) => e.getAttribute('data-etat')))
   verifie('seulement « envoyé » : « Pas encore en ligne : attends avant de vérifier »', /Pas encore en ligne/.test(await blocV3.getByTestId('phrase-en-ligne').textContent()))
   verifie('…et les étapes suivantes sont grises', etatsV3.join(',') === 'fait,fait,attente,attente', etatsV3)
-  await blocV3.getByTestId('btn-corriger').click()
-  await blocV3.getByRole('button', { name: /Envoyer la correction/ }).click()
-  verifie('« Corriger » sans mots : refusé en clair (c’est ce que Claude lira)', await toastAuPremierPlan(/Dis ce qui ne marche pas/))
+  verifie('plus de bouton « Corriger » : « Ça marche », « Ça ne marche pas », « Je ne peux pas vérifier »',
+    await blocV3.getByTestId('btn-corriger').count() === 0 && await blocV3.getByTestId('btn-ne-marche-pas').isVisible() && await blocV3.getByTestId('btn-verifie-pour-moi').isVisible() && await blocV3.getByTestId('btn-certifier').isVisible())
+  await blocV3.getByTestId('btn-ne-marche-pas').click()
+  verifie('« Ça ne marche pas » : les mots sont FACULTATIFS (rien d’obligatoire à écrire)', /facultatif/.test(await blocV3.locator('textarea').getAttribute('placeholder')))
   await blocV3.locator('textarea').fill(`${MARQUE2} le bouton ne répond pas`)
   await blocV3.getByTestId('entree-medias').setInputFiles({ name: 'bug.png', mimeType: 'image/png', buffer: PNG_TEST })
   await blocV3.locator('[data-testid="piece-jointe"][data-etat="ok"]').waitFor({ timeout: 20000 })
-  await blocV3.getByRole('button', { name: /Envoyer la correction/ }).click()
-  verifie('« Corriger » : toast visible', await toastAuPremierPlan(/Correction envoyée/), { auPremierPlan: dernierDessus })
-  const v3Base = sql(`select etat from chantiers where id = '${v3.id}'`)[0]
+  await blocV3.getByTestId('envoyer-probleme').click()
+  verifie('« Ça ne marche pas » : toast visible, « Claude vérifie »', await toastAuPremierPlan(/Claude vérifie ce qui ne marche pas/), { auPremierPlan: dernierDessus })
+  const v3Base = sql(`select etat, verif_demandee_at, verif_motif from chantiers where id = '${v3.id}'`)[0]
   const v3Msgs = sql(`select corps, medias from messages where chantier_id = '${v3.id}' order by created_at`)
-  verifie('« Corriger » : en base, le chantier revient à Claude (libre), ses mots et la photo dans le fil',
-    v3Base?.etat === 'libre' && v3Msgs.some((m) => m.corps.includes('le bouton ne répond pas')) && v3Msgs.some((m) => (m.medias ?? []).length === 1), { v3Base, v3Msgs })
+  verifie('« Ça ne marche pas » : en base, Claude est chargé de vérifier (motif ne_marche_pas), ses mots et la photo dans le fil',
+    v3Base?.etat === 'a_verifier' && !!v3Base.verif_demandee_at && v3Base.verif_motif === 'ne_marche_pas' && v3Msgs.some((m) => m.corps.includes('le bouton ne répond pas')) && v3Msgs.some((m) => (m.medias ?? []).length === 1), { v3Base, v3Msgs })
   await fermerConv()
 
   // « Je ne sais pas : vérifie pour moi » (0016) : Raphaël colle ce qu'il a vu, Claude juge.
@@ -1159,7 +1160,7 @@ try {
   await (await elementAToi(v4.id, 'a_verifier')).getByTestId('verbe-a-toi').click()
   await attendreConv(v4.titre)
   const blocV4 = conv().getByTestId('bloc-validation')
-  verifie('« Je ne sais pas : vérifie pour moi » est proposé à côté de « Ça marche » / « Corriger »', await blocV4.getByTestId('btn-verifie-pour-moi').isVisible())
+  verifie('« Je ne sais pas : vérifie pour moi » est proposé à côté de « Ça marche » / « Ça ne marche pas »', await blocV4.getByTestId('btn-verifie-pour-moi').isVisible())
   await blocV4.getByTestId('btn-verifie-pour-moi').click()
   await blocV4.locator('textarea').fill(`${MARQUE2} voici la réponse de la session : 13 chantiers`)
   await blocV4.getByTestId('envoyer-verification').click()
@@ -1168,7 +1169,7 @@ try {
   const v4Msg = sql(`select corps from messages where chantier_id = '${v4.id}' and kind = 'constat'`)[0]
   verifie('« Vérifie pour moi » : en base, la demande est posée avec ce qu’il a collé', !!v4Base?.verif_demandee_at && /13 chantiers/.test(v4Msg?.corps ?? ''), { v4Base, v4Msg })
   await blocV4.getByTestId('verification-en-cours').waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('en attente de Claude : plus AUCUN bouton (ni « Ça marche », ni « Corriger »), seulement « En attente de Claude »', await blocV4.getByTestId('verification-en-cours').count() === 1 && await blocV4.getByTestId('btn-verifie-pour-moi').count() === 0 && await blocV4.getByTestId('btn-certifier').count() === 0 && await blocV4.getByTestId('btn-corriger').count() === 0)
+  verifie('en attente de Claude : plus AUCUN bouton (ni « Ça marche », ni « Ça ne marche pas »), seulement « En attente de Claude »', await blocV4.getByTestId('verification-en-cours').count() === 1 && await blocV4.getByTestId('btn-verifie-pour-moi').count() === 0 && await blocV4.getByTestId('btn-certifier').count() === 0 && await blocV4.getByTestId('btn-ne-marche-pas').count() === 0)
   await fermerConv()
   verifie('pendant que Claude vérifie, le chantier sort de « À toi de jouer »', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${v4.id}"]`).count() === 0)
   // Retour de Raphaël (29 sept.) : « je ne vois pas où ce chantier part ». Il se voit, sous UN nom, partout.

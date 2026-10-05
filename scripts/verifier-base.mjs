@@ -748,6 +748,29 @@ async function controle17_verifie_pour_moi() {
   verifie("verdict « pas bon » : le chantier repart en correction (libre, demande complétée)", l3.etat === "libre" && /Il manque une section/.test(l3.demande ?? ""), l3);
   const hors = await rpcUtilisateur("demander_verification", { p_id: await creerChantier(P1, { titre: "Pas livré" }), p_par: "u" }, jwt);
   verifie("refusé sur un chantier qui n'est pas « à vérifier »", hors.status >= 400, hors);
+  // 0052 : « Ça ne marche pas » sans correctif, et un message tapé vaut « ça ne marche pas ».
+  const c3 = await creerChantier(P1, { titre: "Ça ne marche peut-être pas", etat: "a_verifier" });
+  const pb = await rpcUtilisateur("signaler_ne_marche_pas", { p_id: c3, p_par: "utilisateur test" }, jwt);
+  const l4 = await chantier(c3);
+  const m4 = await une(`select count(*)::int as n from messages where chantier_id = ${q(c3)} and corps like 'Ça ne marche pas (je ne sais pas pourquoi)%'`);
+  verifie("« Ça ne marche pas » SANS un mot : vérification demandée (motif ne_marche_pas), signalé dans le fil, rien de plus à écrire",
+    pb.status < 300 && !!l4.verif_demandee_at && l4.verif_motif === "ne_marche_pas" && m4.n === 1, { pb, l4, m4 });
+  const c4 = await creerChantier(P1, { titre: "Message tapé dans un chantier à vérifier", etat: "a_verifier" });
+  // Raphaël est « proprietaire » : le compte de test (membre) ne l'est pas, on écrit donc sa ligne en service.
+  const mt = { status: 201, json: [await une(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(P1)}, ${q(c4)}, 'Raphaël', 'proprietaire', 'info', 'ça ne marche pas chez moi') returning id`)] };
+  const l5 = await chantier(c4);
+  const ack = await une(`select count(*)::int as n from messages a join messages m on m.id = a.repond_a where a.chantier_id = ${q(c4)} and a.auteur_type = 'session' and a.corps like 'Reçu : je prends ça%' and m.auteur_type = 'proprietaire'`)
+  verifie("un message tapé dans le fil d'un chantier « à vérifier » = « ça ne marche pas » : vérification demandée + accusé de réception qui lui répond",
+    mt.status === 201 && !!l5.verif_demandee_at && l5.verif_motif === "ne_marche_pas" && ack.n === 1, { mt: mt.status, l5, ack });
+  const c5 = await creerChantier(P1, { titre: "Message dans un chantier libre", etat: "libre" });
+  await rest("messages", { methode: "POST", jwt, corps: { projet_id: P1, chantier_id: c5, auteur: "utilisateur test", auteur_type: "utilisateur", kind: "info", corps: "une remarque" } });
+  verifie("le même message dans un chantier qui n'est pas « à vérifier » ne déclenche aucune vérification", !(await chantier(c5)).verif_demandee_at);
+  const rSans = (() => {
+    const args = ["--chantier", c5, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton.", "--pas-en-ligne", "test"]
+    try { return { code: 0, sortie: execFileSync("bash", [join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts/progression.sh"), ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "verifier-base" }, stdio: ["ignore", "pipe", "pipe"] }) } }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` } }
+  })();
+  verifie("progression.sh --verifier sans lien est refusé (le lien exact de ce qu'il doit ouvrir)", rSans.code === 2 && /aucun lien/.test(rSans.sortie), rSans);
 }
 
 async function controle15_limites_autonome() {
@@ -962,14 +985,14 @@ async function controle20_images_session() {
     // « Comment vérifier » avec image.
     const rP0 = lancer("progression.sh", ["--chantier", c, "--etape", "en cours", "--image", png]);
     verifie("progression.sh --image hors --termine est refusé (il n'accompagne que « Comment vérifier »)", rP0.code === 2, rP0);
-    const rP = lancer("progression.sh", ["--chantier", c, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton bleu.", "--pas-en-ligne", "test", "--image", png]);
+    const rP = lancer("progression.sh", ["--chantier", c, "--termine", "Livré (test)", "--verifier", "1. Ouvre la carte. 2. Tu dois voir un bouton bleu.", "--sans-lien", "test", "--pas-en-ligne", "test", "--image", png]);
     const l = await chantier(c);
     verifie("progression.sh --termine … --image : chantiers.verifier_medias porte l'image, le chantier passe « à vérifier »",
       rP.code === 0 && l.etat === "a_verifier" && l.verifier_medias?.length === 1 && l.verifier_medias[0].chemin.startsWith(`${P1}/${c}/`), { rP: rP.sortie.slice(0, 400), l: { etat: l.etat, vm: l.verifier_medias } });
     const vu = await rest(`chantiers?id=eq.${c}&select=verifier_medias`, { jwt });
     verifie("le membre lit verifier_medias par l'API (ce que l'app affiche)", vu.status === 200 && vu.json?.[0]?.verifier_medias?.length === 1, vu);
     await sql(`update chantiers set etat = 'en_cours' where id = ${q(c)}`);
-    lancer("progression.sh", ["--chantier", c, "--termine", "Relivré (test)", "--verifier", "1. Ouvre la carte.", "--pas-en-ligne", "test"]);
+    lancer("progression.sh", ["--chantier", c, "--termine", "Relivré (test)", "--verifier", "1. Ouvre la carte.", "--sans-lien", "test", "--pas-en-ligne", "test"]);
     verifie("un nouveau --termine SANS image efface les anciennes (périmées)", ((await chantier(c)).verifier_medias ?? []).length === 0);
     // Fil.
     const rE = lancer("media.sh", ["--envoyer", "--chantier", c, "--texte", "Voici l'écran actuel.", "--image", png, "--image", png]);
@@ -1883,7 +1906,7 @@ async function controle30_agents_fantomes() {
   await prov("Finisseur", c);
   const env = { ...process.env, COCKPIT_PROJET: SLUG_A, COCKPIT_SESSION: "agent/test-prov", CLAUDE_CODE_SESSION_ID: sid };
   try {
-    execFileSync("bash", [join(racine, "scripts/progression.sh"), "--chantier", c, "--pas-en-ligne", "banc de test", "--termine", "Fini : test", "--verifier", "1. Rien à voir."],
+    execFileSync("bash", [join(racine, "scripts/progression.sh"), "--chantier", c, "--pas-en-ligne", "banc de test", "--termine", "Fini : test", "--verifier", "1. Rien à voir.", "--sans-lien", "banc de test"],
       { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { verifie("progression.sh --termine a tourné", false, `${e.stdout ?? ""}${e.stderr ?? ""}`); }
   verifie("progression.sh --chantier X --termine ferme la ligne provisoire de SA session sur X", (await statut("Finisseur")) === "termine");
