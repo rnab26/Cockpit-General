@@ -17,7 +17,7 @@ export const VUES: readonly { valeur: Vue; libelle: string; aide: string }[] = [
 ]
 export const VUE_DEFAUT: Vue = 'auto'
 export const LARGEUR_ORDINATEUR = 1280
-export const VIEWPORT_BASE = 'width=device-width, initial-scale=1, viewport-fit=cover'
+export const VIEWPORT_BASE = 'width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover'
 
 export function estVue(v: unknown): v is Vue {
   return v === 'auto' || v === 'mobile' || v === 'ordinateur'
