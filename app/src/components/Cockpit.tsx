@@ -15,6 +15,7 @@ import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
 import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
+import { lireLienFil } from '../lib/lienNotification.ts'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
 import { BulleFlottanteAide } from './BulleFlottanteAide.tsx'
 import { TousLesChantiers } from './TousLesChantiers.tsx'
@@ -109,6 +110,14 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     if ((history.state as { conversation?: boolean } | null)?.conversation) history.back()
     else setConversation(null)
   }, [])
+  // Lien profond d'une notification « Claude a répondu » : ouvert au chargement (appli fermée) ou par message du service worker (appli ouverte).
+  useEffect(() => {
+    const aller = (hash: string) => { const c = lireLienFil(hash); if (c) { ouvrirChantier(c.projetId, c.chantierId); history.replaceState(history.state, '', location.pathname + location.search) } }
+    aller(location.hash)
+    const surMessage = (e: MessageEvent) => { const m = e.data as { type?: string; url?: string } | null; if (m?.type === 'ouvrir-fil' && m.url) aller(m.url.slice(m.url.indexOf('#'))) }
+    navigator.serviceWorker?.addEventListener('message', surMessage)
+    return () => navigator.serviceWorker?.removeEventListener('message', surMessage)
+  }, [ouvrirChantier])
   const conversationQuittee = useCallback(() => setConversation(null), [])
 
   const basculerSection = useCallback((cle: string) => setSectionsOuvertes((s) => { const n = new Set(s); if (n.has(cle)) n.delete(cle); else n.add(cle); return n }), [])
