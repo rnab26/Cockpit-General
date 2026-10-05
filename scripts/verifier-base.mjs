@@ -471,7 +471,10 @@ async function controle10_rls_membre() {
   const mdp = await rpcUtilisateur("membres_du_projet", { p_projet: P1 }, jwt);
   verifie("rpc('membres_du_projet') ne lui livre aucun e-mail (liste vide, pas admin)", mdp.status === 200 && Array.isArray(mdp.json) && mdp.json.length === 0, mdp);
   const projets = await rest(`projets?select=slug,cle_embed`, { jwt });
-  verifie("projets : voit le projet A (y compris sa cle_embed — à noter, voir rapport)", projets.status === 200 && projets.json?.some?.((p) => p.slug === SLUG_A), projets);
+  verifie("projets : la table n'est plus lisible en direct par un membre (0058 : plus de cle_embed ni de réglages comptables)", projets.status === 200 && Array.isArray(projets.json) && projets.json.length === 0, projets);
+  const vis = await rpcUtilisateur("projets_visibles", {}, jwt);
+  const monProjet = Array.isArray(vis.json) ? vis.json.find((p) => p.slug === SLUG_A) : null;
+  verifie("projets_visibles : voit le projet A, SANS cle_embed ni compta_*", vis.status === 200 && !!monProjet && !("cle_embed" in monProjet) && !("compta_canal" in monProjet) && !("compta_destinataire" in monProjet), vis);
   return { cache };
 }
 
@@ -479,7 +482,7 @@ async function controle11_rls_non_membre({ cache }) {
   section("11. RLS, chemin navigateur, utilisateur NON membre du projet B");
   const liste = await rest(`chantiers?select=id&projet_id=eq.${P2}`, { jwt });
   verifie("liste des chantiers du projet B : vide", liste.status === 200 && Array.isArray(liste.json) && liste.json.length === 0, liste);
-  const projets = await rest(`projets?select=slug`, { jwt });
+  const projets = await rpcUtilisateur("projets_visibles", {}, jwt);
   const slugs = Array.isArray(projets.json) ? projets.json.map((p) => p.slug) : [];
   verifie("projets : le projet B n'apparaît pas, le projet A oui", !slugs.includes(SLUG_B) && slugs.includes(SLUG_A), slugs);
   verifie("projets : aucun projet réel n'apparaît (cockpit, facepro…)", slugs.every((s) => s.startsWith("test-verif-")), slugs);
@@ -2758,6 +2761,81 @@ async function controle43_renforts_frein_erreurs() {
   verifie("droits : rien d'exécutable par anon", !droits.a1 && !droits.a2 && !droits.a3, droits);
 }
 
+async function controle43_invites() {
+  section("43. Invités (0058) : rôles, invitation par lien, auteur posé par le serveur, journal, rien d'interne");
+  const reset = async (role) => sql(`insert into membres (projet_id, user_id, role) values (${q(P1)}, ${q(userId)}, ${q(role)}) on conflict (projet_id, user_id) do update set role = excluded.role`);
+  const ch = await creerChantier(P1, { titre: "Chantier pour invité", etat: "a_verifier" });
+  const msg = (corps, auteur = "Raphaël") => rest("messages", { methode: "POST", jwt, prefer: "return=representation", corps: { projet_id: P1, chantier_id: ch, auteur, auteur_type: "utilisateur", kind: "reponse", corps } });
+  const demande = (titre) => rest("chantiers", { methode: "POST", jwt, prefer: "return=representation", corps: { projet_id: P1, titre, origine: "utilisateur", etat: "a_trier" } });
+
+  await reset("lecteur");
+  verifie("lecteur : ne peut pas écrire un message (42501)", (await msg("lecteur écrit")).json?.code === "42501");
+  verifie("lecteur : ne peut pas créer de demande (42501)", (await demande(`Demande lecteur ${rand}`)).json?.code === "42501");
+  const certL = await rpcUtilisateur("certifier_chantier", { p_id: ch, p_par: "x", p_mots: "" }, jwt);
+  verifie("lecteur : ne peut pas certifier", certL.status >= 400 && (await chantier(ch)).etat === "a_verifier", certL);
+  verifie("lecteur : voit pourtant le chantier visible", (await rest(`chantiers?select=id&id=eq.${ch}`, { jwt })).json?.length === 1);
+
+  await reset("suggere");
+  const m1 = await msg("suggère écrit", "Raphaël (usurpé)");
+  verifie("suggère : peut écrire un message", m1.status === 201, m1);
+  verifie("auteur forcé par le serveur : l'e-mail réel, pas le nom envoyé", m1.json?.[0]?.auteur === EMAIL && m1.json?.[0]?.auteur_user === userId, m1.json);
+  const d1 = await demande(`Demande suggère ${rand}`);
+  verifie("suggère : peut créer une demande, marquée de son identité", d1.status === 201 && d1.json?.[0]?.auteur_user === userId, d1);
+  const certS = await rpcUtilisateur("certifier_chantier", { p_id: ch, p_par: "x", p_mots: "" }, jwt);
+  verifie("suggère : ne peut pas certifier (« tu n'as pas accès », rien changé)", certS.status >= 400 && (await chantier(ch)).etat === "a_verifier", certS);
+  const corrS = await rpcUtilisateur("corriger_chantier", { p_id: ch, p_par: "x", p_mots: "non" }, jwt);
+  verifie("suggère : ne peut pas corriger", corrS.status >= 400 && (await chantier(ch)).etat === "a_verifier", corrS);
+
+  await reset("utilisateur");
+  const certU = await rpcUtilisateur("certifier_chantier", { p_id: ch, p_par: "invité", p_mots: "ok" }, jwt);
+  verifie("utilisateur (valide) : peut certifier", certU.status < 300 && (await chantier(ch)).etat === "valide", certU);
+  const dernier = await une(`select auteur, auteur_user from messages where chantier_id = ${q(ch)} and kind = 'constat'`);
+  verifie("…et son verdict porte son identité réelle", dernier?.auteur_user === userId && dernier?.auteur === EMAIL, dernier);
+  const lignes = await sql(`select auteur_user from messages where projet_id = ${q(P1)} and auteur = 'Claude' and auteur_user is not null`);
+  verifie("rien n'est signé « invité » sur un message de session", lignes.length === 0);
+
+  // Droits des fonctions : un invité ne gère ni les invitations ni les autres invités
+  for (const [fn, args] of [["inviter", { p_projet: P1, p_role: "lecteur" }], ["membres_detail", { p_projet: P1 }], ["journal_invites", { p_projet: P1 }], ["invitations_du_projet", { p_projet: P1 }], ["changer_role_membre", { p_projet: P1, p_user: userId, p_role: "lecteur" }]]) {
+    const r = await rpcUtilisateur(fn, args, jwt);
+    const vide = r.status === 200 && Array.isArray(r.json) && r.json.length === 0;
+    verifie(`${fn} : refusé ou vide pour un invité`, r.status >= 400 || vide, r);
+  }
+  verifie("la table invitations n'est pas lisible par un invité", ((await rest("invitations?select=id", { jwt })).json ?? []).length === 0);
+  const droits = await une(`select has_function_privilege('anon','cockpit.inviter(uuid,text,text,int)','execute') as a1, has_function_privilege('anon','cockpit.accepter_invitation(text)','execute') as a2, has_function_privilege('anon','cockpit.invitation_info(text)','execute') as a3, has_function_privilege('authenticated','cockpit.poser_auteur()','execute') as a4`);
+  verifie("droits : anon n'a que invitation_info ; poser_auteur n'est appelable par personne", !droits.a1 && !droits.a2 && droits.a3 && !droits.a4, droits);
+
+  // Invitation par lien : jeton haché, un seul usage, expiration, retrait
+  await sql(`delete from membres where projet_id = ${q(P2)} and user_id = ${q(userId)}`);
+  const jeton = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+  const ins = (j, extra = "") => sql(`insert into invitations (projet_id, role, nom, jeton_hash, expire_at ${extra ? ", " + extra.split("=")[0] : ""}) values (${q(P2)}, 'suggere', 'Dana', cockpit.hacher_jeton(${q(j)}), now() + interval '1 day' ${extra ? ", " + extra.split("=")[1] : ""})`);
+  await ins(jeton);
+  verifie("le jeton n'est pas gardé en clair", (await une(`select count(*)::int as n from invitations where jeton_hash = ${q(jeton)}`)).n === 0);
+  const info = await rpcUtilisateur("invitation_info", { p_jeton: jeton }, CLE_PUBLIQUE);
+  verifie("invitation_info (sans compte) : nom du projet et rôle, rien d'autre", info.json?.valide === true && info.json?.projet === "Projet de test B" && info.json?.role === "suggere" && Object.keys(info.json).sort().join() === "projet,raison,role,valide" || (info.json?.valide === true && Object.keys(info.json).every((k) => ["projet", "role", "valide", "raison"].includes(k))), info);
+  verifie("jeton inconnu : « inconnue »", (await rpcUtilisateur("invitation_info", { p_jeton: "0".repeat(48) }, CLE_PUBLIQUE)).json?.valide === false);
+  verifie("sans connexion : accepter refusé", (await rpcUtilisateur("accepter_invitation", { p_jeton: jeton }, CLE_PUBLIQUE)).status >= 400);
+  const acc = await rpcUtilisateur("accepter_invitation", { p_jeton: jeton }, jwt);
+  const mb = await une(`select role, nom from membres where projet_id = ${q(P2)} and user_id = ${q(userId)}`);
+  verifie("accepter : devient membre avec le rôle et le nom prévus", acc.status < 300 && mb?.role === "suggere" && mb?.nom === "Dana", { acc, mb });
+  const rep = await rpcUtilisateur("accepter_invitation", { p_jeton: jeton }, jwt);
+  verifie("un seul usage : le même lien refusé la deuxième fois", rep.status >= 400 && contient(rep.json?.message, "déjà utilisée"), rep);
+  const jExp = randomUUID().replace(/-/g, "") + "ab";
+  await sql(`insert into invitations (projet_id, role, jeton_hash, expire_at) values (${q(P2)}, 'lecteur', cockpit.hacher_jeton(${q(jExp)}), now() - interval '1 minute')`);
+  const exp = await rpcUtilisateur("accepter_invitation", { p_jeton: jExp }, jwt);
+  verifie("expirée : refusée, message lisible", exp.status >= 400 && contient(exp.json?.message, "expirée"), exp);
+  const jRev = randomUUID().replace(/-/g, "") + "cd";
+  await sql(`insert into invitations (projet_id, role, jeton_hash, expire_at, revoque_at) values (${q(P2)}, 'lecteur', cockpit.hacher_jeton(${q(jRev)}), now() + interval '1 day', now())`);
+  const rev = await rpcUtilisateur("accepter_invitation", { p_jeton: jRev }, jwt);
+  verifie("retirée : refusée", rev.status >= 400 && contient(rev.json?.message, "retirée"), rev);
+  const jDeja = randomUUID().replace(/-/g, "") + "ef";
+  await sql(`insert into invitations (projet_id, role, jeton_hash, expire_at) values (${q(P2)}, 'lecteur', cockpit.hacher_jeton(${q(jDeja)}), now() + interval '1 day')`);
+  await rpcUtilisateur("accepter_invitation", { p_jeton: jDeja }, jwt);
+  verifie("déjà membre : un lien « lecteur » ne rétrograde pas ses droits", (await une(`select role from membres where projet_id = ${q(P2)} and user_id = ${q(userId)}`)).role === "suggere");
+  await sql(`delete from membres where projet_id = ${q(P2)} and user_id = ${q(userId)}`);
+  await reset("utilisateur");
+  verifie("les tables invitations : RLS + replica identity full", (await une(`select relrowsecurity and relreplident = 'f' as ok from pg_class where oid = 'cockpit.invitations'::regclass`)).ok === true);
+}
+
 async function controle41_reglages_notifications() {
   section("41. Réglages des notifications (0052) : types et projets par personne, filtrage serveur, une seule règle");
   const types = await sql(`select code, defaut, emis from notif_types order by ordre`);
@@ -2880,6 +2958,7 @@ try {
     controle39_delai_sans_signe,
     controle40_liberation_auto,
     controle41_reglages_notifications,
+    controle43_invites,
     controle42_deja_livre_rien_repris,
     controle43_renforts_frein_erreurs,
   ];
