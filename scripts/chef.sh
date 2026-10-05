@@ -42,7 +42,7 @@
 set -uo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
-PRFUS="${COCKPIT_PRFUS_CMD:-scripts/pr-a-fusionner.sh}"; PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
+PRFUS="${COCKPIT_PRFUS_CMD:-scripts/pr-a-fusionner.sh}"; CHANT_CMD="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}"; PROG="${COCKPIT_PROG_CMD:-scripts/progression.sh}"; DEM="${COCKPIT_DEM_CMD:-scripts/demander.sh}"
 CHEF_CMD="${COCKPIT_CHEF_CMD:-scripts/chef.sh}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 cible=""; ouv_session=""; ouv_erreur=""
@@ -412,6 +412,24 @@ fi
 nb=$(( ${#donnes[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
 if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $projet ($agents agent(s) au travail)."; fi
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
+
+# REGROUPER AVANT DE LANCER (5 oct. 2026, 0052, chantier 8486b809) : Raphaël : « la chef doit réfléchir à
+# une logique de fusion quand elle reçoit les chantiers […] regrouper ceux qui peuvent être faits ensemble ».
+# La mesure est celle de la fusion suggérée (ressemblance_fusion, une seule règle), seuil plus bas : ici on regroupe le travail.
+groupes_txt=""
+if [ -z "$attente" ] && [ ${#donnes[@]} -gt 0 ]; then
+  ids_donnes=$(printf '%s\n' "${donnes[@]}" | jq -r '.id // empty' | paste -sd, - | sed "s/[^,]*/'&'/g")
+  if [ -n "$ids_donnes" ]; then
+    paires=$("$SQL" "select a, titre_a, b, titre_b, round((score*100)::numeric) as pct from groupes_possibles('$projet', array[$ids_donnes]::uuid[])" 2>/dev/null \
+      | jq -r '.rows[]? | "  - « \(.titre_a) » (\(.a)) et « \(.titre_b) » (\(.b)) : ressemblance \(.pct) %"')
+    if [ -n "$paires" ]; then
+      groupes_txt="REGROUPE AVANT DE LANCER (ces chantiers ouverts se ressemblent ; les faire à part, c'est du travail et des conflits en double) :
+$paires
+Pour chaque paire, juge à partir de leurs demandes (lis-les) : (a) MÊME SUJET → $CHANT_CMD --suggerer-fusion <id à absorber> --dans <id qui reste> --pourquoi \"…\" (Raphaël accepte d'un toucher) ; (b) SUJETS VOISINS (même écran, même fichier, même règle : un correctif de plus au même endroit) → $CHANT_CMD --regrouper <id> --avec <id> --pourquoi \"…\", puis UN SEUL agent fait les deux : donne-lui les deux chantiers dans sa consigne, il signale ses étapes sur chacun (--chantier) et pose --termine sur CHACUN (les deux fils disent « Livré avec … » tout seuls) ; ne lance jamais deux agents sur la même paire ; (c) deux sujets sans rapport → ne fais rien. Au moindre doute, laisse séparé."
+    fi
+  fi
+fi
+[ -n "$groupes_txt" ] && printf '%s\n' "$groupes_txt"
 
 if [ -n "$attente" ]; then
   echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
