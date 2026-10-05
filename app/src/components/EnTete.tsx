@@ -59,7 +59,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
   )
   return (
     <header className="sticky top-0 z-30 border-b border-bord bg-fond/95 backdrop-blur" style={{ borderTopColor: (!vueTout && projet?.couleur) || undefined }}>
-      <div className="mx-auto flex max-w-3xl items-center gap-1 px-3 pt-[max(env(safe-area-inset-top),6px)] pb-1.5">
+      <div className="mx-auto flex max-w-3xl lg:max-w-5xl items-center gap-1 px-3 pt-[max(env(safe-area-inset-top),6px)] pb-1.5">
         <div ref={liste} className="relative min-w-0 flex-1" data-testid="choix-projet" data-vue={vueTout ? 'tout' : projet?.slug ?? ''}>
           <button type="button" aria-haspopup="listbox" aria-expanded={ouvert} onClick={() => setOuvert(!ouvert)} data-testid="choix-projet-bouton"
             className="flex h-10 w-full min-w-0 items-center gap-2 rounded-full border border-bord bg-carte px-3 text-left text-sm font-semibold text-texte">

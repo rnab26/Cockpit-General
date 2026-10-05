@@ -198,7 +198,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
       <GlobalCtx.Provider value={global}>
         <div className="min-h-dvh">
           {entete}
-          <main className="mx-auto max-w-3xl p-4">
+          <main className="mx-auto max-w-3xl lg:max-w-5xl p-4">
             {admin
               ? <Vide icone={<Layers size={28} strokeWidth={1.5} />} titre="Aucun projet" texte="Crée le premier : un nom, un slug, une couleur." action={<Button variante="primaire" onClick={() => setDialogue('projets')}>+ Créer un projet</Button>} />
               : <Vide icone={<Lock size={28} strokeWidth={1.5} />} titre="Aucun projet pour toi" texte={<>Demande à Raphaël de t’ajouter à ton projet avec cette adresse : <b>{moi.email}</b>.</>} action={<Button onClick={() => void seDeconnecter()}>Se déconnecter</Button>} />}
@@ -216,7 +216,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     <GlobalCtx.Provider value={global}>
       <div className={`min-h-dvh ${selectionActive && !vueTout ? 'pb-40' : 'pb-8'}`}>
         {entete}
-        <main className="mx-auto max-w-3xl space-y-3 px-3 pt-4">
+        <main className="mx-auto max-w-3xl lg:max-w-5xl space-y-3 px-3 pt-4">
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-5" data-testid="vue-tout">
