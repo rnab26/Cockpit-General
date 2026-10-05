@@ -4,6 +4,7 @@ import { supabase, messageErreur } from '../lib/supabase.ts'
 import type { Activite, Chantier, Message, Projet, Section, SessionClaude, Tache } from '../lib/types.ts'
 import { chargerEtatEcran } from '../lib/etatEcran.ts'
 import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
+import { remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
 export const INTERVALLE_SONDAGE_MS = 30_000
@@ -219,6 +220,15 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [recharger])
 
+  // Écrire sans attendre un rechargement complet (lib/reponseCarte.ts) : poser/retirer UNE ligne de message à l'écran,
+  // puis relire cette seule ligne en base. Le direct et le sondage la remplaceront de toute façon par la vraie.
+  const poserMessage = useCallback((m: Message) => setMessages((l) => remplacerLigne(l, m)), [])
+  const retirerMessage = useCallback((id: string) => setMessages((l) => retirerLigne(l, id)), [])
+  const relireMessage = useCallback(async (id: string): Promise<Message | null> => {
+    const { data, error } = await supabase.from('messages').select('*').eq('id', id).maybeSingle()
+    return error ? null : (data as Message | null)
+  }, [])
+
   const ids = useMemo(() => new Set(projets.map((p) => p.id)), [projets])
   const vis = useMemo(() => ({
     sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messages, ids),
@@ -229,6 +239,6 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     projets, projet, projetId, vue, choisirVue, chargerProjets,
     ...vis,
     chargementProjets, chargement, charge, erreur, direct, derniereMaj, rechargeDu,
-    recharger, rechargerCible, rechargerProjets,
+    recharger, rechargerCible, rechargerProjets, poserMessage, retirerMessage, relireMessage,
   }
 }
