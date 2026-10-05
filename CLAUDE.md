@@ -834,6 +834,22 @@ plus rapidement possible » (capture : la case « Écrire à Claude sur ce proje
   Preuve : `node scripts/verifier-push.mjs`. **Non prouvé ici** : la
   livraison sur un vrai téléphone (aucun navigateur abonné dans le conteneur).
 
+**Choisir quelles notifications on reçoit** (5 oct. 2026, migration 0052, chantier 70288582 ;
+Raphaël : « gérer quel type de notifications […] pareil pour tous les projets, le plus simple
+possible »). Réglages › Notifications : un interrupteur par TYPE, puis « Tous les projets » +
+un interrupteur par projet, résumé en une phrase, toast succès/échec. Par personne :
+`notif_reglages` (`types` code → bool, absent = défaut du catalogue ; `projets_coupes`, vide =
+tous). Catalogue `notif_types` (code, libellé, `defaut`, `emis`) : UNE source pour l'écran et le
+serveur ; **seul `reponse` est émis** (défaut allumé) ; « À toi », « PR à fusionner » et « Chantier
+terminé » sont listés « bientôt », sans interrupteur, tant qu'aucun trigger ne les envoie. UNE
+règle de décision côté serveur : `notif_veut(user, type, projet)` et `notif_destinataires(type,
+projet)` (admins + membres qui veulent ; jamais un projet `test-…`, jamais un type non émis),
+lue par `cockpit-push` (déployée v2). **Ajouter un type** = une ligne dans `notif_types` (`emis`
+faux), puis le trigger qui l'envoie et `emis` vrai ; l'écran suit tout seul. Règles d'affichage :
+`lib/notifications.ts`, `verifier-notifications.ts` ; base : `verifier-base` §41 (`SEUL=41` joue
+ce seul contrôle). Le réglage vaut pour tous les appareils de la personne ; l'abonnement reste par
+appareil (message clair si l'appareil n'est pas abonné).
+
 ## Économie des modèles (30 sept. 2026, migration 0035, chantier 7a52df8f)
 
 Raphaël : « le cockpit consomme beaucoup trop de tokens […] les sessions vont
