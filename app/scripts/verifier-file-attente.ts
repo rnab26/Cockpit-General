@@ -1,5 +1,7 @@
 // File d'attente des écritures hors ligne (lib/fileAttente.ts).
 // node --experimental-strip-types app/scripts/verifier-file-attente.ts
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { verifie, bilan } from './_assert.ts'
 import { aGarder, aMettreEnCache, avecIdentifiant, classerReponse, cibleDe, delaiReessai, estPanneServeur, phraseBandeau, reponseGardee, resumeDe } from '../src/lib/fileAttente.ts'
 
@@ -51,4 +53,22 @@ verifie('envoi en cours', /Envoi de 2 éléments/.test(phraseBandeau({ attente: 
 verifie('refusé prime, niveau erreur', phraseBandeau({ attente: 2, refuses: 1, horsLigne: true, envoi: false })?.niveau === 'erreur')
 verifie('résumé lisible', resumeDe('POST', `${B}/rest/v1/messages`) === 'Message dans un fil (ajout)' && resumeDe('POST', `${B}/rest/v1/rpc/certifier_chantier`).includes('certifier chantier'))
 verifie('délai croissant plafonné', delaiReessai(1) === 30_000 && delaiReessai(2) === 60_000 && delaiReessai(20) === 15 * 60_000)
+
+console.log('chaque RPC de l’app est classée : lecture (cache) ou écriture (file)')
+// Régression 0058 : projets_visibles (lecture) était prise pour une écriture, donc gardée hors ligne avec une
+// réponse fabriquée au lieu d'être servie du cache. Une RPC neuve doit être rangée ici EXPRESSÉMENT.
+const ECRITURES = new Set(['fusionner_chantiers', 'trancher_fusion', 'signaler_ne_marche_pas', 'revoquer_invitation', 'retirer_reveil_immediat', 'restaurer_champ', 'repondre_message', 'relancer_renfort', 'regler_sans_signe', 'regler_renforts_erreurs', 'regler_renforts_auto', 'regler_renforts', 'regler_modeles', 'regler_filet', 'regler_fermeture', 'regler_bascule_seuils', 'regler_bascule', 'regler_autonome', 'mettre_de_cote', 'liberer_chantier', 'inviter', 'freiner', 'effacer_erreurs_renforts', 'deplacer_chantier', 'demander_verification', 'demander_renforts', 'demander_ou_en_est', 'corriger_chantier', 'completer_chantier', 'changer_role_membre', 'changer_droits_membre', 'certifier_chantier', 'accepter_invitation', 'abandonner_chantier'])
+const noms = new Set<string>()
+const parcourir = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) parcourir(p); else if (/\.tsx?$/.test(f)) for (const m of readFileSync(p, 'utf8').matchAll(/rpc\('([a-z_0-9]+)'/g)) noms.add(m[1]) } }
+parcourir(new URL('../src', import.meta.url).pathname)
+// Cas à part, voulus : ni gardée ni mise en cache (jeton secret ; écrit un peu mais jamais rejouée).
+const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes'])
+for (const n of [...noms].sort()) {
+  const url = `${B}/rest/v1/rpc/${n}`
+  const lecture = aMettreEnCache('POST', url) && !aGarder('POST', url)
+  const ecriture = aGarder('POST', url) && !aMettreEnCache('POST', url)
+  if (NI_L_UN_NI_L_AUTRE.has(n)) { verifie(`${n} : ni gardée ni en cache (voulu)`, !aGarder('POST', url) && !aMettreEnCache('POST', url)); continue }
+  verifie(`${n} : ${ECRITURES.has(n) ? 'écriture' : 'lecture'}`, ECRITURES.has(n) ? ecriture : lecture)
+}
+for (const n of ['projets_visibles', 'invitation_info', 'invitations_du_projet', 'journal_invites', 'chantiers_proches_creation']) verifie(`${n} servie du cache hors ligne`, aMettreEnCache('POST', `${B}/rest/v1/rpc/${n}`))
 bilan('verifier-file-attente')

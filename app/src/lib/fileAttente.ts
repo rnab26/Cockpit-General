@@ -41,7 +41,9 @@ export type CorpsStocke =
   | { type: 'formdata'; v: [string, string | Blob][] }
 
 /** RPC qui LISENT (ou qui n'ont aucun sens hors ligne) : jamais mises en file. */
-const RPC_LECTURE = /^(etat_|prochain_|membres_|moi$|est_|peut_|chef_|file_|ressemblance|candidat_|reveiller_reportes$|a_toi_a_revoir$)/
+// Toute RPC de LECTURE appelée par l'app doit figurer ici : sinon elle serait prise pour une écriture
+// (gardée hors ligne, réponse fabriquée) au lieu d'être servie du cache (regression 0058 : projets_visibles).
+const RPC_LECTURE = /^(etat_|prochain_|membres_|moi$|est_|peut_|chef_|file_|ressemblance|candidat_|reveiller_reportes$|a_toi_a_revoir$|projets_visibles$|invitations_du_projet$|invitation_info$|journal_invites$|chantiers_proches_creation$)/
 /** RPC dont les arguments sont un secret : jamais écrits sur l'appareil. */
 const RPC_SECRETES = new Set(['regler_reveil_immediat'])
 /** Tables sans valeur à rejouer (appareil, préférence jetable). */
