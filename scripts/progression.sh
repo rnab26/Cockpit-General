@@ -211,6 +211,11 @@ if [ -n "$point" ]; then
   rattacher_tour "$cid"
   r=$("$SQL" "select repondre_ou_en_est('$cid'::uuid, '$(q "$session")', '$(q "$point")') as r" | jq -c '.rows[0].r // empty')
   [ -n "$r" ] && [ "$r" != "null" ] || { echo "La réponse n'a pas été écrite (base injoignable ?). Réessaie." >&2; exit 1; }
+  # Réponse donnée = fin du travail d'un assistant « Répondre / Point » : il rend la
+  # réservation tout de suite (Raphaël, 5 oct. : « pas de chantier réservé 1 h pour rien »),
+  # sans toucher à l'état, pour que sa prochaine réponse ou vérification soit prise aussitôt.
+  case "$session" in agent/message-*|agent/point-*)
+    "$SQL" "update chantiers set pris_par = null, pris_jusqu_a = null where id = '$cid' and pris_par = '$(q "$session")'" >/dev/null 2>&1 || true ;; esac
   if [ "$(printf '%s' "$r" | jq -r '.demande // empty')" != "" ]; then echo "Réponse écrite dans le fil : Raphaël voit « Réponse arrivée » sous sa demande « Où ça en est ? »."
   else echo "Réponse écrite dans le fil du chantier : Raphaël la voit dans l'app, sous son message."; fi
   exit 0
@@ -252,6 +257,10 @@ if [ -n "$chantier" ]; then
   # Claude Code ne l'a jamais nommée, elle comptait « en cours » chez la chef.
   if [ "$statut" = "termine" ] || [ "$statut" = "echec" ]; then
     [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && "$SQL" "select clore_taches_prov_chantier('$(q "$CLAUDE_CODE_SESSION_ID")', '$id'::uuid)" >/dev/null 2>&1
+  fi
+  # Un échec rend aussi la réservation (sinon le chantier reste tenu jusqu'à expiration).
+  if [ "$statut" = "echec" ]; then
+    "$SQL" "select liberer_chantier('$id'::uuid, '$(q "$session")')" >/dev/null 2>&1 || true
   fi
   # Une session qui termine ou échoue rend aussi le chantier lisible dans la colonne etat.
   if [ "$statut" = "termine" ]; then
