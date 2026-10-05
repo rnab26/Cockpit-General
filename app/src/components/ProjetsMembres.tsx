@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { Membre, Projet } from '../lib/types.ts'
+import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
-import { useConfirmer } from '../ui/Confirm.tsx'
+import { Invites } from './Invites.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Champ, Input, Interrupteur, Textarea } from '../ui/Champs.tsx'
@@ -21,26 +21,17 @@ const depuis = (p: Projet): Formulaire => ({ slug: p.slug, nom: p.nom, descripti
 export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { ouvert: boolean; onFermer: () => void; projets: Projet[]; chargerProjets: () => Promise<Projet[]> }) {
   const { recharger } = useGlobal()
   const toast = useToast()
-  const confirmer = useConfirmer()
   const [selection, setSelection] = useState<string | 'nouveau' | null>(null)
   const [f, setF] = useState<Formulaire>(vide())
-  const [membres, setMembres] = useState<Membre[] | null>(null)
-  const [email, setEmail] = useState('')
   const [cleVisible, setCleVisible] = useState(false)
   const [enCours, setEnCours] = useState(false)
   const projet = projets.find((p) => p.id === selection) ?? null
 
   useEffect(() => {
-    setCleVisible(false); setMembres(null); setEmail('')
+    setCleVisible(false)
     if (selection === 'nouveau') setF(vide())
-    else if (projet) { setF(depuis(projet)); void chargerMembres(projet.id) }
+    else if (projet) setF(depuis(projet))
   }, [selection, projet?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const chargerMembres = async (id: string) => {
-    const { data, error } = await supabase.rpc('membres_du_projet', { p_projet: id })
-    if (error) { toast.erreur(messageErreur(error)); return }
-    setMembres((data ?? []) as Membre[])
-  }
 
   const enregistrer = async () => {
     if (!f.nom.trim()) { toast.erreur('Donne un nom.'); return }
@@ -58,23 +49,6 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
     await recharger()
   }
 
-  const ajouterMembre = async () => {
-    if (!projet || !email.trim()) return
-    setEnCours(true)
-    const { data, error } = await supabase.rpc('ajouter_membre', { p_projet: projet.id, p_email: email.trim() })
-    setEnCours(false)
-    if (error) { toast.erreur(messageErreur(error)); return }
-    if (data === 'ajouté') { toast.succes(`${email.trim()} ajouté au projet.`); setEmail('') } else toast.erreur(String(data))
-    await chargerMembres(projet.id)
-  }
-  const retirer = async (m: Membre) => {
-    if (!projet) return
-    const ok = await confirmer({ titre: `Retirer ${m.email} ?`, danger: true, libelleOk: 'Retirer', texte: `Cette personne ne verra plus le projet « ${projet.nom} ». Ses demandes restent.` })
-    if (!ok) return
-    const { error } = await supabase.from('membres').delete().eq('projet_id', projet.id).eq('user_id', m.user_id)
-    if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes(`${m.email} retiré.`); await chargerMembres(projet.id)
-  }
   const copier = async (texte: string, quoi: string) => {
     try { await navigator.clipboard.writeText(texte); toast.succes(`${quoi} copié.`) } catch { toast.erreur('Copie impossible : sélectionne le texte à la main.') }
   }
@@ -130,23 +104,7 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
                   <p className="mt-2">Pour t’aider à refaire un bug, le module joint la page (sans jetons ni e-mails), l’appareil, la version du site, les 20 dernières actions (libellés seulement, jamais ce qui est tapé) et les erreurs de la page. Pour ne rien joindre : ajoute <code>data-reproduction="non"</code>.</p>
                 </details>
               </section>
-              <section>
-                <h3 className="mb-2 text-sm font-semibold">Membres (utilisateurs finaux)</h3>
-                {membres === null ? <p className="text-sm text-texte-2">Chargement…</p> : membres.length === 0 ? <p className="text-sm text-texte-2">Personne pour l’instant : toi seul vois ce projet.</p> : (
-                  <ul className="space-y-1">
-                    {membres.map((m) => (
-                      <li key={m.user_id} className="flex items-center justify-between gap-2 rounded-lg border border-bord px-3 py-2 text-sm">
-                        <span className="truncate">{m.email}</span><Button taille="sm" variante="discret" className="text-alerte" onClick={() => retirer(m)}>Retirer</Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-2 flex gap-2">
-                  <Input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="adresse@exemple.com" onKeyDown={(e) => { if (e.key === 'Enter') void ajouterMembre() }} />
-                  <Button variante="primaire" chargement={enCours} disabled={!email.trim()} onClick={ajouterMembre}>Ajouter</Button>
-                </div>
-                <p className="mt-1 text-xs text-texte-2">La personne doit d’abord s’être créé un compte sur cette page de connexion.</p>
-              </section>
+              <Invites projetId={projet.id} projetNom={projet.nom} />
             </>
           ) : null}
         </div>
