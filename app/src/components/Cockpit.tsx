@@ -28,6 +28,9 @@ import { Doublons, DoublonDe } from './Doublons.tsx'
 import { BarreSelection } from './BarreSelection.tsx'
 import { Reglages } from './Reglages.tsx'
 import { ProjetsMembres } from './ProjetsMembres.tsx'
+import { OngletsProjet } from './OngletsProjet.tsx'
+import { CoutsProjet } from './Depenses.tsx'
+import { ONGLET_DEFAUT, type OngletProjet } from '../lib/vueProjet.ts'
 import { Chargement, Erreur, Vide } from '../ui/Etats.tsx'
 import { Button } from '../ui/Button.tsx'
 
@@ -55,6 +58,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const [doublonDe, setDoublonDe] = useState<Chantier | null>(null)
   const [selectionActive, setSelectionActive] = useState(false)
   const [selectionIds, setSelectionIds] = useState<Set<string>>(new Set())
+  const [onglet, setOnglet] = useState<OngletProjet>(ONGLET_DEFAUT)
   const [now, setNow] = useState(() => new Date())
   const admin = moi.admin
 
@@ -95,6 +99,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const changerVue = useCallback((id: string) => {
     d.choisirVue(id)
+    setOnglet(ONGLET_DEFAUT)  // on arrive toujours sur la zone chantiers
     setSelectionActive(false); setSelectionIds(new Set())
     window.scrollTo({ top: 0 })
   }, [d.choisirVue]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -194,7 +199,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
       <GlobalCtx.Provider value={global}>
         <div className="min-h-dvh">
           {entete}
-          <main className="mx-auto max-w-3xl p-4">
+          <main className="mx-auto max-w-3xl lg:max-w-5xl p-4">
             {admin
               ? <Vide icone={<Layers size={28} strokeWidth={1.5} />} titre="Aucun projet" texte="Crée le premier : un nom, un slug, une couleur." action={<Button variante="primaire" onClick={() => setDialogue('projets')}>+ Créer un projet</Button>} />
               : <Vide icone={<Lock size={28} strokeWidth={1.5} />} titre="Aucun projet pour toi" texte={<>Demande à Raphaël de t’ajouter à ton projet avec cette adresse : <b>{moi.email}</b>.</>} action={<Button onClick={() => void seDeconnecter()}>Se déconnecter</Button>} />}
@@ -212,7 +217,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     <GlobalCtx.Provider value={global}>
       <div className={`min-h-dvh ${selectionActive && !vueTout ? 'pb-40' : 'pb-8'}`}>
         {entete}
-        <main className="mx-auto max-w-3xl space-y-3 px-3 pt-4">
+        <main className="mx-auto max-w-3xl lg:max-w-5xl space-y-3 px-3 pt-4">
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-5" data-testid="vue-tout">
@@ -222,10 +227,13 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           ) : (
             <AvecProjet projetId={d.projet.id}>
               <div className="space-y-5" data-testid="vue-projet">
-                <TableauDeBord projetId={d.projet.id} />
-                <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
-                  deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />
-                <ReglagesProjet projetId={d.projet.id} />
+                <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={<OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                {onglet === 'travail' ? (
+                  <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
+                    deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />
+                ) : null}
+                {onglet === 'reglages' ? <ReglagesProjet projetId={d.projet.id} /> : null}
+                {onglet === 'couts' ? <CoutsProjet /> : null}
               </div>
             </AvecProjet>
           )}

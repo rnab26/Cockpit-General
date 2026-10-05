@@ -84,4 +84,6 @@ if erreurs:
 else:
     print("  Erreurs   : aucune erreur JavaScript notée.")
 print("Rejouer : ouvre l’adresse ci-dessus sur un écran de même taille, refais les étapes, compare. Les clics ne se rejouent pas tout seuls.")
+if not url:
+    print("Pas d’adresse à rouvrir : prends les étapes ci-dessus comme TEST SYNTHÉTIQUE (même scénario écrit que « Copier le test synthétique » dans l’app).")
 PY

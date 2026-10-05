@@ -40,7 +40,7 @@ import { basculerRepli, comptesAToi, filtreEffectif, filtrerAToi, lireRepliees, 
  * Toucher une ligne ouvre la conversation du chantier (modèle D). Les nombres
  * viennent de lib/tableauDeBord.ts : une seule règle, testée.
  */
-export function TableauDeBord({ projetId }: { projetId: string | null }) {
+export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { projetId: string | null; entre?: ReactNode; seulementTuiles?: boolean }) {
   const g = useGlobal()
   const fenetre: Fenetre = estFenetre(g.prefs.fenetre_livre) ? g.prefs.fenetre_livre : FENETRE_DEFAUT
   const ordre = useMemo(() => g.projets.map((p) => p.id), [g.projets])
@@ -60,6 +60,9 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
   return (
     <div className="space-y-5">
       <Tuiles t={t} projetId={projetId} fenetre={fenetre} />
+      {/* Vue d'un projet : les trois icônes (travail, réglages, coûts) viennent juste sous les chiffres, puis la discussion. */}
+      {entre}
+      {seulementTuiles ? null : <>
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
       <div className="-mb-3 flex justify-end">
         <Button taille="sm" variante="discret" onClick={() => void retenir(toutBasculer(repliees))} data-testid="tout-replier-accueil" data-replie={tout ? '1' : ''}>
@@ -71,6 +74,7 @@ export function TableauDeBord({ projetId }: { projetId: string | null }) {
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} {...repli('a-lancer')} />
+      </>}
     </div>
   )
 }
