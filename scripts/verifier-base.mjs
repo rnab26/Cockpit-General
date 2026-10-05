@@ -2787,6 +2787,46 @@ async function controle40_liberation_auto() {
   verifie("liberation_passe : refusée à un membre connecté", refus.status >= 400, refus.status);
 }
 
+// 47. Agents finis (0061) : une ligne « en cours » sans signe, dont la session est morte, passe « arrêtée » toute seule.
+const PAF = randomUUID(), SLUG_AF = `test-verif-${rand}-af`;
+async function controle47_agents_finis() {
+  section("47. Agents finis (0061) : tache_morte fermée par pg_cron, jamais un agent vivant, une session vivante ni un projet test");
+  await sql(`insert into projets (id, slug, nom) values (${q(PAF)}, ${q(SLUG_AF)}, 'Projet de test agents finis')`);
+  const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-taches-mortes'`).catch(() => null);
+  verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.tache_morte(cockpit.taches)', 'execute') as regle, has_function_privilege('service_role', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as srv`);
+  verifie("clore_taches_mortes / tache_morte : réservées au service", !droits.anon && !droits.regle && droits.srv, droits);
+  const SM = `sess-mort-${rand}`, SV = `sess-vivante-${rand}`;
+  await sql(`insert into sessions (id, projet_id, vu_at) values (${q(SM)}, ${q(PAF)}, now() - interval '10 hours'), (${q(SV)}, ${q(PAF)}, now())`);
+  const ligne = async (sid, tid, desc, vieux) => sql(`insert into taches (session_id, projet_id, tache_id, type, description, vu_at, demarre_at, progres_at)
+    values (${q(sid)}, ${q(PAF)}, ${q(tid)}, 'agent', ${q(desc)}, now() - interval '${vieux}', now() - interval '${vieux}', null)`);
+  await ligne(SM, "reel-mort", "Répondre : test", "5 hours");        // agent mort, session morte
+  await ligne(SM, "prov:Point : test", "Point : test", "2 hours");    // provisoire d'une session morte (45 min)
+  await ligne(SM, "reel-recent", "Vérifier : test", "30 minutes");    // session morte mais signe récent : gardé
+  await ligne(SV, "reel-vivant", "Coder : test", "5 hours");          // session VIVANTE : jamais touchée
+  const statut = async (tid) => (await une(`select statut, fini_at is not null as fini from taches where projet_id = ${q(PAF)} and tache_id = ${q(tid)}`));
+  const vraie = await une(`select clore_taches_mortes() as n`);
+  verifie("clore_taches_mortes() sans argument : le projet de test n'est pas touché", (await statut("reel-mort")).statut === "en_cours", vraie);
+  const n = (await une(`select clore_taches_mortes(${q(SLUG_AF)}, true) as n`)).n;
+  const a = await statut("reel-mort"), b = await statut("prov:Point : test");
+  verifie("agent mort (5 h sans signe, session morte) : « arrêté » + fini_at", a.statut === "arrete" && a.fini === true && n === 2, { a, n });
+  verifie("ligne provisoire d'une session morte (2 h) : « arrêtée »", b.statut === "arrete", b);
+  verifie("signe récent (30 min) : jamais touché", (await statut("reel-recent")).statut === "en_cours");
+  verifie("session vivante : sa ligne n'est jamais touchée, même vieille de 5 h", (await statut("reel-vivant")).statut === "en_cours");
+  await sql(`update projets set delai_tache_agent_h = 0 where id = ${q(PAF)}`);
+  await ligne(SM, "reel-mort2", "Répondre : bis", "9 hours");
+  await sql(`select clore_taches_mortes(${q(SLUG_AF)}, true)`);
+  verifie("délai 0 = jamais fermé seul", (await statut("reel-mort2")).statut === "en_cours");
+  await sql(`update projets set delai_tache_agent_h = 3 where id = ${q(PAF)}`);
+  // Fin d'un agent : sa ligne provisoire de même description se ferme avec lui
+  await ligne(SV, "reel-fin", "Résoudre le conflit : x", "1 minute");
+  await ligne(SV, "prov:Résoudre le conflit : x", "Résoudre le conflit : x", "1 minute");
+  await sql(`update taches set statut = 'termine', fini_at = now() where projet_id = ${q(PAF)} and tache_id = 'reel-fin'`);
+  verifie("SubagentStop : la ligne provisoire de même description se ferme avec l'agent", (await statut("prov:Résoudre le conflit : x")).statut === "termine");
+  const refus = await rpcUtilisateur("regler_delai_tache_agent", { p_projet: SLUG_AF, p_heures: 5 }, jwt);
+  verifie("regler_delai_tache_agent : refusé à un membre sans droit admin", refus.status >= 400, refus.status);
+}
+
 // 45. Renforts : un frein d'usage ne met pas une demande en erreur (0053) ; erreurs effaçables, relançables.
 const PRE = randomUUID(), SLUG_RE = `test-verif-${rand}-re`;
 async function controle45_renforts_frein_erreurs() {
@@ -3248,6 +3288,7 @@ try {
     controle43_invites,
     controle42_deja_livre_rien_repris,
     controle45_renforts_frein_erreurs,
+    controle47_agents_finis,
     controle45_regroupement,
     controle46_fusion_a_la_creation,
     controle47_index_cles_etrangeres,
