@@ -56,6 +56,7 @@ node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
 node app/scripts/verifier-bulle.mjs                       # bulle d'aide : visible par défaut (projet et « Tout »), message → fil du projet, réponse de session → bulle, réglage d'extinction
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
+node scripts/verifier-emplacement.mjs                      # où le cockpit apparaît : analyse du dépôt (choix possibles seulement) + module en mode bouton / page
 node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
@@ -112,6 +113,22 @@ branch » → gh-pages / root, réglé par Raphaël le 28 sept.). La fonction se
 `node scripts/verifier-embed.mjs`. Une modification de `embed/cockpit-embed.js`
 est servie aux sites hôtes au prochain chargement de leur page (cache CDN
 de Pages, quelques minutes).
+
+## Où le cockpit apparaît, et qui l'utilise : questionnaire AVANT le déploiement (5 oct. 2026, migration 0049, chantier dec7fb3c)
+
+Raphaël : « quand on branche un cockpit, on ne sait pas où il va apparaître ni où il va vivre ».
+`brancher.sh` (étape 5) lance `scripts/emplacement.sh` : `analyser-depot.py` lit le dépôt (et
+`--site`), puis DEUX cartes avec aperçu image (`apercu-emplacement.mjs`) arrivent dans « À toi » :
+où (`menu` bouton dans le menu · `page` à part avec lien · `appli` app Chrome, rien dans le site)
+et qui (`moi` · `equipe` · `utilisateurs` du site). Seuls les choix POSSIBLES sont proposés (app
+mobile : appli seulement ; site sans connexion : pas « utilisateurs »), la recommandation est
+marquée. Réponses rangées dans `projets.emplacement` (jsonb, `regler_emplacement`,
+`emplacement_valide` : appli + utilisateurs refusé) par `emplacement.sh --lire`. La balise n'est
+donnée qu'après réponse : `emplacement.sh --balise [--gabarit "#lien-du-menu"]`. Module embarqué :
+`data-mode="bouton"` (panneau masqué, ouvert par `data-declencheur` ou un bouton flottant, Échap
+referme) / `"page"`. Limite : le site, pas le cockpit, décide qui voit la balise (le cockpit ne
+gère pas les comptes du site) ; l'écran de l'app ne montre pas encore l'emplacement choisi.
+`verifier-emplacement.mjs`.
 
 ## Serveur MCP pour les outils IA hors Claude (30 sept. 2026, chantier 12c22ec6)
 

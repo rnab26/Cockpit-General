@@ -39,3 +39,7 @@ scripts/greffe.sh
 modeles/cockpit-greffe.sh
 modeles/cockpit-greffe-hook.sh
 modeles/cockpit-pre-push.sh
+scripts/emplacement.sh
+scripts/analyser-depot.py
+scripts/apercu-emplacement.mjs
+modeles/cockpit-emplacement.sh

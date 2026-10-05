@@ -133,7 +133,7 @@ if [ "$voie" = invisible ]; then
   [ "$maj" = 1 ] || "$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', '$(q "$depot")', $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
   echo "2. Commandes et hooks dans $H/bin (hors du dépôt)"
   mkdir -p "$H/bin" "$(dirname "$RU")"
-  for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction pr-a-fusionner greffe greffe-hook; do
+  for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction pr-a-fusionner emplacement greffe greffe-hook; do
     cmp -s "$ICI/modeles/cockpit-$n.sh" "$H/bin/cockpit-$n.sh" || { cp "$ICI/modeles/cockpit-$n.sh" "$H/bin/cockpit-$n.sh"; echo "   ok : $H/bin/cockpit-$n.sh"; }
     chmod +x "$H/bin/cockpit-$n.sh"
   done
@@ -215,7 +215,7 @@ poser() { # modèle, destination
   else echo "   EXISTE, n'est pas au cockpit, conservé (relance avec --forcer pour remplacer) : ${2#$dossier/}"; fi
 }
 mkdir -p "$dossier/scripts" "$dossier/.claude/hooks"
-for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction pr-a-fusionner greffe; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
+for n in lanceur sql demander progression chantier passe media chef verdict renfort reproduction pr-a-fusionner emplacement greffe; do poser "$ICI/modeles/cockpit-$n.sh" "$dossier/scripts/cockpit-$n.sh"; done
 # Ancienne aide de l'installation par copie : plus utilisée.
 if [ -f "$dossier/scripts/cockpit-progression_tableau.py" ]; then rm -f "$dossier/scripts/cockpit-progression_tableau.py"; echo "   retiré (ancienne copie) : scripts/cockpit-progression_tableau.py"; fi
 # Ancien mode : un projet SANS sql.sh recevait notre sql.sh sous son nom. Il est à nous : on le laisse
@@ -322,11 +322,18 @@ if [ "$maj" = 1 ]; then
   rm -f /tmp/cockpit-brancher-$$.log
   exit 0
 fi
+# 5. OÙ le cockpit apparaît et QUI l'utilise : demandé AVANT de rien coller
+# (chantier dec7fb3c, 5 oct. 2026). Le dépôt (et le site, si --site) est analysé,
+# deux cartes avec aperçu arrivent dans « À toi » ; la balise n'est donnée qu'après
+# la réponse (scripts/emplacement.sh --projet <slug> --balise).
+echo
+echo "5. Emplacement du cockpit (questionnaire posé avant tout déploiement)"
+COCKPIT_EMPL_CMD="scripts/cockpit-emplacement.sh" COCKPIT_PROJET="$slug" "$ICI/scripts/emplacement.sh" --projet "$slug" --dossier "$dossier" ${url_site:+--site "$url_site"} 2>&1 | sed 's/^/   /' || echo "   (questionnaire non posé : relance : cd $dossier \&\& scripts/cockpit-emplacement.sh --projet $slug)"
 cat <<FIN
 
-5. Module embarqué — à coller dans une page du site (la clé est propre à ce projet) :
-   <script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js" data-cle="$cle" data-utilisateur="Prénom"></script>
-   Il joint à chaque demande de quoi la rejouer (page sans jetons, appareil, version, 20 dernières
+   La balise du module embarqué (data-cle propre à ce projet) s'obtient APRÈS ta réponse aux cartes :
+     cd $dossier && scripts/cockpit-emplacement.sh --projet $slug --balise
+   Elle joint à chaque demande de quoi la rejouer (page sans jetons, appareil, version, 20 dernières
    actions par leur libellé — jamais ce qui est tapé —, erreurs JS) ; data-reproduction="non" pour rien joindre.
 
 Terminé. Vérifie : cd $dossier && COCKPIT_PROJET=$slug bash .claude/hooks/cockpit-session-start.sh | jq -r .hookSpecificOutput.additionalContext | head -30
