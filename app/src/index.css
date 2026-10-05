@@ -85,6 +85,10 @@
 @keyframes cockpit-toast { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }
 .toast-in { animation: cockpit-toast .18s ease-out; }
 
+/* Conversation plein écran en vue Mobile (apport de la PR 75, c6e4ea77). */
+html.vue-mobile dialog[data-testid="conversation"] { height: 100dvh !important; }
+html.vue-mobile dialog[data-testid="conversation"] > div { border-radius: 0 !important; }
+
 /* Vue « mobile » forcée (Réglages › Vue) : sur un écran tactile (téléphone, tablette) l'app prend TOUTE la largeur, aucune colonne étroite (cause du 05/10 : la colonne de 430 px s'appliquait aussi aux téléphones plus larges, aux tablettes et aux pliables). La colonne centrée n'existe que sur un écran à souris (PC), pour simuler un téléphone. */
 @media (pointer: fine) and (min-width: 431px) {
   html.vue-mobile, html.vue-mobile body { overflow-x: hidden; max-width: 100vw; }
