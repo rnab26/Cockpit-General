@@ -986,6 +986,16 @@ try {
     sql(`update messages set answered_at = now(), answered_by = gen_random_uuid(), reponse = 'Fait' where chantier_id = '${AC1.id}' and kind = 'action'`)
     await actualiser()
     verifie('action faite : elle quitte « À toi de jouer » (pastille comprise)', await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC1.id}"]`).count() === 0)
+    // Traitée DIRECTEMENT depuis « À toi de jouer » : Fait sur la ligne, sans ouvrir de fil, avec retour visible.
+    const AC2 = creerTest('action directe', { etat: 'libre' })
+    sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${AC2.id}', 'verifier-web', 'session', 'action', '${MARQUE} Fusionne la PR directe')`)
+    await actualiser()
+    const elA2 = await elementAToi(AC2.id, 'action')
+    verifie('action : « Fait / Pas encore / Ça bloque » directement sur la ligne, sans ouvrir de fil', await elA2.getByTestId('action-fait').count() === 1 && await elA2.getByTestId('action-pas-encore').count() === 1 && await elA2.getByTestId('action-bloque').count() === 1)
+    await elA2.getByTestId('action-fait').click()
+    await page.waitForTimeout(1500)
+    const repA = sql(`select answered_at is not null as repondu, etat from messages where chantier_id = '${AC2.id}' and kind = 'action'`)[0]
+    verifie('action faite sur la ligne : réponse enregistrée (fait), sans fil ouvert, la ligne quitte « À toi »', repA?.repondu === true && repA?.etat === 'fait' && await page.locator('[data-testid="conversation"]').count() === 0 && await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC2.id}"]`).count() === 0, repA)
   }
 
   // ===================================================================
