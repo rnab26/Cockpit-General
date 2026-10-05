@@ -711,6 +711,10 @@ Raphaël : « à chaque fois il y a des conflits sur les branches […] envoie-m
 3. À la source : la liste des contrôles de `verifier-base.mjs` est UN contrôle par ligne (en ajouter un = une ligne, à côté de son sujet), et `scripts/prochaine-migration.sh` donne le numéro libre (max des fichiers locaux et des branches distantes + 1 ; la base n'a pas de journal des migrations cockpit) : à appeler au moment d'écrire le fichier.
 4. `verifier-base` §38 (carte selon la propreté) et §38 bis (numéro de migration).
 
+## Navigation type application : barre d'onglets en bas (5 oct. 2026, chantier 313b3d95)
+
+Raphaël : « une vraie navigation type téléphone, là c'est trop en mode navigateur, les zoom à gérer ». Barre FIXE en bas (`BarreOnglets.tsx` : Accueil, Projet, Recherche, Coûts, Réglages ; sur « Tout », Projet/Coûts ouvrent le dernier projet vu, Réglages ouvre les réglages de l'appli). Où elle apparaît : UNE règle, `lib/navMobile.ts` (vue Mobile = toujours, Auto = écran tactile, Ordinateur = jamais ; `hooks/useNavMobile.ts` pose `--nav-h` que lisent la bulle, la barre de sélection et les toasts). Elle remplace les trois icônes de la page et la loupe d'en-tête (pas de doublon). Vue Mobile : viewport sans zoom (`VIEWPORT_APPLI`) ; écran tactile : `touch-action: manipulation`, champs à 16 px, pas de débordement horizontal (`index.css`). `verifier-nav-mobile.ts`, contrôles « barre du bas » de `verifier-web.mjs`. Constaté le 5 oct. : sur main comme ici, `verifier-web` a des échecs d'environnement (présence « vivante » sans WebSocket, comptes faussés par les projets de test des autres agents, rechargement qui expire par moments).
+
 ## Appli installable (30 sept. 2026)
 
 Raphaël : « installer l'appli depuis la page internet du cockpit, plutôt qu'un

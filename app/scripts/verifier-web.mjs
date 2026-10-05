@@ -463,11 +463,19 @@ try {
     await page.locator('[data-testid="vue-projet"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vivant="oui"] [data-vive="oui"]').count())
   verifie('FacePro : « Tous les chantiers » en lignes compactes, sections repliées', await page.getByTestId('groupe-section').count() >= 1 && await page.locator('[data-testid="groupe-section"] [data-testid="ligne-chantier"]').count() === 0)
   // Vue du projet réorganisée (9cc71872) : chiffres, trois icônes, discussion, « Ça avance », « Prêt à lancer », puis la liste des chantiers.
-  const ysVue = await page.evaluate(() => ['tuiles', 'onglets-projet', 'ecrire-projet', 'en-ce-moment', 'a-lancer', 'tous-les-chantiers'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().top ?? -1))
+  const ysVue = await page.evaluate(() => ['tuiles', 'ecrire-projet', 'en-ce-moment', 'a-lancer', 'tous-les-chantiers'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().top ?? -1))
   verifie('FacePro : ordre des blocs = chiffres, 3 icônes, discussion, « Ça avance », « Prêt à lancer », chantiers', ysVue.every((y, i) => y >= 0 && (i === 0 || y > ysVue[i - 1])), ysVue)
-  const bOnglets = await page.getByTestId('onglets-projet').boundingBox()
-  const bTabs = await page.getByTestId('onglets-projet').getByRole('tab').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
-  verifie('FacePro : les trois icônes tiennent sur la même ligne, dans l’écran', new Set(bTabs).size === 1 && bOnglets.width <= (page.viewportSize()?.width ?? 9999))
+  // Navigation « application » (05/10) : barre d'onglets FIXE en bas ; les trois icônes de la page et la loupe de l'en-tête n'existent plus.
+  const vpNav = page.viewportSize()
+  const barreNav = await page.getByTestId('barre-onglets').boundingBox()
+  const bTabsNav = await page.getByTestId('barre-onglets').getByRole('tab').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+  verifie('barre du bas : 5 onglets sur une ligne, collée en bas de l’écran, dans la largeur', bTabsNav.length === 5 && new Set(bTabsNav).size === 1 && Math.abs(barreNav.y + barreNav.height - vpNav.height) <= 1 && barreNav.width <= vpNav.width, [bTabsNav, barreNav, vpNav])
+  verifie('barre du bas : onglet « Projet » allumé, les trois icônes de la page et la loupe d’en-tête n’existent plus', (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('onglets-projet').count() === 0 && await page.locator('header [data-testid="loupe"]').count() === 0)
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  const barreBasNav = await page.getByTestId('barre-onglets').boundingBox()
+  verifie('barre du bas : toujours en bas après défilement, rien du contenu caché dessous', Math.abs(barreBasNav.y + barreBasNav.height - vpNav.height) <= 1 && await page.evaluate(() => { const d = document.querySelector('[data-testid="vue-projet"]').getBoundingClientRect().bottom; return d <= document.querySelector('[data-testid="barre-onglets"]').getBoundingClientRect().top + 1 }))
+  await page.evaluate(() => window.scrollTo(0, 0))
+  verifie('zoom : viewport de l’appareil, jamais plus petit que 1, aucun débordement horizontal', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && /minimum-scale=1/.test(document.querySelector('meta[name="viewport"]').content)))
   verifie('FacePro : les réglages sont derrière la 2e icône, pas à la suite', await page.getByTestId('reglages-projet').count() === 0)
   await page.getByTestId('onglet-vue-couts').click()
   await page.getByTestId('couts-projet').waitFor({ timeout: 15000 }).catch(() => {})
@@ -476,8 +484,7 @@ try {
   verifie('FacePro : « Réglages du projet » replié, dans l’onglet Réglages', await page.getByTestId('reglages-projet').count() === 1 && await page.getByTestId('reglages-projet').getByTestId('barre-projet').count() === 0)
   await page.getByTestId('onglet-vue-travail').click()
   // La loupe : entre « Actualiser » et « + Chantier ».
-  const xsLoupe = await page.evaluate(() => ['actualiser', 'loupe', 'nouveau-chantier'].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().left ?? -1))
-  verifie('loupe en haut, juste après « Actualiser »', xsLoupe.every((x, i) => x >= 0 && (i === 0 || x > xsLoupe[i - 1])), xsLoupe)
+  // Recherche = 3e onglet de la barre du bas.
   await page.getByTestId('loupe').click()
   await page.getByTestId('recherche-champ').fill('zzzqqqintrouvable')
   verifie('recherche sans résultat : le dit', await page.getByTestId('recherche-aucun').isVisible())
@@ -1471,7 +1478,7 @@ try {
   // 7 bis. Mise en ligne (GitHub simulé) et mode autonome, dans « Réglages du projet » (replié)
   console.log('  — mise en ligne et mode autonome')
   // Vue du projet (9cc71872) : on arrive sur « travail » ; les réglages sont derrière la 2e icône.
-  verifie('vue projet : trois icônes sur une ligne, on arrive sur « travail »', await page.getByTestId('onglets-projet').getByRole('tab').count() === 3 && (await page.getByTestId('onglets-projet').getAttribute('data-actif')) === 'travail' && await page.getByTestId('autonome-projet').count() === 0)
+  verifie('vue projet : barre du bas, on arrive sur « travail »', await page.getByTestId('barre-onglets').getByRole('tab').count() === 5 && (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('autonome-projet').count() === 0)
   await page.getByTestId('onglet-vue-reglages').click()
   const reglagesP = page.getByTestId('reglages-projet')
   await reglagesP.locator('> button').click()
@@ -2134,7 +2141,7 @@ process.exit(echecs ? 1 : 0)
 var dernierDessus = null
 async function toastAuPremierPlan(re) {
   const t = page.getByRole('status').getByText(re).last()
-  await t.waitFor({ timeout: 10000 })
+  await t.waitFor({ timeout: 10000 }).catch(async (e) => { console.log('    toasts à l’écran :', JSON.stringify(await page.getByRole('status').allTextContents())); throw e })
   const b = await t.boundingBox()
   if (!b) return false
   // Sans dialogue ouvert : le toast est l'élément touché à son centre. Avec

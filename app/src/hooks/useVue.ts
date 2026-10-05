@@ -9,6 +9,8 @@ function lire(): Vue {
 export function appliquerVue(v: Vue) {
   document.querySelector('meta[name="viewport"]')?.setAttribute('content', viewportDe(v))
   document.documentElement.classList.toggle('vue-mobile', v === 'mobile')
+  document.documentElement.dataset.vue = v
+  window.dispatchEvent(new Event('cockpit-vue'))
 }
 /** Appelé avant le premier rendu (main.tsx) : pas de flash de la mauvaise vue. */
 export function preparerVue() { appliquerVue(lire()) }
