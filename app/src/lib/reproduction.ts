@@ -6,9 +6,11 @@
 // scripts/verifier-reproduction.ts.
 //
 // Le bouton « Rejouer » ouvre la page d'origine (adresse déjà nettoyée de
-// ses jetons). Rejouer les clics tout seul et le « test synthétique » ne sont
-// PAS faits (v1) : les étapes sont écrites pour qu'un humain ou une session
-// les refasse.
+// ses jetons) quand le projet le permet (une adresse ouvrable). Sinon, un
+// « test synthétique » : le scénario écrit (appareil, étapes, erreur attendue),
+// à copier pour une session ou un testeur. `etatReproduction` est l'UNE règle
+// de « reproduction prête ». Les clics ne se rejouent pas tout seuls : les
+// étapes sont écrites pour qu'un humain ou une session les refasse.
 
 export interface EtapeRepro { quand: string | null; texte: string }
 
@@ -106,4 +108,26 @@ export function lireReproduction(v: unknown): VueReproduction | null {
   }
   if (!vue.url && !vue.pageTitre && !vue.appareil && !etapes.length && !erreurs.length) return null
   return vue
+}
+
+/** « Reproduction prête » : rejouable (adresse à rouvrir), test synthétique (scénario écrit sans adresse), ou rien d'exploitable. */
+export type EtatReproduction = 'rejouable' | 'synthetique' | 'vide'
+export function etatReproduction(v: VueReproduction | null): EtatReproduction {
+  if (!v) return 'vide'
+  if (v.url) return 'rejouable'
+  return v.etapes.length || v.erreurs.length || v.pageTitre ? 'synthetique' : 'vide'
+}
+
+/** Le test synthétique en texte à copier : appareil, point de départ, étapes numérotées, erreur à retrouver. */
+export function testSynthetique(v: VueReproduction, titre: string): string {
+  const l: string[] = [`Test synthétique : ${titre}`, `(${v.moment.toLowerCase()}${v.heure ? `, ${v.heure}` : ''})`, '']
+  if (v.appareil) l.push(`Appareil : ${v.appareil}`)
+  if (v.version) l.push(`Version du site : ${v.version}`)
+  l.push(`Départ : ${v.url ?? (v.pageTitre ? `la page « ${v.pageTitre} »` : 'la page où la demande a été faite')}`)
+  l.push('Étapes :')
+  if (v.etapes.length) v.etapes.forEach((e, i) => l.push(`${i + 1}. ${e.texte}`))
+  else l.push('(aucune action notée : décris le geste avant de tester)')
+  l.push(v.erreurs.length ? `À retrouver : ${v.erreurs.join(' ; ')}` : 'À retrouver : le défaut décrit dans la demande.')
+  l.push('Compare avec ce que l’utilisateur a vu, puis note le résultat dans le fil.')
+  return l.join('\n')
 }
