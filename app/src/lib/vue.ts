@@ -25,6 +25,9 @@ export function estVue(v: unknown): v is Vue {
 export function lireVue(brut: unknown): Vue {
   return estVue(brut) ? brut : VUE_DEFAUT
 }
-export function viewportDe(v: Vue): string {
-  return v === 'ordinateur' ? `width=${LARGEUR_ORDINATEUR}, viewport-fit=cover` : VIEWPORT_BASE
+/** Vue Mobile = application : pas de pincement ni de zoom à gérer (Raphaël, 05/10). */
+export const VIEWPORT_APPLI = `${VIEWPORT_BASE}, maximum-scale=1, user-scalable=no`
+/** Sans zoom : vue Mobile, ou Auto sur écran tactile (« tous les écrans tactiles », Raphaël 05/10) ; un ordinateur à la souris garde le zoom. */
+export function viewportDe(v: Vue, tactile = false): string {
+  return v === 'ordinateur' ? `width=${LARGEUR_ORDINATEUR}, viewport-fit=cover` : v === 'mobile' || (v === 'auto' && tactile) ? VIEWPORT_APPLI : VIEWPORT_BASE
 }

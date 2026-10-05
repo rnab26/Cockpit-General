@@ -7,6 +7,7 @@ import { cleFil } from '../lib/lecture.ts'
 import { projetsCibles, texteConfirmationDeplacement } from '../lib/deplacer.ts'
 import { Select } from '../ui/Champs.tsx'
 import { supabase, messageErreur } from '../lib/supabase.ts'
+import { useProchainPassage } from '../hooks/useProchainPassage.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { useConfirmer } from '../ui/Confirm.tsx'
 import { CONFIRMER_ABANDON, aUnBrouillon, useMenuQuiSeFerme, useToucherLeFond } from '../ui/Modale.ts'
@@ -16,7 +17,8 @@ import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
 import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
-import { situationSilence, phraseLiberee } from '../lib/silence.ts'
+import { situationSilence, phraseLiberee, DELAI_ABANDON_MIN } from '../lib/silence.ts'
+import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, type AttenteReponse } from '../lib/discussion.ts'
@@ -58,7 +60,7 @@ export interface CibleConversation { projetId: string; chantierId: string | null
 const PLACEHOLDER: Record<string, string> = {
   a_cadrer: 'Ta décision : ce que tu veux, ce que tu ne veux pas…',
   bloque: 'Ta réponse : ce que tu as fait, ou ce qu’il faut faire…',
-  a_verifier: 'Ce que tu as constaté, une correction…',
+  a_verifier: 'Écris ce qui ne va pas : Claude vérifie (rien à cocher)…',
 }
 
 export function Conversation({ cible, onFermer, onRetour }: { cible: CibleConversation; onFermer: () => void; onRetour: () => void }) {
@@ -274,22 +276,6 @@ function Corps({ children, chantierId, placeholder, cle }: { children: ReactNode
       <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => { enBas.current = true; window.setTimeout(() => allerEnBas(true), 150) }} />
     </>
   )
-}
-
-/** Le prochain passage de la chef du projet (réveil horaire), relu toutes les 5 min. null : aucun connu. */
-function useProchainPassage(projetId: string, cle: string): string | null {
-  const [quand, setQuand] = useState<string | null>(null)
-  useEffect(() => {
-    let vivant = true
-    const lire = async () => {
-      const { data, error } = await supabase.rpc('prochain_passage_chef', { p_projet_id: projetId })
-      if (vivant && !error) setQuand(typeof data === 'string' ? data : null)
-    }
-    void lire()
-    const t = window.setInterval(lire, 5 * 60_000)
-    return () => { vivant = false; window.clearInterval(t) }
-  }, [projetId, cle])
-  return quand
 }
 
 /** Après ton message, tant que Claude n'a pas répondu dans le fil : qui va répondre, et quand. */
@@ -537,6 +523,11 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const tenus = (id: string) => chantierTenu(id, activites, taches, now, silenceMs)
   const demandeEnCours = !!etatOuEnEst(c, messages, tenus(c.id), now, tenus)?.enAttente
   const silence = presence.code === 'silencieux' && c.etat !== 'a_cadrer' ? situationSilence(c, activite, { now, prochainPassage, demandeEnCours, abandonMin: projets.find((p) => p.id === c.projet_id)?.delai_sans_signe_min }) : null
+  const projetDuFil = projets.find((p) => p.id === c.projet_id)
+  // Personne dessus (ni réservation) : ce qui va se passer, quand, et si Raphaël a un geste (src/lib/enAttente.ts).
+  const phraseSansPersonne = presence.code === 'personne' && c.etat !== 'a_cadrer'
+    ? phraseAttente(c, activite, { now, abandonMin: projetDuFil?.delai_sans_signe_min ?? DELAI_ABANDON_MIN, prochainPassage, autonome: projetAutonome(projetDuFil, now) })
+    : null
   const { historique, aChoisir } = ordreDuFil(fil)
   const sessionTient = presence.code === 'travaille' || (!!c.pris_par && !!c.pris_jusqu_a && Date.parse(c.pris_jusqu_a) > now.getTime())
   const attente = attenteReponse(fil, { maintenant: now.getTime(), sessionTient, prochainPassage })
@@ -615,9 +606,14 @@ function FilChantier({ chantierId }: { chantierId: string }) {
                 <p className="flex items-center gap-1.5 text-[15px] font-medium text-info" data-testid="titre-ou-en-est"><span className="point-vivant inline-block h-2 w-2 shrink-0 rounded-full bg-info" aria-hidden />Tu as demandé où ça en est</p>
               ) : (<>
                 <p className="flex items-center gap-1.5 text-[15px] font-medium"><IconePresence code={presence.code} />{presence.code === 'silencieux' ? 'Plus de nouvelles de Claude' : 'Personne n’y travaille'}</p>
-                {presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
-                {activite ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
-                {silence ? null : <p className="text-sm text-texte-2">Pour le faire avancer : copie la consigne et colle-la dans Claude Code, sur ce projet.</p>}
+                {silence ? null : presence.detail ? <p className="text-sm text-texte-2" data-testid="detail-presence">{presence.detail}</p> : null}
+                {activite && activite.pourcentage > 0 ? <Progression activite={activite} vive={false} compact legende={false} now={now} /> : null}
+                {silence ? null : phraseSansPersonne ? (
+                  <div className="space-y-1 text-sm" data-testid="situation-personne" data-geste={phraseSansPersonne.aFaire ? 'relancer' : 'rien'}>
+                    <p className="text-texte-2" data-testid="personne-quoi">{phraseSansPersonne.quoi}</p>
+                    <p className={`font-medium ${phraseSansPersonne.aFaire ? 'text-attention' : 'text-ok'}`} data-testid="personne-geste">{phraseSansPersonne.suite}{phraseSansPersonne.aFaire ? '' : ' Rien à faire de ton côté.'}</p>
+                  </div>
+                ) : null}
               </>)}
               {silence ? (
                 <div data-testid="situation-silence" data-geste={silence.geste} className="space-y-1 text-sm">
@@ -626,7 +622,10 @@ function FilChantier({ chantierId }: { chantierId: string }) {
                 </div>
               ) : null}
               {silence && silence.geste !== 'relancer' ? (
-                <Repliable titre={<span className="text-sm text-texte-2">Relancer quand même</span>}><BoutonsRelance chantier={c} /></Repliable>
+                <Repliable titre={<span className="text-sm text-texte-2">Je ne veux pas attendre : relancer maintenant</span>}>
+                  <p className="mb-1.5 text-xs text-texte-2">Utile seulement si tu es pressé. « Copier la consigne » te donne un texte à coller dans Claude Code sur ce projet ; « Demander où ça en est » fait répondre Claude ici.</p>
+                  <BoutonsRelance chantier={c} />
+                </Repliable>
               ) : <BoutonsRelance chantier={c} />}
             </div>
           </AFaire>

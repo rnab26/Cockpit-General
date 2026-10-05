@@ -37,6 +37,8 @@ pas le recasser.
 
 ## Brancher un projet
 
+Fiche et marche à suivre en une page : `docs/brancher.md`.
+
 ```bash
 git clone https://github.com/rnab26/Cockpit-General
 cockpit/scripts/brancher.sh --projet facepro --nom "FacePro" --depot rnab26/Facepro --dossier /chemin/vers/Facepro
