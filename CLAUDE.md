@@ -794,6 +794,7 @@ les 10 s tant qu'une réponse est attendue. Le bouton « Chantier » d'origine
 est retiré (`ouvrir_depuis_fil` est réservée aux sessions : il ne pouvait pas
 marcher) : Claude crée lui-même le chantier depuis le message.
 `app/scripts/verifier-bulle.mjs` prouve le trajet complet (projet jetable).
+**Complété le 5 oct. 2026 (chantier 607d08b1 + doublon 95042f6b « clarifier son rôle »)** : la bulle dit à quoi elle sert (encart « À quoi sert cette bulle » + état vide avec deux suggestions) ; chaque message porte nom ET heure (`auteurDe`, `heureLisible`) et son sujet en gras (`sujetDe`, UNE règle partagée avec la conversation) ; « Répondre » sous un message de Claude cite la phrase sélectionnée, sinon son début (`aCiter`, `avecCitation` : ligne « > » en tête du message, redessinée en encart) ; pièces jointes par `useMediasAJoindre` / `ecrireAvecMedias` (📎 + crayon, même brique que les fils) ; dictée par la reconnaissance vocale du NAVIGATEUR (`constructeurVoix`, fr-FR, Chrome Android/ordinateur, Safari ; micro refusé = message qui dit où l'autoriser ; navigateur sans voix = micro grisé + phrase). Limite : la vraie reconnaissance n'est pas testable dans le conteneur (le banc simule `webkitSpeechRecognition`) ; Chrome l'envoie à un serveur de Google, donc il faut internet.
 
 ## Tout ce qui s'ouvre par-dessus se quitte pareil (29 sept. 2026)
 
