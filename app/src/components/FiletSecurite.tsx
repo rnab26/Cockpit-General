@@ -4,7 +4,7 @@ import type { Projet } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
-import { phraseFilet, detailsFilet, ROLE_FILET, type EtatFiletBase } from '../lib/filet.ts'
+import { phraseFilet, detailsFilet, phraseReaction, ROLE_FILET, type EtatFiletBase, type EtatReaction } from '../lib/filet.ts'
 
 /**
  * RÉVEIL AUTOMATIQUE (« filet de sécurité », 0044) : la base surveille toute seule (pg_cron,
@@ -18,20 +18,35 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
   const [erreur, setErreur] = useState<string | null>(null)
   const [details, setDetails] = useState(false)
   const [plafond, setPlafond] = useState('')
+  const [delai, setDelai] = useState('')
+  const [ecart, setEcart] = useState('')
+  const [chefMin, setChefMin] = useState('')
+  const [cadence, setCadence] = useState('')
+  const [reaction, setReaction] = useState<EtatReaction | null>(null)
   const [envoi, setEnvoi] = useState(false)
 
   const charger = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_filet', { p_projet: projet.slug })
     if (error) { setErreur(messageErreur(error)); return }
     setErreur(null); setEtat(data as EtatFiletBase | null)
+    const r = await supabase.rpc('etat_reaction', { p_projet: projet.slug, p_jours: 7 })
+    if (!r.error) setReaction(r.data as EtatReaction | null)
   }, [projet.slug])
   useEffect(() => { void charger() }, [charger])
 
-  const appliquer = async (args: { p_actif?: boolean; p_plafond?: number }, ok: string) => {
+  const appliquer = async (args: { p_actif?: boolean; p_plafond?: number; p_delai_min?: number }, ok: string) => {
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_filet', { p_projet: projet.slug, ...args })
     setEnvoi(false)
     if (error) { toast.erreur(`Réveil automatique non réglé : ${messageErreur(error)}`); return }
+    toast.succes(ok); await charger()
+  }
+
+  const appliquerReactivite = async (rpc: 'regler_reactivite' | 'regler_cadence', args: Record<string, number>, ok: string) => {
+    setEnvoi(true)
+    const { error } = await supabase.rpc(rpc, rpc === 'regler_cadence' ? args : { p_projet: projet.slug, ...args })
+    setEnvoi(false)
+    if (error) { toast.erreur(`Réglage non enregistré : ${messageErreur(error)}`); return }
     toast.succes(ok); await charger()
   }
 
@@ -46,7 +61,14 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
   const Icone = ph.ton === 'alerte' ? ShieldAlert : ShieldCheck
   const teinte = ph.ton === 'alerte' ? 'text-alerte' : ph.ton === 'attente' ? 'text-accent' : 'text-ok'
   const test = etat.statut === 'test'
-  const ouvrirDetails = () => { setDetails(true); setPlafond(String(etat.plafond)) }
+  const ouvrirDetails = () => {
+    setDetails(true); setPlafond(String(etat.plafond)); setDelai(String(etat.delai_min))
+    setEcart(String(etat.reveil_ecart_min ?? 5)); setChefMin(String(etat.chef_reactif_min ?? 5)); setCadence(String(etat.cadence_min ?? 1))
+  }
+  const champ = (v: string, set: (x: string) => void, id: string) => (
+    <input value={v} onChange={(e) => set(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+      className="h-9 w-14 rounded-lg border border-bord bg-fond px-2 text-sm text-texte" data-testid={id} />
+  )
   const geste = ph.action
   return (
     <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="filet-securite" data-statut={etat.statut}>
@@ -89,6 +111,19 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
               <ul className="list-disc space-y-0.5 pl-4 text-xs leading-snug text-texte-2" data-testid="filet-details">
                 {detailsFilet(etat).map((l) => <li key={l}>{l}</li>)}
               </ul>
+              <p className="text-xs leading-snug" data-testid="filet-reaction">
+                <span className="font-medium">{phraseReaction(reaction).titre}</span>
+                <span className="text-texte-2"> · {phraseReaction(reaction).detail}</span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-texte-2">
+                  Réveil si ça attend depuis (min, 1 à 240)
+                  <input value={delai} onChange={(e) => setDelai(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+                    className="h-9 w-14 rounded-lg border border-bord bg-fond px-2 text-sm text-texte" data-testid="filet-delai" />
+                </label>
+                <Button taille="sm" variante="primaire" chargement={envoi} disabled={delai === '' || Number(delai) < 1 || Number(delai) > 240 || Number(delai) === etat.delai_min}
+                  onClick={() => void appliquer({ p_delai_min: Number(delai) }, `Réveil après ${delai} min d’attente.`)} data-testid="filet-delai-enregistrer">Enregistrer</Button>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1.5 text-xs text-texte-2">
                   Réveils par jour au plus (0 à 48)
@@ -97,6 +132,19 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
                 </label>
                 <Button taille="sm" variante="primaire" chargement={envoi} disabled={plafond === '' || Number(plafond) > 48 || Number(plafond) === etat.plafond}
                   onClick={() => void appliquer({ p_plafond: Number(plafond) }, `Limite : ${plafond} réveil(s) par jour.`)} data-testid="filet-enregistrer">Enregistrer</Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-texte-2">Entre deux réveils (min, 1 à 60) {champ(ecart, setEcart, 'filet-ecart')}</label>
+                <label className="flex items-center gap-1.5 text-xs text-texte-2">Chef muette après (min, 1 à 120) {champ(chefMin, setChefMin, 'filet-chef')}</label>
+                <Button taille="sm" variante="primaire" chargement={envoi}
+                  disabled={ecart === '' || chefMin === '' || Number(ecart) < 1 || Number(ecart) > 60 || Number(chefMin) < 1 || Number(chefMin) > 120
+                    || (Number(ecart) === (etat.reveil_ecart_min ?? 5) && Number(chefMin) === (etat.chef_reactif_min ?? 5))}
+                  onClick={() => void appliquerReactivite('regler_reactivite', { p_ecart_min: Number(ecart), p_chef_min: Number(chefMin) }, 'Réactivité enregistrée.')} data-testid="filet-reactivite-ok">Enregistrer</Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-texte-2">La base vérifie toutes les (min, 1 à 15, tous projets) {champ(cadence, setCadence, 'filet-cadence')}</label>
+                <Button taille="sm" variante="primaire" chargement={envoi} disabled={cadence === '' || Number(cadence) < 1 || Number(cadence) > 15 || Number(cadence) === (etat.cadence_min ?? 1)}
+                  onClick={() => void appliquerReactivite('regler_cadence', { p_min: Number(cadence) }, `Vérification toutes les ${cadence} min.`)} data-testid="filet-cadence-ok">Enregistrer</Button>
               </div>
             </div>
           ) : null}
