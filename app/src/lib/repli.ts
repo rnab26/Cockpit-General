@@ -43,13 +43,11 @@ export function comptesAToi(elements: readonly Pick<ElementAToi, 'type'>[]): { t
 }
 
 /**
- * UNE règle d'affichage des pastilles de filtre de « À toi de jouer » : au moins 2 types présents, OU au
- * moins une action ouverte (Raphaël, 5 oct. : « je ne vois pas la pastille Actions » — avec un seul type
- * la rangée était cachée). À zéro action et un seul type, rien : l'état vide / la liste suffisent.
+ * UNE règle d'affichage des pastilles « geste attendu », sous les tuiles (Raphaël, 6 oct. : « constamment tant qu'il y a
+ * des choses à faire ») : visibles dès qu'il reste UN élément, quel que soit son type ; rien à zéro.
  */
 export function pastillesVisibles(elements: readonly Pick<ElementAToi, 'type'>[]): boolean {
-  const c = comptesAToi(elements)
-  return c.length > 1 || c.some((x) => x.type === 'action')
+  return elements.length > 0
 }
 
 /** Filtre retenu valide ? Sinon (inconnu, ou plus rien de ce type) : pas de filtre, on ne cache jamais tout. */

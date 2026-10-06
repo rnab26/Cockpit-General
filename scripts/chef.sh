@@ -15,7 +15,7 @@
 #   scripts/chef.sh --releve        ce que lance la ROUTINE de réveil (30 sept.) : la chef → la passe ;
 #                                   une autre session (ouverte par /fire) → si la chef vit, seulement ce
 #                                   qui attend (réponses, « où ça en est », messages) ; sinon elle devient chef
-#   scripts/chef.sh --consignes     redonne les consignes GARDÉES des chantiers réservés par la passe dont l'agent n'est pas lancé (0068)
+#   scripts/chef.sh --consignes     redonne les consignes GARDÉES des chantiers réservés par la passe dont l'agent n'est pas lancé (0069)
 #   scripts/chef.sh --texte-routine le texte exact du prompt de la routine de réveil du projet
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
 #   scripts/chef.sh --reveil <trig_…> [--distante <session_…>] [--minute <0-59>]   note le réveil horaire
@@ -25,6 +25,8 @@
 #   scripts/chef.sh --filet <oui|non> [plafond/jour] [délai min]   filet de sécurité du projet (0044) : réveil auto si du travail attend
 #   scripts/chef.sh --filet-global <oui|non>       coupe/rallume la surveillance pg_cron de TOUS les projets (0044)
 #   scripts/chef.sh --ouverture-archive <id>      note l'archivage d'une session relais finie
+#   scripts/chef.sh --renouvellement <session_… | --erreur "raison">   note la nouvelle session chef ouverte quand l'ancienne dépasse son seuil de jetons (0068)
+#   scripts/chef.sh --seuil-jetons <n|0> [on|off]   seuil de jetons du renouvellement (50 000 à 5 000 000, 0 = jamais) et interrupteur
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
 #   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
 #                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0045), jamais le nombre d'agents
@@ -72,6 +74,8 @@ while [ $# -gt 0 ]; do
     --ouverture) mode="ouverture"; cible="${2:-}"; ouv_session="${3:-}"; if [ "$ouv_session" = "--erreur" ]; then ouv_session=""; ouv_erreur="${4:-}"; shift 4; else shift 3; fi ;;
     --relais-texte) mode="relais_texte"; shift ;;
     --verifs)  mode="verifs"; shift ;;
+    --renouvellement) mode="renouvellement"; cible="${2:-}"; if [ "$cible" = "--erreur" ]; then cible=""; ouv_erreur="${3:-}"; shift $(( $# < 3 ? $# : 3 )); else shift $(( $# < 2 ? $# : 2 )); fi ;;
+    --seuil-jetons) mode="seuil_jetons"; max="${2:-}"; cible="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --ouverture-archive) mode="ouverture_archive"; cible="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --fermeture) mode="fermeture"; cible="${2:-}"; max="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --filet) mode="filet"; cible="${2:-}"; max="${3:-}"; ouv_session="${4:-}"; shift $(( $# < 4 ? $# : 4 )) ;;
@@ -174,6 +178,16 @@ if [ "$mode" = "verifs" ]; then
 fi
 
 case "$mode" in
+  renouvellement)
+    [ -n "$cible" ] || [ -n "$ouv_erreur" ] || { echo "--renouvellement <session_…> (la nouvelle chef) ou --erreur \"raison\"." >&2; exit 2; }
+    "$SQL" "select renouvellement_note($P, '$(q "$cible")', '$(q "$ouv_erreur")')" >/dev/null 2>&1 \
+      && echo "Renouvellement noté pour $projet${cible:+ : $cible}${ouv_erreur:+ (échec : $ouv_erreur, nouvel essai dans 30 min)}." || { echo "Renouvellement non noté (cockpit injoignable ?)." >&2; exit 1; }
+    exit 0 ;;
+  seuil_jetons)
+    [[ "$max" =~ ^[0-9]+$ ]] || { echo "--seuil-jetons <n> [on|off] : n = 50000 à 5000000, 0 = jamais." >&2; exit 2; }
+    case "$cible" in off) v=false ;; *) v=true ;; esac
+    r=$("$SQL" "select regler_renouvellement($P, $v, $max) as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
+      && echo "Renouvellement de la session chef de $projet : seuil $max jetons ($v)." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
   ouverture_archive)
     [[ "$cible" =~ ^[0-9a-f-]{36}$ ]] || { echo "--ouverture-archive <id de l'ouverture>" >&2; exit 2; }
     [ "$(un "select ouverture_archive('$cible') as ok" | jq -r '.ok // false')" = "true" ] \
@@ -263,7 +277,7 @@ pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
 # 0041/0046 : une réservation sans signe de vie depuis le délai du projet (projets.delai_sans_signe_min, 3 min par défaut) est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
 un "select liberer_silencieux($P) as n" >/dev/null
-# --consignes (0068) : redonne les consignes GARDÉES des chantiers réservés par la passe dont l'agent n'est pas lancé.
+# --consignes (0069) : redonne les consignes GARDÉES des chantiers réservés par la passe dont l'agent n'est pas lancé.
 if [ "$mode" = "consignes" ]; then
   tout=$(un "select consignes_passe_a_relire($P) as r" | jq -c '.r // []')
   n=$(printf '%s' "$tout" | jq 'length')
@@ -318,6 +332,24 @@ if [ -n "$frein" ]; then
 fi
 depot=$(printf '%s' "$etat" | jq -r '.depot // ""')
 libres=$(( maxa - agents ))
+# RENOUVELLEMENT DE LA CHEF (0068, Raphaël : « 500 000 jetons pour une session, c'est déjà trop : elle finit ses
+# tâches en cours, on l'archive, une nouvelle session chef s'ouvre, tout seul »). UNE règle en base,
+# chef_a_renouveler : jetons du contexte (relevés par hooks/suivi.sh) >= seuil du projet. Au-dessus du seuil :
+# plus aucun nouvel agent ; quand les agents en cours ont fini, la chef ouvre sa remplaçante et s'archive.
+renouv_txt=""; renouv_ouvre=0
+if [ -z "$attente" ]; then
+  ro=$(un "select chef_a_renouveler($P) as r" | jq -c '.r // {}')
+  if [ "$(printf '%s' "$ro" | jq -r '.depasse // false')" = "true" ]; then
+    r_jet=$(printf '%s' "$ro" | jq -r '.jetons'); r_seuil=$(printf '%s' "$ro" | jq -r '.seuil')
+    if [ "$(printf '%s' "$ro" | jq -r '.peut_ouvrir')" = "true" ]; then renouv_ouvre=1
+    elif [ "$(printf '%s' "$ro" | jq -r '.erreur // empty')" != "" ] && [ "$agents" -eq 0 ]; then
+      renouv_txt="RENOUVELLEMENT de ta session échoué il y a moins de 30 min ($(printf '%s' "$ro" | jq -r '.erreur')) : nouvel essai plus tard ; en attendant tu continues normalement. "
+    else
+      libres=0
+      renouv_txt="RENOUVELLEMENT de la session chef : ta session porte $r_jet jetons (seuil $r_seuil). Ne lance AUCUN nouvel agent ; laisse finir ceux en cours ($agents) et relance cette commande à la fin de chacun : quand plus aucun ne tourne, tu ouvres ta remplaçante et tu t'archives. "
+    fi
+  fi
+fi
 # RENFORTS (0024) : Raphaël les demande d'un bouton dans l'app (une session par
 # SECTION en attente) ; la chef les OUVRE (create_session), les note, et archive
 # ceux qui ont fini. Jamais leur travail elle-même. Projets de test : jamais.
@@ -364,7 +396,22 @@ rien() {
   if [ -n "$renf_txt" ]; then printf '%s\n%s Fais seulement ces gestes, puis termine ta réponse en une ligne.\n' "$renf_txt" "$1"; else echo "RIEN — $1 Termine ta réponse en une ligne."; fi
   exit 0
 }
-# 0068 : les chantiers que la passe PRÉCÉDENTE a réservés sans qu'aucun agent démarre (consigne perdue, sortie
+if [ "$renouv_ouvre" = "1" ]; then
+  case "$MODELE_CODE" in sonnet) mid="claude-sonnet-5-5" ;; *) mid="$MODELE_CODE" ;; esac
+  nom_p=$(un "select nom from projets where slug = $P" | jq -r '.nom // empty'); nom_p="${nom_p:-$projet}"
+  printf '%s\n' "$renf_txt"
+  cat <<TXT
+RENOUVELLEMENT de la session chef de $projet : ta session porte $r_jet jetons (seuil $r_seuil) et plus aucun agent ne tourne. Fais exactement ceci, rien d'autre :
+1. create_session(title: "$nom_p · chef (renouvelée)", model: "$mid", tags: ["cockpit-chef-renouvelee", "cockpit-$projet"], source_url: "https://github.com/$depot", prompt: "Traite le projet $nom_p en lot : prends tous les chantiers qui attendent, lance des agents, et réponds dans le cockpit. (Session chef renouvelée : l'ancienne a dépassé son seuil de jetons, reprends où elle en était : le hook de démarrage te donne l'état.)"). Ce premier message la rend chef de $projet (hook), elle prend alors le relais et déplace le réveil horaire.
+2. Puis : $CHEF_CMD --renouvellement <session_… rendue>. Échec de create_session : $CHEF_CMD --renouvellement --erreur "<raison courte>" et continue normalement (nouvel essai dans 30 min).
+3. Si l'outil archive_session existe, archive TA session (get_session sans identifiant te donne ton id) ; sinon termine en une ligne : la nouvelle chef a pris la main, celle-ci ne dirige plus rien.
+Ne lance aucun agent, ne réponds à rien d'autre ici.
+TXT
+  exit 0
+fi
+[ -n "$renouv_txt" ] && renf_txt="${renf_txt}${renouv_txt}
+"
+# 0069 : les chantiers que la passe PRÉCÉDENTE a réservés sans qu'aucun agent démarre (consigne perdue, sortie
 # tronquée, session arrêtée) reviennent d'abord, avec LEUR consigne gardée en base, au lieu d'un RIEN. Ils occupent
 # des places ; une minute de grâce évite de les redonner à l'agent qu'on vient de lancer et qui n'a pas encore signalé.
 delai_passe=$(un "select passe_lancement_min as m from projets where id = '$pid'" | jq -r '.m // 5')
@@ -541,7 +588,7 @@ Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch
 ---"'
   echo
 }
-# 0068 : chaque consigne affichée est GARDÉE en base avec sa réservation (relisible : --consignes, ou le prochain
+# 0069 : chaque consigne affichée est GARDÉE en base avec sa réservation (relisible : --consignes, ou le prochain
 # appel tant que l'agent n'est pas lancé) ; sans agent lancé au bout de projets.passe_lancement_min, le chantier
 # est rendu à la file (liberer_silencieux_coeur). Une session qui perd la sortie ne perd plus rien.
 nres=0
