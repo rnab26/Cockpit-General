@@ -1,6 +1,6 @@
 // Filet de sécurité (src/lib/filet.ts, 0044) : les mots de l'écran pour chaque état.
 import { verifie, bilan } from './_assert.ts'
-import { phraseFilet, detailsFilet, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
+import { phraseFilet, detailsFilet, phraseReaction, dureeLisible, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
 
 console.log('verifier-filet')
 const base: EtatFiletBase = { statut: 'actif', projet_actif: true, plafond: 6, delai_min: 10, aujourdhui: 1, dernier_at: '2026-09-30T10:05:00Z',
@@ -28,4 +28,10 @@ for (const st of ['actif', 'eteint', 'global_eteint', 'cron_absent', 'sans_jeton
 }
 const d = detailsFilet({ ...base, attente: att }).join(' | ')
 verifie('détails : dernier réveil, ce qui attend, compte du jour, délai', /Dernier réveil : 13:05/.test(d) && /Ce qui attend/.test(d) && /1 sur 6/.test(d) && /10 min/.test(d), d)
+verifie('durées lisibles', dureeLisible(45) === '45 s' && dureeLisible(240) === '4 min' && dureeLisible(7800) === '2 h 10', [dureeLisible(45), dureeLisible(240), dureeLisible(7800)])
+const rx = { jours: 7, messages: 12, repondus: 10, sans_reponse: 2, mediane_s: 240, p90_s: 900, pire_s: 3000, dernier_s: 60, plus_ancien_sans_reponse: null }
+const pr = phraseReaction(rx)
+verifie('réaction : médiane en titre, détail avec p90 et sans réponse', /^Réponse en 4 min/.test(pr.titre) && /15 min/.test(pr.detail) && /2 sans réponse/.test(pr.detail), pr)
+verifie('réaction : rien à mesurer', /Pas encore/.test(phraseReaction({ ...rx, messages: 0 }).titre) && /Pas encore/.test(phraseReaction(null).titre))
+verifie('réaction : messages mais aucune réponse', /Aucune réponse/.test(phraseReaction({ ...rx, repondus: 0, mediane_s: null }).titre))
 bilan('verifier-filet')

@@ -49,7 +49,7 @@
 
 import { randomUUID, randomBytes } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3024,6 +3024,26 @@ async function controle49_passe_sans_perte() {
   verifie("(4) réglage à 0 : l'ancien comportement (au plus une ouverture par heure)", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === false);
 }
 
+// 50. Réactivité (0071) : le délai réel message → réponse est mesuré par UNE règle, le filet attend 3 min par défaut, et la session réveillée sert aussi les chantiers prenables.
+const PRX = randomUUID(), SLUG_RX = `test-verif-${rand}-rx`;
+async function controle50_reactivite() {
+  section("50. Réactivité (0071) : délai message → réponse mesuré, filet à 3 min, relève qui sert les chantiers prenables");
+  await sql(`insert into projets (id, slug, nom) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité')`);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.etat_reaction(text,int)', 'execute') as anon, has_function_privilege('service_role', 'cockpit.etat_reaction(text,int)', 'execute') as srv`);
+  verifie("etat_reaction : ni anon, mais le service", !droits.anon && droits.srv, droits);
+  verifie("filet_delai_min : 3 min par défaut (avant : 10)", (await une(`select filet_delai_min as d from projets where id = ${q(PRX)}`)).d === 3);
+  const vide = (await une(`select etat_reaction(${q(SLUG_RX)}) as r`)).r;
+  verifie("aucun message : 0 mesuré, médiane vide", vide.messages === 0 && vide.mediane_s === null, vide);
+  const m1 = randomUUID(), m2 = randomUUID();
+  await sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(m1)}, ${q(PRX)}, 'Raphaël', 'proprietaire', 'info', 'question un', now() - interval '30 minutes'), (${q(m2)}, ${q(PRX)}, 'Raphaël', 'proprietaire', 'info', 'question deux', now() - interval '20 minutes')`);
+  await sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, repond_a, created_at) values (${q(PRX)}, 'session', 'session', 'info', 'réponse un', ${q(m1)}, now() - interval '30 minutes' + interval '90 seconds')`);
+  const r = (await une(`select etat_reaction(${q(SLUG_RX)}, 7) as r`)).r;
+  verifie("un message répondu en 90 s, un sans réponse depuis 20 min : médiane 90 s, 1 sans réponse", r.messages === 2 && r.repondus === 1 && r.mediane_s === 90 && r.dernier_s === 90 && r.sans_reponse === 1 && !!r.plus_ancien_sans_reponse, r);
+  const chef = readFileSync(new URL("./chef.sh", import.meta.url), "utf8");
+  verifie("chef.sh : la relève sert aussi les chantiers prenables (plus de garde « -z attente » sur le mode autonome)", !/if \[ -z "\$attente" \] && \[ "\$\(printf '%s' "\$etat" \| jq -r '\.autonome/.test(chef) && /RELÈVE[^\n]*chantiers prenables/.test(chef));
+  verifie("chef.sh : une chef au-dessus de son seuil de jetons est relayée tout de suite par la session réveillée", /chef_depassee=\$\(un "select chef_a_renouveler/.test(chef) && /\[ "\$chef_depassee" != "true" \]/.test(chef));
+}
+
 // 43. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
 const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
 async function controle45_regroupement() {
@@ -3353,6 +3373,7 @@ try {
     controle46_fusion_a_la_creation,
     controle47_index_cles_etrangeres,
     controle49_passe_sans_perte,
+    controle50_reactivite,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3364,7 +3385,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];

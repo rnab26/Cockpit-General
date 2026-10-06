@@ -4,7 +4,7 @@ import type { Projet } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
-import { phraseFilet, detailsFilet, ROLE_FILET, type EtatFiletBase } from '../lib/filet.ts'
+import { phraseFilet, detailsFilet, phraseReaction, ROLE_FILET, type EtatFiletBase, type EtatReaction } from '../lib/filet.ts'
 
 /**
  * RÉVEIL AUTOMATIQUE (« filet de sécurité », 0044) : la base surveille toute seule (pg_cron,
@@ -18,16 +18,20 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
   const [erreur, setErreur] = useState<string | null>(null)
   const [details, setDetails] = useState(false)
   const [plafond, setPlafond] = useState('')
+  const [delai, setDelai] = useState('')
+  const [reaction, setReaction] = useState<EtatReaction | null>(null)
   const [envoi, setEnvoi] = useState(false)
 
   const charger = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_filet', { p_projet: projet.slug })
     if (error) { setErreur(messageErreur(error)); return }
     setErreur(null); setEtat(data as EtatFiletBase | null)
+    const r = await supabase.rpc('etat_reaction', { p_projet: projet.slug, p_jours: 7 })
+    if (!r.error) setReaction(r.data as EtatReaction | null)
   }, [projet.slug])
   useEffect(() => { void charger() }, [charger])
 
-  const appliquer = async (args: { p_actif?: boolean; p_plafond?: number }, ok: string) => {
+  const appliquer = async (args: { p_actif?: boolean; p_plafond?: number; p_delai_min?: number }, ok: string) => {
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_filet', { p_projet: projet.slug, ...args })
     setEnvoi(false)
@@ -46,7 +50,7 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
   const Icone = ph.ton === 'alerte' ? ShieldAlert : ShieldCheck
   const teinte = ph.ton === 'alerte' ? 'text-alerte' : ph.ton === 'attente' ? 'text-accent' : 'text-ok'
   const test = etat.statut === 'test'
-  const ouvrirDetails = () => { setDetails(true); setPlafond(String(etat.plafond)) }
+  const ouvrirDetails = () => { setDetails(true); setPlafond(String(etat.plafond)); setDelai(String(etat.delai_min)) }
   const geste = ph.action
   return (
     <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="filet-securite" data-statut={etat.statut}>
@@ -89,6 +93,19 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
               <ul className="list-disc space-y-0.5 pl-4 text-xs leading-snug text-texte-2" data-testid="filet-details">
                 {detailsFilet(etat).map((l) => <li key={l}>{l}</li>)}
               </ul>
+              <p className="text-xs leading-snug" data-testid="filet-reaction">
+                <span className="font-medium">{phraseReaction(reaction).titre}</span>
+                <span className="text-texte-2"> · {phraseReaction(reaction).detail}</span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-texte-2">
+                  Réveil si ça attend depuis (min, 1 à 240)
+                  <input value={delai} onChange={(e) => setDelai(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+                    className="h-9 w-14 rounded-lg border border-bord bg-fond px-2 text-sm text-texte" data-testid="filet-delai" />
+                </label>
+                <Button taille="sm" variante="primaire" chargement={envoi} disabled={delai === '' || Number(delai) < 1 || Number(delai) > 240 || Number(delai) === etat.delai_min}
+                  onClick={() => void appliquer({ p_delai_min: Number(delai) }, `Réveil après ${delai} min d’attente.`)} data-testid="filet-delai-enregistrer">Enregistrer</Button>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1.5 text-xs text-texte-2">
                   Réveils par jour au plus (0 à 48)

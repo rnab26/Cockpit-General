@@ -56,3 +56,29 @@ export function phraseFilet(e: EtatFiletBase): PhraseFilet {
       return { ton: 'ok', titre: 'Tout est en ordre', detail: e.dernier_at ? `Rien n’attend. Dernier réveil à ${hhmm(e.dernier_at)}.` : 'Rien n’attend.' }
   }
 }
+
+/** Délai réel entre un message de Raphaël et la première réponse d'une session (etat_reaction, 0071). */
+export interface EtatReaction {
+  jours: number; messages: number; repondus: number; sans_reponse: number
+  mediane_s: number | null; p90_s: number | null; pire_s: number | null; dernier_s: number | null
+  plus_ancien_sans_reponse: string | null
+}
+
+/** « 45 s », « 4 min », « 2 h 10 » : une durée lisible, jamais de décimale. */
+export function dureeLisible(s: number): string {
+  if (s < 90) return `${Math.max(1, Math.round(s))} s`
+  if (s < 5400) return `${Math.round(s / 60)} min`
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60)
+  return m === 60 ? `${h + 1} h` : `${h} h${m ? ` ${String(m).padStart(2, '0')}` : ''}`
+}
+
+/** Une phrase : « Réponse en 4 min en général ». Texte d'attente si rien à mesurer. */
+export function phraseReaction(r: EtatReaction | null | undefined): { titre: string; detail: string } {
+  if (!r || r.messages === 0) return { titre: 'Pas encore de message à mesurer', detail: `Aucun message de toi sur ${r?.jours ?? 7} jours.` }
+  const parts: string[] = []
+  if (r.dernier_s != null) parts.push(`dernière réponse en ${dureeLisible(r.dernier_s)}`)
+  if (r.p90_s != null) parts.push(`9 sur 10 en moins de ${dureeLisible(r.p90_s)}`)
+  if (r.sans_reponse > 0) parts.push(`${r.sans_reponse} sans réponse pour l’instant`)
+  if (r.mediane_s == null) return { titre: 'Aucune réponse mesurée', detail: parts.join(' · ') }
+  return { titre: `Réponse en ${dureeLisible(r.mediane_s)} en général`, detail: `Sur ${r.repondus} message(s) en ${r.jours} j${parts.length ? ' · ' + parts.join(' · ') : ''}.` }
+}
