@@ -43,3 +43,6 @@ scripts/emplacement.sh
 scripts/analyser-depot.py
 scripts/apercu-emplacement.mjs
 modeles/cockpit-emplacement.sh
+scripts/clarte.py
+scripts/prochaine-migration.sh
+scripts/deployer-fonction.sh
