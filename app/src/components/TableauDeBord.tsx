@@ -6,7 +6,7 @@ import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { attenteAToi, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
+import { attenteAToi, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
@@ -133,6 +133,39 @@ function idsDe(t: Tableau, cle: CleTuile): string[] {
   return t.fini.map((c) => c.id)
 }
 
+/**
+ * Les pastilles « geste attendu » (Questions, À tester, Actions…) vivent SOUS les tuiles, en permanence tant qu'il
+ * reste quelque chose à faire (Raphaël, 6 oct. : elles n'apparaissaient que dans « À toi de jouer » et
+ * disparaissaient avec lui). Toucher une pastille filtre « À toi de jouer » (même préférence) ; la même, ou « Tout »,
+ * retire le filtre. Rien à faire : rien affiché. UNE règle : `comptesAToi`.
+ */
+function PastillesAToi({ elements }: { elements: ElementAToi[] }) {
+  const g = useGlobal()
+  const toast = useToast()
+  const comptes = useMemo(() => comptesAToi(elements), [elements])
+  const filtre = filtreEffectif(g.prefs[PREF_FILTRE_A_TOI], elements)
+  if (!pastillesVisibles(elements)) return null
+  const choisir = async (type: TypeAToi | null) => {
+    try { await g.poser(PREF_FILTRE_A_TOI, type && filtre !== type ? type : 'tout') }
+    catch (err) { toast.erreur(`Filtre non retenu : ${err instanceof Error ? err.message : String(err)}`); return }
+    document.querySelector('[data-testid="a-toi"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  return (
+    <div className="-mx-1 mt-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Ce qui t’attend, par geste" data-testid="filtre-a-toi">
+      {[{ type: null as TypeAToi | null, n: elements.length }, ...comptes].map((x) => {
+        const actif = filtre === x.type
+        return (
+          <button key={x.type ?? 'tout'} type="button" aria-pressed={actif} data-testid="filtre-a-toi-puce" data-type={x.type ?? 'tout'}
+            onClick={() => void choisir(x.type)}
+            className={`inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-sm ${actif ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-bord text-texte-2'}`}>
+            {x.type ? LIBELLE_FILTRE_A_TOI[x.type] : 'Tout'}<span className="tabular-nums">{x.n}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
   const g = useGlobal()
   const [liste, setListe] = useState<Liste | null>(null)
@@ -158,6 +191,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           )
         })}
       </div>
+      <PastillesAToi elements={t.aToi} />
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-texte-2">
         <button type="button" onClick={changerFenetre} data-testid="fenetre-ou-jen-suis" className="underline-offset-2 hover:underline">fini = {libelleFenetre} · changer</button>
         <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-ou-jen-suis" className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline">
@@ -357,7 +391,6 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
   const tri: TriAToi = g.prefs.tri_a_toi === 'anciens' ? 'anciens' : 'recents'
   // Filtre par geste attendu (Questions, À tester…) : retenu par personne, jamais une liste vide cachée.
   const filtre = filtreEffectif(g.prefs[PREF_FILTRE_A_TOI], elements)
-  const comptes = useMemo(() => comptesAToi(elements), [elements])
   const tries = useMemo(() => trierAToi(filtrerAToi(elements, filtre), tri), [elements, filtre, tri])
   const visibles = tout ? tries : tries.slice(0, A_TOI_VISIBLES)
   const nDepasses = elements.filter((e) => e.avanceDepuis).length
@@ -373,20 +406,6 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
         <>
-          {pastillesVisibles(elements) ? (
-            <div className="-mx-1 mb-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Filtrer par geste attendu" data-testid="filtre-a-toi">
-              {[{ type: null as null, n: elements.length }, ...comptes].map((x) => {
-                const actif = filtre === x.type
-                return (
-                  <button key={x.type ?? 'tout'} type="button" aria-pressed={actif} data-testid="filtre-a-toi-puce" data-type={x.type ?? 'tout'}
-                    onClick={() => { setTout(false); void retenir(PREF_FILTRE_A_TOI, x.type ?? 'tout', 'Filtre') }}
-                    className={`inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-sm ${actif ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-bord text-texte-2'}`}>
-                    {x.type ? LIBELLE_FILTRE_A_TOI[x.type] : 'Tout'}<span className="tabular-nums">{x.n}</span>
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
           {elements.length > 1 ? (
             <div className="mb-1 flex items-center justify-between gap-2 px-1 text-xs text-texte-2">
               <span data-testid="a-toi-depasses">{nDepasses ? `${nDepasses} peut-être plus à jour, en bas : Claude les revoit` : ''}</span>

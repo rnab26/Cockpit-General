@@ -1,4 +1,4 @@
--- 0068 — Passe du chef sans perte (6 oct. 2026, chantier d48bafe7).
+-- 0069 — Passe du chef sans perte (6 oct. 2026, chantier d48bafe7).
 -- Raphaël : « je n'ai pas besoin à chaque fois d'un chat ou d'une nouvelle session pour régler ce genre de
 -- correctif ; l'application doit marcher au quotidien sans interruption ». Constaté : chef.sh RÉSERVE les
 -- chantiers dès qu'il les affiche ; si la session qui l'appelle perd la consigne (sortie tronquée, arrêt),

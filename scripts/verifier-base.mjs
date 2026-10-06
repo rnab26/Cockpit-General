@@ -1869,7 +1869,7 @@ async function controle30_agents_fantomes() {
     try { return execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A, CLAUDE_CODE_SESSION_ID: sid, ...env }, stdio: ["ignore", "pipe", "pipe"] }); }
     catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
   };
-  await sql(`delete from passe_consignes where projet_id = ${q(P1)}`);  // 0068 : les consignes gardées des passes d'avant ne sont pas le sujet ici
+  await sql(`delete from passe_consignes where projet_id = ${q(P1)}`);  // 0069 : les consignes gardées des passes d'avant ne sont pas le sujet ici
   await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
   await sql(`update chefs set max_agents = 3 where projet_id = ${q(P1)}`);
   for (const d of ["Fantôme 1", "Fantôme 2", "Fantôme 3"]) await prov(d);
@@ -2980,10 +2980,10 @@ async function controle48_renfort_fini_pas_erreur() {
   verifie("muet AVEC travail restant : « erreur » qui dit le reste (jamais « 3 h »)", b.statut === "erreur" && /il reste 1 chantier/.test(b.erreur ?? "") && !/3 h/.test(b.erreur ?? ""), JSON.stringify(b));
 }
 
-// 49. Passe du chef sans perte (0068, chantier d48bafe7) : consigne gardée et relisible, réservation rendue si aucun agent ne démarre, relais qui ne redemande pas la même ouverture.
+// 49. Passe du chef sans perte (0069, chantier d48bafe7) : consigne gardée et relisible, réservation rendue si aucun agent ne démarre, relais qui ne redemande pas la même ouverture.
 const PPS = randomUUID(), SLUG_PS = `test-verif-${rand}-ps`;
 async function controle49_passe_sans_perte() {
-  section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0068)");
+  section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
   await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.consignes_passe_a_relire(text)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.noter_consigne_passe(text,uuid,text,text,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.consignes_passe_a_relire(text)', 'execute') as srv`);
   verifie("consignes de la passe : réservées au service", !droits.anon && !droits.auth && droits.srv, droits);
