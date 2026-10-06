@@ -486,7 +486,7 @@ try {
   const vpNav = page.viewportSize()
   const barreNav = await page.getByTestId('barre-onglets').boundingBox()
   const bTabsNav = await page.getByTestId('barre-onglets').getByRole('tab').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
-  verifie('barre du bas : 5 onglets sur une ligne, collée en bas de l’écran, dans la largeur', bTabsNav.length === 5 && new Set(bTabsNav).size === 1 && Math.abs(barreNav.y + barreNav.height - vpNav.height) <= 1 && barreNav.width <= vpNav.width, [bTabsNav, barreNav, vpNav])
+  verifie('barre du bas : 6 onglets sur une ligne, collée en bas de l’écran, dans la largeur', bTabsNav.length === 6 && new Set(bTabsNav).size === 1 && Math.abs(barreNav.y + barreNav.height - vpNav.height) <= 1 && barreNav.width <= vpNav.width, [bTabsNav, barreNav, vpNav])
   verifie('barre du bas : onglet « Projet » allumé, les trois icônes de la page et la loupe d’en-tête n’existent plus', (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('onglets-projet').count() === 0 && await page.locator('header [data-testid="loupe"]').count() === 0)
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
   const barreBasNav = await page.getByTestId('barre-onglets').boundingBox()
