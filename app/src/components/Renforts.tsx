@@ -7,7 +7,7 @@ import { useToast } from '../ui/Toast.tsx'
 import { DELAI_ABANDON_MIN, DELAI_ABANDON_MIN_BORNES, erreurDelaiSansSigne } from '../lib/silence.ts'
 import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
-import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
+import { LIBELLE_LANCER, LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
   AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, peutRelancer, erreurEffacement, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type Renfort, type ResultatDemande,
@@ -202,12 +202,12 @@ function TraiterCeProjet({ projet, etat, avecNom }: { projet: Projet; etat: Etat
     window.open(LIEN_CLAUDE_CODE, '_blank', 'noopener')
   }
   return (
-    <section aria-label={`Traiter ce projet${avecNom ? ` · ${projet.nom}` : ''}`} data-testid="traiter" data-projet={projet.slug}
+    <section aria-label={`${LIBELLE_LANCER}${avecNom ? ` · ${projet.nom}` : ''}`} data-testid="traiter" data-projet={projet.slug}
       className="rounded-2xl border-2 border-accent bg-carte px-3 py-3">
-      <h2 className="text-[15px] font-semibold">Traiter ce projet{avecNom ? <span className="ml-1.5 text-sm font-normal text-texte-2">{projet.nom}</span> : null}</h2>
+      <h2 className="text-[15px] font-semibold">{LIBELLE_LANCER}{avecNom ? <span className="ml-1.5 text-sm font-normal text-texte-2">{projet.nom}</span> : null}</h2>
       <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="traiter-etat">{etatTraiter(etat, g.now)}</p>
       <Button variante="primaire" pleine className="mt-2.5" onClick={() => void lancer()} data-testid="traiter-lancer">
-        <Play size={16} aria-hidden />Copier la phrase et ouvrir Claude Code
+        <Play size={16} aria-hidden />{LIBELLE_LANCER}
       </Button>
       <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-snug text-texte-2" data-testid="traiter-etapes">
         {etapesTraiter(projet.depot).map((e) => <li key={e}>{e}</li>)}
