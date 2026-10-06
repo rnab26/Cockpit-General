@@ -148,6 +148,9 @@ demandes des utilisateurs, progression des autres sessions.
   Son écran passe alors à « Réponse arrivée ».
 - **Une question à un humain** : `scripts/cockpit-demander.sh --chantier … --question … --pourquoi … --option "libellé|aide|recommande"`
   (`--action` pour quelque chose qu'il doit faire). Jamais dans un artefact.
+  **Bloqué en attendant Raphaël (un fichier, une photo, une décision) = tu POSES la
+  question (ou l'action) avant de t'arrêter, jamais seulement dans ta réponse** : sinon le
+  chantier reste « à lancer » sans qu'il sache que c'est lui qu'on attend (FacePro, 6 oct.).
 - **UNE ACTION MANUELLE = LIEN EXACT + ÉTAPES NUMÉROTÉES + TEXTE PRÊT À
   COLLER** (Raphaël, 30 sept. : « à chaque fois il faut que j'aille chercher
   et ce n'est pas assez précis ; des liens précis, des démarches précises pour
