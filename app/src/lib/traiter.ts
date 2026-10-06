@@ -11,6 +11,8 @@
 import { dateRelative } from './dates.ts'
 
 export const LIEN_CLAUDE_CODE = 'https://claude.ai/code'
+/** Libellé du bouton (chantier 6a69c7b4 : Raphaël cherchait « lancer une session autonome »). Une seule source. */
+export const LIBELLE_LANCER = 'Lancer une session autonome'
 
 export function phraseTraiter(nom: string): string {
   return `Traite le projet ${nom} en lot : prends tous les chantiers qui attendent, lance des agents, et réponds dans le cockpit.`
@@ -33,8 +35,8 @@ export function etatTraiter(e: EtatTraiter, now: Date): string {
 /** Les trois gestes, dans l'ordre. Sans dépôt renseigné, on ne l'invente pas. */
 export function etapesTraiter(depot: string | null): string[] {
   return [
-    `Ouvre Claude Code et choisis le dépôt ${depot ?? 'de ce projet'}.`,
-    'Colle la phrase (déjà copiée) et envoie.',
-    'Reviens ici : les chantiers avancent, tu réponds dans le fil.',
+    `Dans claude.ai/code (s'ouvre au toucher du bouton), choisis le dépôt ${depot ?? 'de ce projet'} puis « Nouvelle session ».`,
+    'Colle la phrase (déjà copiée) dans le champ de message et envoie.',
+    'Reviens ici : la session prend les chantiers en lot (fréquence et nombre d’agents : Renforts › Réglages, plus bas).',
   ]
 }

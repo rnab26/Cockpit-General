@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { verifie, bilan } from './_assert.ts'
-import { aGarder, aMettreEnCache, avecIdentifiant, classerReponse, cibleDe, delaiPanneauDe, delaiReessai, estLectureEnFile, estPanneServeur, niveauAffichage, phraseBandeau, reponseGardee, resumeDe } from '../src/lib/fileAttente.ts'
+import { aGarder, aMettreEnCache, avecIdentifiant, classerReponse, cibleDe, delaiPanneauDe, delaiReessai, estLectureEnFile, estPanneServeur, fusionnerEnAttente, messagesEnAttente, niveauAffichage, phraseBandeau, reponseGardee, resumeDe } from '../src/lib/fileAttente.ts'
 
 const B = 'https://x.supabase.co'
 console.log('ce qu’on garde')
@@ -78,7 +78,7 @@ verifie('délai croissant plafonné', delaiReessai(1) === 30_000 && delaiReessai
 console.log('chaque RPC de l’app est classée : lecture (cache) ou écriture (file)')
 // Régression 0058 : projets_visibles (lecture) était prise pour une écriture, donc gardée hors ligne avec une
 // réponse fabriquée au lieu d'être servie du cache. Une RPC neuve doit être rangée ici EXPRESSÉMENT.
-const ECRITURES = new Set(['fusionner_chantiers', 'trancher_fusion', 'signaler_ne_marche_pas', 'revoquer_invitation', 'retirer_reveil_immediat', 'restaurer_champ', 'repondre_message', 'relancer_renfort', 'regler_sans_signe', 'regler_renforts_erreurs', 'regler_renforts_auto', 'regler_renforts', 'regler_modeles', 'regler_filet', 'regler_fermeture', 'regler_bascule_seuils', 'regler_bascule', 'regler_autonome', 'mettre_de_cote', 'liberer_chantier', 'inviter', 'effacer_erreurs_renforts', 'deplacer_chantier', 'demander_verification', 'demander_renforts', 'demander_ou_en_est', 'corriger_chantier', 'changer_role_membre', 'changer_droits_membre', 'certifier_chantier', 'accepter_invitation', 'abandonner_chantier'])
+const ECRITURES = new Set(['fusionner_chantiers', 'trancher_fusion', 'signaler_ne_marche_pas', 'revoquer_invitation', 'retirer_reveil_immediat', 'restaurer_champ', 'repondre_message', 'relancer_renfort', 'regler_sans_signe', 'regler_renforts_erreurs', 'regler_renforts_auto', 'regler_renforts', 'regler_renouvellement', 'regler_modeles', 'regler_filet', 'regler_fermeture', 'regler_bascule_seuils', 'regler_bascule', 'regler_autonome', 'mettre_de_cote', 'liberer_chantier', 'inviter', 'effacer_erreurs_renforts', 'deplacer_chantier', 'demander_verification', 'demander_renforts', 'demander_ou_en_est', 'corriger_chantier', 'changer_role_membre', 'changer_droits_membre', 'certifier_chantier', 'accepter_invitation', 'abandonner_chantier'])
 const noms = new Set<string>()
 const parcourir = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) parcourir(p); else if (/\.tsx?$/.test(f)) for (const m of readFileSync(p, 'utf8').matchAll(/rpc\('([a-z_0-9]+)'/g)) noms.add(m[1]) } }
 parcourir(new URL('../src', import.meta.url).pathname)
@@ -92,4 +92,21 @@ for (const n of [...noms].sort()) {
   verifie(`${n} : ${ECRITURES.has(n) ? 'écriture' : 'lecture'}`, ECRITURES.has(n) ? ecriture : lecture)
 }
 for (const n of ['projets_visibles', 'invitation_info', 'invitations_du_projet', 'journal_invites']) verifie(`${n} servie du cache hors ligne`, aMettreEnCache('POST', `${B}/rest/v1/rpc/${n}`))
+console.log('messages écrits hors ligne : visibles dans la bulle et le fil (6 oct. 2026)')
+const el = (id: string, extra: Record<string, unknown> = {}, statut: 'attente' | 'refuse' = 'attente', ajoute = 2000) => ({
+  id: 'e' + id, ajoute, uid: null, methode: 'POST', url: `${B}/rest/v1/messages`, entetes: [], essais: 0, statut, resume: '', apercu: '',
+  corps: { type: 'texte' as const, v: JSON.stringify({ id, projet_id: 'p1', chantier_id: 'c1', auteur: 'Raphaël', auteur_type: 'proprietaire', kind: 'info', corps: 'bonjour ' + id, ...extra }) },
+})
+const serveur = { id: 's1', projet_id: 'p1', chantier_id: 'c1', auteur: 'Claude', auteur_type: 'session', kind: 'info', corps: 'ok', created_at: '2026-10-06T10:00:00.000Z' } as never
+const att = messagesEnAttente([el('m1')])
+verifie('un ajout gardé devient un message affichable, marqué', att.length === 1 && att[0].en_attente_envoi === true && att[0].corps === 'bonjour m1' && att[0].chantier_id === 'c1' && att[0].envoi_refuse === false, att)
+verifie('sa date = l’heure d’écriture sur l’appareil', att[0].created_at === new Date(2000).toISOString())
+verifie('refusé par le serveur : marqué refusé (jamais caché)', messagesEnAttente([el('m2', {}, 'refuse')])[0].envoi_refuse === true)
+verifie('une autre table, un PATCH, une RPC : pas un message', messagesEnAttente([{ ...el('x'), url: `${B}/rest/v1/chantiers` }, { ...el('y'), methode: 'PATCH' }, { ...el('z'), url: `${B}/rest/v1/rpc/repondre_message` }]).length === 0)
+verifie('corps illisible ou sans id : ignoré sans planter', messagesEnAttente([{ ...el('a'), corps: { type: 'texte' as const, v: '{pas du json' } }, { ...el('b'), corps: { type: 'texte' as const, v: '{"corps":"x"}' } }]).length === 0)
+const f = fusionnerEnAttente([serveur], [el('m3', {}, 'attente', Date.parse('2026-10-06T11:00:00Z'))])
+verifie('fil = vrais messages + en attente, dans l’ordre du temps', f.length === 2 && f[0].id === 's1' && f[1].id === 'm3', f.map((m) => m.id))
+const deja = fusionnerEnAttente([{ ...(serveur as object), id: 'm4', auteur_type: 'proprietaire', created_at: '2026-10-06T10:01:00.000Z' } as never], [el('m4')])
+verifie('même identifiant côté serveur : jamais doublé', deja.length === 1)
+verifie('après envoi (élément retiré de la file) : plus de marque', !fusionnerEnAttente([serveur], []).some((m) => m.en_attente_envoi))
 bilan('verifier-file-attente')

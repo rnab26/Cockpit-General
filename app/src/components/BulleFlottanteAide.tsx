@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
-import { HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
+import { CloudOff, HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
 import { useGlobal } from '../contexte.ts'
+import { PastilleReponse, useMarquerLu } from './PastilleReponse.tsx'
+import { cleFil } from '../lib/lecture.ts'
 import { VUE_TOUT } from '../hooks/useDonnees.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
+import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, constructeurVoix, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { heureLisible } from '../lib/dates.ts'
 import type { Message } from '../lib/types.ts'
+import { aToi } from '../lib/entonnoir.ts'
+import { AvecProjet } from './AvecProjet.tsx'
+import { BlocQuestion } from './BlocQuestion.tsx'
+import { BlocValidation } from './BlocValidation.tsx'
+import { BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
 
 /**
  * Bulle flottante d'aide (allumée par défaut ; l'extinction est dans « Réglages
@@ -23,10 +31,14 @@ import type { Message } from '../lib/types.ts'
  */
 type Voix = { start: () => void; stop: () => void; abort: () => void; lang: string; interimResults: boolean; continuous: boolean; onresult: ((e: any) => void) | null; onerror: ((e: any) => void) | null; onend: (() => void) | null }
 
-export function BulleFlottanteAide() {
+export function BulleFlottanteAide({ projetOuvertId, onFermer, sansBouton = false }: { projetOuvertId?: string | null; onFermer?: () => void; sansBouton?: boolean } = {}) {
   const g = useGlobal()
   const toast = useToast()
-  const [ouvert, setOuvert] = useState(false)
+  const [ouvertLocal, setOuvertLocal] = useState(false)
+  // Piloté par la barre du bas (liste des discussions) ou, sans barre, par le bouton flottant.
+  const pilote = projetOuvertId !== undefined
+  const ouvert = pilote ? projetOuvertId !== null : ouvertLocal
+  const setOuvert = (v: boolean) => { if (pilote) { if (!v) onFermer?.() } else setOuvertLocal(v) }
   const [envoi, setEnvoi] = useState(false)
   const [texte, setTexte] = useState('')
   const [citation, setCitation] = useState<string | null>(null)
@@ -36,9 +48,11 @@ export function BulleFlottanteAide() {
   const voix = useRef<Voix | null>(null)
   const Reco = typeof window !== 'undefined' ? constructeurVoix(window) : null
 
-  const projet = projetDeLaBulle(g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
+  const projet = projetDeLaBulle(pilote ? (projetOuvertId ?? (g.vue === VUE_TOUT ? null : g.vue)) : g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
   const pj = useMediasAJoindre(projet?.id ?? '', null)
   const fil = projet ? filDeLaBulle(g.messages, projet.id) : []
+  // Bulle ouverte = fil lu ; fermée, la pastille « Réponse » reste sur le bouton tant qu'une réponse n'est pas lue.
+  useMarquerLu(projet ? cleFil(projet.id, null) : '', ouvert && projet ? fil : [], g.prefs, g.poser)
   useEffect(() => { if (ouvert) fin.current?.scrollIntoView({ block: 'end' }) }, [ouvert, fil.length])
   // Sa question attend une réponse : la bulle ouverte relit toutes les 10 s (le direct l'apporte déjà s'il est
   // actif ; ceci couvre le direct coupé, sans recharger l'app en continu quand rien n'est attendu).
@@ -96,11 +110,12 @@ export function BulleFlottanteAide() {
   return (
     <>
       {/* À droite, au-dessus de la barre système et du bas de page : ne cache aucun bouton. */}
-      {!ouvert && (
+      {!ouvert && !sansBouton && (
         <button type="button" onClick={() => setOuvert(true)} aria-label="Ouvrir l’aide" data-testid="bulle-aide-bouton" title={`Aide · ${projet.nom}`}
           style={{ bottom: 'calc(max(var(--nav-h, 0px), env(safe-area-inset-bottom)) + 76px)', right: 'calc(env(safe-area-inset-right) + 12px)' }}
           className="fixed z-30 flex h-11 w-11 items-center justify-center rounded-full border border-bord bg-carte text-texte shadow-lg hover:bg-carte-2 focus:outline-none focus:ring-2 focus:ring-accent/40">
           <HelpCircle size={22} />
+          {projet ? <PastilleReponse cle={cleFil(projet.id, null)} className="absolute -right-1 -top-2 !px-1.5" /> : null}
         </button>
       )}
       {ouvert ? <Dialog ouvert onFermer={() => setOuvert(false)} titre={`Aide · ${projet.nom}`} brouillon={!vide || !!citation}
@@ -146,6 +161,7 @@ export function BulleFlottanteAide() {
             </div>
           ) : fil.map((m) => <MessageBulle key={m.id} m={m} admin={g.admin} now={g.now} onRepondre={repondreA} />)}
           {attend ? <p className="text-center text-xs text-texte-2" data-testid="bulle-aide-attente">Claude n’a pas encore répondu : la réponse arrivera ici.</p> : null}
+          <AFaireIci projetId={projet.id} />
           <div ref={fin} />
         </div>
       </Dialog> : null}
@@ -176,6 +192,11 @@ function MessageBulle({ m, admin, now, onRepondre }: { m: Message; admin: boolea
         {citation ? <p className={`mb-1 rounded-lg border-l-4 px-2 py-1 text-sm ${claude ? 'border-accent bg-carte' : 'border-white/70 bg-white/15'}`} data-testid="bulle-aide-citee">{citation}</p> : null}
         {reste ? (claude ? <TexteLong texte={reste} /> : <p className="whitespace-pre-wrap">{reste}</p>) : null}
         {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} petit /></div> : null}
+        {m.en_attente_envoi ? (
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-white/90" data-testid="message-en-attente" role="status">
+            <CloudOff size={12} aria-hidden />{phraseMessageEnAttente(m)}
+          </p>
+        ) : null}
         {claude ? (
           <button type="button" data-testid="bulle-aide-repondre" onPointerDownCapture={(e) => { (e.currentTarget as HTMLElement).dataset.sel = selection() }}
             onClick={(e) => onRepondre(m.corps, (e.currentTarget as HTMLElement).dataset.sel || selection())}
@@ -185,5 +206,90 @@ function MessageBulle({ m, admin, now, onRepondre }: { m: Message; admin: boolea
         ) : null}
       </div>
     </div>
+  )
+}
+
+/**
+ * « Discussions » (barre du bas, à côté de la loupe) : un chat par projet, le plus récemment actif en haut,
+ * pastille « Réponse » quand Claude a répondu et que ce n'est pas lu. Toucher une ligne ouvre le chat du projet.
+ */
+export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: boolean; onFermer: () => void; onChoisir: (projetId: string) => void }) {
+  const g = useGlobal()
+  const [filtre, setFiltre] = useState('')
+  if (!ouvert) return null
+  const lignes = g.projets
+    .filter((p) => bulleActive(g.prefs, p.id))
+    .map((p) => { const fil = filDeLaBulle(g.messages, p.id); return { p, dernier: fil.length ? fil[fil.length - 1] : null } })
+    .sort((a, b) => (b.dernier?.created_at ?? '').localeCompare(a.dernier?.created_at ?? '') || a.p.nom.localeCompare(b.p.nom))
+  const q = filtre.trim().toLowerCase()
+  const vues = q ? lignes.filter((l) => l.p.nom.toLowerCase().includes(q)) : lignes
+  return (
+    <Dialog ouvert onFermer={onFermer} titre="Discussions">
+      <div data-testid="discussions-liste" className="min-h-[30dvh] space-y-2">
+        {lignes.length > 6 ? (
+          <input type="search" value={filtre} onChange={(e) => setFiltre(e.target.value)} placeholder="Chercher un projet…" aria-label="Chercher un projet" data-testid="discussions-filtre"
+            className="h-10 w-full rounded-xl border border-bord bg-fond px-3 text-[15px] text-texte focus:outline-none focus:ring-2 focus:ring-accent/40" />
+        ) : null}
+        {g.projets.length === 0 ? (
+          <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-vide">Aucun projet pour l’instant : il n’y a pas encore de discussion.</p>
+        ) : lignes.length === 0 ? (
+          <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-vide">Les discussions sont éteintes sur tous les projets (case « Bulle d’aide sur ce projet » dans Réglages du projet).</p>
+        ) : vues.length === 0 ? (
+          <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-aucun">Aucun projet ne s’appelle « {filtre} ».</p>
+        ) : vues.map(({ p, dernier }) => {
+          const nl = g.nonLus.get(cleFil(p.id, null))
+          const { sujet, reste } = sujetDe(citationDe(dernier?.corps ?? null).reste)
+          const apercu = dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${(sujet ?? reste ?? '').replace(/\s+/g, ' ').trim() || (mediasDe(dernier).length ? resumeMedias(mediasDe(dernier)) : '…')}` : 'Pas encore de message'
+          return (
+            <button key={p.id} type="button" onClick={() => onChoisir(p.id)} data-testid="discussion-ligne" data-projet={p.slug}
+              className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-bord bg-carte px-3 py-2 text-left hover:bg-carte-2 active:bg-carte-2">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-carte-2 text-base font-semibold text-accent" aria-hidden>{p.nom.slice(0, 1).toUpperCase()}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="truncate font-semibold text-texte">{p.nom}</span>
+                  {dernier ? <span className="shrink-0 text-[11px] text-texte-2">{heureLisible(dernier.created_at, g.now)}</span> : null}
+                </span>
+                <span className="block truncate text-sm text-texte-2" data-testid="discussion-apercu">{apercu}</span>
+              </span>
+              {nl ? <span data-testid="discussion-pastille" data-nombre={nl.n} aria-label={`${nl.n} réponse${nl.n > 1 ? 's' : ''} de Claude à lire`} className="min-w-5 shrink-0 rounded-full bg-alerte px-1.5 text-center text-xs font-bold leading-5 text-white">{nl.n}</span> : null}
+            </button>
+          )
+        })}
+      </div>
+    </Dialog>
+  )
+}
+
+/**
+ * Ce que Claude attend de toi sur ce projet, répondable ICI (Raphaël, 6 oct. : « autant me faire faire
+ * directement ce qu'il y a à faire dans son message, plutôt que je quitte la discussion »). Mêmes cartes
+ * et même règle que « À toi de jouer » (`aToi`) : question, action, vérification, cadrage, fusion.
+ * En dernier dans la discussion, comme les cartes d'un fil ; rien d'affiché quand il n'y a rien à faire.
+ */
+function AFaireIci({ projetId }: { projetId: string }) {
+  const g = useGlobal()
+  const els = aToi(g.chantiers, g.messages, projetId, g.activites, g.taches)
+  // Une vérification montre déjà les questions de son chantier : pas de doublon.
+  const verifies = new Set(els.filter((e) => e.type === 'a_verifier' && e.chantier).map((e) => e.chantier!.id))
+  const liste = els.filter((e) => {
+    if (e.type === 'question' || e.type === 'action') return !!e.message && !(e.chantier && verifies.has(e.chantier.id))
+    if (e.type === 'a_verifier' || e.type === 'a_cadrer') return !!e.chantier
+    return e.type === 'fusion' && !!e.message
+  })
+  if (!liste.length) return null
+  return (
+    <section className="space-y-2 border-t border-bord pt-2" data-testid="bulle-a-faire" aria-label="À faire ici">
+      <p className="text-xs font-semibold text-accent">À faire ici ({liste.length})</p>
+      <AvecProjet projetId={projetId}>
+        {liste.map((e) => (
+          <div key={e.cle} data-testid="bulle-a-faire-carte" data-type={e.type}>
+            {e.type === 'a_verifier' ? <BlocValidation chantier={e.chantier!} />
+              : e.type === 'a_cadrer' ? <BlocCadrer chantier={e.chantier!} />
+              : e.type === 'fusion' ? <BlocFusion message={e.message!} />
+              : <>{e.chantier ? <p className="mb-0.5 text-[11px] text-texte-2">Chantier : {e.chantier.titre}</p> : null}<BlocQuestion message={e.message!} /></>}
+          </div>
+        ))}
+      </AvecProjet>
+    </section>
   )
 }
