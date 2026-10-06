@@ -72,28 +72,43 @@ try {
   page.on('pageerror', (e) => erreurs.push(String(e)))
   const panneau = page.getByTestId('bulle-aide-panneau')
 
-  // --- 1. vue « Tout » : la bulle est là sans réglage
+  // La bulle flottante n'existe plus quand la barre du bas est là (chantier 6bb045e0) : les chats vivent dans l'onglet « Discussions ».
+  const ongletDisc = page.getByTestId('onglet-barre-discussions')
+  const ligneChat = page.locator(`[data-testid="discussion-ligne"][data-projet="${SLUG}"]`)
+  const ouvrirChat = async () => {
+    if (!(await page.getByTestId('discussions-liste').isVisible().catch(() => false))) await ongletDisc.click()
+    await ligneChat.click()
+  }
+
+  // --- 1. vue « Tout » : l'onglet Discussions est là, la liste montre le projet
   await page.goto(BASE + '#tout', { waitUntil: 'domcontentloaded' })
-  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 20000 }).catch(() => {})
-  verifie('vue « Tout » : la bulle est visible sans aucun réglage', await page.getByTestId('bulle-aide-bouton').isVisible().catch(() => false))
-  await page.screenshot({ path: `${CAPTURES}/bulle-tout.png` })
+  await ongletDisc.waitFor({ timeout: 20000 }).catch(() => {})
+  verifie('vue « Tout » : l’onglet « Discussions » est dans la barre du bas, plus de bulle flottante', await ongletDisc.isVisible().catch(() => false) && await page.getByTestId('bulle-aide-bouton').count() === 0)
+  const ordre = await page.getByTestId('barre-onglets').getByRole('tab').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+  verifie('ordre : … loupe, Discussions, Coûts …', ordre.indexOf('onglet-barre-discussions') === ordre.indexOf('loupe') + 1, ordre)
+  await ongletDisc.click()
+  await page.getByTestId('discussions-liste').waitFor({ timeout: 10000 })
+  verifie('la liste des discussions montre le projet, « Pas encore de message » (état vide du chat)', await ligneChat.count() === 1 && (await ligneChat.innerText()).includes('Pas encore de message'))
+  await page.screenshot({ path: `${CAPTURES}/discussions-liste.png` })
+  await page.keyboard.press('Escape')
+  await page.getByTestId('discussions-liste').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  verifie('Échap ferme la liste', await page.getByTestId('discussions-liste').count() === 0)
 
   // --- 2. vue du projet jetable
   await page.goto(BASE + `#projet=${SLUG}`, { waitUntil: 'domcontentloaded' })
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByTestId('vue-projet').waitFor({ timeout: 20000 })
-  const bulle = page.getByTestId('bulle-aide-bouton')
-  await bulle.waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('vue projet : la bulle est visible sans réglage (l’app ne plante pas)', await bulle.isVisible().catch(() => false))
-  const b = await bulle.boundingBox()
+  await ongletDisc.waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('vue projet : l’onglet « Discussions » est visible sans réglage', await ongletDisc.isVisible().catch(() => false))
   const vp = page.viewportSize()
-  verifie('téléphone : à droite, dans l’écran, au-dessus du bas de page (≥ 60 px du bord bas)', !!b && b.x >= 0 && b.x + b.width <= vp.width - 8 && b.y + b.height <= vp.height - 60, b)
+  const bb = await page.getByTestId('barre-onglets').getByRole('tab').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.right)] }))
+  verifie('téléphone : 6 onglets sur une ligne, dans la largeur', bb.length === 6 && new Set(bb.map((x) => x[0])).size === 1 && bb.every((x) => x[1] <= vp.width), bb)
   const sansDefilement = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   verifie('aucun défilement horizontal', sansDefilement <= 0, sansDefilement)
   await page.screenshot({ path: `${CAPTURES}/bulle-projet.png` })
 
   // --- 3. un message tapé dans la bulle = message libre du fil du projet
-  await bulle.click()
+  await ouvrirChat()
   await panneau.waitFor({ timeout: 5000 })
   verifie('fil vide : le message d’aide s’affiche', await page.getByTestId('bulle-aide-vide').isVisible())
   const question = 'Comment ranger un chantier dans une section ?'
@@ -148,25 +163,27 @@ try {
   verifie('téléphone : toujours aucun défilement horizontal bulle ouverte', await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 0)
   await page.screenshot({ path: `${CAPTURES}/bulle-ouverte-2.png` })
   await page.keyboard.press('Escape')
-  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 5000 })
+  await page.getByTestId('discussions-liste').waitFor({ timeout: 5000 })
+  verifie('fermer le chat ramène à la liste, la ligne montre le dernier message', (await ligneChat.innerText()).includes('Toi : Le bleu'), await ligneChat.innerText())
+  await page.keyboard.press('Escape')
 
   // --- 4 quinquies. voix : micro refusé = message clair ; navigateur sans voix = état « non supporté »
   await page.evaluate(() => sessionStorage.setItem('voixErreur', '1'))
-  await page.getByTestId('bulle-aide-bouton').click()
+  await ouvrirChat()
   await page.getByTestId('bulle-aide-micro').click()
   await page.getByText('Micro refusé', { exact: false }).waitFor({ timeout: 5000 }).catch(() => {})
   verifie('micro refusé : un message dit comment l’autoriser', await page.getByText('Micro refusé', { exact: false }).count() >= 1)
   await page.evaluate(() => { sessionStorage.removeItem('voixErreur'); sessionStorage.setItem('sansVoix', '1') })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 20000 })
-  await page.getByTestId('bulle-aide-bouton').click()
+  await ongletDisc.waitFor({ timeout: 20000 })
+  await ouvrirChat()
   verifie('navigateur sans reconnaissance vocale : état « non supporté » dit clairement', (await page.getByTestId('bulle-aide-micro').getAttribute('data-voix')) === 'non-supporte' && await page.getByTestId('bulle-aide-voix-non').isVisible())
   await page.getByTestId('bulle-aide-micro').click()
   await page.getByText('dictée vocale n’est pas disponible', { exact: false }).waitFor({ timeout: 5000 }).catch(() => {})
   verifie('… et toucher le micro explique pourquoi (message)', await page.getByText('dictée vocale n’est pas disponible', { exact: false }).count() >= 1)
   await page.evaluate(() => sessionStorage.removeItem('sansVoix'))
   await page.keyboard.press('Escape')
-  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 5000 })
+  await page.keyboard.press('Escape')
 
   // --- 5. le réglage d'extinction reste dans « Réglages du projet »
   await page.getByTestId('onglet-vue-reglages').click()
@@ -175,11 +192,17 @@ try {
   await caseBulle.waitFor({ timeout: 5000 })
   verifie('Réglages du projet : « Bulle d’aide » cochée par défaut', await caseBulle.isChecked())
   await caseBulle.uncheck()
-  await page.getByTestId('bulle-aide-bouton').waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
-  verifie('décochée : la bulle disparaît', await page.getByTestId('bulle-aide-bouton').count() === 0)
+  await page.waitForTimeout(800)
+  await ongletDisc.click()
+  await page.getByTestId('discussions-liste').waitFor({ timeout: 8000 })
+  verifie('décochée : le projet n’a plus de chat dans la liste', await ligneChat.count() === 0)
+  await page.keyboard.press('Escape')
   await caseBulle.check()
-  await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 8000 }).catch(() => {})
-  verifie('recochée : la bulle revient', await page.getByTestId('bulle-aide-bouton').count() === 1)
+  await page.waitForTimeout(800)
+  await ongletDisc.click()
+  await page.getByTestId('discussions-liste').waitFor({ timeout: 8000 })
+  verifie('recochée : le chat revient dans la liste', await ligneChat.count() === 1)
+  await page.keyboard.press('Escape')
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++

@@ -93,6 +93,8 @@ const ids = (l: { c: { id: string } }[]) => l.map((x) => x.c.id)
 // 1. Les tuiles = les longueurs des listes
 verifie('tuiles = longueurs des listes (pour toi, ça avance, en pause, fini)',
   t.tuiles.pourToi === t.aToi.length && t.tuiles.caAvance === t.caAvance.length && t.tuiles.enPause === t.pretALancer.length + t.sansSession.length && t.tuiles.fini === t.fini.length, t.tuiles)
+verifie('de côté : le chantier reporté (pas l’archivé) est compté et listé, jamais dans « à lancer »',
+  t.tuiles.deCote === t.deCote.length && t.deCote.every((c) => c.etat === 'reporte' && !c.archived_at) && t.deCote.some((c) => c.id === 'reporte') && !ids(t.pretALancer).includes('reporte'), t.deCote.map((c) => c.id))
 verifie('pour toi : 2 questions, à vérifier ×3, à cadrer, 2 bloqués (8) — sans le « vérifie pour moi » en cours', t.tuiles.pourToi === 8 && !t.aToi.some((e) => e.chantier?.id === 'verif-demandee'), t.aToi.map((e) => e.cle))
 verifie('0016 : après le verdict « c’est bon », la ligne dit de confirmer d’un toucher', /c’est bon, confirme/.test(attenteAToi(t.aToi.find((e) => e.chantier?.id === 'verif-verdict')!, now)))
 verifie('fini : seulement le certifié du jour', t.fini.map((c) => c.id).join(',') === 'fini', t.fini.map((c) => c.id))

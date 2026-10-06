@@ -24,6 +24,7 @@ export function messageErreur(e: unknown): string {
   if (typeof e === 'string') return e
   const o = e as { message?: string; details?: string; hint?: string; code?: string }
   const m = o.message ?? 'Erreur inconnue'
+  if (/schema cache|PGRST00[0-3]|connection timeout|upstream request timeout|504|503|502/i.test(m)) return 'Le serveur de données est surchargé ou redémarre. Le cockpit réessaie tout seul.'
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Pas de réseau : la base est injoignable.'
   if (/JWT|not authenticated|401/i.test(m)) return 'Session expirée : reconnecte-toi.'
   if (/row-level security|permission denied/i.test(m)) return 'Tu n’as pas le droit de faire ça sur ce projet.'
