@@ -6,7 +6,7 @@ import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
+import { attenteAToi, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
@@ -624,11 +624,15 @@ function resumeSimple(r: Tableau['resume']): string {
 export const A_LANCER_VISIBLES = 5
 
 function SectionPretALancer({ lignes, avecProjet, replie, onToggle }: { lignes: LigneALancer[]; avecProjet: boolean } & Repli) {
+  const g = useGlobal()
   const [tout, setTout] = useState(false)
-  const visibles = tout ? lignes : lignes.slice(0, A_LANCER_VISIBLES)
+  // Les nouveaux sont toujours visibles, même au-delà des 5 lignes (ils arrivent en tête).
+  const nouveaux = lignes.filter((l) => estNouveau(l.c, g.now)).length
+  const visibles = tout ? lignes : lignes.slice(0, Math.max(A_LANCER_VISIBLES, nouveaux))
   return (
     <section aria-label="Prêt à lancer" data-testid="a-lancer">
       <TitreSection numero={3} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
+      {replie || !nouveaux ? null : <p className="-mt-1 mb-1.5 text-xs text-texte-2" data-testid="a-lancer-nouveaux">Dont {nouveaux} nouveau{nouveaux > 1 ? 'x' : ''} (créé{nouveaux > 1 ? 's' : ''} depuis moins de 24 h), en haut de la liste.</p>}
       {replie ? null : lignes.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien à lancer : tout ce qui est prêt est déjà en route.</p>
       ) : (
@@ -654,7 +658,10 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
     <li data-testid="ligne-a-lancer" data-ligne-chantier={l.c.id}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button type="button" onClick={() => g.ouvrirChantier(l.c.projet_id, l.c.id)} className="min-w-0 flex-1 text-left">
-          <span className="line-clamp-2 text-[15px] font-medium leading-snug">{l.c.titre}</span>
+          <span className="line-clamp-2 text-[15px] font-medium leading-snug">
+            {estNouveau(l.c, g.now) ? <span className="mr-1.5 rounded-md bg-accent px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase text-accent-fg" data-testid="badge-nouveau">Nouveau</span> : null}
+            {l.c.titre}
+          </span>
           {avecProjet || details ? (
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <Projet projetId={l.c.projet_id} /> : null}
