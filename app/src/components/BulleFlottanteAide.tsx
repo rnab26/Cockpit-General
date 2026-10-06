@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
+import { CloudOff, HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
 import { useGlobal } from '../contexte.ts'
 import { VUE_TOUT } from '../hooks/useDonnees.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
+import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, constructeurVoix, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
@@ -176,6 +177,11 @@ function MessageBulle({ m, admin, now, onRepondre }: { m: Message; admin: boolea
         {citation ? <p className={`mb-1 rounded-lg border-l-4 px-2 py-1 text-sm ${claude ? 'border-accent bg-carte' : 'border-white/70 bg-white/15'}`} data-testid="bulle-aide-citee">{citation}</p> : null}
         {reste ? (claude ? <TexteLong texte={reste} /> : <p className="whitespace-pre-wrap">{reste}</p>) : null}
         {medias.length ? <div className="mt-1.5"><MediasMessage medias={medias} petit /></div> : null}
+        {m.en_attente_envoi ? (
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-white/90" data-testid="message-en-attente" role="status">
+            <CloudOff size={12} aria-hidden />{phraseMessageEnAttente(m)}
+          </p>
+        ) : null}
         {claude ? (
           <button type="button" data-testid="bulle-aide-repondre" onPointerDownCapture={(e) => { (e.currentTarget as HTMLElement).dataset.sel = selection() }}
             onClick={(e) => onRepondre(m.corps, (e.currentTarget as HTMLElement).dataset.sel || selection())}
