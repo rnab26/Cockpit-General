@@ -3159,6 +3159,25 @@ async function controle45_regroupement() {
 
 // 51. Réactivité (0071) : la chef qui ne répond pas ne compte plus comme « vivante », le filet réveille, le délai de réponse est mesuré, les réglages bornés.
 const PRX = randomUUID(), SLUG_RX = `test-verif-${rand}-rx`;
+const PRC = randomUUID(), SLUG_RC = `test-verif-${rand}-rc`;
+async function controle53_reveil_chantier() {
+  section("53. Un chantier qui arrive réveille la chef tout de suite (0074) : mêmes sûretés que le message");
+  await sql(`insert into projets (id, slug, nom) values (${q(PRC)}, ${q(SLUG_RC)}, 'Projet de test réveil chantier')`);
+  const rien = async () => (await une(`select rien_a_servir(${q(PRC)}, 'chantier') as r`)).r;
+  const trig = await une(`select count(*)::int as n from pg_trigger where tgrelid = 'cockpit.chantiers'::regclass and tgname = 'reveil_sur_chantier' and not tgisinternal`);
+  verifie("le déclencheur reveil_sur_chantier existe", trig.n === 1, trig);
+  verifie("rien à prendre : rien_a_servir(« chantier ») est vrai", (await rien()) === true);
+  await sql(`update projets set autonome_toujours = true where id = ${q(PRC)}`);
+  await sql(`insert into chantiers (projet_id, titre, etat) values (${q(PRC)}, 'Chantier neuf', 'libre')`);
+  verifie("mode autonome allumé + un chantier libre : il y a quelque chose à servir", (await rien()) === false);
+  await sql(`update projets set autonome_toujours = false where id = ${q(PRC)}`);
+  verifie("mode autonome éteint : rien à servir (le chantier attend, pas de réveil)", (await rien()) === true);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.rien_a_servir(uuid, text)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.rien_a_servir(uuid, text)', 'execute') as auth`);
+  verifie("rien_a_servir : fermée au public", !droits.anon && !droits.auth, droits);
+  await sql(`update projets set autonome_toujours = true where id = ${q(PRC)}`);
+  const r = await une(`select reveiller_chef(${q(PRC)}, null, 'chantier') as r`);
+  verifie("projet de test sans jeton : aucun envoi (pas_configure)", r.r === "pas_configure", r);
+}
 async function controle51_reactivite() {
   section("51. Réactivité (0071) : chef muette relevée, filet, délai de réponse mesuré, réglages visibles");
   await sql(`insert into projets (id, slug, nom, filet_delai_min) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité', 1)`);
@@ -3534,6 +3553,7 @@ try {
     controle50_retour_carte_bloque,
     controle51_reactivite,
     controle52_mesure_reaction,
+    controle53_reveil_chantier,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3545,7 +3565,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
