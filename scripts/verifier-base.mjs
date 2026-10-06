@@ -2732,7 +2732,7 @@ async function controle38_filet_securite() {
   const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
   // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, à la cadence réglée (0071 : toutes les minutes par défaut)", cron?.active === true && /^(\*|\*\/([1-9]|1[0-5])|[0-2]-59\/3) \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
     has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
     has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
@@ -2761,11 +2761,11 @@ async function controle38_filet_securite() {
     && (await une(`select filet_ecart(12)::text b`)).b === "02:00:00" && (await une(`select filet_ecart(48)::text c`)).c === "00:30:00");
   await sql(`update filet_reveils set at = now() - interval '3 hours' where projet_id = ${q(P11)}`);
   await sql(`update projets set filet_plafond_jour = 6 where id = ${q(P11)}`);
-  verifie("plafond 6 (un réveil toutes les 4 h) : le dernier date de 3 h, trop tôt", await passe() === "trop_tot" && await journal() === 1);
-  verifie("etat_filet dit quand le prochain réveil est possible (ecart_min 240, prochain_at futur)",
-    await (async () => { const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e; return e.ecart_min === 240 && Date.parse(e.prochain_at) > Date.now(); })());
+  // 0071 : tant qu'il y a eu moins de 3 réveils dans l'heure, l'écart est court (reveil_ecart_min, 5 min) : plus de blocage de 2 à 4 h.
+  verifie("0071 : dernier réveil il y a 3 h, moins de 3 dans l'heure : le réveil repart (plus d'attente de 4 h)", await passe() === "simule" && await journal() === 2);
+  verifie("etat_filet dit quand le prochain réveil est possible (ecart_min 5, prochain_at futur)",
+    await (async () => { const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e; return e.ecart_min === 5 && Date.parse(e.prochain_at) > Date.now(); })());
   await sql(`update projets set filet_plafond_jour = 12 where id = ${q(P11)}`);
-  verifie("plafond 12 (un réveil toutes les 2 h) : 3 h après, le réveil repart", await passe() === "simule" && await journal() === 2);
   // Le plafond du jour reste une limite dure : 2 réveils déjà faits dans les 24 h, espacés de plus que l'écart.
   await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
   await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) values (${q(P11)}, 'a', 'simule', true, now() - interval '23 hours'), (${q(P11)}, 'b', 'simule', true, now() - interval '20 hours')`);
