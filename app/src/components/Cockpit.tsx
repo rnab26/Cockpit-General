@@ -333,12 +333,13 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {reglages}
         {aideInstallation}
         {projetsMembres}
-        {barreBas ? (
+        {/* Clavier ouvert = barreBas faux : tant qu'une discussion est ouverte on garde le même arbre, sinon le chat se refermait dès qu'on touchait le champ de saisie. */}
+        {barreBas || discussion.liste || discussion.projetId ? (
           <>
             <ListeDiscussions ouvert={discussion.liste} onFermer={() => setDiscussion({ liste: false, projetId: null })} onChoisir={(id) => setDiscussion({ liste: false, projetId: id })} />
             {/* Fermer un chat ramène à la liste des discussions. */}
             <BulleFlottanteAide sansBouton projetOuvertId={discussion.projetId} onFermer={() => setDiscussion({ liste: true, projetId: null })} />
-            <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche, discussion.liste || !!discussion.projetId)} onChoisir={surBarre} aToi={aToiTotal} reponses={nbNonLus} />
+            {barreBas ? <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche, discussion.liste || !!discussion.projetId)} onChoisir={surBarre} aToi={aToiTotal} reponses={nbNonLus} /> : null}
           </>
         ) : <BulleFlottanteAide />}
       </div>
