@@ -11,6 +11,50 @@ export interface EtatFiletBase {
   dernier_pourquoi: string | null
   attente: { n: number; raisons: string[] }
   vivant: boolean
+  /** 0071 : réglages de réactivité (affichés, modifiables dans « Détails »). */
+  cadence_min?: number
+  reveil_ecart_min?: number
+  chef_reactif_min?: number
+  chef?: { repond: boolean; raison: string } | null
+  reponse?: ReponseMesuree | null
+}
+
+/** 0071 : délai réel entre un message de Raphaël et la première réponse d'une session (7 derniers jours, mesuré en base). */
+export interface ReponseMesuree {
+  n: number
+  repondus: number
+  en_attente: number
+  attente_depuis_s: number | null
+  mediane_s: number | null
+  p90_s: number | null
+  dernier_s: number | null
+}
+
+/** « 45 s », « 4 min », « 2 h 10 » : une durée lisible, jamais de secondes au-delà d'une minute. */
+export function dureeCourte(s: number | null | undefined): string {
+  if (s == null || !Number.isFinite(s)) return '—'
+  if (s < 90) return `${Math.max(0, Math.round(s))} s`
+  if (s < 5400) return `${Math.round(s / 60)} min`
+  const h = Math.floor(s / 3600)
+  const m = Math.round((s - h * 3600) / 60)
+  return m === 60 ? `${h + 1} h` : `${h} h${m ? ` ${String(m).padStart(2, '0')}` : ''}`
+}
+
+/** Une phrase : combien de temps Claude met à répondre, et ce qui attend encore. Vide s'il n'y a rien à dire. */
+export function phraseReponse(r: ReponseMesuree | null | undefined): string {
+  if (!r || r.n === 0) return ''
+  const l: string[] = []
+  if (r.repondus > 0) l.push(`Réponse en ${dureeCourte(r.mediane_s)} en général (la dernière : ${dureeCourte(r.dernier_s)}, 9 sur 10 sous ${dureeCourte(r.p90_s)})`)
+  if (r.en_attente > 0) l.push(`${r.en_attente} message(s) attendent depuis ${dureeCourte(r.attente_depuis_s)} au plus`)
+  return `${l.join(' · ')}.`
+}
+
+/** Pourquoi la chef est jugée muette (vide si elle répond). */
+export function phraseChef(c: EtatFiletBase['chef']): string {
+  if (!c || c.repond) return ''
+  if (c.raison === 'jetons') return 'La session chef est pleine (trop de jetons) : la prochaine session réveillée la relève.'
+  if (c.raison === 'sans_passe') return 'La session chef ne réagit pas au travail qui attend : la prochaine session réveillée la relève.'
+  return ''
 }
 
 /** Le geste concret quand ça bloque : `jeton` ouvre le champ du jeton, `rallumer` rallume, `plafond` ouvre la limite. */
@@ -38,6 +82,11 @@ export function detailsFilet(e: EtatFiletBase): string[] {
   l.push(e.attente.n > 0 ? `Ce qui attend : ${e.attente.raisons.join(', ')}.` : 'Rien n’attend.')
   l.push(`Réveils aujourd’hui : ${e.aujourdhui} sur ${e.plafond} au plus.`)
   l.push(`Claude est réveillé si le travail attend depuis ${e.delai_min} min et qu’aucune session ne travaille.`)
+  if (e.cadence_min) l.push(`La base vérifie toutes les ${e.cadence_min} min, puis réveille au plus toutes les ${e.reveil_ecart_min ?? 5} min ; une session chef est jugée muette après ${e.chef_reactif_min ?? 5} min.`)
+  const rep = phraseReponse(e.reponse)
+  if (rep) l.push(rep)
+  const ch = phraseChef(e.chef)
+  if (ch) l.push(ch)
   return l
 }
 

@@ -1,6 +1,6 @@
 // Filet de sécurité (src/lib/filet.ts, 0044) : les mots de l'écran pour chaque état.
 import { verifie, bilan } from './_assert.ts'
-import { phraseFilet, detailsFilet, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
+import { phraseFilet, detailsFilet, dureeCourte, phraseReponse, phraseChef, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
 
 console.log('verifier-filet')
 const base: EtatFiletBase = { statut: 'actif', projet_actif: true, plafond: 6, delai_min: 10, aujourdhui: 1, dernier_at: '2026-09-30T10:05:00Z',
@@ -28,4 +28,13 @@ for (const st of ['actif', 'eteint', 'global_eteint', 'cron_absent', 'sans_jeton
 }
 const d = detailsFilet({ ...base, attente: att }).join(' | ')
 verifie('détails : dernier réveil, ce qui attend, compte du jour, délai', /Dernier réveil : 13:05/.test(d) && /Ce qui attend/.test(d) && /1 sur 6/.test(d) && /10 min/.test(d), d)
+// 0071 : délai réel de réponse et chef muette, en mots.
+verifie('durées lisibles', dureeCourte(45) === '45 s' && dureeCourte(240) === '4 min' && dureeCourte(7800) === '2 h 10' && dureeCourte(null) === '—')
+const rep = { n: 5, repondus: 4, en_attente: 1, attente_depuis_s: 600, mediane_s: 240, p90_s: 900, dernier_s: 30 }
+const pr = phraseReponse(rep)
+verifie('phrase de réponse : médiane, dernière, attente', /4 min/.test(pr) && /30 s/.test(pr) && /1 message\(s\) attendent depuis 10 min/.test(pr), pr)
+verifie('aucun message : pas de phrase', phraseReponse({ ...rep, n: 0 }) === '' && phraseReponse(null) === '')
+verifie('chef muette : dit pourquoi ; chef qui répond : rien', /pleine/.test(phraseChef({ repond: false, raison: 'jetons' })) && /ne réagit pas/.test(phraseChef({ repond: false, raison: 'sans_passe' })) && phraseChef({ repond: true, raison: 'ok' }) === '')
+const d2 = detailsFilet({ ...base, attente: att, cadence_min: 1, reveil_ecart_min: 5, chef_reactif_min: 5, reponse: rep, chef: { repond: false, raison: 'jetons' } }).join(' | ')
+verifie('détails : cadence, délai de réponse, chef pleine', /toutes les 1 min/.test(d2) && /Réponse en 4 min/.test(d2) && /pleine/.test(d2), d2)
 bilan('verifier-filet')

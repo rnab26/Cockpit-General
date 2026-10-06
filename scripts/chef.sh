@@ -31,6 +31,8 @@
 #   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
 #                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0045), jamais le nombre d'agents
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
+#   scripts/chef.sh --reactivite <écart réveils min 1-60> <réaction chef min 1-120>   réveil immédiat au plus toutes les N min ; chef jugée muette après N min (0071)
+#   scripts/chef.sh --cadence <min 1-15>        fréquence de la boucle de la base (libération + filet), toutes les N min (0071)
 #   scripts/chef.sh --sans-signe <min>  délai « sans signe de vie » du projet : au-delà, une réservation est libérée (1 à 120, défaut 3 ; 0046)
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
@@ -67,6 +69,8 @@ while [ $# -gt 0 ]; do
     --fenetre) usage_type="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --reset)   usage_reset="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --bascule) mode="bascule"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
+    --reactivite) mode="reactivite"; max="${2:-}"; cible="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
+    --cadence) mode="cadence"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --sans-signe) mode="sans_signe"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --renforts) mode="renforts"; max="${2:-}"; shift 2 ;;
@@ -245,6 +249,14 @@ case "$mode" in
     [[ "$max" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--frein <heures> \"<raison>\" (0 = lever)." >&2; exit 2; }
     r=$("$SQL" "select freiner($P, $max, '$(q "$freinraison")') as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
       && { [ "$max" = "0" ] && echo "Frein levé pour $projet." || echo "Frein posé sur $projet pour $max h : 1 agent, aucune revue, aucun nouveau renfort."; } || { echo "Frein refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
+  reactivite)
+    [[ "$max" =~ ^[0-9]+$ ]] && [[ "$cible" =~ ^[0-9]+$ ]] || { echo "--reactivite <écart entre réveils 1-60 min> <réaction de la chef 1-120 min>." >&2; exit 2; }
+    r=$("$SQL" "select regler_reactivite($P, $max, $cible) as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r.projet' >/dev/null \
+      && echo "Réactivité de $projet : réveil immédiat au plus toutes les $max min, chef jugée muette après $cible min." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
+  cadence)
+    [[ "$max" =~ ^[0-9]+$ ]] || { echo "--cadence <minutes 1-15>." >&2; exit 2; }
+    r=$("$SQL" "select regler_cadence($max) as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r.cadence_min' >/dev/null \
+      && echo "Boucle de la base (libération + filet) : toutes les $max min, pour tous les projets." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
   sans_signe)
     [[ "$max" =~ ^[0-9]+$ ]] && [ "$max" -ge 1 ] && [ "$max" -le 120 ] || { echo "--sans-signe <minutes> : un nombre de 1 à 120." >&2; exit 2; }
     r=$("$SQL" "select regler_sans_signe($P, $max) as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
@@ -291,14 +303,25 @@ chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
 # (ouverte par /fire) ne vole jamais une chef vivante : elle sert seulement ce qui
 # attend Raphaël (« attente ») puis s'arrête ; chef morte ou absente → elle devient chef.
-attente=""
+attente=""; releve_prise=0
 if [ "$mode" = "releve" ] && [ -n "$sid" ] && [ "$chef" != "$sid" ]; then
-  if [ "$(un "select chef_vivante('$pid') as v" | jq -r '.v // false')" = "true" ]; then
+  # 0071 (Raphaël, 6 oct. : « les chantiers à lancer ne se lancent pas tout seuls ») : une chef « vivante » (vue < 3 h)
+  # qui ne répond pas (contexte au-delà du seuil sans agent, ou du travail qui attend sans qu'elle passe) ne retient
+  # plus la session réveillée : celle-ci la RELÈVE et sert tout, chantiers prenables compris. UNE règle : chef_repond.
+  rep_chef=$(un "select chef_repond('$pid') as r" | jq -c '.r // {}')
+  if [ "$(un "select chef_vivante('$pid') as v" | jq -r '.v // false')" = "true" ] && [ "$(printf '%s' "$rep_chef" | jq -r '.repond // true')" = "true" ]; then
     attente=1
   else
+    if [ "$(printf '%s' "$rep_chef" | jq -r '.repond // true')" = "false" ] && [ -n "$chef" ]; then releve_prise=1; fi
     r=$(un "select prendre_chef($P, '$(q "$sid")', '$(q "$branche")', '') as r" | jq -c '.r // {}')
     if [ "$(printf '%s' "$r" | jq -r '.projet // empty')" = "$projet" ]; then
-      echo "Cette session devient la SESSION CHEF de $projet (l'ancienne, $(printf '%s' "$r" | jq -r '.ancienne // "aucune"'), ne vit plus). Ne touche pas au réveil : la routine qui t'a ouverte le porte."
+      if [ "$releve_prise" = "1" ]; then
+        raison_releve=$(printf '%s' "$rep_chef" | jq -r '.raison // "?"')
+        echo "Cette session RELÈVE la chef de $projet ($(printf '%s' "$r" | jq -r '.ancienne // "aucune"') ne répondait plus : $raison_releve). Tu sers TOUT, chantiers prenables compris. Ne touche pas au réveil : la routine qui t'a ouverte le porte."
+        "$SQL" "select noter_releve_chef($P, '$(q "$raison_releve")', '$(q "$chef")')" >/dev/null 2>&1
+      else
+        echo "Cette session devient la SESSION CHEF de $projet (l'ancienne, $(printf '%s' "$r" | jq -r '.ancienne // "aucune"'), ne vit plus). Ne touche pas au réveil : la routine qui t'a ouverte le porte."
+      fi
       chef="$sid"
     fi
   fi
@@ -312,6 +335,8 @@ if [ -n "$attente" ]; then
 else
   "$SQL" "update chefs set vu_at = now() where projet_id = '$pid'" >/dev/null 2>&1
   agents=$(printf '%s' "$etat" | jq -r '.agents // 0')
+  # Relève (0071) : `etat` décrit l'ancienne chef, pas cette session ; ses agents à elle.
+  [ "$releve_prise" = "1" ] && agents=$(un "select agents_actifs('$(q "$sid")', '$pid') as n" | jq -r '.n // 0')
 fi
 maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 2')
 # ÉCONOMIE DES MODÈLES (0035) : modèle des agents qui codent / des agents de lecture, effort, et FREIN.

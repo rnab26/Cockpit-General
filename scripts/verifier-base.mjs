@@ -3058,6 +3058,90 @@ async function controle45_regroupement() {
     && (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and corps like 'Cette livraison couvre aussi%'`)).n === 1);
 }
 
+// 50. Réactivité (0071) : la chef qui ne répond pas ne compte plus comme « vivante », le filet réveille, le délai de réponse est mesuré, les réglages bornés.
+const PRX = randomUUID(), SLUG_RX = `test-verif-${rand}-rx`;
+async function controle50_reactivite() {
+  section("50. Réactivité (0071) : chef muette relevée, filet, délai de réponse mesuré, réglages visibles");
+  await sql(`insert into projets (id, slug, nom, filet_delai_min) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité', 1)`);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.chef_repond(uuid)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.chef_repond(uuid)', 'execute') as auth,
+    has_function_privilege('anon', 'cockpit.delai_reponse(text,int)', 'execute') as anon2, has_function_privilege('authenticated', 'cockpit.regler_cadence(int)', 'execute') as auth2, has_function_privilege('service_role', 'cockpit.chef_repond(uuid)', 'execute') as srv`);
+  verifie("chef_repond : réservé au service ; delai_reponse fermé à anon ; regler_cadence réservé aux admins connectés", !droits.anon && !droits.auth && !droits.anon2 && droits.auth2 && droits.srv, droits);
+  const repond = async () => (await une(`select chef_repond(${q(PRX)}) as r`)).r;
+  const r0 = await repond();
+  verifie("aucune chef : ne répond pas (raison « aucune »)", r0.repond === false && r0.raison === "aucune", r0);
+  const sid = `test-rx-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(PRX)}, 'claude/chef-rx', now())`);
+  await sql(`insert into chefs (projet_id, session_id, actif, vu_at) values (${q(PRX)}, ${q(sid)}, true, now())`);
+  verifie("chef active, rien n'attend : elle répond", (await repond()).repond === true);
+  // Du travail attend depuis 10 min : un message de Raphaël sans réponse.
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PRX)}, null, 'Raphaël', 'proprietaire', 'info', 'tu es là ?', now() - interval '10 minutes')`);
+  verifie("travail en attente depuis 10 min, chef passée APRÈS son arrivée : elle répond", (await repond()).repond === true);
+  await sql(`update chefs set vu_at = now() - interval '1 hour' where projet_id = ${q(PRX)}`);
+  const r2 = await repond();
+  verifie("travail en attente depuis 10 min, aucune passe depuis : la chef ne répond pas (« sans_passe »)", r2.repond === false && r2.raison === "sans_passe", r2);
+  await sql(`update projets set chef_reactif_min = 30 where id = ${q(PRX)}`);
+  verifie("délai de réaction réglable : à 30 min, 10 min d'attente ne suffisent pas", (await repond()).repond === true);
+  await sql(`update projets set chef_reactif_min = 5 where id = ${q(PRX)}`);
+  // filet_vivant : la chef muette (session vue à l'instant) ne compte plus comme quelqu'un qui s'en occupe.
+  verifie("filet_vivant : une chef muette, même vue à l'instant, ne compte pas", (await une(`select filet_vivant(${q(PRX)}) as v`)).v === false);
+  const pass = (await une(`select filet_passe(${q(SLUG_RX)}, true, true) as r`)).r[0];
+  verifie("filet_passe : du travail attend, chef muette : le réveil part (simulé)", pass.resultat === "simule", pass);
+  await sql(`update chefs set vu_at = now() where projet_id = ${q(PRX)}`);
+  verifie("la chef repasse : elle répond de nouveau, filet_vivant le voit", (await repond()).repond === true && (await une(`select filet_vivant(${q(PRX)}) as v`)).v === true);
+  // Jetons : au-dessus du seuil et plus aucun agent → ne répond plus, même sans travail ancien.
+  await sql(`delete from messages where projet_id = ${q(PRX)}`);
+  await sql(`update sessions set jetons = 620000, jetons_at = now() where id = ${q(sid)}`);
+  const r3 = await repond();
+  verifie("contexte au-dessus du seuil (620 000 > 500 000), aucun agent : la chef passe la main (« jetons »)", r3.repond === false && r3.raison === "jetons", r3);
+  verifie("chef_a_renouveler relit la même règle (depasse)", (await une(`select chef_a_renouveler(${q(SLUG_RX)}) as r`)).r.depasse === true);
+  await sql(`insert into taches (session_id, projet_id, tache_id, type, description, statut, vu_at) values (${q(sid)}, ${q(PRX)}, 'ta-rx', 'agent', 'agent vivant', 'en_cours', now())`);
+  verifie("la même chef avec un agent vivant : elle répond (elle reprend la main à sa fin)", (await repond()).repond === true);
+  await sql(`delete from taches where projet_id = ${q(PRX)}`);
+  await sql(`update sessions set jetons = 100 where id = ${q(sid)}`);
+  // Délai de réponse mesuré : message -10 min, réponse de session -7 min = 180 s ; un second sans réponse.
+  const fil = await creerChantier(PRX, { titre: "Fil sans réponse" });
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PRX)}, null, 'Raphaël', 'proprietaire', 'info', 'premier', now() - interval '10 minutes')`);
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PRX)}, null, 'Claude', 'session', 'info', 'réponse', now() - interval '7 minutes')`);
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PRX)}, ${q(fil)}, 'Raphaël', 'proprietaire', 'info', 'second', now() - interval '4 minutes')`);
+  const d = (await une(`select delai_reponse(${q(SLUG_RX)}, 7) as d`)).d;
+  verifie("délai mesuré : 2 messages, 1 répondu en 180 s, 1 en attente depuis ~4 min", d.n === 2 && d.repondus === 1 && d.en_attente === 1 && Math.abs(d.mediane_s - 180) <= 2 && d.attente_depuis_s >= 235 && d.attente_depuis_s <= 270, d);
+  const e = (await une(`select etat_filet(${q(SLUG_RX)}) as e`)).e;
+  verifie("etat_filet donne à l'écran : cadence, écart, réaction de la chef, délai de réponse", e.cadence_min >= 1 && e.reveil_ecart_min === 5 && e.chef_reactif_min === 5 && e.chef && e.reponse?.n === 2, { cadence: e.cadence_min, chef: e.chef, rep: e.reponse });
+  // Écart entre deux réveils : court au début, étalé au-delà de 3 réveils dans l'heure.
+  await sql(`update messages set created_at = now() - interval '9 minutes' where projet_id = ${q(PRX)} and corps = 'second'`);
+  await sql(`delete from filet_reveils where projet_id = ${q(PRX)}`);
+  await sql(`update chefs set vu_at = now() - interval '1 hour' where projet_id = ${q(PRX)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) values (${q(PRX)}, 't', 'simule', true, now() - interval '6 minutes')`);
+  const p1 = (await une(`select filet_passe(${q(SLUG_RX)}, true, true) as r`)).r[0];
+  verifie("un premier réveil il y a 6 min, écart réglé à 5 : un nouveau réveil est permis (plus de blocage de 2 h)", p1.resultat === "simule", p1);
+  await sql(`delete from filet_reveils where projet_id = ${q(PRX)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) values (${q(PRX)}, 't', 'simule', true, now() - interval '6 minutes')`);
+  await sql(`update projets set reveil_ecart_min = 30 where id = ${q(PRX)}`);
+  const p2 = (await une(`select filet_passe(${q(SLUG_RX)}, true, true) as r`)).r[0];
+  verifie("écart réglé à 30 min : ce même réveil attend (trop_tot)", p2.resultat === "trop_tot", p2);
+  await sql(`delete from filet_reveils where projet_id = ${q(PRX)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) select ${q(PRX)}, 't', 'simule', true, now() - make_interval(mins => g * 10) from generate_series(1, 3) g`);
+  await sql(`update projets set reveil_ecart_min = 1 where id = ${q(PRX)}`);
+  const p3 = (await une(`select filet_passe(${q(SLUG_RX)}, true, true) as r`)).r[0];
+  verifie("3 réveils dans l'heure sans effet : retour à l'étalement de 0067 (trop_tot), pas de boucle de réveils", p3.resultat === "trop_tot", p3);
+  // Réglages bornés.
+  verifie("regler_reactivite refuse 0 et 61 (écart), 0 et 121 (chef) ; accepte les bornes",
+    !!(await erreurDe(`select regler_reactivite(${q(SLUG_RX)}, 0, null)`)) && !!(await erreurDe(`select regler_reactivite(${q(SLUG_RX)}, 61, null)`))
+    && !!(await erreurDe(`select regler_reactivite(${q(SLUG_RX)}, null, 0)`)) && !!(await erreurDe(`select regler_reactivite(${q(SLUG_RX)}, null, 121)`))
+    && !(await erreurDe(`select regler_reactivite(${q(SLUG_RX)}, 1, 120)`)));
+  verifie("regler_cadence refuse 0 et 16", !!(await erreurDe(`select regler_cadence(0)`)) && !!(await erreurDe(`select regler_cadence(16)`)));
+  // La boucle : cadence réglée, job replanifié, puis remis comme avant.
+  const avant = await une(`select cadence_min from filet_reglage where id = 1`);
+  await sql(`select regler_cadence(2)`);
+  const j2 = await une(`select schedule, command from cron.job where jobname = 'cockpit-filet-securite'`);
+  await sql(`select regler_cadence(${avant.cadence_min})`);
+  const j1 = await une(`select schedule from cron.job where jobname = 'cockpit-filet-securite'`);
+  verifie("la boucle cron suit le réglage (2 min, puis rétabli) et lance libération + filet sous un seul verrou",
+    j2.schedule === "*/2 * * * *" && /boucle_reactive/.test(j2.command) && /724550/.test(j2.command) && j1.schedule === (avant.cadence_min <= 1 ? "* * * * *" : `*/${avant.cadence_min} * * * *`), { j2, j1 });
+  const tout = await une(`select (select count(*) from cron.job where jobname = 'cockpit-filet-securite' and active)::int as actif`);
+  verifie("la boucle est active après le test", tout.actif === 1);
+}
+
 const PFC = randomUUID(), SLUG_FC = `test-verif-${rand}-fc`;
 async function controle46_fusion_a_la_creation() {
   section("46. Créer près d'un chantier existant (0060) : la fusion garde les DEUX demandes, chantiers_proches = la règle de la fusion suggérée, compléter");
@@ -3353,6 +3437,7 @@ try {
     controle46_fusion_a_la_creation,
     controle47_index_cles_etrangeres,
     controle49_passe_sans_perte,
+    controle50_reactivite,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3364,7 +3449,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
