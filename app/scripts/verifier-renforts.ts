@@ -68,11 +68,11 @@ verifie('bloquée : renforts à 0, frein, interrupteur éteint : chaque cause a 
   && /frein/.test(alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'frein' }) }))?.conseil ?? '') && alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'frein' }) }))?.geste === false
   && /automatique est éteinte/.test(alerteSaturation(etat({ auto: au({ file: 4, niveau: 'proche', bloque: 'eteint', actif: false }) }))?.conseil ?? ''))
 verifie('réglage : la ligne dit allumé/éteint, le seuil, la file, et pourquoi rien ne s’ouvre',
-  /allumée.*dès 3 chantiers.*= agents par session.*File actuelle : 2/.test(libelleAuto(au({ file: 2 })))
+  /allumée.*dès 1 chantier en attente.*paquets.*File actuelle : 2/.test(libelleAuto(au({ file: 2 })))
   && /éteinte/.test(libelleAuto(au({ actif: false }))) && /frein/.test(libelleAuto(au({ bloque: 'frein' })))
   && /Maximum/.test(libelleAuto(au({ bloque: 'plein' }))) && /à 0/.test(libelleAuto(au({ bloque: 'reglage_zero' }))) && /indisponible/.test(libelleAuto(undefined)))
 verifie('seuil : vide = défaut, 1 à 20 sinon', erreurSeuilAuto('') === null && erreurSeuilAuto('1') === null && erreurSeuilAuto('20') === null
   && !!erreurSeuilAuto('0') && !!erreurSeuilAuto('21') && !!erreurSeuilAuto('2.5') && !!erreurSeuilAuto('abc'))
-verifie('origine : un renfort auto dit l’heure et pourquoi ; un renfort manuel ne dit rien', /^ouvert automatiquement à \d+ h \d\d parce que la file \(5\) atteignait le seuil de 3$/.test(origineRenfort(r({ origine: 'auto', file: 5, seuil: 3 })) ?? '')
+verifie('origine : un renfort auto dit l’heure et pourquoi ; un renfort manuel ne dit rien', /^ouvert automatiquement à \d+ h \d\d parce que 5 chantiers attendaient$/.test(origineRenfort(r({ origine: 'auto', file: 5, seuil: 3 })) ?? '')
   && origineRenfort(r({ origine: 'manuel' })) === null && origineRenfort(r({})) === null && /ouvert automatiquement/.test(origineRenfort(r({ origine: 'auto' })) ?? ''))
 bilan('verifier-renforts')

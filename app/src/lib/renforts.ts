@@ -169,7 +169,7 @@ export function alerteSaturation(e: EtatRenforts): { niveau: NiveauSaturation; t
 export function libelleAuto(a: EtatAuto | undefined, frein?: string | null): string {
   if (!a) return 'Ouverture automatique : état indisponible.'
   if (!a.actif) return 'Ouverture automatique éteinte : les renforts ne s’ouvrent que sur ton bouton.'
-  const base = `Ouverture automatique allumée : dès ${a.seuil} chantier${a.seuil > 1 ? 's' : ''} en file${a.seuil_defaut ? ' (= agents par session)' : ''}. File actuelle : ${a.file}.`
+  const base = `Ouverture automatique allumée : dès 1 chantier en attente, par paquets (une session par paquet de chantiers). File actuelle : ${a.file}.`
   if (a.bloque === 'reglage_zero') return `${base} Bloquée : sessions de renfort à 0.`
   if (a.bloque === 'frein') return `${base} En pause : frein d’usage actif${frein ? ` jusqu’à ${heure(frein)}` : ''}.`
   if (a.bloque === 'plein') return `${base} Maximum de renforts atteint.`
@@ -186,7 +186,7 @@ export function erreurSeuilAuto(texte: string): string | null {
 /** « ouvert automatiquement à 14 h 32 parce que… » : null pour un renfort demandé à la main. */
 export function origineRenfort(r: Renfort): string | null {
   if (r.origine !== 'auto') return null
-  const pourquoi = r.seuil != null && r.file != null ? `la file (${r.file}) atteignait le seuil de ${r.seuil}` : 'la file de chantiers dépassait ce qu’une session porte'
+  const pourquoi = r.file != null ? `${r.file} chantier${r.file > 1 ? 's' : ''} attendaient` : 'des chantiers attendaient'
   return `ouvert automatiquement à ${heure(r.created_at)} parce que ${pourquoi}`
 }
 

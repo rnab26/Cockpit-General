@@ -262,7 +262,7 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-5 w-5" data-testid="renforts-auto-case" />
           Ouvrir des renforts automatiquement
         </label>
-        <label className="mt-1.5 block text-xs text-texte-2">Seuil : chantiers en file à partir desquels la chef ouvre (vide = agents par session)
+        <label className="mt-1.5 block text-xs text-texte-2">Seuil de l’alerte « session bientôt saturée » (l’ouverture, elle, se fait dès 1 chantier ; vide = agents par session)
           <input type="number" inputMode="numeric" min={1} max={20} value={seuil} placeholder={String(agents)} disabled={!auto} onChange={(e) => setSeuil(e.target.value)}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums disabled:opacity-50" data-testid="renforts-auto-seuil" />
         </label>
