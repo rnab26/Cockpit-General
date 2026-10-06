@@ -138,6 +138,27 @@ try {
   o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
   verifie("après la panne : la précision arrive quand même", /pendant la panne/.test(o.additionalContext ?? ""), o);
 
+  console.log("\n5 bis. « Ça bloque » sur une carte d'action : arrive à la session (0070), carte restée ouverte");
+  const A1 = randomUUID();
+  sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(A1)}, ${q(P)}, ${q(C1)}, 'test', 'session', 'action', 'Fusionne la PR #999 : carte de test')`);
+  await attendre(300);
+  sql(`select repondre_message(${q(A1)}, 'Raphaël', 'Ça bloque', 'la PR 999 n''existe pas', 'bloque') as r`);
+  sql(`update messages set answered_by = '00000000-0000-4000-8000-00000000cafe' where id = ${q(A1)}`);
+  o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
+  verifie("la session vivante reçoit « Ça bloque » + son mot, et la consigne de FERMER la carte", /Fusionne la PR #999/.test(o.additionalContext ?? "") && /la PR 999 n'existe pas/.test(o.additionalContext ?? "") && /CARTE RESTÉE OUVERTE/.test(o.additionalContext ?? "") && /--retirer/.test(o.additionalContext ?? ""), o);
+  o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
+  verifie("il n'est pas redonné au pas d'après", !/Fusionne la PR #999/.test(o.additionalContext ?? ""), o);
+  const A2 = randomUUID();
+  const C50 = randomUUID();
+  sql(`insert into chantiers (id, projet_id, titre, etat) values (${q(C50)}, ${q(P)}, 'Chantier sans personne dessus', 'libre')`);
+  sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(A2)}, ${q(P)}, ${q(C50)}, 'test', 'session', 'action', 'Fusionne la PR #998 : carte de test 2')`);
+  await attendre(300);
+  sql(`select repondre_message(${q(A2)}, 'Raphaël', 'Ça bloque', 'toujours pas', 'bloque') as r`);
+  sql(`update messages set answered_by = '00000000-0000-4000-8000-00000000cafe' where id = ${q(A2)}`);
+  o = hook("session-start.sh", { session_id: `test-rep5b-${rand}`, hook_event_name: "SessionStart", source: "startup" });
+  const blocBloque = (o.additionalContext ?? "").split("## Ses RÉPONSES que personne n'a encore prises")[1]?.split("\n## ")[0] ?? "";
+  verifie("une nouvelle session voit ce retour au démarrage, avec « la carte est restée ouverte »", /PR #998/.test(blocBloque) && /toujours pas/.test(blocBloque) && /RESTÉE OUVERTE/.test(blocBloque), blocBloque || o);
+
   console.log("\n6. question générale (sans chantier)");
   const QG = randomUUID();
   sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps, options) values (${q(QG)}, ${q(P)}, 'test', 'session', 'question', 'Installer le module pour tous ?', '[{"libelle":"Oui"},{"libelle":"Admin seulement"}]'::jsonb)`);

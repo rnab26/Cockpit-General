@@ -379,7 +379,16 @@
 .discret{background:none;border:0;padding:4px 2px;color:var(--muted);cursor:pointer;font-size:12px}
 .discret:hover{color:var(--fg)}
 .champ,.zone{width:100%;display:block;padding:8px 10px;border-radius:8px;border:1px solid var(--border);
- background:var(--card);font-size:14px;line-height:1.4;outline:none;resize:vertical;min-width:0}
+ background:var(--card);font-size:14px;line-height:1.4;outline:none;resize:none;min-width:0}
+.zone{overflow-y:auto;max-height:40vh}
+.pj{margin-top:6px}
+.pj-liste{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.pj-item{display:flex;align-items:center;gap:8px;border-radius:8px;background:var(--muted-bg);padding:4px 8px;font-size:12px}
+.pj-item img{width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0}
+.pj-item .nom{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-item .etat{flex-shrink:0;color:var(--muted)}.pj-item.echec .etat{color:var(--danger)}
+.pj-item .discret{min-height:32px;min-width:32px}
+.vignette{max-width:100%;max-height:140px;border-radius:8px;display:block;margin-top:4px}
 .champ:focus,.zone:focus{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 25%,transparent)}
 .champ.gras{font-weight:700}
 .bandeau{border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:13px}
@@ -642,13 +651,102 @@
   const etat = { donnees: null, chargement: true, erreur: null, erreurFond: null, majA: null, empreinte: '' }
   const ui = {
     bacEnCours: true, bacEnCoursChoisi: false, bacActif: false,
-    formulaire: false, nouveau: { titre: '', demande: '' },
+    formulaire: false, nouveau: { titre: '', demande: '', pj: nouveauPj() },
     cartes: {}, envoi: {}, retour: {}, attenteVue: -1, rendreApres: false,
   }
+
+  // ------------------------------------------------------- pièces jointes
+  // 6 oct. 2026 (chantier d1cf639b) : « pas de pièces jointes à ajouter possible ». Le fichier part directement dans
+  // le stockage par une adresse signée que la fonction serveur délivre (`televerser`) ; seule la liste (chemin, nom,
+  // type, taille) accompagne ensuite le message. Chaque pièce dit où elle en est (Envoi… / Prêt ✓ / l'erreur) et
+  // « Envoyer » reste grisé tant qu'une pièce part ou a échoué : rien ne part à moitié.
+  const PJ_MAX = 10, PJ_TAILLE_MAX = 25 * 1024 * 1024
+  let seqPj = 0
+  function tailleLisible(o) {
+    if (o < 1024) return o + ' o'
+    if (o < 1024 * 1024) return Math.round(o / 1024) + ' Ko'
+    return (o / 1024 / 1024).toFixed(o < 10 * 1024 * 1024 ? 1 : 0).replace('.', ',') + ' Mo'
+  }
+  function nouveauPj() {
+    return {
+      liste: [], noeud: null, chantierId: null, onChange: null,
+      enCours() { return this.liste.some((x) => x.statut === 'envoi') },
+      blocage() {
+        if (this.enCours()) return 'Un fichier part encore : un instant.'
+        if (this.liste.some((x) => x.statut === 'echec')) return 'Un fichier n’est pas parti : réessaie ou retire-le.'
+        return null
+      },
+      medias() { return this.liste.filter((x) => x.statut === 'ok').map((x) => ({ chemin: x.chemin, nom: x.nom, type: x.type, taille: x.taille })) },
+      vider() { this.liste.forEach((x) => { if (x.apercu) URL.revokeObjectURL(x.apercu) }); this.liste = []; this.repaint() },
+      retirer(it) { if (it.apercu) URL.revokeObjectURL(it.apercu); this.liste = this.liste.filter((x) => x !== it); this.repaint() },
+      repaint() { if (this.noeud && this.noeud.isConnected) peindrePj(this); if (this.onChange) this.onChange() },
+    }
+  }
+  function peindrePj(ctrl) {
+    const items = ctrl.liste.map((it) => h('div', { class: 'pj-item' + (it.statut === 'echec' ? ' echec' : ''), 'data-pj': it.statut },
+      it.apercu ? h('img', { src: it.apercu, alt: '' }) : h('span', { 'aria-hidden': 'true' }, '📄'),
+      h('span', { class: 'nom', title: it.nom }, it.nom + ' · ' + tailleLisible(it.taille)),
+      h('span', { class: 'etat', role: 'status' }, it.statut === 'envoi' ? 'Envoi…' : it.statut === 'ok' ? 'Prêt ✓' : (it.erreur || 'Échec')),
+      it.statut === 'echec' && it.file ? h('button', { class: 'discret', type: 'button', onclick: () => deposerPj(ctrl, it) }, 'Réessayer') : null,
+      h('button', { class: 'discret', type: 'button', 'aria-label': 'Retirer ' + it.nom, onclick: () => ctrl.retirer(it) }, '✕')))
+    const b = ctrl.blocage()
+    ctrl.noeud.replaceChildren.apply(ctrl.noeud, items.concat(b && ctrl.liste.length ? [h('p', { class: 'aide', 'data-pj-blocage': '1' }, b)] : []))
+  }
+  function zonePj(ctrl, chantierId, envoi) {
+    ctrl.chantierId = chantierId || null
+    const entree = h('input', { type: 'file', multiple: true, style: 'display:none', 'data-pj-input': '1',
+      onchange: (e) => { const fs = Array.prototype.slice.call(e.target.files || []); e.target.value = ''; ajouterPj(ctrl, fs) } })
+    const liste = h('div', { class: 'pj-liste' })
+    ctrl.noeud = liste
+    const zone = h('div', { class: 'pj' }, entree,
+      h('button', { class: 'btn sec petit', type: 'button', disabled: envoi, onclick: () => entree.click() }, '📎 Joindre un fichier ou une photo'),
+      liste)
+    peindrePj(ctrl)
+    return zone
+  }
+  function ajouterPj(ctrl, fichiers) {
+    fichiers.forEach((f) => {
+      const it = { nom: f.name || 'fichier', type: f.type || 'application/octet-stream', taille: f.size, statut: 'envoi', file: f, chemin: null, erreur: null,
+        apercu: /^image\//.test(f.type || '') ? URL.createObjectURL(f) : null, lance: false }
+      if (ctrl.liste.length >= PJ_MAX) { it.statut = 'echec'; it.erreur = PJ_MAX + ' pièces au plus.'; it.file = null }
+      else if (!f.size) { it.statut = 'echec'; it.erreur = 'Fichier vide.'; it.file = null }
+      else if (f.size > PJ_TAILLE_MAX) { it.statut = 'echec'; it.erreur = 'Trop gros (25 Mo au plus).'; it.file = null }
+      ctrl.liste.push(it)
+    })
+    ctrl.repaint()
+    ctrl.liste.filter((x) => x.statut === 'envoi' && !x.lance).forEach((it) => deposerPj(ctrl, it))
+  }
+  async function deposerPj(ctrl, it) {
+    it.lance = true; it.statut = 'envoi'; it.erreur = null; ctrl.repaint()
+    try {
+      const t = await api('televerser', { nom: it.nom, type: it.type, taille: it.taille, chantier_id: ctrl.chantierId || undefined })
+      const fd = new FormData()
+      fd.append('cacheControl', '3600'); fd.append('', it.file, it.nom)
+      let r
+      try { r = await fetch(t.url, { method: 'PUT', body: fd }) } catch (e) { throw new Error('Pas de connexion : le fichier n’est pas parti.') }
+      if (!r.ok) throw new Error('Le stockage a refusé le fichier (' + r.status + ').')
+      it.chemin = t.chemin; it.statut = 'ok'
+    } catch (e) { it.statut = 'echec'; it.erreur = e.message }
+    ctrl.repaint()
+  }
+  // Les pièces d'un message de l'historique : vignette cliquable pour une image, lien sinon.
+  function piecesDe(m) {
+    const l = Array.isArray(m.medias) ? m.medias : []
+    if (!l.length) return null
+    return h('div', { 'data-pieces': '1' }, l.map((x) => {
+      const nom = (x.nom || 'fichier') + (x.taille ? ' (' + tailleLisible(x.taille) + ')' : '')
+      if (!x.url) return h('p', { class: 'quand' }, '📎 ' + nom)
+      return /^image\//.test(x.type || '')
+        ? h('a', { href: x.url, target: '_blank', rel: 'noopener noreferrer', title: nom }, h('img', { class: 'vignette', src: x.url, alt: nom, loading: 'lazy' }))
+        : h('p', null, h('a', { class: 'lien', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, '📎 ' + nom))
+    }))
+  }
+
   function carte(id) {
     return ui.cartes[id] || (ui.cartes[id] = {
       depliee: false, hist: false, edition: false, titre: '', demande: '',
       correction: false, mots: '', option: null, precision: '', msg: false, msgTexte: '', cv: false,
+      msgPj: nouveauPj(), motsPj: nouveauPj(),
     })
   }
 
@@ -734,6 +832,16 @@
     if (ui.rendreApres) { ui.rendreApres = false; setTimeout(() => { if (!champTexteActif()) rendre() }, 50) }
   })
 
+  // Un champ qui grandit avec le texte (jusqu'à 40 % de l'écran) ; Ctrl/Cmd + Entrée envoie (6 oct. 2026, d1cf639b).
+  function croitre(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + 2, Math.round(window.innerHeight * 0.4)) + 'px' }
+  app.addEventListener('input', (e) => { if (e.target && e.target.tagName === 'TEXTAREA') croitre(e.target) })
+  app.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || !e.target || !/^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return
+    const z = e.target.closest('[data-envoi-zone]')
+    const b = z && z.querySelector('button[data-envoi]:not([disabled])')
+    if (b) { e.preventDefault(); b.click() }
+  })
+
   function rendre() {
     // La position ne saute pas : on note où on est, on remplace tout d'un
     // bloc (même tâche, donc aucun repaint entre les deux), on remet la
@@ -744,6 +852,7 @@
     const sel = actif && actif.selectionStart != null ? [actif.selectionStart, actif.selectionEnd] : null
 
     app.replaceChildren.apply(app, contenu())
+    app.querySelectorAll('textarea.zone').forEach(croitre)
 
     window.scrollTo(0, y)
     hote.scrollTop = hs
@@ -866,31 +975,43 @@
         retourPour('nouveau', 'form'))
     }
     const n = ui.nouveau
-    const titre = normaliser(n.titre)
-    const proches = titre.length < 3 ? [] : chantiers.filter((c) => {
-      const t = normaliser(c.titre)
-      return t === titre || t.includes(titre) || titre.includes(t)
-    })
     const envoi = !!ui.envoi.nouveau
-    return h('div', { class: 'formulaire' },
+    // Saisie fluide : taper ne redessine JAMAIS l'écran (6 oct. 2026, chantier d1cf639b). Seuls l'avertissement
+    // « nom proche » et l'état du bouton se mettent à jour, en place, pendant la frappe.
+    const zoneAvert = h('div')
+    const btnAjouter = h('button', { class: 'btn', 'data-envoi': '1', onclick: creer }, envoi ? 'Enregistrement…' : '➕ Ajouter la demande')
+    const majBouton = () => { btnAjouter.disabled = envoi || !n.titre.trim() || !!n.pj.blocage() }
+    const majAvert = () => {
+      const titre = normaliser(n.titre)
+      const proches = titre.length < 3 ? [] : chantiers.filter((c) => {
+        const t = normaliser(c.titre)
+        return t === titre || t.includes(titre) || titre.includes(t)
+      })
+      zoneAvert.replaceChildren.apply(zoneAvert, proches.length ? [h('div', { class: 'avert' },
+        h('p', { style: 'font-weight:600' }, '⚠️ Une demande au nom proche existe déjà. Pour éviter un doublon, ajoute plutôt un message sur sa carte :'),
+        h('ul', null, proches.map((c) => h('li', null, '« ' + c.titre + ' » (' + badgeEtat(c)[0] + ')'))))] : [])
+    }
+    n.pj.onChange = majBouton
+    majAvert(); majBouton()
+    return h('div', { class: 'formulaire', 'data-envoi-zone': '1' },
       h('p', { class: 'aide', style: 'font-weight:600' }, '➕ Nouvelle demande'),
       h('input', { class: 'champ gras', 'data-focus': 'nouveau-titre', placeholder: 'Titre court (ex. Le bouton Exporter ne répond plus)', value: n.titre, maxlength: 200, disabled: envoi,
-        oninput: (e) => { n.titre = e.target.value; rendre() } }),
-      proches.length ? h('div', { class: 'avert' },
-        h('p', { style: 'font-weight:600' }, '⚠️ Une demande au nom proche existe déjà. Pour éviter un doublon, ajoute plutôt un message sur sa carte :'),
-        h('ul', null, proches.map((c) => h('li', null, '« ' + c.titre + ' » (' + badgeEtat(c)[0] + ')')))) : null,
+        oninput: (e) => { n.titre = e.target.value; majBouton(); majAvert() } }),
+      zoneAvert,
       h('textarea', { class: 'zone', 'data-focus': 'nouveau-demande', rows: 3, placeholder: 'Ce que tu veux changer, en détail… (un exemple concret aide beaucoup)', disabled: envoi,
         oninput: (e) => { n.demande = e.target.value } }, n.demande),
+      zonePj(n.pj, null, envoi),
       h('div', { class: 'ligne' },
-        h('button', { class: 'btn', disabled: envoi || !n.titre.trim(), onclick: creer }, envoi ? 'Enregistrement…' : '➕ Ajouter la demande'),
+        btnAjouter,
         h('button', { class: 'btn sec', disabled: envoi, onclick: () => { ui.formulaire = false; rendre() } }, 'Annuler')),
       retourPour('nouveau', 'form'))
   }
   function creer() {
     const n = ui.nouveau
     agir('nouveau', 'form', async () => {
-      await api('creer', { titre: n.titre.trim(), demande: n.demande.trim(), reproduction: await capturer() })
-      ui.nouveau = { titre: '', demande: '' }
+      await api('creer', { titre: n.titre.trim(), demande: n.demande.trim(), medias: n.pj.medias(), reproduction: await capturer() })
+      ui.nouveau.pj.vider()
+      ui.nouveau = { titre: '', demande: '', pj: nouveauPj() }
       ui.formulaire = false
       ui.bacEnCours = true
     })
@@ -999,7 +1120,10 @@
       if (!estAction && /pr[ée]ciser/i.test(o.libelle || '')) { u.option = o; rendre(); focus(cleChamp); return }
       envoyer(o)
     }
-    return h('div', { class: 'bloc rouge', 'data-question': q.id },
+    const btnValider = !options.length || u.option
+      ? h('button', { class: 'btn', 'data-envoi': '1', disabled: envoi || !u.precision.trim(), onclick: () => envoyer(u.option) }, envoi ? 'Enregistrement…' : '✅ Valider cette réponse')
+      : null
+    return h('div', { class: 'bloc rouge', 'data-question': q.id, 'data-envoi-zone': '1' },
       h('p', { class: 'bloc-titre' }, estAction ? '🔴 Une action t’est demandée' : '🔴 Réponse attendue'),
       h('p', { style: 'font-weight:600' }, q.corps),
       q.pourquoi ? h('p', { class: 'aide' }, 'Pourquoi : ', q.pourquoi) : null,
@@ -1011,9 +1135,8 @@
       options.some((o) => o.aide) ? h('ul', { class: 'aide', style: 'list-style:disc;padding-left:18px;margin-top:4px' }, options.filter((o) => o.aide).map((o) => h('li', null, h('b', null, o.libelle), ' : ', o.aide))) : null,
       h('input', { class: 'champ', style: 'margin-top:6px', 'data-focus': cleChamp, value: u.precision, disabled: envoi,
         placeholder: u.option ? 'Écris ta précision ici, puis valide ci-dessous…' : 'Précision (facultatif)…',
-        oninput: (e) => { u.precision = e.target.value; if (u.option) rendre() } }),
-      !options.length || u.option ? h('div', { class: 'ligne' },
-        h('button', { class: 'btn', disabled: envoi || !u.precision.trim(), onclick: () => envoyer(u.option) }, envoi ? 'Enregistrement…' : '✅ Valider cette réponse')) : null,
+        oninput: (e) => { u.precision = e.target.value; if (btnValider) btnValider.disabled = envoi || !u.precision.trim() } }),
+      !options.length || u.option ? h('div', { class: 'ligne' }, btnValider) : null,
       retourPour(c.id, 'question'))
   }
 
@@ -1021,15 +1144,22 @@
   // pas, corriger » ; sur une carte certifiée, seulement le lien de
   // signalement. Corriger complète la MÊME demande, jamais une nouvelle.
   function blocValidation(c, u, envoi, mode) {
-    const zone = () => h('div', { class: 'edit', style: 'margin-top:6px' },
-      h('textarea', { class: 'zone', 'data-focus': 'mots-' + c.id, rows: 3, disabled: envoi, placeholder: "Qu'est-ce qui ne va pas ? Sois précis (un exemple concret si possible)…",
-        oninput: (e) => { u.mots = e.target.value; rendre() } }, u.mots),
-      h('div', { class: 'ligne' },
-        h('button', { class: 'btn', disabled: envoi || !u.mots.trim(), onclick: () => agir(c.id, 'validation', async () => {
-          await api('corriger', { chantier_id: c.id, mots: u.mots.trim(), reproduction: await capturer() })
-          u.correction = false; u.mots = ''
-        }) }, envoi ? 'Enregistrement…' : '📩 Envoyer la correction'),
-        h('button', { class: 'btn sec', disabled: envoi, onclick: () => { u.correction = false; rendre() } }, 'Annuler')))
+    const zone = () => {
+      const btn = h('button', { class: 'btn', 'data-envoi': '1', onclick: () => agir(c.id, 'validation', async () => {
+        await api('corriger', { chantier_id: c.id, mots: u.mots.trim(), medias: u.motsPj.medias(), reproduction: await capturer() })
+        u.correction = false; u.mots = ''; u.motsPj.vider()
+      }) }, envoi ? 'Enregistrement…' : '📩 Envoyer la correction')
+      const maj = () => { btn.disabled = envoi || !u.mots.trim() || !!u.motsPj.blocage() }
+      u.motsPj.onChange = maj
+      maj()
+      return h('div', { class: 'edit', style: 'margin-top:6px', 'data-envoi-zone': '1' },
+        h('textarea', { class: 'zone', 'data-focus': 'mots-' + c.id, rows: 3, disabled: envoi, placeholder: "Qu'est-ce qui ne va pas ? Sois précis (un exemple concret si possible)…",
+          oninput: (e) => { u.mots = e.target.value; maj() } }, u.mots),
+        zonePj(u.motsPj, c.id, envoi),
+        h('div', { class: 'ligne' },
+          btn,
+          h('button', { class: 'btn sec', disabled: envoi, onclick: () => { u.correction = false; rendre() } }, 'Annuler')))
+    }
     if (mode === 'valide') {
       const texteCv = (c.comment_verifier || '').trim()
       return h('div', { style: 'margin-top:6px' },
@@ -1061,7 +1191,7 @@
           m.precision ? h('p', { class: 'quand' }, 'Précision : ', m.precision) : null] })
       } else {
         const qui = m.auteur_type === 'session' ? '🤖' : '🙋 ' + m.auteur + ' :'
-        items.push({ ts: m.created_at, noeud: [h('p', { class: 'quand' }, quand(m.created_at)), h('p', null, qui + ' ', m.kind === 'blocage' ? '⛔ ' : '', m.corps)] })
+        items.push({ ts: m.created_at, noeud: [h('p', { class: 'quand' }, quand(m.created_at)), h('p', null, qui + ' ', m.kind === 'blocage' ? '⛔ ' : '', m.corps), piecesDe(m)] })
       }
     }
     if (!items.length) return null
@@ -1076,18 +1206,28 @@
       u.hist ? h('ul', { class: 'hist' }, items.map((i) => h('li', null, i.noeud))) : null)
   }
 
+  // Le message à Claude : la frappe ne redessine rien, les pièces se joignent (6 oct. 2026, chantier d1cf639b).
+  function msgFormulaire(c, u, envoi) {
+    const btn = h('button', { class: 'btn petit', 'data-envoi': '1', onclick: () => agir(c.id, 'message', async () => {
+      await api('message', { chantier_id: c.id, corps: u.msgTexte.trim(), medias: u.msgPj.medias() })
+      u.msg = false; u.msgTexte = ''; u.msgPj.vider(); u.hist = true
+    }) }, envoi ? 'Enregistrement…' : '📩 Envoyer')
+    const maj = () => { btn.disabled = envoi || !(u.msgTexte.trim() || u.msgPj.liste.length) || !!u.msgPj.blocage() }
+    u.msgPj.onChange = maj
+    maj()
+    return h('div', { class: 'bloc neutre', 'data-envoi-zone': '1' },
+      h('p', { class: 'bloc-titre' }, '💬 Ton message'),
+      h('textarea', { class: 'zone', 'data-focus': 'msg-' + c.id, rows: 2, disabled: envoi, placeholder: 'Une précision, un exemple, une remarque…', oninput: (e) => { u.msgTexte = e.target.value; maj() } }, u.msgTexte),
+      zonePj(u.msgPj, c.id, envoi),
+      h('div', { class: 'ligne' },
+        btn,
+        h('button', { class: 'btn sec petit', disabled: envoi, onclick: () => { u.msg = false; rendre() } }, 'Annuler')),
+      retourPour(c.id, 'message'))
+  }
+
   function pied(c, u, envoi) {
     return h('div', null,
-      u.msg ? h('div', { class: 'bloc neutre' },
-        h('p', { class: 'bloc-titre' }, '💬 Ton message'),
-        h('textarea', { class: 'zone', 'data-focus': 'msg-' + c.id, rows: 2, disabled: envoi, placeholder: 'Une précision, un exemple, une remarque…', oninput: (e) => { u.msgTexte = e.target.value; rendre() } }, u.msgTexte),
-        h('div', { class: 'ligne' },
-          h('button', { class: 'btn petit', disabled: envoi || !u.msgTexte.trim(), onclick: () => agir(c.id, 'message', async () => {
-            await api('message', { chantier_id: c.id, corps: u.msgTexte.trim() })
-            u.msg = false; u.msgTexte = ''; u.hist = true
-          }) }, envoi ? 'Enregistrement…' : '📩 Envoyer'),
-          h('button', { class: 'btn sec petit', disabled: envoi, onclick: () => { u.msg = false; rendre() } }, 'Annuler')),
-        retourPour(c.id, 'message')) : null,
+      u.msg ? msgFormulaire(c, u, envoi) : null,
       h('div', { class: 'pied' },
         h('span', null, 'Créée ', quand(c.created_at).toLowerCase(), c.updated_at && c.updated_at !== c.created_at ? ' · modifiée ' + quand(c.updated_at).toLowerCase() : ''),
         !u.msg ? h('button', { class: 'discret', onclick: () => { u.msg = true; rendre(); focus('msg-' + c.id) } }, '💬 Ajouter un message') : null))

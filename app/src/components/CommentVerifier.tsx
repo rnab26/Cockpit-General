@@ -6,7 +6,8 @@ import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
-import { corpsDemandeVerifier, derniereDemandeVerifier, etapesVerifier, segmentsAvecLiens } from '../lib/commentVerifier.ts'
+import { corpsDemandeVerifier, derniereDemandeVerifier, etapesVerifier } from '../lib/commentVerifier.ts'
+import { LiensAOuvrir, TexteAvecLiens } from '../ui/TexteAvecLiens.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { mediasVerifier } from '../lib/medias.ts'
 import { MediasMessage } from './Medias.tsx'
@@ -21,13 +22,6 @@ function CeQueTuDoisVoir({ chantier }: { chantier: Chantier }) {
       <MediasMessage medias={medias} apercu testId="images-verifier-liste" />
     </div>
   )
-}
-
-/** Un texte dont les adresses http(s) deviennent des liens (nouvel onglet). */
-function TexteAvecLiens({ texte }: { texte: string }) {
-  return <>{segmentsAvecLiens(texte).map((s, i) => s.lien
-    ? <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-accent underline underline-offset-2">{s.texte}</a>
-    : <span key={i}>{s.texte}</span>)}</>
 }
 
 /** Les étapes, une par ligne, le numéro dans sa propre colonne. */
@@ -62,6 +56,7 @@ export function EncadreCommentVerifier({ chantier }: { chantier: Chantier }) {
     return (
       <div data-testid="comment-verifier" className="rounded-lg border border-bord bg-carte px-3 py-2">
         <p className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</p>
+        <LiensAOuvrir textes={[texte]} testId="liens-verifier" />
         <Etapes texte={texte} />
         <CeQueTuDoisVoir chantier={chantier} />
       </div>
@@ -100,6 +95,7 @@ export function CommentVerifierReplie({ chantier }: { chantier: Chantier }) {
   if (!texte) return null
   return (
     <Repliable testId="comment-verifier-replie" titre={<span className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</span>}>
+      <LiensAOuvrir textes={[texte]} testId="liens-verifier" />
       <Etapes texte={texte} />
       <CeQueTuDoisVoir chantier={chantier} />
     </Repliable>

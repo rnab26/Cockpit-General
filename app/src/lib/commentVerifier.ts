@@ -88,6 +88,28 @@ export function segmentsAvecLiens(texte: string): Segment[] {
   return out
 }
 
+/**
+ * Les adresses https à ouvrir dans ces textes, une fois chacune, dans l'ordre (6 oct. 2026, chantiers 2be961b8 et
+ * 95f21f04 : « pourquoi tu ne mets pas les liens de ce qu'il y a à faire ici »). Elles deviennent de GROS boutons
+ * en tête de la carte, pas seulement des mots soulignés dans une phrase. Jamais http:, javascript:, data:.
+ */
+export function liensDuTexte(textes: readonly (string | null | undefined)[], max = 4): { url: string; domaine: string }[] {
+  const vus = new Set<string>()
+  const out: { url: string; domaine: string }[] = []
+  for (const t of textes) {
+    for (const s of segmentsAvecLiens(t ?? '')) {
+      if (!s.lien || vus.has(s.url)) continue
+      let u: URL
+      try { u = new URL(s.url) } catch { continue }
+      if (u.protocol !== 'https:') continue
+      vus.add(s.url)
+      out.push({ url: s.url, domaine: u.hostname.replace(/^www\./, '') })
+      if (out.length >= max) return out
+    }
+  }
+  return out
+}
+
 /** Le message écrit dans le fil quand la personne qui certifie demande
  *  « comment vérifier ». `kind='info'` (pas 'question') : une question
  *  finirait dans SES PROPRES « questions en attente ». */
