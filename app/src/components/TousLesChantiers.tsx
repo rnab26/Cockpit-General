@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Archive, ChevronRight, CircleCheck, Plus, Search } from 'lucide-react'
 import type { Chantier, Section } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
+import { PastilleReponse } from './PastilleReponse.tsx'
 import { bacDe } from '../lib/etats.ts'
 import { compteursPresence, presenceDe, trierParPresence, LIBELLE_COURT_PRESENCE } from '../lib/entonnoir.ts'
 import type { Presence } from '../lib/presence.ts'
@@ -128,6 +129,7 @@ function LigneChantier({ c, presence }: Avec) {
               <span data-testid="badge-presence">{presence.libelle}</span>{details.length ? ` · ${details.join(' · ')}` : ''}
             </span>
           </span>
+          <PastilleReponse cle={c.id} />
           <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
         </button>
       </div>

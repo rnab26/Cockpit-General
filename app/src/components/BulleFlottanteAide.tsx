@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
 import { useGlobal } from '../contexte.ts'
+import { PastilleReponse, useMarquerLu } from './PastilleReponse.tsx'
+import { cleFil } from '../lib/lecture.ts'
 import { VUE_TOUT } from '../hooks/useDonnees.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -39,6 +41,8 @@ export function BulleFlottanteAide() {
   const projet = projetDeLaBulle(g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
   const pj = useMediasAJoindre(projet?.id ?? '', null)
   const fil = projet ? filDeLaBulle(g.messages, projet.id) : []
+  // Bulle ouverte = fil lu ; fermée, la pastille « Réponse » reste sur le bouton tant qu'une réponse n'est pas lue.
+  useMarquerLu(projet ? cleFil(projet.id, null) : '', ouvert && projet ? fil : [], g.prefs, g.poser)
   useEffect(() => { if (ouvert) fin.current?.scrollIntoView({ block: 'end' }) }, [ouvert, fil.length])
   // Sa question attend une réponse : la bulle ouverte relit toutes les 10 s (le direct l'apporte déjà s'il est
   // actif ; ceci couvre le direct coupé, sans recharger l'app en continu quand rien n'est attendu).
@@ -101,6 +105,7 @@ export function BulleFlottanteAide() {
           style={{ bottom: 'calc(max(var(--nav-h, 0px), env(safe-area-inset-bottom)) + 76px)', right: 'calc(env(safe-area-inset-right) + 12px)' }}
           className="fixed z-30 flex h-11 w-11 items-center justify-center rounded-full border border-bord bg-carte text-texte shadow-lg hover:bg-carte-2 focus:outline-none focus:ring-2 focus:ring-accent/40">
           <HelpCircle size={22} />
+          {projet ? <PastilleReponse cle={cleFil(projet.id, null)} className="absolute -right-1 -top-2 !px-1.5" /> : null}
         </button>
       )}
       {ouvert ? <Dialog ouvert onFermer={() => setOuvert(false)} titre={`Aide · ${projet.nom}`} brouillon={!vide || !!citation}

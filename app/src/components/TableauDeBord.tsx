@@ -241,6 +241,7 @@ function LigneEnAttente({ c, onOuvrir }: { c: Chantier; onOuvrir: () => void }) 
           <span className="mt-0.5 block text-sm leading-snug text-texte-2" data-testid="attente-quoi">{p.quoi}</span>
           <span className={`block text-sm leading-snug ${p.aFaire ? 'font-medium text-attention' : 'text-ok'}`} data-testid="attente-suite">{p.suite}{p.aFaire ? '' : ' Rien à faire de ton côté.'}</span>
         </span>
+        <PastilleReponse cle={c.id} className="mt-0.5" />
         <ChevronRight size={16} className="mt-1 shrink-0 text-texte-2" aria-hidden />
       </button>
     </li>
@@ -287,6 +288,7 @@ function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null
                   </span>
                   {ligneDe.get(c.id) ? <BarreDeLigne l={ligneDe.get(c.id)!} /> : null}
                 </span>
+                <PastilleReponse cle={c.id} />
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
               </button>
             </li>
@@ -659,6 +661,7 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
           ) : null}
           {a ? <span className="mt-1 flex"><Barre pct={a.pourcentage} vive={false} /></span> : null}
         </button>
+        <PastilleReponse cle={l.c.id} />
         <Button taille="sm" onClick={() => setOuvert(!ouvert)} aria-expanded={ouvert} data-testid="lancer" className="shrink-0"><Rocket size={15} aria-hidden />Lancer</Button>
       </div>
       {ouvert ? (
