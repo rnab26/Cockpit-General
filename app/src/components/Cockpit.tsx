@@ -9,7 +9,8 @@ import type { Theme } from '../hooks/useTheme.ts'
 import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { PREF_LU_DEPUIS, PREF_LU_FILS, lireLus, reponsesNonLues, totalNonLus } from '../lib/lecture.ts'
-import { pastillesProjet } from '../lib/entonnoir.ts'
+import { aToi, pastillesProjet } from '../lib/entonnoir.ts'
+import { bulleActive, cartesAFaire, notifsChat } from '../lib/bulleAide.ts'
 import { autonomeActif, chantiersPrenables, etatAutonome, travailEnCours } from '../lib/autonome.ts'
 import { Layers, Lock } from 'lucide-react'
 import { supabase } from '../lib/supabase.ts'
@@ -93,6 +94,11 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   )
   // Onglet du navigateur et icône de l'appli : le nombre de réponses à lire.
   const nbNonLus = totalNonLus(nonLus)
+  // Pastille de l'onglet « Discussions » = la somme des chats (réponses non lues + cartes à faire), la même règle que la liste.
+  const nbDiscussions = useMemo(
+    () => d.projets.filter((p) => bulleActive(prefs, p.id)).reduce((n, p) => n + notifsChat(nonLus, p.id, cartesAFaire(aToi(d.chantiers, d.messages, p.id, d.activites, d.taches))).total, 0),
+    [d.projets, d.chantiers, d.messages, d.activites, d.taches, prefs, nonLus],
+  )
   useEffect(() => {
     document.title = nbNonLus ? `(${nbNonLus}) Cockpit` : 'Cockpit'
     try { const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }; void (nbNonLus ? nav.setAppBadge?.(nbNonLus) : nav.clearAppBadge?.())?.catch(() => {}) } catch { /* non supporté */ }
@@ -339,7 +345,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
             <ListeDiscussions ouvert={discussion.liste} onFermer={() => setDiscussion({ liste: false, projetId: null })} onChoisir={(id) => setDiscussion({ liste: false, projetId: id })} />
             {/* Fermer un chat ramène à la liste des discussions. */}
             <BulleFlottanteAide sansBouton projetOuvertId={discussion.projetId} onFermer={() => setDiscussion({ liste: true, projetId: null })} />
-            {barreBas ? <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche, discussion.liste || !!discussion.projetId)} onChoisir={surBarre} aToi={aToiTotal} reponses={nbNonLus} /> : null}
+            {barreBas ? <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche, discussion.liste || !!discussion.projetId)} onChoisir={surBarre} aToi={aToiTotal} reponses={nbDiscussions} /> : null}
           </>
         ) : <BulleFlottanteAide />}
       </div>
