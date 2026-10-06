@@ -13,6 +13,11 @@ import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, constructeurVo
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { heureLisible } from '../lib/dates.ts'
 import type { Message } from '../lib/types.ts'
+import { aToi } from '../lib/entonnoir.ts'
+import { AvecProjet } from './AvecProjet.tsx'
+import { BlocQuestion } from './BlocQuestion.tsx'
+import { BlocValidation } from './BlocValidation.tsx'
+import { BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
 
 /**
  * Bulle flottante d'aide (allumée par défaut ; l'extinction est dans « Réglages
@@ -156,6 +161,7 @@ export function BulleFlottanteAide({ projetOuvertId, onFermer, sansBouton = fals
             </div>
           ) : fil.map((m) => <MessageBulle key={m.id} m={m} admin={g.admin} now={g.now} onRepondre={repondreA} />)}
           {attend ? <p className="text-center text-xs text-texte-2" data-testid="bulle-aide-attente">Claude n’a pas encore répondu : la réponse arrivera ici.</p> : null}
+          <AFaireIci projetId={projet.id} />
           <div ref={fin} />
         </div>
       </Dialog> : null}
@@ -251,5 +257,39 @@ export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: bool
         })}
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * Ce que Claude attend de toi sur ce projet, répondable ICI (Raphaël, 6 oct. : « autant me faire faire
+ * directement ce qu'il y a à faire dans son message, plutôt que je quitte la discussion »). Mêmes cartes
+ * et même règle que « À toi de jouer » (`aToi`) : question, action, vérification, cadrage, fusion.
+ * En dernier dans la discussion, comme les cartes d'un fil ; rien d'affiché quand il n'y a rien à faire.
+ */
+function AFaireIci({ projetId }: { projetId: string }) {
+  const g = useGlobal()
+  const els = aToi(g.chantiers, g.messages, projetId, g.activites, g.taches)
+  // Une vérification montre déjà les questions de son chantier : pas de doublon.
+  const verifies = new Set(els.filter((e) => e.type === 'a_verifier' && e.chantier).map((e) => e.chantier!.id))
+  const liste = els.filter((e) => {
+    if (e.type === 'question' || e.type === 'action') return !!e.message && !(e.chantier && verifies.has(e.chantier.id))
+    if (e.type === 'a_verifier' || e.type === 'a_cadrer') return !!e.chantier
+    return e.type === 'fusion' && !!e.message
+  })
+  if (!liste.length) return null
+  return (
+    <section className="space-y-2 border-t border-bord pt-2" data-testid="bulle-a-faire" aria-label="À faire ici">
+      <p className="text-xs font-semibold text-accent">À faire ici ({liste.length})</p>
+      <AvecProjet projetId={projetId}>
+        {liste.map((e) => (
+          <div key={e.cle} data-testid="bulle-a-faire-carte" data-type={e.type}>
+            {e.type === 'a_verifier' ? <BlocValidation chantier={e.chantier!} />
+              : e.type === 'a_cadrer' ? <BlocCadrer chantier={e.chantier!} />
+              : e.type === 'fusion' ? <BlocFusion message={e.message!} />
+              : <>{e.chantier ? <p className="mb-0.5 text-[11px] text-texte-2">Chantier : {e.chantier.titre}</p> : null}<BlocQuestion message={e.message!} /></>}
+          </div>
+        ))}
+      </AvecProjet>
+    </section>
   )
 }
