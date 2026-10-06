@@ -2717,7 +2717,7 @@ async function controle38_filet_securite() {
   const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
   // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
     has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
     has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
@@ -2739,12 +2739,25 @@ async function controle38_filet_securite() {
   verifie("travail en attente depuis 30 min + personne de vivant : un réveil journalisé", await passe() === "simule" && await journal() === 1);
   const j = await une(`select pourquoi, resultat from filet_reveils where projet_id = ${q(P11)}`);
   verifie("… avec son pourquoi", /1 message\(s\) sans réponse/.test(j.pourquoi) && j.resultat === "simule", j);
-  verifie("deux passes rapprochées : un seul réveil (anti-rafale 5 min)", await passe() === "trop_tot" && await journal() === 1);
-  await sql(`update filet_reveils set at = now() - interval '10 minutes' where projet_id = ${q(P11)}`);
-  await sql(`update projets set filet_plafond_jour = 1 where id = ${q(P11)}`);
-  verifie("plafond du jour atteint : aucun réveil de plus", await passe() === "plafond" && await journal() === 1);
+  verifie("deux passes rapprochées : un seul réveil (écart = 24 h / plafond, jamais moins de 5 min)", await passe() === "trop_tot" && await journal() === 1);
+  // 0067 : les réveils s'étalent sur la journée (FacePro avait brûlé ses 6 réveils en 1 h 36, puis 14 h sans réveil).
+  verifie("filet_ecart : 24 h / plafond, au moins 5 min",
+    (await une(`select filet_ecart(6)::text a, filet_ecart(12)::text b, filet_ecart(48)::text c, filet_ecart(0)::text d`)).a === "04:00:00"
+    && (await une(`select filet_ecart(12)::text b`)).b === "02:00:00" && (await une(`select filet_ecart(48)::text c`)).c === "00:30:00");
+  await sql(`update filet_reveils set at = now() - interval '3 hours' where projet_id = ${q(P11)}`);
+  await sql(`update projets set filet_plafond_jour = 6 where id = ${q(P11)}`);
+  verifie("plafond 6 (un réveil toutes les 4 h) : le dernier date de 3 h, trop tôt", await passe() === "trop_tot" && await journal() === 1);
+  verifie("etat_filet dit quand le prochain réveil est possible (ecart_min 240, prochain_at futur)",
+    await (async () => { const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e; return e.ecart_min === 240 && Date.parse(e.prochain_at) > Date.now(); })());
+  await sql(`update projets set filet_plafond_jour = 12 where id = ${q(P11)}`);
+  verifie("plafond 12 (un réveil toutes les 2 h) : 3 h après, le réveil repart", await passe() === "simule" && await journal() === 2);
+  // Le plafond du jour reste une limite dure : 2 réveils déjà faits dans les 24 h, espacés de plus que l'écart.
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) values (${q(P11)}, 'a', 'simule', true, now() - interval '23 hours'), (${q(P11)}, 'b', 'simule', true, now() - interval '20 hours')`);
   await sql(`update projets set filet_plafond_jour = 2 where id = ${q(P11)}`);
-  verifie("plafond relevé et 5 min passées : le réveil repart", await passe() === "simule" && await journal() === 2);
+  verifie("plafond du jour atteint (2 sur 2) : aucun réveil de plus", await passe() === "plafond" && await journal() === 2);
+  await sql(`update projets set filet_plafond_jour = 3 where id = ${q(P11)}`);
+  verifie("plafond relevé et l'écart (8 h) passé : le réveil repart", await passe() === "simule" && await journal() === 3);
   // Sans jeton : le vrai chemin (sans simulation) n'appelle rien et ne journalise rien.
   await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
   const r = await passe(true, false);
@@ -2753,7 +2766,7 @@ async function controle38_filet_securite() {
   const mauvais = await sql(`select regler_filet(${q(SLUG_K)}, null, 99, null) as r`).then(() => "accepté", (e) => e.message);
   verifie("plafond hors 0-48 refusé", /48/.test(String(mauvais)), mauvais);
   const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e;
-  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 2, e);
+  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 3, e);
   // Le vrai cron ne touche jamais un projet de test.
   const vraie = await une(`select filet_passe() as r`);
   verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
@@ -2767,7 +2780,7 @@ async function controle40_liberation_auto() {
   section("40. Libération automatique (0050) : pg_cron toutes les 3 min libère le chantier d'une session morte, une seule règle");
   await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération')`);
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-liberation-auto'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-liberation-auto existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  verifie("pg_cron : le job cockpit-liberation-auto existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.liberation_passe(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.liberer_silencieux_coeur(text)', 'execute') as coeur, has_function_privilege('service_role', 'cockpit.liberation_passe(text,boolean)', 'execute') as srv`);
   verifie("liberation_passe / liberer_silencieux_coeur : réservés au service", !droits.anon && !droits.coeur && droits.srv, droits);
   const mort = await creerChantier(PLB, { titre: "LIBÉRATION Session morte", etat: "en_cours" });
@@ -2794,7 +2807,7 @@ async function controle47_agents_finis() {
   section("47. Agents finis (0061) : tache_morte fermée par pg_cron, jamais un agent vivant, une session vivante ni un projet test");
   await sql(`insert into projets (id, slug, nom) values (${q(PAF)}, ${q(SLUG_AF)}, 'Projet de test agents finis')`);
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-taches-mortes'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.tache_morte(cockpit.taches)', 'execute') as regle, has_function_privilege('service_role', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as srv`);
   verifie("clore_taches_mortes / tache_morte : réservées au service", !droits.anon && !droits.regle && droits.srv, droits);
   const SM = `sess-mort-${rand}`, SV = `sess-vivante-${rand}`;

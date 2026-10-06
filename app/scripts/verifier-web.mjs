@@ -344,13 +344,13 @@ try {
   console.log('  — accueil « Tout » (tableau de bord)')
   verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
   const bTuiles = await page.getByTestId('tuiles').boundingBox()
-  verifie('les quatre tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 4, bTuiles)
+  verifie('les cinq tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 5, bTuiles)
   const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
   verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
   // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
-  verifie('tuile « en attente » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
+  verifie('tuile « à lancer » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
   // Le détail est ouvert d'emblée (30 sept.) : pas de toucher pour l'ouvrir.
   verifie('« Détail par projet » ouvert d\'emblée', await page.getByTestId('detail-ou-jen-suis').getAttribute('aria-expanded') === 'true')
   // Les projets jetables d'un AUTRE banc (verifier-base, verifier-embed… lancés en même temps) naissent et
@@ -377,18 +377,29 @@ try {
   // « En attente » (chantier 37405805) : chaque ligne dit ce qui se passe, ce qui va être fait, et « rien à faire » ou le geste.
   if (await nTuile('enPause')) {
     await page.getByTestId('tuile-enPause').click()
-    const dlgE = page.getByRole('dialog').filter({ hasText: 'En attente' })
+    const dlgE = page.getByRole('dialog').filter({ hasText: 'À lancer' })
     await dlgE.waitFor({ timeout: 5000 })
     const lignesE = dlgE.getByTestId('ligne-en-attente')
     const nE = await lignesE.count()
     const textesE = await lignesE.evaluateAll((els) => els.map((e) => [...e.querySelectorAll('[data-testid="attente-quoi"],[data-testid="attente-suite"]')].map((x) => x.textContent).join(' ')))
-    verifie('tuile « en attente » : chaque ligne dit ce qui se passe et ce qui va être fait, sans jargon',
+    verifie('tuile « à lancer » : chaque ligne dit ce qui se passe et ce qui va être fait, sans jargon',
       nE >= 1 && (await dlgE.getByTestId('attente-quoi').count()) === nE && (await dlgE.getByTestId('attente-suite').count()) === nE
       && textesE.every((t) => !/renfort\/|réservé|abandonné/.test(t) && /(Rien à faire|Lancer|repris|prend|prendra|relance)/.test(t)), textesE)
     verifie('…titre entier (pas tronqué) et pas de débordement horizontal',
       !(await dlgE.getByTestId('ligne-en-attente').first().locator('span.truncate').count()) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     await page.keyboard.press('Escape')
     await dlgE.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
+  // « De côté » (6 oct. 2026, chantier 1724cd4f) : les chantiers mis de côté / reportés étaient listés nulle part.
+  verifie('plus aucune tuile ne s’appelle « en attente » (ambigu : on ne sait pas ce qui attend quoi)', !/en attente/i.test(await page.getByTestId('tuiles').innerText()))
+  if (await nTuile('deCote')) {
+    await page.getByTestId('tuile-deCote').click()
+    const dlgC = page.getByRole('dialog').filter({ hasText: 'De côté' })
+    await dlgC.waitFor({ timeout: 5000 })
+    verifie('tuile « de côté » : autant de lignes que le nombre, chacune dit « Mis de côté » ou la date de report',
+      await dlgC.getByTestId('ligne-liste-ou-jen-suis').count() === await nTuile('deCote') && (await dlgC.getByTestId('quand-de-cote').allTextContents()).every((t) => /Mis de côté|Reporté au|Report échu/.test(t)))
+    await page.keyboard.press('Escape')
+    await dlgC.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
   // « Fini » (chantier 3cea6ae9) : chaque ligne dit quand et par qui, le plus récemment certifié en haut.
   if (await nTuile('fini')) {
