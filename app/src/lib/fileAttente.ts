@@ -15,6 +15,8 @@
  * visible (copier / réessayer / abandonner après confirmation).
  */
 
+import type { Message } from './types.ts'
+
 export type StatutElement = 'attente' | 'refuse'
 
 export interface ElementFile {
@@ -213,4 +215,47 @@ export function niveauAffichage(o: { attente: number; refuses: number; horsLigne
   if (o.attente > 0 && o.plusAncienAttente != null && o.maintenant - o.plusAncienAttente >= o.delaiS * 1000) return 'panneau'
   if (o.horsLigne || o.attente > 0) return 'voyant'
   return 'rien'
+}
+
+/**
+ * Messages gardés sur l'appareil, pas encore partis (6 oct. 2026, vérification de Raphaël : « un message
+ * écrit hors ligne est gardé mais la bulle et le fil ne l'affichent pas »). UNE règle : la file (persistée
+ * dans IndexedDB, donc aussi après rechargement) est la source ; l'écran les range avec les vrais messages,
+ * marqués `en_attente_envoi`. Un message déjà arrivé du serveur (même id) n'est jamais doublé. Quand
+ * l'envoi réussit l'élément quitte la file et la ligne devient normale ; refusé : `envoi_refuse`.
+ */
+export function messagesEnAttente(elements: ElementFile[]): Message[] {
+  const sortie: Message[] = []
+  for (const el of elements) {
+    if (el.methode.toUpperCase() !== 'POST' || el.corps?.type !== 'texte') continue
+    const c = cibleDe(el.url)
+    if (c.genre !== 'table' || c.nom !== 'messages') continue
+    let v: unknown
+    try { v = JSON.parse(el.corps.v) } catch { continue }
+    for (const o of Array.isArray(v) ? v : [v]) {
+      if (!o || typeof o !== 'object') continue
+      const r = o as Partial<Message>
+      if (typeof r.id !== 'string' || typeof r.projet_id !== 'string') continue
+      sortie.push({
+        pourquoi: null, options: null, reponse: null, precision: null, repond_a: null, etat: null, answered_at: null, answered_by: null,
+        chantier_id: null, auteur: '', auteur_type: 'proprietaire', kind: 'info', corps: '',
+        ...r, created_at: r.created_at ?? new Date(el.ajoute).toISOString(),
+        en_attente_envoi: true, envoi_refuse: el.statut === 'refuse',
+      } as Message)
+    }
+  }
+  return sortie
+}
+
+/** Les vrais messages + ceux qui attendent d'être envoyés (la version « en attente » remplace une copie locale de même id). */
+export function fusionnerEnAttente(messages: Message[], elements: ElementFile[]): Message[] {
+  const attente = messagesEnAttente(elements)
+  if (!attente.length) return messages
+  const ids = new Set(attente.map((m) => m.id))
+  return [...messages.filter((m) => !ids.has(m.id)), ...attente].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+}
+
+/** Phrase posée sur un message qui n'est pas encore parti. */
+export function phraseMessageEnAttente(m: Pick<Message, 'envoi_refuse'>): string {
+  return m.envoi_refuse ? 'Refusé par le serveur : détail dans le bandeau en haut (copier, réessayer)' : 'En attente d’envoi : gardé sur cet appareil, il part au retour du réseau'
 }
