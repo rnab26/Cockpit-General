@@ -69,6 +69,7 @@ node scripts/verifier-push.mjs                            # notifications push :
 node app/scripts/verifier-hors-ligne.mjs                    # survie des données côté app : écriture sans réseau gardée, survit au rechargement, repart dans l'ordre, pas de doublon si la réponse se perd, refus visible/réessayable, lecture hors ligne
 node scripts/verifier-file-sessions.mjs                    # survie des données côté sessions : sql.sh garde les écritures base injoignable, les rejoue dans l'ordre, un SQL refusé n'est pas jeté
 node scripts/verifier-greffe.mjs                           # dépôt d'autrui : refus sans --voie, voie 1 sans trace, voie 2 garde + branche propre, voie 3 inchangée
+node scripts/verifier-clarte.mjs                          # vocabulaire des cartes : jargon refusé, bouton entre « » accepté (sans base)
 bash -n scripts/*.sh hooks/*.sh
 ```
 
@@ -690,6 +691,7 @@ toute écriture) : `demander.sh` (question ≤ 140 car., pourquoi ≤ 250, 2 à 
 options avec aide ≤ 140), `progression.sh` (`--verifier` ≤ 5 étapes
 numérotées, ≤ 500 car. ; résumé de `--termine` ≤ 120), `chantier.sh` (titre
 ≤ 80). Même exigence pour tout texte que l'app affiche.
+**Vocabulaire (6 oct. 2026, chantier ca171345)** : Raphaël, « du jargon, du charabia, toujours les mêmes phrases ». UNE liste de mots de développeur (endpoint, hook, migration, commit, branche, script, déployer…) dans `scripts/clarte.py`, appelée par `demander.sh` (question, pourquoi, options, étapes), `progression.sh` (`--verifier`, résumé de `--termine`, `--point`) et `verdict.sh` : refus avant d'écrire, avec le mot de remplacement. Le nom d'un bouton entre « » n'est pas contrôlé. Les cartes de PR (`pr-a-fusionner.sh`) sont réécrites en mots simples (clés « Fusionne la PR #n » inchangées). Limite : une liste ne juge pas la clarté d'une phrase, seulement le vocabulaire ; les phrases déjà en base ne sont pas réécrites. `verifier-clarte.mjs`.
 
 ## Médias dans les réponses (29 sept. 2026, migration 0013)
 

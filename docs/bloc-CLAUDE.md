@@ -71,6 +71,15 @@ demandes des utilisateurs, progression des autres sessions.
   choisit. Pas de jargon, pas d'identifiant, pas de chiffres techniques : le
   détail va dans le fil. Les scripts refusent ce qui dépasse (Raphaël, 29 sept. :
   « dans 80 % des cas je ne comprends pas, donc je ne peux pas répondre »).
+  **Écrire pour un jeune de 15 ans** (Raphaël, 6 oct. : « du jargon, du
+  charabia, toujours les mêmes phrases ») : des mots de tous les jours, une idée
+  par phrase, un verbe d'action au début de chaque étape, et jamais la même
+  formule recopiée d'une carte à l'autre. Pas : « Fusionne la PR, la CI est
+  verte, le hook est propagé ». Mais : « Touche « Merge pull request » : le
+  changement part en ligne. » `scripts/clarte.py` refuse les mots de
+  développeur (endpoint, hook, migration, commit, branche, script, déployer…)
+  dans les questions, étapes, « comment vérifier », résumés et réponses ; le nom
+  exact d'un bouton va entre « », le détail technique dans le fil.
 - **Chaque demande de travail de Raphaël → un chantier, AVANT de coder** :
   `scripts/cockpit-chantier.sh --ouvrir "<titre court>" --demande "<ses mots>" --section "<rubrique>"`.
   Il reprend (ou rouvre) le chantier existant au lieu d'en créer un doublon.

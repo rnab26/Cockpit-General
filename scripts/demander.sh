@@ -139,6 +139,10 @@ trop_long() { # $1 = nom, $2 = texte, $3 = max
 }
 trop_long "--question" "$question" 140
 trop_long "--pourquoi" "$pourquoi" 250
+# Vocabulaire : pas de jargon de développeur (scripts/clarte.py, une seule liste).
+{ printf '%s\0' "--question" "$question" "--pourquoi" "$pourquoi"
+  for o in ${options[@]+"${options[@]}"}; do printf '%s\0' "une option" "${o//|/ }"; done
+  for e in ${etapes[@]+"${etapes[@]}"}; do printf '%s\0' "une --etape" "$e"; done; } | python3 "$RACINE/scripts/clarte.py" || exit 2
 if [ "$kind" = "question" ]; then
   if [ ${#options[@]} -lt 2 ] || [ ${#options[@]} -gt 4 ]; then
     echo "Refusé (règle de clarté) : une question propose 2 à 4 réponses toutes prêtes (--option \"libellé|ce qui se passe|recommande\"), pour que Raphaël réponde d'un toucher. $CONSEIL" >&2; exit 2
