@@ -64,23 +64,24 @@ reponses_fraiches() {
       union select chantier_id from activite where session = '$qb' and '$qb' <> '' and updated_at > now() - interval '3 hours' and chantier_id is not null"
   fi
   if [ -n "$depuis" ]; then
-    cond="coalesce(m.answered_at, m.created_at) > '$depuis'::timestamptz"
+    cond="coalesce(m.answered_at, m.retour_at, m.created_at) > '$depuis'::timestamptz"
   else
-    cond="coalesce(m.answered_at, m.created_at) > now() - interval '24 hours'
-      and not exists (select 1 from messages s where s.chantier_id = m.chantier_id and s.auteur_type = 'session' and s.created_at > coalesce(m.answered_at, m.created_at))"
+    cond="coalesce(m.answered_at, m.retour_at, m.created_at) > now() - interval '24 hours'
+      and not exists (select 1 from messages s where s.chantier_id = m.chantier_id and s.auteur_type = 'session' and s.created_at > coalesce(m.answered_at, m.retour_at, m.created_at))"
   fi
   brut=$(timeout 3 "$SQL" "with mes as ($mes)
     select now() as maintenant, string_agg(format('- « %s » : %s%s', c.titre,
-        case when m.kind in ('question','action') then format('il a répondu à « %s » → %s%s', left(m.corps, 90), m.reponse, coalesce(' — ' || m.precision, ''))
+        case when cockpit.est_retour_carte(m) then format('CARTE RESTÉE OUVERTE, il a répondu « %s » à « %s »%s → traite-le, puis FERME la carte (elle ne se ferme pas seule) : %s --retirer %s \"pourquoi\" si elle n''a plus lieu d''être, sinon corrige et reviens la lui reposer', m.reponse, left(m.corps, 90), coalesce(' — ' || m.precision, ''), '${COCKPIT_DEM_CMD:-scripts/demander.sh}', m.id)
+             when m.kind in ('question','action') then format('il a répondu à « %s » → %s%s', left(m.corps, 90), m.reponse, coalesce(' — ' || m.precision, ''))
              when m.ou_en_est then format('il demande OÙ ÇA EN EST. Réponds-lui tout de suite dans le fil, en 3 lignes au plus (fait / reste / ce qui bloque) : %s --chantier %s --point \"…\"', '${COCKPIT_PROG_CMD:-scripts/progression.sh}', c.id)
              when cockpit.est_message_libre(m) then format('il t''écrit : « %s » → RÉPONDS-LUI dans ce fil, court, avant de continuer : %s --chantier %s --point \"…\" (un AUTRE sujet, « il faudrait aussi… » ? crée-le et range-le, ta réponse porte le lien : %s --ouvrir \"<titre>\" --demande \"<ses mots>\" --depuis %s --reponse \"…\")', left(m.corps, 400), '${COCKPIT_PROG_CMD:-scripts/progression.sh}', c.id, '${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}', c.id)
              else left(m.corps, 400) end,
-        case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) : media.sh --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by coalesce(m.answered_at, m.created_at)) as nouvelles,
+        case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) : media.sh --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by coalesce(m.answered_at, m.retour_at, m.created_at)) as nouvelles,
       string_agg(m.id::text, ',') filter (where m.recu_at is null and (m.ou_en_est or cockpit.est_message_libre(m))) as a_marquer
     from messages m join chantiers c on c.id = m.chantier_id
     where m.chantier_id in (select id from mes)
       and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and not m.via_session)
-        or (m.kind in ('question','action') and m.answered_at is not null and coalesce(m.reponse, '') not like 'Retirée par Claude%'))
+        or (m.kind in ('question','action') and (m.answered_at is not null or cockpit.est_retour_carte(m)) and coalesce(m.reponse, '') not like 'Retirée par %'))
       and $cond" 2>/dev/null)
   local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
   [ -n "$maintenant" ] && printf '%s\n' "$maintenant" > "$cur" 2>/dev/null   # seulement si la base a répondu

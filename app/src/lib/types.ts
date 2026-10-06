@@ -126,6 +126,8 @@ export interface Message {
   etat: EtatAction | null
   answered_at: string | null
   answered_by: string | null
+  /** 0070 : quand il a touché « Ça bloque » / « Pas encore » sur une carte d'action (la carte reste ouverte, answered_at reste nul). */
+  retour_at?: string | null
   created_at: string
   /** Pièces jointes (0013) : fichiers du stockage privé `cockpit-medias`. */
   medias?: Media[] | null
