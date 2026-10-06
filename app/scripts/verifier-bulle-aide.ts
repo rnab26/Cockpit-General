@@ -1,6 +1,6 @@
 // Bulle flottante d'aide : allumée par défaut, projet choisi en vue « Tout », fil libre.
 import { verifie, bilan } from './_assert.ts'
-import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, citer, cleBulle, constructeurVoix, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe } from '../src/lib/bulleAide.ts'
+import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, citer, cleBulle, cartesAFaire, constructeurVoix, filDeLaBulle, notifsChat, messageVoix, projetDeLaBulle, sujetDe } from '../src/lib/bulleAide.ts'
 import { estMessageLibre } from '../src/lib/discussion.ts'
 
 console.log('verifier-bulle-aide')
@@ -46,5 +46,13 @@ verifie('on cite la sélection, sinon le message sans sa ligne Sujet', aCiter(' 
 verifie('un message cité reste un message libre', estMessageLibre({ ...m('9', {}), corps: '> Veux-tu A ?\nA', answered_at: null } as any, []))
 verifie('voix : non supportée / supportée', constructeurVoix({}) === null && constructeurVoix({ webkitSpeechRecognition: class {} }) !== null)
 verifie('voix : micro refusé dit où l’autoriser', messageVoix('not-allowed').includes('Micro') && messageVoix('aborted') === '' && messageVoix('zzz').includes('zzz'))
+
+// Pastilles par chat : réponses libres non lues + cartes à faire ; le total de l'onglet = somme des chats.
+const el = (type: string, id: string, chantierId: string | null, message = true) => ({ type, cle: id, projetId: 'a', chantier: chantierId ? { id: chantierId } : null, message: message ? {} : null }) as any
+const cartes = cartesAFaire([el('question', 'q1', 'c1'), el('a_verifier', 'v1', 'c1'), el('question', 'q2', 'c2'), el('bloque', 'b', 'c3'), el('fusion', 'f', null), el('fusion', 'f2', null, false)])
+verifie('cartes : une question d’un chantier à vérifier n’est pas comptée deux fois, un « bloque » n’est pas une carte', cartes.map((c: any) => c.cle).join() === 'v1,q2,f', cartes.map((c: any) => c.cle))
+const nl = new Map([['projet:a', { n: 2, dernier: 'x' }], ['c9', { n: 5, dernier: 'x' }]])
+verifie('notifs : réponses du fil libre + cartes, jamais les réponses d’un fil de chantier', JSON.stringify(notifsChat(nl, 'a', cartes)) === JSON.stringify({ reponses: 2, aFaire: 3, total: 5 }))
+verifie('notifs : rien = zéro', notifsChat(new Map(), 'b', []).total === 0)
 
 bilan()

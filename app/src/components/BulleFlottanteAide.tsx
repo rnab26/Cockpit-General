@@ -9,7 +9,7 @@ import { Dialog } from '../ui/Dialog.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
 import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
-import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, constructeurVoix, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
+import { aCiter, auteurDe, avecCitation, bulleActive, cartesAFaire, citationDe, constructeurVoix, notifsChat, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { heureLisible } from '../lib/dates.ts'
 import type { Message } from '../lib/types.ts'
@@ -60,7 +60,7 @@ export function BulleFlottanteAide({ projetOuvertId, onFermer, sansBouton = fals
   const recharger = g.recharger
   useEffect(() => {
     if (!ouvert || !attend) return
-    const t = window.setInterval(() => { void recharger() }, 10_000)
+    const t = window.setInterval(() => { void recharger(true) }, 10_000)
     return () => window.clearInterval(t)
   }, [ouvert, attend, recharger])
   // Fermer la bulle coupe le micro.
@@ -104,7 +104,7 @@ export function BulleFlottanteAide({ projetOuvertId, onFermer, sansBouton = fals
     if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return }
     setTexte(''); setCitation(null); pj.vider()
     toast.succes('Message envoyé : Claude te répondra ici.')
-    await g.recharger()
+    await g.recharger(true)
   }
 
   return (
@@ -219,8 +219,8 @@ export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: bool
   if (!ouvert) return null
   const lignes = g.projets
     .filter((p) => bulleActive(g.prefs, p.id))
-    .map((p) => { const fil = filDeLaBulle(g.messages, p.id); return { p, dernier: fil.length ? fil[fil.length - 1] : null } })
-    .sort((a, b) => (b.dernier?.created_at ?? '').localeCompare(a.dernier?.created_at ?? '') || a.p.nom.localeCompare(b.p.nom))
+    .map((p) => { const fil = filDeLaBulle(g.messages, p.id); return { p, dernier: fil.length ? fil[fil.length - 1] : null, notifs: notifsChat(g.nonLus, p.id, cartesAFaire(aToi(g.chantiers, g.messages, p.id, g.activites, g.taches))) } })
+    .sort((a, b) => Number(b.notifs.total > 0) - Number(a.notifs.total > 0) || (b.dernier?.created_at ?? '').localeCompare(a.dernier?.created_at ?? '') || a.p.nom.localeCompare(b.p.nom))
   const q = filtre.trim().toLowerCase()
   const vues = q ? lignes.filter((l) => l.p.nom.toLowerCase().includes(q)) : lignes
   return (
@@ -236,8 +236,7 @@ export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: bool
           <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-vide">Les discussions sont éteintes sur tous les projets (case « Bulle d’aide sur ce projet » dans Réglages du projet).</p>
         ) : vues.length === 0 ? (
           <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-aucun">Aucun projet ne s’appelle « {filtre} ».</p>
-        ) : vues.map(({ p, dernier }) => {
-          const nl = g.nonLus.get(cleFil(p.id, null))
+        ) : vues.map(({ p, dernier, notifs }) => {
           const { sujet, reste } = sujetDe(citationDe(dernier?.corps ?? null).reste)
           const apercu = dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${(sujet ?? reste ?? '').replace(/\s+/g, ' ').trim() || (mediasDe(dernier).length ? resumeMedias(mediasDe(dernier)) : '…')}` : 'Pas encore de message'
           return (
@@ -251,7 +250,10 @@ export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: bool
                 </span>
                 <span className="block truncate text-sm text-texte-2" data-testid="discussion-apercu">{apercu}</span>
               </span>
-              {nl ? <span data-testid="discussion-pastille" data-nombre={nl.n} aria-label={`${nl.n} réponse${nl.n > 1 ? 's' : ''} de Claude à lire`} className="min-w-5 shrink-0 rounded-full bg-alerte px-1.5 text-center text-xs font-bold leading-5 text-white">{nl.n}</span> : null}
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                {notifs.reponses ? <span data-testid="discussion-pastille" data-nombre={notifs.reponses} aria-label={`${notifs.reponses} réponse${notifs.reponses > 1 ? 's' : ''} de Claude à lire`} className="min-w-5 rounded-full bg-alerte px-1.5 text-center text-xs font-bold leading-5 text-white">{notifs.reponses}</span> : null}
+                {notifs.aFaire ? <span data-testid="discussion-a-faire" data-nombre={notifs.aFaire} aria-label={`${notifs.aFaire} chose${notifs.aFaire > 1 ? 's' : ''} à faire dans ce chat`} className="rounded-full bg-accent px-1.5 text-center text-[11px] font-semibold leading-5 text-white">{notifs.aFaire} à faire</span> : null}
+              </span>
             </button>
           )
         })}
@@ -268,14 +270,7 @@ export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: bool
  */
 function AFaireIci({ projetId }: { projetId: string }) {
   const g = useGlobal()
-  const els = aToi(g.chantiers, g.messages, projetId, g.activites, g.taches)
-  // Une vérification montre déjà les questions de son chantier : pas de doublon.
-  const verifies = new Set(els.filter((e) => e.type === 'a_verifier' && e.chantier).map((e) => e.chantier!.id))
-  const liste = els.filter((e) => {
-    if (e.type === 'question' || e.type === 'action') return !!e.message && !(e.chantier && verifies.has(e.chantier.id))
-    if (e.type === 'a_verifier' || e.type === 'a_cadrer') return !!e.chantier
-    return e.type === 'fusion' && !!e.message
-  })
+  const liste = cartesAFaire(aToi(g.chantiers, g.messages, projetId, g.activites, g.taches))
   if (!liste.length) return null
   return (
     <section className="space-y-2 border-t border-bord pt-2" data-testid="bulle-a-faire" aria-label="À faire ici">

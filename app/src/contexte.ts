@@ -29,7 +29,7 @@ export interface Contexte {
   now: Date
   /** Le délai de silence (réglage `silence_minutes`), en ms. */
   silenceMs: number
-  recharger: () => Promise<void>
+  recharger: (silencieux?: boolean) => Promise<void>
   /** Écriture sans rechargement complet (lib/reponseCarte.ts) : une ligne posée à l'écran, puis relue seule en base. */
   messagesLocal: MessagesLocal
   prefs: Preferences
@@ -62,7 +62,7 @@ export interface Global {
   silenceMs: number
   prefs: Preferences
   poser: (cle: string, valeur: unknown) => Promise<void>
-  recharger: () => Promise<void>
+  recharger: (silencieux?: boolean) => Promise<void>
   /** Relit la liste des projets (mode autonome, dépôt…). */
   rechargerProjets: () => Promise<void>
   /** « N chantiers prêts » par projet, lu en base (0065) ; null : pas encore reçu, l'écran retombe sur sa copie locale. */

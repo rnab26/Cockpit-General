@@ -7,6 +7,8 @@
  *    le projet dont le fil libre a reçu le dernier message, sinon le premier.
  */
 import type { Message, Projet } from './types.ts'
+import type { ElementAToi } from './entonnoir.ts'
+import { cleFil, type NonLus } from './lecture.ts'
 
 export const cleBulle = (projetId: string) => `bulle_flottante_aide_${projetId}`
 
@@ -88,3 +90,31 @@ export function messageVoix(code: string): string {
   }
 }
 export const VOIX_NON_SUPPORTEE = 'La dictée vocale n’est pas disponible dans ce navigateur : utilise Chrome (Android ou ordinateur) ou Safari, ou le micro du clavier.'
+
+/**
+ * Les cartes « À faire ici » d'un chat : celles de « À toi de jouer » qu'on peut traiter dans la discussion.
+ * UNE règle, lue par le chat (AFaireIci) ET par les pastilles de la liste / de la barre du bas : ce qui est
+ * compté sur un chat est exactement ce qu'on y trouve en l'ouvrant.
+ */
+export function cartesAFaire(els: readonly ElementAToi[]): ElementAToi[] {
+  // Une vérification montre déjà les questions de son chantier : pas de doublon.
+  const verifies = new Set(els.filter((e) => e.type === 'a_verifier' && e.chantier).map((e) => e.chantier!.id))
+  return els.filter((e) => {
+    if (e.type === 'question' || e.type === 'action') return !!e.message && !(e.chantier && verifies.has(e.chantier.id))
+    if (e.type === 'a_verifier' || e.type === 'a_cadrer') return !!e.chantier
+    return e.type === 'fusion' && !!e.message
+  })
+}
+
+export interface NotifsChat { reponses: number; aFaire: number; total: number }
+
+/**
+ * Ce qui attend sur le chat d'UN projet : réponses de Claude non lues dans sa discussion + cartes à traiter.
+ * Le total de l'onglet « Discussions » est la somme des chats (jamais un autre compte : avant, il comptait
+ * aussi les réponses des fils de chantiers, qu'aucun chat ne montre, et ne retombait pas à zéro).
+ */
+export function notifsChat(nonLus: ReadonlyMap<string, NonLus>, projetId: string, cartes: readonly ElementAToi[]): NotifsChat {
+  const reponses = nonLus.get(cleFil(projetId, null))?.n ?? 0
+  const aFaire = cartes.length
+  return { reponses, aFaire, total: reponses + aFaire }
+}

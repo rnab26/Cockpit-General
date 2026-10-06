@@ -162,9 +162,9 @@ if [ -n "$pas_prete" ]; then
       if [ "$mstate" = "dirty" ]; then quoi="en conflit"; txt="un agent la répare"; else quoi="à mettre à jour"; txt="un agent la met à jour"; fi
       if [ "$(conflit_ouvert)" = "0" ]; then
         COCKPIT_PROJET="$projet" "$DEM" --action --question "PR #$n $quoi : $txt" \
-          --pourquoi "main a avancé : la PR ne peut plus être fusionnée telle quelle. Rien à faire de ton côté : la carte « Fusionne la PR #$n » revient toute seule quand elle est propre." \
+          --pourquoi "Le reste du projet a changé pendant ce travail : les deux versions se contredisent. Claude les remet d'accord tout seul, rien à faire pour toi." \
           --lien "https://github.com/$depot/pull/$n|Voir la PR #$n" \
-          --etape "Rien à faire : attends la carte « Fusionne la PR #$n »" >/dev/null || { echo "La carte « $quoi » de la PR #$n n'a pas pu être posée." >&2; exit 1; }
+          --etape "Rien à faire : une nouvelle carte arrivera quand ce sera prêt" >/dev/null || { echo "La carte « $quoi » de la PR #$n n'a pas pu être posée." >&2; exit 1; }
         echo "PAS PRÊTE : PR #$n $pas_prete. Carte « $quoi » posée dans « À toi »."
       else echo "PAS PRÊTE : PR #$n $pas_prete. Carte « $quoi » déjà posée."; fi ;;
     *:cours|unknown:*)   # Calcul ou CI en cours : on ne touche à rien (une carte « Fusionne » déjà posée est gardée).
@@ -188,7 +188,7 @@ if [ "$toutes" != "0" ]; then echo "PR #$n : carte déjà posée ($ouvertes ouve
 question="$cle ${titre:-prête à valider}"
 [ ${#question} -le 140 ] || question="${question:0:137}..."
 COCKPIT_PROJET="$projet" "$DEM" --action --question "$question" \
-  --pourquoi "La plateforme refuse la fusion par une session : seul ton toucher la fait. Le travail est fini et vérifié." \
+  --pourquoi "C'est prêt et testé. Seul ton toucher peut le mettre en ligne." \
   --lien "https://github.com/$depot/pull/$n|Ouvrir la PR #$n" \
   --etape "Touche « Merge pull request »" \
   --etape "Touche « Confirm merge »" >/dev/null || { echo "La carte de la PR #$n n'a pas pu être posée." >&2; exit 1; }
