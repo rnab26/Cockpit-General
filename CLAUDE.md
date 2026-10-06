@@ -1013,4 +1013,25 @@ Raphaël : « je n'arrive plus à me connecter, ça charge sans fin, puis ça cr
 **Rechargement jamais périmé (5 oct. 2026, revue)** : `useDonnees.recharger` rendait le passage DÉJÀ en cours quand on le redemandait ; or ce passage pouvait avoir commencé AVANT l'écriture qu'on venait de faire : après « Je ne peux pas vérifier » ou « Fait », l'écran gardait l'ancien état jusqu'au sondage de 30 s (visible surtout sans temps réel). Maintenant un seul passage à la fois, mais une demande arrivée pendant un passage en programme UN de plus derrière (partagé par toutes les demandes du moment). Sur la fiche : `verifier-web` 471/471. Mesure du chargement complet (5 oct., écran de téléphone, base calme) : 3,5 s, **1,7 Mo** à chaque rechargement complet (messages 1,1 Mo, tâches 447 Ko, chantiers 337 Ko) : si l'app doit s'alléger, c'est là (limiter les tâches aux vivantes + récentes, ne relire que les messages récents) ; non fait, parce que ça touche toutes les règles d'écran.
 
 
+## « Ça bloque » sur une carte d'action (6 oct. 2026, migration 0070, chantier 0fec7563)
+
+Raphaël : « j'ai beau écrire que ça bloque et que la PR 60 n'existe pas, rien ne prend mon retour ».
+Cause : `repondre_message` laisse `answered_at` NUL sur une action non « fait » (la carte reste ouverte) et
+tout ce qui sert un retour à Claude (`reponses_sans_suite`, hook de démarrage, hook de suivi) exigeait
+`answered_at` : le retour n'était lu par personne. Maintenant : `messages.retour_at` date le retour,
+`est_retour_carte` (« Ça bloque », ou « Pas encore » avec un mot/fichier) le fait servir, la consigne de
+l'agent exige de FERMER la carte (`demander.sh --retirer`), Raphaël peut la retirer lui-même
+(`retirer_carte`, bouton sur la carte), et `pr-a-fusionner.sh` retire/ne pose pas la carte d'une PR
+inexistante (404 alors que le dépôt répond). Tests : `verifier-base` §50 et §37, `verifier-reponses` 5 bis.
+
+## Bulle embarquée : saisie fluide et pièces jointes (6 oct. 2026, chantier d1cf639b)
+
+Taper ne redessine plus l'écran (mises à jour en place), champs qui grandissent, Ctrl/Cmd+Entrée envoie.
+Pièces jointes : action serveur `televerser` (adresse d'envoi signée vers `cockpit-medias`, 25 Mo au plus,
+le fichier ne passe pas par la fonction), `medias` acceptés par `creer` / `corriger` / `message` (chemin sous
+le projet de la clé et fichier existant, vérifiés), lecture par adresses signées dans `etat` (jamais le
+chemin). Fonction à redéployer après modification : `VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-embed`.
+Liens : une adresse https écrite dans une carte « À toi » ou dans « Comment vérifier » devient un bouton
+(`ui/TexteAvecLiens.tsx`, `liensDuTexte`).
+
 **Discussions : pastilles réparties par chat** (6 oct. 2026, chantier 3b2bf53d ; Raphaël : « les notifications ne sont pas réparties dans les différents chats »). Cause prouvée : la pastille de l'onglet « Discussions » comptait TOUTES les réponses non lues (fils de chantiers compris) alors que chaque ligne de chat ne comptait que la discussion libre, et les cartes « À faire ici » n'étaient comptées nulle part. UNE règle (`lib/bulleAide.ts` : `cartesAFaire`, `notifsChat`) : un chat = réponses non lues de sa discussion + cartes à faire (même liste que celle affichée en ouvrant le chat) ; l'onglet = la somme des chats ; la liste met en haut les chats qui attendent. Le sondage de 10 s de la bulle relit en silence (`recharger(true)`, plus de voyant de chargement ni d'erreur à l'écran). `verifier-bulle.mjs` (cartes répondues dans le chat, clavier ouvert, total = somme), `verifier-bulle-aide.ts`. Non vérifié : vrai téléphone (clavier réel).

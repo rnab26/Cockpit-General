@@ -1970,6 +1970,19 @@ async function controle37_pr_a_fusionner() {
   const inconnue = lancer(["12", "--fermee"]);
   const mauvais = lancer(["abc"]);
   verifie("--fermee sur une PR sans carte : sans erreur, rien créé ; un numéro invalide est refusé", inconnue.code === 0 && (await cartes(12)).length === 0 && mauvais.code === 2, { inconnue, mauvais });
+  // PR INEXISTANTE (0fec7563) : le cas de Raphaël, une carte « Fusionne la PR #60 » pour une PR qui n'existe pas dans le dépôt.
+  // GitHub réel : le dépôt (public) répond, la PR #999999 y répond 404 → la carte est retirée, et aucune n'est posée.
+  await sql(`update projets set depot = 'rnab26/Cockpit-General' where id = ${q(P10)}`);
+  lancer(["999999", "--etat", "open", "--titre", "PR d'un autre dépôt"]);   // la carte traîne (posée quand l'état était donné)
+  verifie("(avant) la carte de la PR #999999 est posée", (await cartes(999999)).filter((c) => c.answered_at === null).length === 1);
+  const inex = lancer(["999999"]);
+  const apresInex = await cartes(999999);
+  verifie("PR introuvable dans le dépôt (404 alors que le dépôt répond) : la carte est retirée, jamais gardée pour toujours",
+    inex.code === 0 && apresInex.length === 1 && apresInex[0].answered_at !== null && /n'existe pas dans/.test(inex.sortie), { inex, apresInex });
+  const rep = (await sql(`select reponse, answered_by from messages where projet_id = ${q(P10)} and left(corps, 24) = 'Fusionne la PR #999999 :'`))[0];
+  verifie("réponse AUTOMATIQUE (answered_by vide) : jamais prise pour une réponse de Raphaël, donc jamais reprise", rep?.answered_by === null && /^PR #999999 pas prête/.test(rep?.reponse ?? ""), rep);
+  const inex2 = lancer(["999998"]);
+  verifie("PR inexistante sans carte : aucune carte posée, le script le dit", inex2.code === 0 && (await cartes(999998)).length === 0 && /n'existe pas dans/.test(inex2.sortie), inex2);
 }
 
 // 38. PR sans conflit : la carte « À toi » n'arrive que si la PR est propre (script réel, propreté donnée par --merge-state / --ci, sans GitHub).
@@ -2982,6 +2995,58 @@ async function controle48_renfort_fini_pas_erreur() {
 
 // 49. Passe du chef sans perte (0069, chantier d48bafe7) : consigne gardée et relisible, réservation rendue si aucun agent ne démarre, relais qui ne redemande pas la même ouverture.
 const PPS = randomUUID(), SLUG_PS = `test-verif-${rand}-ps`;
+async function controle50_retour_carte_bloque() {
+  section("50. « Ça bloque » sur une carte d'action (0070) : le retour arrive à Claude, la carte se retire, « Pas encore » seul ne réveille personne");
+  // Le chemin de l'app : l'utilisateur membre appelle repondre_message avec son JWT (answered_by = lui).
+  const repondre = (mid, reponse, precision, etat) => rpcUtilisateur("repondre_message", { p_id: mid, p_par: "Raphaël", p_reponse: reponse, p_precision: precision ?? null, p_etat: etat ?? null }, jwt);
+  const attente = async () => (await sql(`select message_id from reponses_sans_suite(${q(P1)})`)).map((r) => r.message_id);
+  const c = await creerChantier(P1, { titre: "50 Carte qui bloque", etat: "libre", demande: "test 0070" });
+  const carte = await creerMessage(P1, c, { kind: "action", corps: "Fusionne la PR #999 : test" });
+  // 1. La cause : la carte reste ouverte (answered_at nul), mais le retour est DATÉ.
+  const r1 = await repondre(carte, "Ça bloque", "la PR 999 n'existe pas", "bloque");
+  verifie("repondre_message « Ça bloque » : accepté", r1.status < 300, r1);
+  const m = await une(`select answered_at, retour_at, etat, answered_by from messages where id = ${q(carte)}`);
+  verifie("la carte reste ouverte (answered_at nul) et le retour est daté (retour_at posé)", m.answered_at === null && m.retour_at !== null && m.etat === "bloque", m);
+  verifie("est_retour_carte : vrai pour ce retour", (await une(`select cockpit.est_retour_carte(m) as v from messages m where id = ${q(carte)}`)).v === true);
+  // 2. Il est SERVI : reponses_sans_suite le rend (avant, rien ne le lisait jamais).
+  verifie("« Ça bloque » + son mot : sans suite, donc repris par la chef / le hook de démarrage", (await attente()).includes(carte));
+  const rp = await une(`select reprendre_reponse('agent/test-50', ${q(P1)}) as r`);
+  verifie("reprendre_reponse confie le retour à un agent et dit « carte_ouverte » (il doit fermer la carte)",
+    rp.r?.carte_ouverte === true && rp.r?.precision === "la PR 999 n'existe pas" && rp.r?.question_id === carte, rp.r);
+  verifie("repris une fois : plus « sans suite » (pas de boucle)", !(await attente()).includes(carte));
+  // 3. L'agent ferme la carte : « Retirée par Claude » ; jamais reprise.
+  await sql(`update messages set answered_at = now(), reponse = 'Retirée par Claude (test) : cette PR n''existe pas' where id = ${q(carte)}`);
+  verifie("carte retirée par Claude : n'est plus ouverte, n'est jamais reprise", !(await attente()).includes(carte));
+  // 4. « Pas encore » SEUL : un état, pas une demande ; avec un mot : servi.
+  const c2 = await creerChantier(P1, { titre: "50 Pas encore", etat: "libre" });
+  const pe = await creerMessage(P1, c2, { kind: "action", corps: "Pose la clé : test" });
+  await repondre(pe, "Pas encore", null, "pas_encore");
+  verifie("« Pas encore » sans mot : pas servi", !(await attente()).includes(pe));
+  await repondre(pe, "Pas encore", "j'attends le mot de passe", "pas_encore");
+  verifie("« Pas encore » avec un mot : servi", (await attente()).includes(pe));
+  // 5. « Fait » : la carte se ferme, comme avant.
+  await repondre(pe, "Fait", null, "fait");
+  const fe = await une(`select answered_at, retour_at from messages where id = ${q(pe)}`);
+  verifie("« Fait » ferme la carte (answered_at posé), comme avant", fe.answered_at !== null, fe);
+  // 6. Raphaël retire LUI-MÊME une carte à tort : fermée, motif dans le fil, jamais reprise comme travail.
+  const c3 = await creerChantier(P1, { titre: "50 Retrait par Raphaël", etat: "libre" });
+  const a3 = await creerMessage(P1, c3, { kind: "action", corps: "Fusionne la PR #998 : test" });
+  const r3 = await rpcUtilisateur("retirer_carte", { p_id: a3, p_par: "Raphaël", p_motif: "cette PR n'existe pas" }, jwt);
+  const m3 = await une(`select answered_at, reponse from messages where id = ${q(a3)}`);
+  verifie("retirer_carte : la carte est fermée avec son motif", r3.status < 300 && m3.answered_at !== null && m3.reponse.startsWith("Retirée par Raphaël : cette PR"), { r3, m3 });
+  verifie("une carte retirée par lui n'est jamais reprise comme travail", !(await attente()).includes(a3));
+  verifie("son motif est écrit dans le fil (Claude le lit)", (await une(`select count(*)::int as n from messages where chantier_id = ${q(c3)} and kind = 'info' and corps like '%cette PR n''existe pas%'`)).n === 1);
+  const r3b = await rpcUtilisateur("retirer_carte", { p_id: a3, p_par: "Raphaël", p_motif: null }, jwt);
+  verifie("retirer deux fois : refusé proprement (déjà fermée)", r3b.status >= 400, r3b);
+  // 7. Un non-membre ne peut pas retirer (droits inchangés).
+  const c4 = await creerChantier(P2, { titre: "50 Autre projet", etat: "libre" });
+  const a4 = await creerMessage(P2, c4, { kind: "action", corps: "Carte d'un autre projet" });
+  const r4 = await rpcUtilisateur("retirer_carte", { p_id: a4, p_par: "x", p_motif: "x" }, jwt);
+  verifie("retirer_carte : un non-membre est refusé", r4.status >= 400, r4);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.retirer_carte(uuid,text,text)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.retirer_carte(uuid,text,text)', 'execute') as auth, has_function_privilege('authenticated', 'cockpit.est_retour_carte(cockpit.messages)', 'execute') as est`);
+  verifie("droits : retirer_carte pour les connectés seulement, jamais anon ; est_retour_carte réservé au service", !droits.anon && droits.auth && !droits.est, droits);
+}
+
 async function controle49_passe_sans_perte() {
   section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
   await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
@@ -3374,6 +3439,7 @@ try {
     controle47_index_cles_etrangeres,
     controle49_passe_sans_perte,
     controle50_reactivite,
+    controle50_retour_carte_bloque,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {

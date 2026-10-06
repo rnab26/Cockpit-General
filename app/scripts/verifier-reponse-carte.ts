@@ -1,7 +1,7 @@
 // Répondre à une carte : mise à jour immédiate, un seul envoi, retour arrière (lib/reponseCarte.ts, chantier b287e60a).
 // node --experimental-strip-types app/scripts/verifier-reponse-carte.ts
 import { verifie, bilan } from './_assert.ts'
-import { reponseOptimiste, dejaRepondue, remplacerLigne, retirerLigne, ligneRelueValable, libelleEnvoi, REPONSE_LOCALE } from '../src/lib/reponseCarte.ts'
+import { reponseOptimiste, dejaRepondue, remplacerLigne, retirerLigne, ligneRelueValable, libelleEnvoi, REPONSE_LOCALE, retourCarte, phraseRetourCarte, reponseRetrait } from '../src/lib/reponseCarte.ts'
 
 const base = { id: 'M1', projet_id: 'P', chantier_id: 'C', auteur: 'claude', auteur_type: 'session', kind: 'question', corps: 'Q ?', pourquoi: null, options: null,
   reponse: null, precision: null, repond_a: null, etat: null, answered_at: null, answered_by: null, created_at: '2026-10-05T10:00:00Z' }
@@ -40,4 +40,23 @@ verifie('rien relu : ignorée', !ligneRelueValable(rq, null))
 
 console.log('libellés du bouton')
 verifie('envoi / envoyé / repos', libelleEnvoi('envoi', 'Fait') === 'Envoi…' && libelleEnvoi('envoye', 'Fait') === 'Envoyé ✓' && libelleEnvoi('repos', 'Fait') === 'Fait' && libelleEnvoi('echec', 'Fait') === 'Fait')
+
+console.log('« Ça bloque » : le retour est daté, suivi, et la carte peut être retirée (0070, chantier 0fec7563)')
+const rb = reponseOptimiste(a, { reponse: 'Ça bloque', etat: 'bloque', precision: 'la PR 60 n\'existe pas', maintenant: T })
+verifie('« Ça bloque » : la carte reste ouverte et le retour est daté', rb.answered_at === null && rb.retour_at === T && rb.etat === 'bloque')
+verifie('« Fait » ne date aucun retour', rf.retour_at === undefined || rf.retour_at === null)
+const filVide: never[] = []
+verifie('retour « Ça bloque » sans réponse de session : « attend »', retourCarte(rb, filVide)?.etat === 'attend')
+const filLu = [{ chantier_id: 'C', auteur_type: 'session', created_at: '2026-10-05T10:06:00Z' }] as never
+verifie('une session a écrit depuis dans le fil : « lu »', retourCarte(rb, filLu)?.etat === 'lu')
+const filAutre = [{ chantier_id: 'AUTRE', auteur_type: 'session', created_at: '2026-10-05T10:06:00Z' }] as never
+verifie('un message d\'un AUTRE chantier ne compte pas', retourCarte(rb, filAutre)?.etat === 'attend')
+const filAvant = [{ chantier_id: 'C', auteur_type: 'session', created_at: '2026-10-05T10:01:00Z' }] as never
+verifie('un message de session d\'AVANT son retour ne compte pas', retourCarte(rb, filAvant)?.etat === 'attend')
+verifie('« Pas encore » seul : rien à suivre (un simple état)', retourCarte(rp, filVide) === null)
+verifie('« Pas encore » avec un mot : à suivre', retourCarte(reponseOptimiste(a, { reponse: 'Pas encore', etat: 'pas_encore', precision: 'j\'attends', maintenant: T }), filVide)?.etat === 'attend')
+verifie('carte fermée (« Fait »), question, ou rien : pas de retour', retourCarte(rf, filVide) === null && retourCarte(rq, filVide) === null && retourCarte(a, filVide) === null)
+verifie('la phrase dit qui fait quoi, et que la carte se retire', /Claude le lira/.test(phraseRetourCarte({ etat: 'attend', depuis: T })) && /retire-la toi-même/.test(phraseRetourCarte({ etat: 'lu', depuis: T })))
+verifie('réponse de retrait : même texte que la base (« Retirée par … : motif »)', reponseRetrait('Raphaël', ' cette PR n\'existe pas ') === 'Retirée par Raphaël : cette PR n\'existe pas')
+verifie('retrait sans motif : une phrase par défaut', /^Retirée par Raphaël : /.test(reponseRetrait('', '')))
 bilan('verifier-reponse-carte')

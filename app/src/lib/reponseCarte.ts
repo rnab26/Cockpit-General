@@ -29,6 +29,8 @@ export function reponseOptimiste(m: Message, o: { reponse: string; precision?: s
     precision: o.precision ?? m.precision,
     etat,
     answered_at: m.kind === 'action' && etat !== 'fait' ? m.answered_at : o.maintenant,
+    // 0070 : la carte reste ouverte mais le retour est daté (c'est ce que Claude lit).
+    retour_at: m.kind === 'action' && etat !== 'fait' ? o.maintenant : m.retour_at,
     answered_by: REPONSE_LOCALE,
   }
 }
@@ -74,3 +76,32 @@ export function libelleEnvoi(etat: EtatEnvoi, repos: string): string {
 
 /** Combien de temps « Envoyé ✓ » reste affiché. */
 export const DUREE_ENVOYE_MS = 2500
+
+/**
+ * Où en est son retour sur une carte d'action restée ouverte (« Ça bloque », ou « Pas encore » avec un mot) —
+ * même règle que `est_retour_carte` (0070). Avant : « Ça bloque » + son mot étaient enregistrés et rien ne
+ * s'affichait, ni rien ne les lisait ; il le refaisait des dizaines de fois (chantier 0fec7563).
+ *  - null : pas de retour à suivre ;
+ *  - « attend » : enregistré, aucune session n'a encore écrit dans le fil depuis ;
+ *  - « lu » : une session a écrit dans le fil du chantier depuis son retour.
+ */
+export type RetourCarte = { etat: 'attend' | 'lu'; depuis: string }
+export function retourCarte(m: Message, fil: readonly Pick<Message, 'chantier_id' | 'auteur_type' | 'created_at'>[]): RetourCarte | null {
+  if (m.kind !== 'action' || m.answered_at || !m.retour_at) return null
+  const mot = !!(m.precision ?? '').trim() || (Array.isArray(m.medias) && m.medias.length > 0)
+  if (!(m.etat === 'bloque' || (m.etat === 'pas_encore' && mot))) return null
+  const lu = fil.some((x) => x.chantier_id === m.chantier_id && x.auteur_type === 'session' && x.created_at > m.retour_at!)
+  return { etat: lu ? 'lu' : 'attend', depuis: m.retour_at }
+}
+
+/** La phrase affichée sous la carte pour ce retour. */
+export function phraseRetourCarte(r: RetourCarte): string {
+  return r.etat === 'lu'
+    ? 'Claude a lu ton retour. La carte reste ici tant qu’il ne l’a pas fermée ou corrigée : si elle n’a pas lieu d’être, retire-la toi-même.'
+    : 'Ton retour est enregistré : Claude le lira à son prochain passage (quelques minutes). Si la carte n’a pas lieu d’être, retire-la toi-même.'
+}
+
+/** La réponse que `retirer_carte` écrit (0070) : même texte à l'écran avant la confirmation de la base. */
+export function reponseRetrait(par: string, motif: string): string {
+  return `Retirée par ${par.trim() || 'Raphaël'} : ${motif.trim() || 'cette carte n’a pas lieu d’être'}`
+}
