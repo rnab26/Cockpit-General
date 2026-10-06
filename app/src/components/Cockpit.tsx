@@ -27,6 +27,7 @@ import { ModifierChantier } from './ModifierChantier.tsx'
 import { Sections } from './Sections.tsx'
 import { Doublons, DoublonDe } from './Doublons.tsx'
 import { BarreSelection } from './BarreSelection.tsx'
+import { usePrenables } from '../hooks/usePrenables.ts'
 import { Reglages } from './Reglages.tsx'
 import { ProjetsMembres } from './ProjetsMembres.tsx'
 import { OngletsProjet } from './OngletsProjet.tsx'
@@ -196,9 +197,10 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     }
   }, [d.projets, parProjet, moi, admin, enAttente, now, silenceMs, recharger, messagesLocal, prefs, poser, selection, ouvrirChantier])
 
+  const prenables = usePrenables(admin, d.derniereMaj)
   const global: Global = {
     moi, admin, par: moi.email, projets: d.projets, sections: d.sections, chantiers: d.chantiers, messages: d.messages, activites: d.activites,
-    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, nonLus, vue, ouvrirChantier, contexteDe,
+    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, prenables, nonLus, vue, ouvrirChantier, contexteDe,
   }
 
   const pastilles = useMemo(() => {
@@ -207,12 +209,12 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     for (const p of d.projets) {
       // Le mode autonome se voit sur chaque onglet (0031) ; ambre s'il tourne sans rien à prendre.
       const auto = admin && autonomeActif(p, now)
-        ? (etatAutonome(p, chantiersPrenables(d.chantiers, p.id, now, d.activites, d.taches, d.sessions), travailEnCours(d.chantiers, d.taches, p.id, now), now).alerte ? 'alerte' : 'actif')
+        ? (etatAutonome(p, (prenables?.get(p.id) ?? chantiersPrenables(d.chantiers, p.id, now, d.activites, d.taches, d.sessions)), travailEnCours(d.chantiers, d.taches, p.id, now), now).alerte ? 'alerte' : 'actif')
         : null
       m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto })
     }
     return m
-  }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin])
+  }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin, prenables])
 
   // Barre du bas : chaque onglet change d'écran, jamais de fenêtre par-dessus (sauf Réglages de l'appli depuis l'accueil).
   if (!vueTout && d.projet) dernierProjet.current = d.projet.id
@@ -281,7 +283,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const pretAffichage = d.charge || !!d.erreur
   return (
     <GlobalCtx.Provider value={global}>
-      <div className={`min-h-dvh ${selectionActive && !vueTout ? 'pb-40' : barreBas ? 'pb-24' : 'pb-8'}`}>
+      <div className={`min-h-dvh ${selectionActive && !vueTout ? (barreBas ? 'pb-56' : 'pb-40') : barreBas ? 'pb-24' : 'pb-8'}`}>
         {entete}
         <main className="mx-auto max-w-3xl lg:max-w-5xl space-y-3 px-3 pt-4">
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}

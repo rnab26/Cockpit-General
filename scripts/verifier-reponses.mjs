@@ -228,7 +228,7 @@ try {
 
   console.log("\n10. message libre sur un fil que PERSONNE ne tient → la chef le confie à un agent");
   const C4 = randomUUID(), M2 = randomUUID(), SIDC = `test-chef-${rand}`;
-  sql(`insert into chantiers (id, projet_id, titre, etat, demande) values (${q(C4)}, ${q(P)}, 'Chantier sans personne', 'a_verifier', 'Refaire le menu')`);
+  sql(`insert into chantiers (id, projet_id, titre, etat, demande) values (${q(C4)}, ${q(P)}, 'Chantier sans personne', 'en_cours', 'Refaire le menu')`);
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(P)}, ${q(C4)}, 'claude/vieux', 'session', 'info', 'Livré : le menu est refait')`);
   await attendre(300);
   sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(M2)}, ${q(P)}, ${q(C4)}, 'Raphaël', 'proprietaire', 'info', 'Je ne vois pas le menu, où est-il ?')`);
@@ -245,7 +245,7 @@ try {
   verifie("la passe de la chef lance un agent « Répondre : … » qui cite son message et la commande",
     /Agent « Répondre : Chantier sans personne »/.test(sortie) && /où est-il/.test(sortie) && sortie.includes(`progression.sh --chantier ${C4} --point`) && /Livré : le menu est refait/.test(sortie), sortie.slice(0, 1500) || passe.stderr);
   const apres = sql(`select c.etat, c.pris_par, m.recu_par from chantiers c join messages m on m.id = ${q(M2)} where c.id = ${q(C4)}`)[0];
-  verifie("message marqué pris par l'agent, chantier réservé SANS changer d'état", apres?.etat === "a_verifier" && /^agent\/message-/.test(apres?.pris_par ?? "") && apres?.recu_par === apres?.pris_par, apres);
+  verifie("message marqué pris par l'agent, chantier réservé SANS changer d'état", apres?.etat === "en_cours" && /^agent\/message-/.test(apres?.pris_par ?? "") && apres?.recu_par === apres?.pris_par, apres);
   sr = sql(`select * from messages_sans_reponse(${q(P)}, null)`);
   verifie("il n'est pas redonné à la passe suivante", !sr.some((r) => r.chantier_id === C4), sr);
 
