@@ -9,4 +9,5 @@ verifie('vue Auto : barre seulement sur écran tactile', navMobileActive('auto',
 verifie('accueil allumé sur « Tout »', ongletBarreActif(true, 'travail', false) === 'accueil')
 verifie('projet : travail / coûts / réglages', ongletBarreActif(false, 'travail', false) === 'projet' && ongletBarreActif(false, 'couts', false) === 'couts' && ongletBarreActif(false, 'reglages', false) === 'reglages')
 verifie('recherche ouverte : elle prime', ongletBarreActif(false, 'couts', true) === 'recherche' && ongletBarreActif(true, 'travail', true) === 'recherche')
+verifie('discussions ouvertes : onglet « Discussions » allumé, avant la recherche', ongletBarreActif(false, 'travail', false, true) === 'discussion' && ongletBarreActif(true, 'travail', true, true) === 'discussion')
 bilan('verifier-nav-mobile')

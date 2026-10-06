@@ -25,10 +25,14 @@ import type { Message } from '../lib/types.ts'
  */
 type Voix = { start: () => void; stop: () => void; abort: () => void; lang: string; interimResults: boolean; continuous: boolean; onresult: ((e: any) => void) | null; onerror: ((e: any) => void) | null; onend: (() => void) | null }
 
-export function BulleFlottanteAide() {
+export function BulleFlottanteAide({ projetOuvertId, onFermer, sansBouton = false }: { projetOuvertId?: string | null; onFermer?: () => void; sansBouton?: boolean } = {}) {
   const g = useGlobal()
   const toast = useToast()
-  const [ouvert, setOuvert] = useState(false)
+  const [ouvertLocal, setOuvertLocal] = useState(false)
+  // Piloté par la barre du bas (liste des discussions) ou, sans barre, par le bouton flottant.
+  const pilote = projetOuvertId !== undefined
+  const ouvert = pilote ? projetOuvertId !== null : ouvertLocal
+  const setOuvert = (v: boolean) => { if (pilote) { if (!v) onFermer?.() } else setOuvertLocal(v) }
   const [envoi, setEnvoi] = useState(false)
   const [texte, setTexte] = useState('')
   const [citation, setCitation] = useState<string | null>(null)
@@ -38,7 +42,7 @@ export function BulleFlottanteAide() {
   const voix = useRef<Voix | null>(null)
   const Reco = typeof window !== 'undefined' ? constructeurVoix(window) : null
 
-  const projet = projetDeLaBulle(g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
+  const projet = projetDeLaBulle(pilote ? (projetOuvertId ?? (g.vue === VUE_TOUT ? null : g.vue)) : g.vue === VUE_TOUT ? null : g.vue, g.projets, g.messages)
   const pj = useMediasAJoindre(projet?.id ?? '', null)
   const fil = projet ? filDeLaBulle(g.messages, projet.id) : []
   // Bulle ouverte = fil lu ; fermée, la pastille « Réponse » reste sur le bouton tant qu'une réponse n'est pas lue.
@@ -100,7 +104,7 @@ export function BulleFlottanteAide() {
   return (
     <>
       {/* À droite, au-dessus de la barre système et du bas de page : ne cache aucun bouton. */}
-      {!ouvert && (
+      {!ouvert && !sansBouton && (
         <button type="button" onClick={() => setOuvert(true)} aria-label="Ouvrir l’aide" data-testid="bulle-aide-bouton" title={`Aide · ${projet.nom}`}
           style={{ bottom: 'calc(max(var(--nav-h, 0px), env(safe-area-inset-bottom)) + 76px)', right: 'calc(env(safe-area-inset-right) + 12px)' }}
           className="fixed z-30 flex h-11 w-11 items-center justify-center rounded-full border border-bord bg-carte text-texte shadow-lg hover:bg-carte-2 focus:outline-none focus:ring-2 focus:ring-accent/40">
@@ -190,5 +194,56 @@ function MessageBulle({ m, admin, now, onRepondre }: { m: Message; admin: boolea
         ) : null}
       </div>
     </div>
+  )
+}
+
+/**
+ * « Discussions » (barre du bas, à côté de la loupe) : un chat par projet, le plus récemment actif en haut,
+ * pastille « Réponse » quand Claude a répondu et que ce n'est pas lu. Toucher une ligne ouvre le chat du projet.
+ */
+export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: boolean; onFermer: () => void; onChoisir: (projetId: string) => void }) {
+  const g = useGlobal()
+  const [filtre, setFiltre] = useState('')
+  if (!ouvert) return null
+  const lignes = g.projets
+    .filter((p) => bulleActive(g.prefs, p.id))
+    .map((p) => { const fil = filDeLaBulle(g.messages, p.id); return { p, dernier: fil.length ? fil[fil.length - 1] : null } })
+    .sort((a, b) => (b.dernier?.created_at ?? '').localeCompare(a.dernier?.created_at ?? '') || a.p.nom.localeCompare(b.p.nom))
+  const q = filtre.trim().toLowerCase()
+  const vues = q ? lignes.filter((l) => l.p.nom.toLowerCase().includes(q)) : lignes
+  return (
+    <Dialog ouvert onFermer={onFermer} titre="Discussions">
+      <div data-testid="discussions-liste" className="min-h-[30dvh] space-y-2">
+        {lignes.length > 6 ? (
+          <input type="search" value={filtre} onChange={(e) => setFiltre(e.target.value)} placeholder="Chercher un projet…" aria-label="Chercher un projet" data-testid="discussions-filtre"
+            className="h-10 w-full rounded-xl border border-bord bg-fond px-3 text-[15px] text-texte focus:outline-none focus:ring-2 focus:ring-accent/40" />
+        ) : null}
+        {g.projets.length === 0 ? (
+          <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-vide">Aucun projet pour l’instant : il n’y a pas encore de discussion.</p>
+        ) : lignes.length === 0 ? (
+          <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-vide">Les discussions sont éteintes sur tous les projets (case « Bulle d’aide sur ce projet » dans Réglages du projet).</p>
+        ) : vues.length === 0 ? (
+          <p className="py-6 text-center text-sm text-texte-2" data-testid="discussions-aucun">Aucun projet ne s’appelle « {filtre} ».</p>
+        ) : vues.map(({ p, dernier }) => {
+          const nl = g.nonLus.get(cleFil(p.id, null))
+          const { sujet, reste } = sujetDe(citationDe(dernier?.corps ?? null).reste)
+          const apercu = dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${(sujet ?? reste ?? '').replace(/\s+/g, ' ').trim() || (mediasDe(dernier).length ? resumeMedias(mediasDe(dernier)) : '…')}` : 'Pas encore de message'
+          return (
+            <button key={p.id} type="button" onClick={() => onChoisir(p.id)} data-testid="discussion-ligne" data-projet={p.slug}
+              className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-bord bg-carte px-3 py-2 text-left hover:bg-carte-2 active:bg-carte-2">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-carte-2 text-base font-semibold text-accent" aria-hidden>{p.nom.slice(0, 1).toUpperCase()}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="truncate font-semibold text-texte">{p.nom}</span>
+                  {dernier ? <span className="shrink-0 text-[11px] text-texte-2">{heureLisible(dernier.created_at, g.now)}</span> : null}
+                </span>
+                <span className="block truncate text-sm text-texte-2" data-testid="discussion-apercu">{apercu}</span>
+              </span>
+              {nl ? <span data-testid="discussion-pastille" data-nombre={nl.n} aria-label={`${nl.n} réponse${nl.n > 1 ? 's' : ''} de Claude à lire`} className="min-w-5 shrink-0 rounded-full bg-alerte px-1.5 text-center text-xs font-bold leading-5 text-white">{nl.n}</span> : null}
+            </button>
+          )
+        })}
+      </div>
+    </Dialog>
   )
 }

@@ -20,7 +20,7 @@ import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.
 import { lireLienFil } from '../lib/lienNotification.ts'
 import { chargerEtatEcran, etatCoherent, sauverEtatEcran } from '../lib/etatEcran.ts'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
-import { BulleFlottanteAide } from './BulleFlottanteAide.tsx'
+import { BulleFlottanteAide, ListeDiscussions } from './BulleFlottanteAide.tsx'
 import { TousLesChantiers } from './TousLesChantiers.tsx'
 import { NouveauChantier } from './NouveauChantier.tsx'
 import { ModifierChantier } from './ModifierChantier.tsx'
@@ -67,6 +67,8 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const [selectionIds, setSelectionIds] = useState<Set<string>>(new Set())
   const [onglet, setOnglet] = useState<OngletProjet>(reprise.current?.onglet ?? ONGLET_DEFAUT)
   const [recherche, setRecherche] = useState(false)
+  // Discussions de la barre du bas : la liste des chats par projet, puis le chat d'un projet.
+  const [discussion, setDiscussion] = useState<{ liste: boolean; projetId: string | null }>({ liste: false, projetId: null })
   const barreBas = useNavMobile()
   const dernierProjet = useRef<string | null>(null)
   const [now, setNow] = useState(() => new Date())
@@ -221,6 +223,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const projetCourant = (): string | null => dernierProjet.current && d.projets.some((p) => p.id === dernierProjet.current) ? dernierProjet.current : (d.projets.find((p) => p.actif)?.id ?? d.projets[0]?.id ?? null)
   const surBarre = (o: OngletBarre) => {
     if (o === 'recherche') { setRecherche((v) => !v); return }
+    if (o === 'discussion') { setDiscussion((v) => ({ liste: !v.liste && !v.projetId, projetId: null })); return }
     setRecherche(false)
     window.scrollTo({ top: 0 })
     if (o === 'accueil') { changerVue(VUE_TOUT); return }
@@ -330,8 +333,14 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {reglages}
         {aideInstallation}
         {projetsMembres}
-        <BulleFlottanteAide />
-        {barreBas ? <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche)} onChoisir={surBarre} aToi={aToiTotal} /> : null}
+        {barreBas ? (
+          <>
+            <ListeDiscussions ouvert={discussion.liste} onFermer={() => setDiscussion({ liste: false, projetId: null })} onChoisir={(id) => setDiscussion({ liste: false, projetId: id })} />
+            {/* Fermer un chat ramène à la liste des discussions. */}
+            <BulleFlottanteAide sansBouton projetOuvertId={discussion.projetId} onFermer={() => setDiscussion({ liste: true, projetId: null })} />
+            <BarreOnglets actif={ongletBarreActif(vueTout, onglet, recherche, discussion.liste || !!discussion.projetId)} onChoisir={surBarre} aToi={aToiTotal} reponses={nbNonLus} />
+          </>
+        ) : <BulleFlottanteAide />}
       </div>
     </GlobalCtx.Provider>
   )
