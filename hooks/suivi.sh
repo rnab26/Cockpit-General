@@ -160,10 +160,38 @@ battement() {
       rm -f "$2"' _ "$plafond" "$repere_outil" "$pas" "$SQL" "$req" >/dev/null 2>&1 & ) >/dev/null 2>&1
 }
 
+# JETONS DU CONTEXTE (0068, Raphaël : « renouveler la session chef à 500 000 jetons »).
+# Mesure = ce que la session porte dans son contexte au dernier tour de la conversation
+# PRINCIPALE : input + cache lu + cache créé, lus dans le transcript (`transcript_path`,
+# entrées « assistant » avec message.usage, hors sous-agents). Jamais la somme de tout
+# ce qui a été relu (le cache relu à chaque tour gonflerait le total sans raison).
+# Au plus 1 fois/minute (toujours à l'arrêt d'un tour), détaché, jamais bloquant.
+jetons_du_transcript() {
+  local f="$1"
+  [ -r "$f" ] || return 0
+  tail -c "${COCKPIT_JETONS_OCTETS:-600000}" "$f" 2>/dev/null | jq -R -r '
+    fromjson? | select(.type == "assistant" and (.isSidechain // false) == false)
+    | .message.usage // empty
+    | ((.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0))
+    | select(. > 0)' 2>/dev/null | tail -1
+}
+signaler_jetons() {
+  [ -z "$agent" ] || return 0
+  local tp n rep="${TMPDIR:-/tmp}/cockpit-jet-$sid"
+  if [ "$ev" != "Stop" ] && [ -f "$rep" ] && [ $(( $(date +%s) - $(stat -c %Y "$rep" 2>/dev/null || echo 0) )) -lt "${COCKPIT_JETONS_INTERVALLE:-60}" ]; then return 0; fi
+  tp=$(printf '%s' "$entree" | jq -r '.transcript_path // empty' 2>/dev/null)
+  [ -n "$tp" ] || return 0
+  touch "$rep" 2>/dev/null
+  n=$(jetons_du_transcript "$tp")
+  [[ "$n" =~ ^[0-9]+$ ]] || return 0
+  ( setsid "$SQL" "select signaler_jetons('$(printf '%s' "$PROJET" | sed "s/'/''/g")', '$(printf '%s' "$sid" | sed "s/'/''/g")', $n)" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
 case "$ev" in
   PreToolUse) battement; exit 0 ;;
   PostToolUse)
     rm -f "$repere_outil" 2>/dev/null
+    signaler_jetons
     reponses_fraiches PostToolUse
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
     # avec sa description. Sinon, un simple signe de vie, au plus 1 fois/minute.
@@ -197,6 +225,7 @@ case "$ev" in
     # surcharge… Le cockpit affiche « En pause » jusqu'au prochain signe de vie.
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, error, error_details: ((.error_details // "") | tostring | .[0:400])}') ;;
   Stop|SubagentStop|SubagentStart|SessionEnd)
+    [ "$ev" = "Stop" ] && signaler_jetons
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, agent_id, agent_type, background_tasks}') ;;
   *) exit 0 ;;
 esac
