@@ -25,7 +25,7 @@ verifie('cause prouvée : une seule action = un seul type, la règle d’avant (
 verifie('une seule action : pastilles visibles (Actions sort)', pastillesVisibles(T('action')))
 verifie('plusieurs actions seules : visibles', pastillesVisibles(T('action', 'action')))
 verifie('une action + une question : visibles', pastillesVisibles(T('question', 'action')))
-verifie('zéro action, un seul type (questions) : masquées', !pastillesVisibles(T('question', 'question')))
+verifie('un seul type (questions) : visibles (constamment tant qu’il y a à faire)', pastillesVisibles(T('question', 'question')))
 verifie('zéro élément : masquées (l’état vide « Rien ne t’attend » s’affiche)', !pastillesVisibles([]))
 verifie('zéro action mais deux autres types : visibles (règle générale inchangée)', pastillesVisibles(T('question', 'a_verifier')))
 // Câblage de l'écran (verifier-web.mjs le joue en vrai quand l'environnement le permet ; ici, banc qui tourne toujours).

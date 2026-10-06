@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, Copy, Ellipsis, ExternalLink, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, CloudOff, Copy, Ellipsis, ExternalLink, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit, useGlobal } from '../contexte.ts'
 import { useMarquerLu } from './PastilleReponse.tsx'
@@ -41,6 +41,7 @@ import { Progression } from './Progression.tsx'
 import { TachesDuChantier } from './QuiTravaille.tsx'
 import { PointTravaille } from './Vivant.tsx'
 import { IconePresence, PointProjet } from './Icones.tsx'
+import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, deposerMedia, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 
 /**
@@ -161,8 +162,8 @@ function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: Reac
 }
 
 /** Une bulle du fil : Claude à gauche (fond carte), toi à droite (fond neutre plus soutenu). Jamais de pavé teinté. */
-function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, repondre = false }: {
-  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null; repondre?: boolean
+function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, repondre = false, enAttente }: {
+  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null; repondre?: boolean; enAttente?: { texte: string; refuse: boolean } | null
 }) {
   const { now } = useCockpit()
   return (
@@ -177,6 +178,11 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, r
           </p>
         ) : null}
         {children}
+        {enAttente ? (
+          <p className={`mt-1 flex items-center gap-1 text-[11px] ${enAttente.refuse ? 'text-alerte' : 'text-attention'}`} data-testid="message-en-attente" role="status">
+            <CloudOff size={12} aria-hidden />{enAttente.texte}
+          </p>
+        ) : null}
         {repondre ? (
           <button type="button" data-testid="repondre-bulle" onClick={() => window.dispatchEvent(new CustomEvent('cockpit:repondre', { detail: { sujet: sujet ?? null } }))}
             className="mt-1.5 -mb-0.5 inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-accent hover:bg-carte-2">
@@ -214,7 +220,8 @@ function BulleMessage({ m }: { m: Message }) {
   const { sujet, reste } = sujetDe(m.corps)
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
-    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet} repondre={m.auteur_type === 'session'}>
+    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet} repondre={m.auteur_type === 'session'}
+      enAttente={m.en_attente_envoi ? { texte: phraseMessageEnAttente(m), refuse: !!m.envoi_refuse } : null}>
       {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {m.reponse ? (

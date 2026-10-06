@@ -26,6 +26,7 @@ done
 [ -n "$ok" ] && [ -n "${texte// /}" ] || { echo "Donne --bon \"…\" ou --pas-bon \"…\" : ce que tu as constaté, en mots simples." >&2; exit 2; }
 n=$(printf '%s' "$texte" | python3 -c 'import sys; print(len(sys.stdin.read()))')
 [ "$n" -le 400 ] || { echo "Refusé (règle de clarté) : verdict de $n caractères, 400 au plus. Le constat, en mots simples ; le détail va dans le fil." >&2; exit 2; }
+printf '%s\0' "le verdict" "$texte" | python3 "$(dirname "$0")/clarte.py" || exit 2
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 r=$("$SQL" "select rendre_verdict('$chantier'::uuid, '$(q "$auteur")', $ok, '$(q "$texte")') as r" | jq -r '.rows[0].r // empty')
 [ -n "$r" ] || { echo "La base a refusé le verdict." >&2; exit 1; }

@@ -7,7 +7,7 @@ import { useToast } from '../ui/Toast.tsx'
 import { DELAI_ABANDON_MIN, DELAI_ABANDON_MIN_BORNES, erreurDelaiSansSigne } from '../lib/silence.ts'
 import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
-import { LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
+import { LIBELLE_LANCER, LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
   AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, peutRelancer, erreurEffacement, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type Renfort, type ResultatDemande,
@@ -178,6 +178,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
       </button>
       {reglages ? <ReglagesRenforts projet={projet} etat={etat} onFini={() => { setReglages(false); void charger() }} /> : null}
       {reglages ? <ReglagesModeles projet={projet} /> : null}
+      {reglages ? <ReglageRenouvellement projet={projet} /> : null}
     </section>
     </>
   )
@@ -202,12 +203,12 @@ function TraiterCeProjet({ projet, etat, avecNom }: { projet: Projet; etat: Etat
     window.open(LIEN_CLAUDE_CODE, '_blank', 'noopener')
   }
   return (
-    <section aria-label={`Traiter ce projet${avecNom ? ` · ${projet.nom}` : ''}`} data-testid="traiter" data-projet={projet.slug}
+    <section aria-label={`${LIBELLE_LANCER}${avecNom ? ` · ${projet.nom}` : ''}`} data-testid="traiter" data-projet={projet.slug}
       className="rounded-2xl border-2 border-accent bg-carte px-3 py-3">
-      <h2 className="text-[15px] font-semibold">Traiter ce projet{avecNom ? <span className="ml-1.5 text-sm font-normal text-texte-2">{projet.nom}</span> : null}</h2>
+      <h2 className="text-[15px] font-semibold">{LIBELLE_LANCER}{avecNom ? <span className="ml-1.5 text-sm font-normal text-texte-2">{projet.nom}</span> : null}</h2>
       <p className="mt-0.5 text-xs leading-snug text-texte-2" data-testid="traiter-etat">{etatTraiter(etat, g.now)}</p>
       <Button variante="primaire" pleine className="mt-2.5" onClick={() => void lancer()} data-testid="traiter-lancer">
-        <Play size={16} aria-hidden />Copier la phrase et ouvrir Claude Code
+        <Play size={16} aria-hidden />{LIBELLE_LANCER}
       </Button>
       <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-xs leading-snug text-texte-2" data-testid="traiter-etapes">
         {etapesTraiter(projet.depot).map((e) => <li key={e}>{e}</li>)}
@@ -273,6 +274,66 @@ function ReglagesRenforts({ projet, etat, onFini }: { projet: Projet; etat: Etat
       <div className="flex justify-end gap-2">
         <Button taille="sm" onClick={onFini}>Annuler</Button>
         <Button taille="sm" variante="primaire" chargement={envoi} onClick={() => void enregistrer()} data-testid="renforts-enregistrer">Enregistrer</Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Renouvellement automatique de la session chef (0068) : au-delà du seuil de jetons de son contexte, elle finit ses
+ * agents en cours, ouvre une nouvelle session chef et s'archive. Réglable ici ; la règle vit en base (chef_a_renouveler).
+ */
+interface EtatRenouvellement { auto: boolean; seuil: number; jetons: number | null; jetons_at: string | null; depasse: boolean; agents: number; demande_at: string | null; erreur: string | null }
+function libelleRenouvellement(e: EtatRenouvellement): string {
+  if (e.seuil === 0 || !e.auto) return 'Renouvellement éteint : la session chef reste la même jusqu’à son arrêt.'
+  const n = (v: number) => v.toLocaleString('fr-FR')
+  const base = e.jetons == null ? `Jetons de la session chef pas encore relevés (seuil ${n(e.seuil)}).` : `Session chef : ${n(e.jetons)} jetons sur ${n(e.seuil)}.`
+  if (e.erreur) return `${base} Dernier renouvellement échoué : ${e.erreur}`
+  if (e.depasse) return `${base} Seuil atteint : elle finit ses ${e.agents} agent(s) puis passe la main à une nouvelle session.`
+  return base
+}
+function ReglageRenouvellement({ projet }: { projet: Projet }) {
+  const toast = useToast()
+  const [etat, setEtat] = useState<EtatRenouvellement | null>(null)
+  const [erreur, setErreur] = useState<string | null>(null)
+  const [auto, setAuto] = useState(true)
+  const [seuil, setSeuil] = useState(500000)
+  const [envoi, setEnvoi] = useState(false)
+  const lire = useCallback(async () => {
+    const { data, error } = await supabase.rpc('etat_renouvellement', { p_projet: projet.slug })
+    if (error) { setErreur(messageErreur(error)); return }
+    const e = data as EtatRenouvellement | null
+    if (!e) return
+    setErreur(null); setEtat(e); setAuto(e.auto); setSeuil(e.seuil)
+  }, [projet.slug])
+  useEffect(() => { void lire() }, [lire])
+  const enregistrer = async () => {
+    if (!Number.isInteger(seuil) || !(seuil === 0 || (seuil >= 50000 && seuil <= 5000000))) { toast.erreur('Seuil de jetons : de 50 000 à 5 000 000 (0 = jamais).'); return }
+    setEnvoi(true)
+    const { error } = await supabase.rpc('regler_renouvellement', { p_projet: projet.slug, p_auto: auto, p_seuil: seuil })
+    setEnvoi(false)
+    if (error) { toast.erreur(`Renouvellement non enregistré : ${messageErreur(error)}`); return }
+    toast.succes(auto && seuil > 0 ? `Renouvellement enregistré : la session chef est remplacée à ${seuil.toLocaleString('fr-FR')} jetons.` : 'Renouvellement éteint.')
+    void lire()
+  }
+  if (erreur) return <p className="mt-2 text-xs text-alerte" data-testid="renouvellement-erreur">Renouvellement indisponible : {erreur}</p>
+  if (!etat) return <p className="mt-2 text-xs text-texte-2" role="status">Chargement du renouvellement…</p>
+  return (
+    <div className="mt-2 space-y-2 rounded-xl border border-bord bg-carte-2/40 p-2.5 text-sm" data-testid="renouvellement-reglages">
+      <p className="text-xs font-medium">Renouvellement de la session chef</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs text-texte-2">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} data-testid="renouvellement-auto" />
+          Ouvrir une nouvelle session chef quand l’actuelle est trop chargée
+        </label>
+        <label className="text-xs text-texte-2">à (jetons, 50 000 à 5 000 000)
+          <input type="number" inputMode="numeric" min={0} max={5000000} step={50000} value={seuil} disabled={!auto} onChange={(e) => setSeuil(Number(e.target.value))}
+            className="ml-2 h-9 w-28 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="renouvellement-seuil" />
+        </label>
+      </div>
+      <p className={`text-xs leading-snug ${etat.depasse || etat.erreur ? 'text-alerte' : 'text-texte-2'}`} data-testid="renouvellement-etat">{libelleRenouvellement(etat)}</p>
+      <div className="flex justify-end">
+        <Button taille="sm" variante="primaire" chargement={envoi} onClick={() => void enregistrer()} data-testid="renouvellement-enregistrer">Enregistrer</Button>
       </div>
     </div>
   )

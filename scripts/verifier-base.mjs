@@ -1869,6 +1869,7 @@ async function controle30_agents_fantomes() {
     try { return execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A, CLAUDE_CODE_SESSION_ID: sid, ...env }, stdio: ["ignore", "pipe", "pipe"] }); }
     catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
   };
+  await sql(`delete from passe_consignes where projet_id = ${q(P1)}`);  // 0069 : les consignes gardées des passes d'avant ne sont pas le sujet ici
   await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
   await sql(`update chefs set max_agents = 3 where projet_id = ${q(P1)}`);
   for (const d of ["Fantôme 1", "Fantôme 2", "Fantôme 3"]) await prov(d);
@@ -2573,6 +2574,7 @@ async function controle32_economie_modeles() {
   verifie("chef.sh --modeles : réglages enregistrés", /Modèles de/.test(cli) && e2.modele_code === "opus" && e2.effort === "eleve" && e2.agents === 4, { cli, e2 });
   chef({ ARGS: ["--modeles", "sonnet", "haiku", "moyen", "2"] });
   // La chef donne le modèle de chaque agent et l'effort.
+  await sql(`delete from passe_consignes where projet_id = ${q(P1)}`);
   await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
   await sql(`update projets set autonome_toujours = true where id = ${q(P1)}`);
   for (const t of ["Eco un", "Eco deux"]) await creerChantier(P1, { titre: t, etat: "libre", demande: "test" });
@@ -2717,7 +2719,7 @@ async function controle38_filet_securite() {
   const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
   // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
     has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
     has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
@@ -2739,12 +2741,25 @@ async function controle38_filet_securite() {
   verifie("travail en attente depuis 30 min + personne de vivant : un réveil journalisé", await passe() === "simule" && await journal() === 1);
   const j = await une(`select pourquoi, resultat from filet_reveils where projet_id = ${q(P11)}`);
   verifie("… avec son pourquoi", /1 message\(s\) sans réponse/.test(j.pourquoi) && j.resultat === "simule", j);
-  verifie("deux passes rapprochées : un seul réveil (anti-rafale 5 min)", await passe() === "trop_tot" && await journal() === 1);
-  await sql(`update filet_reveils set at = now() - interval '10 minutes' where projet_id = ${q(P11)}`);
-  await sql(`update projets set filet_plafond_jour = 1 where id = ${q(P11)}`);
-  verifie("plafond du jour atteint : aucun réveil de plus", await passe() === "plafond" && await journal() === 1);
+  verifie("deux passes rapprochées : un seul réveil (écart = 24 h / plafond, jamais moins de 5 min)", await passe() === "trop_tot" && await journal() === 1);
+  // 0067 : les réveils s'étalent sur la journée (FacePro avait brûlé ses 6 réveils en 1 h 36, puis 14 h sans réveil).
+  verifie("filet_ecart : 24 h / plafond, au moins 5 min",
+    (await une(`select filet_ecart(6)::text a, filet_ecart(12)::text b, filet_ecart(48)::text c, filet_ecart(0)::text d`)).a === "04:00:00"
+    && (await une(`select filet_ecart(12)::text b`)).b === "02:00:00" && (await une(`select filet_ecart(48)::text c`)).c === "00:30:00");
+  await sql(`update filet_reveils set at = now() - interval '3 hours' where projet_id = ${q(P11)}`);
+  await sql(`update projets set filet_plafond_jour = 6 where id = ${q(P11)}`);
+  verifie("plafond 6 (un réveil toutes les 4 h) : le dernier date de 3 h, trop tôt", await passe() === "trop_tot" && await journal() === 1);
+  verifie("etat_filet dit quand le prochain réveil est possible (ecart_min 240, prochain_at futur)",
+    await (async () => { const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e; return e.ecart_min === 240 && Date.parse(e.prochain_at) > Date.now(); })());
+  await sql(`update projets set filet_plafond_jour = 12 where id = ${q(P11)}`);
+  verifie("plafond 12 (un réveil toutes les 2 h) : 3 h après, le réveil repart", await passe() === "simule" && await journal() === 2);
+  // Le plafond du jour reste une limite dure : 2 réveils déjà faits dans les 24 h, espacés de plus que l'écart.
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) values (${q(P11)}, 'a', 'simule', true, now() - interval '23 hours'), (${q(P11)}, 'b', 'simule', true, now() - interval '20 hours')`);
   await sql(`update projets set filet_plafond_jour = 2 where id = ${q(P11)}`);
-  verifie("plafond relevé et 5 min passées : le réveil repart", await passe() === "simule" && await journal() === 2);
+  verifie("plafond du jour atteint (2 sur 2) : aucun réveil de plus", await passe() === "plafond" && await journal() === 2);
+  await sql(`update projets set filet_plafond_jour = 3 where id = ${q(P11)}`);
+  verifie("plafond relevé et l'écart (8 h) passé : le réveil repart", await passe() === "simule" && await journal() === 3);
   // Sans jeton : le vrai chemin (sans simulation) n'appelle rien et ne journalise rien.
   await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
   const r = await passe(true, false);
@@ -2753,7 +2768,7 @@ async function controle38_filet_securite() {
   const mauvais = await sql(`select regler_filet(${q(SLUG_K)}, null, 99, null) as r`).then(() => "accepté", (e) => e.message);
   verifie("plafond hors 0-48 refusé", /48/.test(String(mauvais)), mauvais);
   const e = (await une(`select etat_filet(${q(SLUG_K)}) as e`)).e;
-  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 2, e);
+  verifie("etat_filet d'un projet de test : statut « test », jamais un réveil promis", e.statut === "test" && e.plafond === 3, e);
   // Le vrai cron ne touche jamais un projet de test.
   const vraie = await une(`select filet_passe() as r`);
   verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
@@ -2767,7 +2782,7 @@ async function controle40_liberation_auto() {
   section("40. Libération automatique (0050) : pg_cron toutes les 3 min libère le chantier d'une session morte, une seule règle");
   await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération')`);
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-liberation-auto'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-liberation-auto existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  verifie("pg_cron : le job cockpit-liberation-auto existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.liberation_passe(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.liberer_silencieux_coeur(text)', 'execute') as coeur, has_function_privilege('service_role', 'cockpit.liberation_passe(text,boolean)', 'execute') as srv`);
   verifie("liberation_passe / liberer_silencieux_coeur : réservés au service", !droits.anon && !droits.coeur && droits.srv, droits);
   const mort = await creerChantier(PLB, { titre: "LIBÉRATION Session morte", etat: "en_cours" });
@@ -2794,7 +2809,7 @@ async function controle47_agents_finis() {
   section("47. Agents finis (0061) : tache_morte fermée par pg_cron, jamais un agent vivant, une session vivante ni un projet test");
   await sql(`insert into projets (id, slug, nom) values (${q(PAF)}, ${q(SLUG_AF)}, 'Projet de test agents finis')`);
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-taches-mortes'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && cron.schedule === "*/3 * * * *", cron);
+  verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.tache_morte(cockpit.taches)', 'execute') as regle, has_function_privilege('service_role', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as srv`);
   verifie("clore_taches_mortes / tache_morte : réservées au service", !droits.anon && !droits.regle && droits.srv, droits);
   const SM = `sess-mort-${rand}`, SV = `sess-vivante-${rand}`;
@@ -2963,6 +2978,50 @@ async function controle48_renfort_fini_pas_erreur() {
   verifie("muet SANS travail restant : « fini » (fini_at posé), aucune erreur", a.statut === "fini" && a.f && a.erreur === null, JSON.stringify(a));
   const b = await une(`select statut, erreur from renforts where id = ${q(R2)}`);
   verifie("muet AVEC travail restant : « erreur » qui dit le reste (jamais « 3 h »)", b.statut === "erreur" && /il reste 1 chantier/.test(b.erreur ?? "") && !/3 h/.test(b.erreur ?? ""), JSON.stringify(b));
+}
+
+// 49. Passe du chef sans perte (0069, chantier d48bafe7) : consigne gardée et relisible, réservation rendue si aucun agent ne démarre, relais qui ne redemande pas la même ouverture.
+const PPS = randomUUID(), SLUG_PS = `test-verif-${rand}-ps`;
+async function controle49_passe_sans_perte() {
+  section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
+  await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.consignes_passe_a_relire(text)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.noter_consigne_passe(text,uuid,text,text,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.consignes_passe_a_relire(text)', 'execute') as srv`);
+  verifie("consignes de la passe : réservées au service", !droits.anon && !droits.auth && droits.srv, droits);
+  const a = await creerChantier(PPS, { titre: "Passe : sans agent", etat: "libre" });
+  const b = await creerChantier(PPS, { titre: "Passe : agent lancé", etat: "libre" });
+  const c = await creerChantier(PPS, { titre: "Passe : récent", etat: "libre" });
+  const reserve = async (id, br, titre) => {
+    await une(`select reserver_chantier(${q(id)}, ${q(br)}, 60) as ok`);
+    await sql(`select noter_consigne_passe(${q(SLUG_PS)}, ${q(id)}, ${q(br)}, 'libre', ${q(titre)}, ${q("CONSIGNE " + titre)})`);
+  };
+  await reserve(a, "agent/ps-a", "A"); await reserve(b, "agent/ps-b", "B"); await reserve(c, "agent/ps-c", "C");
+  const lues = (await une(`select consignes_passe_a_relire(${q(SLUG_PS)}) as r`)).r;
+  verifie("(1) la consigne d'un chantier réservé reste relisible (3 réservés, 3 consignes, texte intact)",
+    lues.length === 3 && lues.some((x) => x.chantier === a && x.consigne === "CONSIGNE A"), lues);
+  // (2) A et B : réservées depuis 6 min ; un agent a démarré sur B (ligne d'activité) ; C : 2 min, fiche muette.
+  await sql(`update passe_consignes set created_at = now() - interval '6 minutes' where chantier_id in (${q(a)}, ${q(b)})`);
+  await sql(`update passe_consignes set created_at = now() - interval '2 minutes' where chantier_id = ${q(c)}`);
+  await sql(`insert into activite (projet_id, chantier_id, session, etape, updated_at) values (${q(PPS)}, ${q(b)}, 'agent/ps-b', 'je commence', now())`);
+  await sql(`update chantiers set updated_at = now() - interval '1 hour' where id = ${q(c)}`);
+  const n = (await une(`select liberer_silencieux_coeur(${q(SLUG_PS)}) as n`)).n;
+  const ea = await une(`select pris_par, etat from chantiers where id = ${q(a)}`);
+  const eb = await une(`select pris_par from chantiers where id = ${q(b)}`);
+  const ec = await une(`select pris_par from chantiers where id = ${q(c)}`);
+  verifie("(2) sans agent au bout du délai : rendu à la file avec son état d'avant (libre, personne ne le tient)", ea.pris_par === null && ea.etat === "libre" && n >= 1, { ea, n });
+  verifie("(2) un agent a démarré (activité) : la réservation reste ; une réservation de la passe encore dans son délai n'est pas libérée comme « silencieuse »", eb.pris_par === "agent/ps-b" && ec.pris_par === "agent/ps-c", { eb, ec });
+  const apres = (await une(`select consignes_passe_a_relire(${q(SLUG_PS)}) as r`)).r;
+  verifie("(1) une consigne rendue ou lancée n'est plus redonnée ; seule la récente (C) l'est",
+    apres.length === 1 && apres[0].chantier === c && apres[0].minutes >= 1, apres);
+  const rendu = (await une(`select count(*)::int as n from chantiers where id = ${q(a)} and libere_de = 'agent/ps-a'`)).n;
+  verifie("(2) le fil dit qui a été libéré (libere_de) : traçable", rendu === 1);
+  // (4) le relais ne redemande pas l'ouverture déjà faite tant que rien de neuf n'est arrivé.
+  await sql(`insert into ouvertures (projet_id, session_distante, created_at) values (${q(PPS)}, 'session_test', now() - interval '2 hours')`);
+  verifie("(4) ouverture réussie il y a 2 h, rien de neuf : déjà ouverte", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === true);
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PPS)}, ${q(c)}, 'Raphaël', 'proprietaire', 'info', 'du neuf')`);
+  verifie("(4) un message de Raphaël arrivé depuis : on peut rouvrir", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === false);
+  await sql(`delete from messages where projet_id = ${q(PPS)} and corps = 'du neuf'`);
+  await sql(`update projets set relais_reouverture_h = 0 where id = ${q(PPS)}`);
+  verifie("(4) réglage à 0 : l'ancien comportement (au plus une ouverture par heure)", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === false);
 }
 
 // 43. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
@@ -3293,6 +3352,7 @@ try {
     controle45_regroupement,
     controle46_fusion_a_la_creation,
     controle47_index_cles_etrangeres,
+    controle49_passe_sans_perte,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3304,7 +3364,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
