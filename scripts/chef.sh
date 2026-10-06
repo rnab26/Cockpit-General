@@ -31,6 +31,8 @@
 #   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
 #                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0045), jamais le nombre d'agents
 #   scripts/chef.sh --bascule <on|off>       interrupteur de la bascule automatique du projet
+#   scripts/chef.sh --reactivite <écart réveils min 1-60> <réaction chef min 1-120>   réveil immédiat au plus toutes les N min ; chef jugée muette après N min (0071)
+#   scripts/chef.sh --cadence <min 1-15>        fréquence de la boucle de la base (libération + filet), toutes les N min (0071)
 #   scripts/chef.sh --sans-signe <min>  délai « sans signe de vie » du projet : au-delà, une réservation est libérée (1 à 120, défaut 3 ; 0046)
 #   scripts/chef.sh --max <n>       nombre d'agents en parallèle pour le projet (1 à 8)
 #   scripts/chef.sh --renforts <n>  sessions de RENFORT au plus (0 à 4, 0 = aucune ; 0024)
@@ -67,6 +69,8 @@ while [ $# -gt 0 ]; do
     --fenetre) usage_type="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --reset)   usage_reset="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --bascule) mode="bascule"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
+    --reactivite) mode="reactivite"; max="${2:-}"; cible="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
+    --cadence) mode="cadence"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --sans-signe) mode="sans_signe"; max="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --max)     mode="max"; max="${2:-}"; shift 2 ;;
     --renforts) mode="renforts"; max="${2:-}"; shift 2 ;;
@@ -245,6 +249,14 @@ case "$mode" in
     [[ "$max" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--frein <heures> \"<raison>\" (0 = lever)." >&2; exit 2; }
     r=$("$SQL" "select freiner($P, $max, '$(q "$freinraison")') as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
       && { [ "$max" = "0" ] && echo "Frein levé pour $projet." || echo "Frein posé sur $projet pour $max h : 1 agent, aucune revue, aucun nouveau renfort."; } || { echo "Frein refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
+  reactivite)
+    [[ "$max" =~ ^[0-9]+$ ]] && [[ "$cible" =~ ^[0-9]+$ ]] || { echo "--reactivite <écart entre réveils 1-60 min> <réaction de la chef 1-120 min>." >&2; exit 2; }
+    r=$("$SQL" "select regler_reactivite($P, $max, $cible) as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r.projet' >/dev/null \
+      && echo "Réactivité de $projet : réveil immédiat au plus toutes les $max min, chef jugée muette après $cible min." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
+  cadence)
+    [[ "$max" =~ ^[0-9]+$ ]] || { echo "--cadence <minutes 1-15>." >&2; exit 2; }
+    r=$("$SQL" "select regler_cadence($max) as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r.cadence_min' >/dev/null \
+      && echo "Boucle de la base (libération + filet) : toutes les $max min, pour tous les projets." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .message // .' 2>/dev/null | head -c 300)" >&2; exit 1; } ; exit 0 ;;
   sans_signe)
     [[ "$max" =~ ^[0-9]+$ ]] && [ "$max" -ge 1 ] && [ "$max" -le 120 ] || { echo "--sans-signe <minutes> : un nombre de 1 à 120." >&2; exit 2; }
     r=$("$SQL" "select regler_sans_signe($P, $max) as r" 2>&1) && printf '%s' "$r" | jq -e '.ok == true' >/dev/null \
@@ -290,15 +302,26 @@ fi
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
 # (ouverte par /fire) ne vole jamais une chef vivante : elle sert seulement ce qui
-# attend Raphaël (« attente ») puis s'arrête ; chef morte ou absente → elle devient chef.
-attente=""
+# attend Raphaël et les chantiers prenables (« attente », 0071) puis s'arrête ; chef morte ou absente → elle devient chef.
+attente=""; releve_prise=0
 if [ "$mode" = "releve" ] && [ -n "$sid" ] && [ "$chef" != "$sid" ]; then
-  if [ "$(un "select chef_vivante('$pid') as v" | jq -r '.v // false')" = "true" ]; then
+  # 0071 (Raphaël, 6 oct. : « les chantiers à lancer ne se lancent pas tout seuls ») : une chef « vivante » (vue < 3 h)
+  # qui ne répond pas (contexte au-delà du seuil sans agent, ou du travail qui attend sans qu'elle passe) ne retient
+  # plus la session réveillée : celle-ci la RELÈVE et sert tout, chantiers prenables compris. UNE règle : chef_repond.
+  rep_chef=$(un "select chef_repond('$pid') as r" | jq -c '.r // {}')
+  if [ "$(un "select chef_vivante('$pid') as v" | jq -r '.v // false')" = "true" ] && [ "$(printf '%s' "$rep_chef" | jq -r '.repond // true')" = "true" ]; then
     attente=1
   else
+    if [ "$(printf '%s' "$rep_chef" | jq -r '.repond // true')" = "false" ] && [ -n "$chef" ]; then releve_prise=1; fi
     r=$(un "select prendre_chef($P, '$(q "$sid")', '$(q "$branche")', '') as r" | jq -c '.r // {}')
     if [ "$(printf '%s' "$r" | jq -r '.projet // empty')" = "$projet" ]; then
-      echo "Cette session devient la SESSION CHEF de $projet (l'ancienne, $(printf '%s' "$r" | jq -r '.ancienne // "aucune"'), ne vit plus). Ne touche pas au réveil : la routine qui t'a ouverte le porte."
+      if [ "$releve_prise" = "1" ]; then
+        raison_releve=$(printf '%s' "$rep_chef" | jq -r '.raison // "?"')
+        echo "Cette session RELÈVE la chef de $projet ($(printf '%s' "$r" | jq -r '.ancienne // "aucune"') ne répondait plus : $raison_releve). Tu sers TOUT, chantiers prenables compris. Ne touche pas au réveil : la routine qui t'a ouverte le porte."
+        "$SQL" "select noter_releve_chef($P, '$(q "$raison_releve")', '$(q "$chef")')" >/dev/null 2>&1
+      else
+        echo "Cette session devient la SESSION CHEF de $projet (l'ancienne, $(printf '%s' "$r" | jq -r '.ancienne // "aucune"'), ne vit plus). Ne touche pas au réveil : la routine qui t'a ouverte le porte."
+      fi
       chef="$sid"
     fi
   fi
@@ -312,6 +335,8 @@ if [ -n "$attente" ]; then
 else
   "$SQL" "update chefs set vu_at = now() where projet_id = '$pid'" >/dev/null 2>&1
   agents=$(printf '%s' "$etat" | jq -r '.agents // 0')
+  # Relève (0071) : `etat` décrit l'ancienne chef, pas cette session ; ses agents à elle.
+  [ "$releve_prise" = "1" ] && agents=$(un "select agents_actifs('$(q "$sid")', '$pid') as n" | jq -r '.n // 0')
 fi
 maxa=$(printf '%s' "$etat" | jq -r '.max_agents // 2')
 # ÉCONOMIE DES MODÈLES (0035) : modèle des agents qui codent / des agents de lecture, effort, et FREIN.
@@ -464,7 +489,9 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
 done
 # Un chantier par place libre si le mode autonome du projet est allumé, le plus ancien d'abord.
-if [ -z "$attente" ] && [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
+# 0071 : la session réveillée (« attente ») sert AUSSI ces chantiers : la chef vit mais n'a rien lancé (c'est pour cela
+# que le filet l'a réveillée) ; sans cela, les chantiers prenables restaient des heures sans personne (constaté le 6 oct.).
+if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
   while [ ${#donnes[@]} -lt "$libres" ]; do
     br="agent/$(date +%s%N | tail -c 7)"
     c=$(un "select prochain_chantier_autonome($P, null, '$br') as c" | jq -c '.c // empty')
@@ -504,7 +531,7 @@ fi
 [ -n "$groupes_txt" ] && printf '%s\n' "$groupes_txt"
 
 if [ -n "$attente" ]; then
-  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
+  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers ce qui attend Raphaël ET les chantiers prenables (la chef n’a rien lancé). Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
   echo "Quand un agent a fini : relis son rapport, puis relance $CHEF_CMD --releve ; quand il répond RIEN, termine en une ligne. Ne fais PAS le travail toi-même."
 else
 echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » (jamais plus lourd : Raphaël règle ça dans le cockpit) ; effort de raisonnement — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
@@ -525,7 +552,7 @@ Réponse de Raphaël (\(.repondu_le)) : « \(.reponse // "") »\(if .precision t
 Demande du chantier :
 \(.demande)\(if $repro != "" then "\n" + $repro else "" end)
 
-Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
+Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .carte_ouverte then "\nATTENTION : c’est une CARTE D’ACTION restée OUVERTE sur son écran (il a touché « Ça bloque » ou « Pas encore » avec un mot : une carte ne se ferme pas seule). Établis d’abord si ce qu’il dit est vrai (numéro de PR dans le bon dépôt ? lien exact ? geste réellement possible ?), puis FERME la carte, sinon elle revient devant lui indéfiniment : si elle n’a plus lieu d’être, COCKPIT_PROJET=\(.slug) \($dem) --retirer \(.question_id) \"pourquoi, en une phrase\" ; si elle était mal posée, corrige la cause (lien, dépôt, étape), retire l’ancienne puis repose la bonne avec \($dem) --action. Dis-lui dans le fil ce que tu as trouvé (\($prog) --chantier \(.id) --point \"…\")." else "" end)\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
 Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch -c \(.branche), et travaille sur cette branche (jamais directement sur main ; ta copie à toi ; le cockpit te reconnaît à ce nom). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert (si la plateforme refuse la fusion, « merge without review » : n’insiste pas et ne cherche aucun détour ; SANS CONFLIT : JUSTE avant d’ouvrir la PR, git fetch origin puis git merge origin/main dans ta branche (garde les DEUX côtés ; une migration dont le numéro est déjà pris : renumérote-la avec scripts/prochaine-migration.sh, appelé au moment d’écrire le fichier, jamais « le suivant » deviné) et relance les tests rapides ; pousse ta branche, ouvre la PR, puis IMMÉDIATEMENT COCKPIT_PROJET=\(.slug) \($prfus) <N> (la carte « À toi » avec le lien et les 2 gestes ; elle n’est posée QUE si la PR est propre : le script répond « PAS PRÊTE : … » sinon, et la chef s’en occupe ; sans doublon, retirée seule à la fusion ; ne pose jamais cette action à la main) ; ne termine jamais en laissant une branche finie sans PR ni carte ; DÉPLOIEMENT PAR LOT : une PR = toute la vague de correctifs du même sujet, jamais une PR ou un redéploiement par correctif ; une fonction Supabase se déploie une fois en fin de lot avec scripts/deployer-fonction.sh, qui ne renvoie rien si elle est inchangée), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. Ouvre https://… (le lien EXACT) 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
     echo; return 0

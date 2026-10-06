@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
-import { CircleHelp, ExternalLink, ListChecks } from 'lucide-react'
+import { CircleHelp, ListChecks } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
-import { corpsDemandeVerifier, derniereDemandeVerifier, etapesVerifier, liensAOuvrir, segmentsAvecLiens } from '../lib/commentVerifier.ts'
+import { corpsDemandeVerifier, derniereDemandeVerifier, etapesVerifier } from '../lib/commentVerifier.ts'
+import { LiensAOuvrir, TexteAvecLiens } from '../ui/TexteAvecLiens.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { mediasVerifier } from '../lib/medias.ts'
 import { MediasMessage } from './Medias.tsx'
@@ -19,29 +20,6 @@ function CeQueTuDoisVoir({ chantier }: { chantier: Chantier }) {
     <div className="mt-2" data-testid="images-verifier">
       <p className="mb-1 text-xs font-medium text-texte-2">Ce que tu dois voir :</p>
       <MediasMessage medias={medias} apercu testId="images-verifier-liste" />
-    </div>
-  )
-}
-
-/** Un texte dont les adresses http(s) deviennent des liens (nouvel onglet). */
-function TexteAvecLiens({ texte }: { texte: string }) {
-  return <>{segmentsAvecLiens(texte).map((s, i) => s.lien
-    ? <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="break-all font-medium text-accent underline underline-offset-2">{s.texte}</a>
-    : <span key={i}>{s.texte}</span>)}</>
-}
-
-/** Les liens du texte en boutons : un toucher, pas de recherche dans les étapes. */
-function LiensAOuvrir({ texte }: { texte: string }) {
-  const liens = useMemo(() => liensAOuvrir(texte), [texte])
-  if (!liens.length) return null
-  return (
-    <div className="mt-2 flex flex-wrap gap-2" data-testid="liens-verifier">
-      {liens.map((l) => (
-        <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" data-testid="lien-verifier"
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-accent px-3 text-sm font-medium text-accent">
-          <ExternalLink size={16} aria-hidden />{l.libelle}
-        </a>
-      ))}
     </div>
   )
 }
@@ -78,7 +56,7 @@ export function EncadreCommentVerifier({ chantier }: { chantier: Chantier }) {
     return (
       <div data-testid="comment-verifier" className="rounded-lg border border-bord bg-carte px-3 py-2">
         <p className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</p>
-        <LiensAOuvrir texte={texte} />
+        <LiensAOuvrir textes={[texte]} testId="liens-verifier" />
         <Etapes texte={texte} />
         <CeQueTuDoisVoir chantier={chantier} />
       </div>
@@ -117,8 +95,8 @@ export function CommentVerifierReplie({ chantier }: { chantier: Chantier }) {
   if (!texte) return null
   return (
     <Repliable testId="comment-verifier-replie" titre={<span className="flex items-center gap-1.5 text-sm font-medium"><ListChecks size={16} className="text-texte-2" aria-hidden />Comment vérifier</span>}>
-      <LiensAOuvrir texte={texte} />
-        <Etapes texte={texte} />
+      <LiensAOuvrir textes={[texte]} testId="liens-verifier" />
+      <Etapes texte={texte} />
       <CeQueTuDoisVoir chantier={chantier} />
     </Repliable>
   )

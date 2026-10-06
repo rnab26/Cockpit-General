@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, CloudOff, Copy, Ellipsis, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, CloudOff, Copy, Ellipsis, ExternalLink, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit, useGlobal } from '../contexte.ts'
 import { useMarquerLu } from './PastilleReponse.tsx'
@@ -26,6 +26,8 @@ import { auteurDe, sujetDe } from '../lib/bulleAide.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, separerChat, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
+import { liensAFaire, type LienAFaire } from '../lib/liensAFaire.ts'
+import { domaineDe } from '../lib/marche.ts'
 import { BlocQuestion } from './BlocQuestion.tsx'
 import { BlocValidation, SignalerProbleme } from './BlocValidation.tsx'
 import { BlocBloque, BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
@@ -249,7 +251,7 @@ function BulleMessage({ m }: { m: Message }) {
  * plus haut que l'écran, on s'arrête sur son début pour qu'il se lise.
  * `cle` change à chaque nouveau message : si on était en bas, on y reste.
  */
-function Corps({ children, actions, nbActions = 0, faites = [], chantierId, placeholder, cle }: { children: ReactNode; actions?: ReactNode; nbActions?: number; faites?: Message[]; chantierId: string | null; placeholder: string; cle: string }) {
+function Corps({ children, actions, nbActions = 0, liens = [], faites = [], chantierId, placeholder, cle }: { children: ReactNode; actions?: ReactNode; nbActions?: number; liens?: LienAFaire[]; faites?: Message[]; chantierId: string | null; placeholder: string; cle: string }) {
   const corps = useRef<HTMLDivElement>(null)
   const enBas = useRef(true)
   const allerEnBas = (doux = false) => {
@@ -271,7 +273,7 @@ function Corps({ children, actions, nbActions = 0, faites = [], chantierId, plac
   return (
     <>
       <div ref={corps} onScroll={surDefilement} className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-3 py-3" data-zone-libre="oui" data-testid="fil-conversation">{children}</div>
-      <ZoneActions nb={nbActions} faites={faites}>{actions}</ZoneActions>
+      <ZoneActions nb={nbActions} liens={liens} faites={faites}>{actions}</ZoneActions>
       <Saisie chantierId={chantierId} placeholder={placeholder} onEnvoye={() => { enBas.current = true; window.setTimeout(() => allerEnBas(true), 150) }} />
     </>
   )
@@ -284,7 +286,7 @@ function Corps({ children, actions, nbActions = 0, faites = [], chantierId, plac
  * entre le chat et la barre d'écriture : le chat ne contient que la discussion, et reste visible quand on agit.
  * Repliable ; les actions déjà faites sont rangées dans un repli, pas dans le chat.
  */
-function ZoneActions({ nb, faites, children }: { nb: number; faites: Message[]; children: ReactNode }) {
+function ZoneActions({ nb, liens, faites, children }: { nb: number; liens: LienAFaire[]; faites: Message[]; children: ReactNode }) {
   const [ouvert, setOuvert] = useState(true)
   if (!nb && !faites.length) return null
   return (
@@ -295,6 +297,18 @@ function ZoneActions({ nb, faites, children }: { nb: number; faites: Message[]; 
         <span className="flex-1">{nb ? (nb > 1 ? 'À faire de ton côté' : 'À faire de ton côté') : 'Rien à faire de ton côté'}</span>
         <ChevronDown size={16} className={`text-texte-2 transition-transform ${ouvert ? 'rotate-180' : ''}`} aria-hidden />
       </button>
+      {liens.length ? (
+        <div className="flex gap-2 overflow-x-auto px-3 pb-2" data-testid="zone-actions-liens">
+          {liens.map((l) => (
+            <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" data-testid="zone-actions-lien"
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border border-accent/60 bg-accent/5 px-3 text-sm font-medium text-accent hover:bg-accent/10">
+              <ExternalLink size={15} aria-hidden />
+              <span>{l.libelle}</span>
+              <span className="text-xs font-normal text-texte-2">{domaineDe(l.url)}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
       {ouvert ? (
         <div className="max-h-[42dvh] space-y-2.5 overflow-y-auto overscroll-contain px-3 pb-3" data-testid="zone-actions-contenu">
           {children}
@@ -590,6 +604,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
         }
         menu={admin ? <MenuChantier chantier={c} nMessages={fil.length} onHistorique={() => setSignalHistorique((n) => n + 1)} /> : null} />
       <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'} cle={cle} nbActions={nbActions} faites={faites}
+        liens={liensAFaire(cartes, c.etat === 'a_verifier' ? c.comment_verifier : null)}
         actions={<>
           {c.etat === 'a_verifier' ? <AFaire><BlocValidation chantier={c} onQuestionsAffichees={setQuestionsDansValidation} /></AFaire> : null}
           {c.etat === 'a_cadrer' ? <AFaire><BlocCadrer chantier={c} /></AFaire> : null}
@@ -704,7 +719,7 @@ function FilProjet() {
   return (
     <>
       <EnTete titre="Discussion du projet" sousTitre={<p className="text-xs text-texte-2">Écris ce que tu veux, même plusieurs sujets : Claude ouvre un fil par sujet et te répond dans chacun</p>} />
-      <Corps chantierId={null} placeholder="Écrire à Claude…" cle={cle} nbActions={aChoisir.length} faites={faites}
+      <Corps chantierId={null} placeholder="Écrire à Claude…" cle={cle} nbActions={aChoisir.length} faites={faites} liens={liensAFaire(aChoisir)}
         actions={aChoisir.map((m) => m.kind === 'fusion'
           ? <AFaire key={m.id}><BlocFusion message={m} /></AFaire>
           : <AFaire key={m.id}><BlocQuestion message={m} /></AFaire>)}>

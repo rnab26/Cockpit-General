@@ -88,29 +88,26 @@ export function segmentsAvecLiens(texte: string): Segment[] {
   return out
 }
 
-/** Un lien à ouvrir d'un toucher, avec un nom lisible. */
-export interface LienAOuvrir { url: string; libelle: string }
-
 /**
- * Les adresses du texte, sans doublon, dans l'ordre, chacune avec un nom clair :
- * « PR n° 12 » pour une pull request GitHub, « Aperçu » pour une image/page de
- * simulation, sinon le nom du site. Raphaël ouvre sans chercher dans le texte.
+ * Les adresses https à ouvrir dans ces textes, une fois chacune, dans l'ordre (6 oct. 2026, chantiers 2be961b8 et
+ * 95f21f04 : « pourquoi tu ne mets pas les liens de ce qu'il y a à faire ici »). Elles deviennent de GROS boutons
+ * en tête de la carte, pas seulement des mots soulignés dans une phrase. Jamais http:, javascript:, data:.
  */
-export function liensAOuvrir(texte: string | null | undefined): LienAOuvrir[] {
+export function liensDuTexte(textes: readonly (string | null | undefined)[], max = 4): { url: string; domaine: string }[] {
   const vus = new Set<string>()
-  const res: LienAOuvrir[] = []
-  for (const s of segmentsAvecLiens(texte ?? '')) {
-    if (!s.lien || vus.has(s.url)) continue
-    vus.add(s.url)
-    let libelle = s.url
-    try {
-      const u = new URL(s.url)
-      const pr = u.hostname === 'github.com' ? u.pathname.match(/\/pull\/(\d+)/) : null
-      libelle = pr ? `PR n° ${pr[1]}` : /\.(png|jpe?g|webp|gif)$/i.test(u.pathname) ? 'Image à voir' : u.hostname.replace(/^www\./, '')
-    } catch { continue }
-    res.push({ url: s.url, libelle })
+  const out: { url: string; domaine: string }[] = []
+  for (const t of textes) {
+    for (const s of segmentsAvecLiens(t ?? '')) {
+      if (!s.lien || vus.has(s.url)) continue
+      let u: URL
+      try { u = new URL(s.url) } catch { continue }
+      if (u.protocol !== 'https:') continue
+      vus.add(s.url)
+      out.push({ url: s.url, domaine: u.hostname.replace(/^www\./, '') })
+      if (out.length >= max) return out
+    }
   }
-  return res
+  return out
 }
 
 /** Le message écrit dans le fil quand la personne qui certifie demande
