@@ -392,7 +392,9 @@ $fermer_txt
 [ -n "$renf_txt" ] && renf_txt="RENFORTS de $projet, demandés par Raphaël dans le cockpit (sessions à part, chacune sa machine ; ne fais pas leur travail) :
 $renf_txt
 "
-# RELAIS (0028) : si cette chef est LA chef relais (celle du cockpit si elle vit),
+fi
+# RELAIS (0028 ; 0075, 6 oct. : AUSSI pour la session réveillée en « attente » — mesuré : le réveil de FacePro ouvrait une
+# session qui sautait ce bloc, donc personne n'ouvrait rien pour FacePro) : si cette chef est LA chef relais (celle du cockpit si elle vit),
 # elle ouvre aussi pour les projets SANS chef vivante : leurs renforts, et UNE
 # session du projet quand Raphaël y a écrit sans réponse et qu'aucune session
 # ne vit. Seulement ouvrir / noter / archiver : jamais leur travail, jamais leur
@@ -402,7 +404,6 @@ relais_txt=""; [ "${FREIN_ON:-0}" = "1" ] || relais_txt=$(printf '%s' "$relais" 
 [ -n "$relais_txt" ] && renf_txt="${renf_txt}RELAIS pour les projets SANS chef vivante (tu es la chef relais : ouvre seulement, ne fais ni leur travail ni leurs réponses) :
 $relais_txt
 "
-fi
 # PR À FUSIONNER (30 sept. 2026) : la passe réconcilie les cartes « Fusionne la PR #N » avec GitHub —
 # UN appel léger (liste des PR ouvertes), puis le script idempotent par PR. Au plus une fois par 30 min et par projet
 # (marqueur local), jamais pour un projet de test, jamais sous frein.
