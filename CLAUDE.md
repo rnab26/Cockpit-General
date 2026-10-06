@@ -295,6 +295,10 @@ n'ouvre que s'il y a un message sans réponse ; `reveiller_chef` renvoie
 Limite : une session /fire dont le modèle n'a pas l'outil `archive_session`
 reste ouverte (non suivie en base). `verifier-base` §34.
 
+## Passe du chef sans perte : consigne gardée, réservation rendue si aucun agent ne démarre (6 oct. 2026, migration 0069, chantier d48bafe7)
+
+Raphaël : « je n'ai pas besoin à chaque fois d'un chat ou d'une nouvelle session pour régler ce genre de correctif ». Constaté : `chef.sh` réservait les chantiers dès l'affichage ; une session qui perdait la sortie (tronquée, arrêt) les laissait « en cours » pour personne et le second appel répondait RIEN. Maintenant : (1) chaque consigne affichée est GARDÉE (`passe_consignes`, `noter_consigne_passe`) et relisible : le prochain `chef.sh` (après une minute de grâce, pour ne pas la redonner à l'agent qu'on vient de lancer ; jamais au-delà des places libres) ou `chef.sh --consignes` la redonne ; (2) sans agent démarré (`passe_lancee` : activité, tâche ou session sur la branche réservée) au bout de `projets.passe_lancement_min` (5 min, 1 à 120), `rendre_passes_non_lancees` rend le chantier à la file avec son état d'avant ; appelée par `liberer_silencieux_coeur` (donc par le job de 3 min, `chef.sh`, `passe.sh`), qui laisse la réservation de la passe tranquille pendant ce délai ; (3) la passe écrit « PASSE : N réservé(s), M relu(s), soit K agent(s) à lancer » et le RIEN dit combien attendent leur agent ; (4) le relais ne redemande pas une ouverture de session réussie tant que rien de neuf n'est arrivé (`relais_deja_ouvert` : message libre ou vérification de Raphaël, renfort demandé ; `projets.relais_reouverture_h`, 6 h, 0 = au plus une par heure comme avant ; les renforts demandés gardent leur règle). Limites : pas d'écran de réglage (SQL) ; une consigne relue garde le modèle de sa première émission ; seules les consignes d'un chantier sont gardées (pas la revue « À toi »). `verifier-base` §49.
+
 ## Traité sans attendre : aucun chantier « tenu » pour rien (30 sept. 2026, migration 0043, chantier fb19d6a8)
 
 Raphaël : « je ne veux pas que les chantiers soient tenus, je veux qu'ils soient

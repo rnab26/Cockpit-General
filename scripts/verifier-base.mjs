@@ -1869,6 +1869,7 @@ async function controle30_agents_fantomes() {
     try { return execFileSync("bash", [join(racine, "scripts/chef.sh")], { encoding: "utf8", cwd: racine, env: { ...process.env, COCKPIT_PROJET: SLUG_A, CLAUDE_CODE_SESSION_ID: sid, ...env }, stdio: ["ignore", "pipe", "pipe"] }); }
     catch (e) { return `${e.stdout ?? ""}${e.stderr ?? ""}`; }
   };
+  await sql(`delete from passe_consignes where projet_id = ${q(P1)}`);  // 0069 : les consignes gardées des passes d'avant ne sont pas le sujet ici
   await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
   await sql(`update chefs set max_agents = 3 where projet_id = ${q(P1)}`);
   for (const d of ["Fantôme 1", "Fantôme 2", "Fantôme 3"]) await prov(d);
@@ -2573,6 +2574,7 @@ async function controle32_economie_modeles() {
   verifie("chef.sh --modeles : réglages enregistrés", /Modèles de/.test(cli) && e2.modele_code === "opus" && e2.effort === "eleve" && e2.agents === 4, { cli, e2 });
   chef({ ARGS: ["--modeles", "sonnet", "haiku", "moyen", "2"] });
   // La chef donne le modèle de chaque agent et l'effort.
+  await sql(`delete from passe_consignes where projet_id = ${q(P1)}`);
   await une(`select prendre_chef(${q(SLUG_A)}, ${q(sid)}, 'agent/test', '') as r`);
   await sql(`update projets set autonome_toujours = true where id = ${q(P1)}`);
   for (const t of ["Eco un", "Eco deux"]) await creerChantier(P1, { titre: t, etat: "libre", demande: "test" });
@@ -2978,6 +2980,50 @@ async function controle48_renfort_fini_pas_erreur() {
   verifie("muet AVEC travail restant : « erreur » qui dit le reste (jamais « 3 h »)", b.statut === "erreur" && /il reste 1 chantier/.test(b.erreur ?? "") && !/3 h/.test(b.erreur ?? ""), JSON.stringify(b));
 }
 
+// 49. Passe du chef sans perte (0069, chantier d48bafe7) : consigne gardée et relisible, réservation rendue si aucun agent ne démarre, relais qui ne redemande pas la même ouverture.
+const PPS = randomUUID(), SLUG_PS = `test-verif-${rand}-ps`;
+async function controle49_passe_sans_perte() {
+  section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
+  await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.consignes_passe_a_relire(text)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.noter_consigne_passe(text,uuid,text,text,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.consignes_passe_a_relire(text)', 'execute') as srv`);
+  verifie("consignes de la passe : réservées au service", !droits.anon && !droits.auth && droits.srv, droits);
+  const a = await creerChantier(PPS, { titre: "Passe : sans agent", etat: "libre" });
+  const b = await creerChantier(PPS, { titre: "Passe : agent lancé", etat: "libre" });
+  const c = await creerChantier(PPS, { titre: "Passe : récent", etat: "libre" });
+  const reserve = async (id, br, titre) => {
+    await une(`select reserver_chantier(${q(id)}, ${q(br)}, 60) as ok`);
+    await sql(`select noter_consigne_passe(${q(SLUG_PS)}, ${q(id)}, ${q(br)}, 'libre', ${q(titre)}, ${q("CONSIGNE " + titre)})`);
+  };
+  await reserve(a, "agent/ps-a", "A"); await reserve(b, "agent/ps-b", "B"); await reserve(c, "agent/ps-c", "C");
+  const lues = (await une(`select consignes_passe_a_relire(${q(SLUG_PS)}) as r`)).r;
+  verifie("(1) la consigne d'un chantier réservé reste relisible (3 réservés, 3 consignes, texte intact)",
+    lues.length === 3 && lues.some((x) => x.chantier === a && x.consigne === "CONSIGNE A"), lues);
+  // (2) A et B : réservées depuis 6 min ; un agent a démarré sur B (ligne d'activité) ; C : 2 min, fiche muette.
+  await sql(`update passe_consignes set created_at = now() - interval '6 minutes' where chantier_id in (${q(a)}, ${q(b)})`);
+  await sql(`update passe_consignes set created_at = now() - interval '2 minutes' where chantier_id = ${q(c)}`);
+  await sql(`insert into activite (projet_id, chantier_id, session, etape, updated_at) values (${q(PPS)}, ${q(b)}, 'agent/ps-b', 'je commence', now())`);
+  await sql(`update chantiers set updated_at = now() - interval '1 hour' where id = ${q(c)}`);
+  const n = (await une(`select liberer_silencieux_coeur(${q(SLUG_PS)}) as n`)).n;
+  const ea = await une(`select pris_par, etat from chantiers where id = ${q(a)}`);
+  const eb = await une(`select pris_par from chantiers where id = ${q(b)}`);
+  const ec = await une(`select pris_par from chantiers where id = ${q(c)}`);
+  verifie("(2) sans agent au bout du délai : rendu à la file avec son état d'avant (libre, personne ne le tient)", ea.pris_par === null && ea.etat === "libre" && n >= 1, { ea, n });
+  verifie("(2) un agent a démarré (activité) : la réservation reste ; une réservation de la passe encore dans son délai n'est pas libérée comme « silencieuse »", eb.pris_par === "agent/ps-b" && ec.pris_par === "agent/ps-c", { eb, ec });
+  const apres = (await une(`select consignes_passe_a_relire(${q(SLUG_PS)}) as r`)).r;
+  verifie("(1) une consigne rendue ou lancée n'est plus redonnée ; seule la récente (C) l'est",
+    apres.length === 1 && apres[0].chantier === c && apres[0].minutes >= 1, apres);
+  const rendu = (await une(`select count(*)::int as n from chantiers where id = ${q(a)} and libere_de = 'agent/ps-a'`)).n;
+  verifie("(2) le fil dit qui a été libéré (libere_de) : traçable", rendu === 1);
+  // (4) le relais ne redemande pas l'ouverture déjà faite tant que rien de neuf n'est arrivé.
+  await sql(`insert into ouvertures (projet_id, session_distante, created_at) values (${q(PPS)}, 'session_test', now() - interval '2 hours')`);
+  verifie("(4) ouverture réussie il y a 2 h, rien de neuf : déjà ouverte", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === true);
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PPS)}, ${q(c)}, 'Raphaël', 'proprietaire', 'info', 'du neuf')`);
+  verifie("(4) un message de Raphaël arrivé depuis : on peut rouvrir", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === false);
+  await sql(`delete from messages where projet_id = ${q(PPS)} and corps = 'du neuf'`);
+  await sql(`update projets set relais_reouverture_h = 0 where id = ${q(PPS)}`);
+  verifie("(4) réglage à 0 : l'ancien comportement (au plus une ouverture par heure)", (await une(`select relais_deja_ouvert(${q(PPS)}) as v`)).v === false);
+}
+
 // 43. Regroupement et livraison (0055) : la chef voit les chantiers voisins, les regroupe, et la livraison d'un chantier est annoncée dans le fil de l'autre (regroupé ou fusionné).
 const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
 async function controle45_regroupement() {
@@ -3306,6 +3352,7 @@ try {
     controle45_regroupement,
     controle46_fusion_a_la_creation,
     controle47_index_cles_etrangeres,
+    controle49_passe_sans_perte,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || (e.name ?? "").startsWith(`controle${process.env.SEUL}_`))) {
@@ -3317,7 +3364,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
