@@ -2443,6 +2443,8 @@ async function controle35_renforts_auto() {
   const etat = async () => (await une(`select etat_renforts(${q(SLUG_I)}) as e`)).e;
   const vivants = async () => (await une(`select count(*)::int as n from renforts where projet_id = ${q(P9)} and statut in ('demande', 'actif')`)).n;
 
+  // Une chef vivante tient le projet : le seuil d'ouverture est celui de ses réglages (0075 : sans chef, 1 suffit).
+  await sql(`insert into chefs (projet_id, session_id, actif, vu_at) values (${q(P9)}, 'test-renf-${rand}', true, now())`);
   await sql(`select regler_renforts(${q(SLUG_I)}, 2, 3)`);
   let e = await etat();
   verifie("la règle est en base : file 5 (jamais « à cadrer »), seuil 3 = agents par session (défaut), niveau « proche », rien ne bloque",
@@ -2491,6 +2493,16 @@ async function controle35_renforts_auto() {
   await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, 1)`);
   await sql(`select renforts_a_ouvrir(${q(SLUG_I)}, true)`);
   verifie("seuil 1, maximum 1 : un seul renfort (le maximum jamais dépassé), ensuite bloque = plein", (await vivants()) === 1 && (await etat()).auto.bloque === "plein");
+
+  // 0075 (6 oct., FacePro : 2 chantiers, seuil 4, personne ne s'ouvrait) : SANS chef vivante et sans seuil posé à la main,
+  // UN chantier en attente suffit à ouvrir ; avec une chef vivante, le seuil des réglages (3) reste.
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, null)`);
+  verifie("chef vivante, seuil par défaut : ouverture à 3 (seuil_ouverture = seuil)", (await une(`select file_renforts(${q(P9)}) as f`)).f.seuil_ouverture === 3);
+  await sql(`delete from chefs where projet_id = ${q(P9)}`);
+  const sansChef = (await une(`select file_renforts(${q(P9)}) as f`)).f;
+  verifie("aucune chef vivante, seuil par défaut : UN chantier suffit (seuil_ouverture 1), l'alerte garde son seuil 3", sansChef.seuil_ouverture === 1 && sansChef.seuil === 3, sansChef);
+  await sql(`select regler_renforts_auto(${q(SLUG_I)}, true, 4)`);
+  verifie("seuil posé à la main (4) : respecté même sans chef", (await une(`select file_renforts(${q(P9)}) as f`)).f.seuil_ouverture === 4);
 
   // Droits : un membre non admin ne règle ni ne lit la règle.
   await sql(`insert into membres (projet_id, user_id) values (${q(P9)}, ${q(userId)}) on conflict do nothing`);
@@ -3120,6 +3132,7 @@ async function controle52_mesure_reaction() {
   verifie("un message répondu en 90 s, un sans réponse depuis 20 min : médiane 90 s, 1 sans réponse", r.messages === 2 && r.repondus === 1 && r.mediane_s === 90 && r.dernier_s === 90 && r.sans_reponse === 1 && !!r.plus_ancien_sans_reponse, r);
   const chef = readFileSync(new URL("./chef.sh", import.meta.url), "utf8");
   verifie("chef.sh : la relève sert aussi les chantiers prenables (plus de garde « -z attente » sur le mode autonome)", !/if \[ -z "\$attente" \] && \[ "\$\(printf '%s' "\$etat" \| jq -r '\.autonome/.test(chef) && /RELÈVE[^\n]*chantiers prenables/.test(chef));
+  verifie("chef.sh : la session réveillée en « attente » sert AUSSI le relais (0075 : sinon FacePro n'ouvrait rien)", /relais=\$\(un "select relais_a_servir/.test(chef) && !/if \[ -z "\$attente" \]; then\n(?:(?!\nfi\n)[\s\S])*relais=\$\(un/.test(chef));
   verifie("chef.sh : une chef au-dessus de son seuil de jetons est relayée tout de suite par la session réveillée", /rep_chef=\$\(un "select chef_repond\(/.test(chef) && /releve_prise=1/.test(chef) && /noter_releve_chef/.test(chef));
 }
 
