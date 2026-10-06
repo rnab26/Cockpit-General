@@ -49,7 +49,7 @@ export function detailsFilet(e: EtatFiletBase): string[] {
   const l: string[] = []
   l.push(e.dernier_at ? `Dernier réveil : ${hhmm(e.dernier_at)} (${e.dernier_pourquoi ?? 'du travail attendait'}).` : 'Aucun réveil pour l’instant.')
   l.push(e.attente.n > 0 ? `Ce qui attend : ${e.attente.raisons.join(', ')}.` : 'Rien n’attend.')
-  l.push(`Réveils aujourd’hui : ${e.aujourdhui} sur ${e.plafond} au plus.`)
+  l.push(`Réveils sans effet aujourd’hui : ${e.aujourdhui} sur ${e.plafond} au plus (un réveil suivi d’une session ne compte pas).`)
   l.push(`Claude est réveillé si le travail attend depuis ${e.delai_min} min et qu’aucune session ne travaille.`)
   if (e.cadence_min) l.push(`La base vérifie toutes les ${e.cadence_min} min, puis réveille au plus toutes les ${e.reveil_ecart_min ?? 5} min ; une session chef est jugée muette après ${e.chef_reactif_min ?? 5} min.`)
   const ch = phraseChef(e.chef)

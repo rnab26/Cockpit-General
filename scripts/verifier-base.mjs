@@ -2773,6 +2773,20 @@ async function controle38_filet_securite() {
   verifie("plafond du jour atteint (2 sur 2) : aucun réveil de plus", await passe() === "plafond" && await journal() === 2);
   await sql(`update projets set filet_plafond_jour = 3 where id = ${q(P11)}`);
   verifie("plafond relevé et l'écart (8 h) passé : le réveil repart", await passe() === "simule" && await journal() === 3);
+  // 6 oct. : un réveil suivi d'une session du projet n'est pas « sans effet » et ne ronge pas le plafond.
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) values (${q(P11)}, 'a', 'simule', true, now() - interval '23 hours'), (${q(P11)}, 'b', 'simule', true, now() - interval '20 hours')`);
+  await sql(`insert into sessions (id, projet_id, demarre_at, vu_at, fin_at) values ('test-filet-a', ${q(P11)}, now() - interval '23 hours' + interval '2 minutes', now() - interval '23 hours' + interval '3 minutes', now() - interval '23 hours' + interval '3 minutes'), ('test-filet-b', ${q(P11)}, now() - interval '20 hours' + interval '2 minutes', now() - interval '20 hours' + interval '3 minutes', now() - interval '20 hours' + interval '3 minutes')`);
+  await sql(`update projets set filet_plafond_jour = 2 where id = ${q(P11)}`);
+  { const rr = await passe(); verifie("réveils suivis d'une session : plafond 2 non atteint, le réveil repart (" + rr + ")", rr === "simule"); }
+  // Butoir dur : 9 réveils (3 × plafond 3), tous suivis d'une session, espacés de plus que l'écart (8 h) pour la dernière.
+  await sql(`delete from sessions where id in ('test-filet-a', 'test-filet-b')`);
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  await sql(`insert into filet_reveils (projet_id, pourquoi, resultat, simule, at) select ${q(P11)}, 'x', 'simule', true, now() - (10 + g) * interval '1 hour' from generate_series(0, 8) g`);
+  await sql(`insert into sessions (id, projet_id, demarre_at, vu_at, fin_at) select 'test-filet-' || g, ${q(P11)}, now() - (10 + g) * interval '1 hour' + interval '2 minutes', now() - (10 + g) * interval '1 hour' + interval '3 minutes', now() - (10 + g) * interval '1 hour' + interval '3 minutes' from generate_series(0, 8) g`);
+  await sql(`update projets set filet_plafond_jour = 3 where id = ${q(P11)}`);
+  verifie("butoir dur : 9 réveils (3 × plafond 3) arrêtent tout, même suivis de sessions", await passe() === "plafond");
+  await sql(`delete from sessions where id like 'test-filet-%'`);
   // Sans jeton : le vrai chemin (sans simulation) n'appelle rien et ne journalise rien.
   await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
   const r = await passe(true, false);
