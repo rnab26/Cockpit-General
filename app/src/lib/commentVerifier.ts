@@ -88,6 +88,31 @@ export function segmentsAvecLiens(texte: string): Segment[] {
   return out
 }
 
+/** Un lien à ouvrir d'un toucher, avec un nom lisible. */
+export interface LienAOuvrir { url: string; libelle: string }
+
+/**
+ * Les adresses du texte, sans doublon, dans l'ordre, chacune avec un nom clair :
+ * « PR n° 12 » pour une pull request GitHub, « Aperçu » pour une image/page de
+ * simulation, sinon le nom du site. Raphaël ouvre sans chercher dans le texte.
+ */
+export function liensAOuvrir(texte: string | null | undefined): LienAOuvrir[] {
+  const vus = new Set<string>()
+  const res: LienAOuvrir[] = []
+  for (const s of segmentsAvecLiens(texte ?? '')) {
+    if (!s.lien || vus.has(s.url)) continue
+    vus.add(s.url)
+    let libelle = s.url
+    try {
+      const u = new URL(s.url)
+      const pr = u.hostname === 'github.com' ? u.pathname.match(/\/pull\/(\d+)/) : null
+      libelle = pr ? `PR n° ${pr[1]}` : /\.(png|jpe?g|webp|gif)$/i.test(u.pathname) ? 'Image à voir' : u.hostname.replace(/^www\./, '')
+    } catch { continue }
+    res.push({ url: s.url, libelle })
+  }
+  return res
+}
+
 /** Le message écrit dans le fil quand la personne qui certifie demande
  *  « comment vérifier ». `kind='info'` (pas 'question') : une question
  *  finirait dans SES PROPRES « questions en attente ». */

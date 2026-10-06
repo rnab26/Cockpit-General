@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { verifie, bilan } from './_assert.ts'
 import {
-  etapesVerifier, segmentsAvecLiens, corpsDemandeVerifier, derniereDemandeVerifier, QUESTION_VERIFIER,
+  etapesVerifier, segmentsAvecLiens, liensAOuvrir, corpsDemandeVerifier, derniereDemandeVerifier, QUESTION_VERIFIER,
 } from '../src/lib/commentVerifier.ts'
 
 console.log('verifier-comment-verifier')
@@ -43,6 +43,9 @@ const s2 = segmentsAvecLiens('(voir https://exemple.fr/page)')
 verifie('une parenthèse fermante non ouverte dans l’adresse reste hors du lien', s2[1]?.lien === true && s2[1].texte === 'https://exemple.fr/page' && s2[2]?.texte === ')', s2)
 const s3 = segmentsAvecLiens('https://fr.wikipedia.org/wiki/Test_(informatique)')
 verifie('une parenthèse qui fait partie de l’adresse est gardée', s3.length === 1 && s3[0].texte === 'https://fr.wikipedia.org/wiki/Test_(informatique)', s3)
+const lo = liensAOuvrir('1. Ouvre https://github.com/rnab26/Cockpit-General/pull/12 2. Puis https://rnab26.github.io/Cockpit-General/. Revois https://github.com/rnab26/Cockpit-General/pull/12 et https://x.fr/a.png')
+verifie('liens à ouvrir : PR nommée, doublon écarté, site, image', JSON.stringify(lo.map((l) => l.libelle)) === JSON.stringify(['PR n° 12', 'rnab26.github.io', 'Image à voir']))
+verifie('liens à ouvrir : rien sans lien', liensAOuvrir(null).length === 0)
 verifie('http et https, deux liens dans le même texte', segmentsAvecLiens('http://a.fr et https://b.fr').filter((x) => x.lien).length === 2)
 verifie('« javascript: » ou « ftp: » ne deviennent jamais des liens', segmentsAvecLiens('javascript:alert(1) ftp://x.fr').every((x) => !x.lien))
 verifie('sans lien, le texte ressort en un seul morceau intact', JSON.stringify(segmentsAvecLiens('rien ici')) === JSON.stringify([{ lien: false, texte: 'rien ici' }]))
