@@ -267,6 +267,29 @@ export function aLancer(
 ): { projetId: string; lignes: LigneALancer[] }[] {
   return sansPersonne(chantiers, activites, messages, now, silenceMs, ordreProjets, projetId, taches,
     (l) => !estEnCoursSansNouvelles(l.c, l.presence) && !repriseReponse(l.c, messages, activites, taches, now))
+    // Les NOUVEAUX d'abord, le plus récent en haut (6 oct. 2026) : un chantier qu'on vient de créer se voit tout de suite.
+    .map((g) => ({ ...g, lignes: nouveauxDabord(g.lignes, now) }))
+}
+
+/** Un chantier est « nouveau » pendant 24 h, tant que personne n'a commencé (à trier / libre). */
+export const NOUVEAU_MS = 24 * 3_600_000
+export function estNouveau(c: Pick<Chantier, 'etat' | 'created_at' | 'archived_at'>, now: Date): boolean {
+  if (c.archived_at || (c.etat !== 'a_trier' && c.etat !== 'libre')) return false
+  const t = Date.parse(c.created_at)
+  return Number.isFinite(t) && now.getTime() - t < NOUVEAU_MS && now.getTime() >= t - 60_000
+}
+
+/** Les nouveaux en tête (plus récent d'abord), le reste dans l'ordre déjà donné. */
+export function nouveauxDabord<T extends { c: Pick<Chantier, 'etat' | 'created_at' | 'archived_at'> }>(lignes: readonly T[], now: Date): T[] {
+  const nouveaux = lignes.filter((l) => estNouveau(l.c, now)).sort((a, b) => b.c.created_at.localeCompare(a.c.created_at))
+  return [...nouveaux, ...lignes.filter((l) => !estNouveau(l.c, now))]
+}
+
+/** Où apparaît un chantier qu'on vient de créer : la phrase dite après « Créer » (une seule règle). */
+export function ouApparait(etat: string): string {
+  if (etat === 'a_cadrer' || etat === 'bloque') return 'Il apparaît dans « À toi de jouer ».'
+  if (etat === 'a_trier' || etat === 'libre') return 'Il apparaît en haut de « Prêt à lancer », marqué « Nouveau ».'
+  return 'Il apparaît dans la liste du projet.'
 }
 
 /** Les chantiers « en cours, mais plus de nouvelles », groupés par projet (silencieux d'abord). */

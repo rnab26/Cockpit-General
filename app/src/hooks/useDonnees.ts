@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import type { Activite, Chantier, Message, Projet, Section, SessionClaude, Tache } from '../lib/types.ts'
 import { chargerEtatEcran } from '../lib/etatEcran.ts'
 import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
+import { abonner, etatFile } from '../lib/fetchResilient.ts'
+import { fusionnerEnAttente } from '../lib/fileAttente.ts'
 import { remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
@@ -241,11 +243,14 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     return error ? null : (data as Message | null)
   }, [])
 
+  // Les messages écrits hors ligne (gardés dans la file de l'appareil) se voient dans la bulle et le fil, marqués.
+  const file = useSyncExternalStore(abonner, etatFile, etatFile)
+  const messagesAffiches = useMemo(() => fusionnerEnAttente(messages, file.elements), [messages, file.elements])
   const ids = useMemo(() => new Set(projets.map((p) => p.id)), [projets])
   const vis = useMemo(() => ({
-    sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messages, ids),
+    sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messagesAffiches, ids),
     activites: lignesVisibles(activites, ids), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
-  }), [ids, sections, chantiers, messages, activites, sessions, taches])
+  }), [ids, sections, chantiers, messagesAffiches, activites, sessions, taches])
 
   return {
     projets, projet, projetId, vue, choisirVue, chargerProjets,

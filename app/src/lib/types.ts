@@ -142,6 +142,9 @@ export interface Message {
   via_session?: boolean | null
   /** 0033 : le fil vers lequel ce message renvoie (chantier ouvert depuis ce fil, ou fil d'origine). */
   chantier_lie?: string | null
+  /** Côté appareil seulement (jamais en base) : écrit hors ligne, pas encore parti (lib/fileAttente.ts). */
+  en_attente_envoi?: boolean
+  envoi_refuse?: boolean
 }
 
 export interface Media {

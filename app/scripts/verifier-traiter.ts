@@ -1,4 +1,4 @@
-import { phraseTraiter, etatTraiter, etapesTraiter, LIEN_CLAUDE_CODE } from '../src/lib/traiter.ts'
+import { phraseTraiter, etatTraiter, etapesTraiter, LIEN_CLAUDE_CODE, LIBELLE_LANCER } from '../src/lib/traiter.ts'
 let ko = 0, ok = 0
 const verifie = (nom: string, cond: boolean, detail?: unknown) => { if (cond) { ok++; console.log('  ✓ ' + nom) } else { ko++; console.log('  ✗ ' + nom, detail ?? '') } }
 const now = new Date('2026-09-29T12:00:00Z')
@@ -15,5 +15,6 @@ verifie('chef vivante : « tient déjà », et le détail par section', /tient d
 verifie('sans dépôt : on ne l’invente pas', etapesTraiter(null)[0].includes('de ce projet'))
 verifie('avec dépôt : il est nommé', etapesTraiter('rnab26/Facepro')[0].includes('rnab26/Facepro'))
 verifie('le lien est la page documentée, sans paramètre inventé', LIEN_CLAUDE_CODE === 'https://claude.ai/code')
+verifie('libellé du bouton = « Lancer une session autonome »', LIBELLE_LANCER === 'Lancer une session autonome')
 console.log(`\nverifier-traiter : ${ok}/${ok + ko}`)
 process.exit(ko ? 1 : 0)

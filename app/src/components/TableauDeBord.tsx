@@ -6,7 +6,7 @@ import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { attenteAToi, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
+import { attenteAToi, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
@@ -29,6 +29,7 @@ import { useFlash } from './Vivant.tsx'
 import { Renforts, RenfortsTout } from './Renforts.tsx'
 import { ReveilImmediat } from './ReveilImmediat.tsx'
 import { FiletSecurite } from './FiletSecurite.tsx'
+import { quandDeCote } from '../lib/reporter.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
 import { bulleActive, cleBulle } from '../lib/bulleAide.ts'
@@ -39,7 +40,7 @@ import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerA
  * fais A + D », « des modèles plus compacts, plus ergonomiques, moins casse-tête
  * visuellement, des logiques plus ordonnées »), pour l'onglet « Tout » ET la
  * vue d'un projet :
- *   quatre tuiles (pour toi · ça avance · en attente · fini) — chacune ouvre sa liste ;
+ *   cinq tuiles (pour toi · ça avance · à lancer · de côté · fini) — chacune ouvre sa liste ;
  *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée (en premier) ;
  *   « À toi de jouer »       — une ligne par chose à faire, UN verbe (en second) ;
  *   « Prêt à lancer »        — ce que personne ne tient, « Lancer ».
@@ -114,20 +115,55 @@ function EcrireAuProjet({ projetId }: { projetId: string }) {
 
 // ---------------------------------------------------------------- tuiles
 
-type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'fini'
+type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'deCote' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
   { cle: 'caAvance', libelle: 'ça avance', aide: 'une session ou un assistant y travaille vraiment (barre de progression)', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
-  { cle: 'enPause', libelle: 'en attente', aide: 'personne n’y travaille : prêt à lancer, ou en cours sans session dessus', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'enPause', libelle: 'à lancer', aide: 'prêts à démarrer (nouveaux compris) ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'deCote', libelle: 'de côté', aide: 'mis de côté ou reportés exprès : ils ne bougent pas tant que tu ne les relances pas', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; enAttente?: boolean }
+interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
   if (cle === 'caAvance') return t.caAvance.map((l) => l.c.id)
   if (cle === 'enPause') return [...t.pretALancer, ...t.sansSession].map((l) => l.c.id)
+  if (cle === 'deCote') return t.deCote.map((c) => c.id)
   return t.fini.map((c) => c.id)
+}
+
+/**
+ * Les pastilles « geste attendu » (Questions, À tester, Actions…) vivent SOUS les tuiles, en permanence tant qu'il
+ * reste quelque chose à faire (Raphaël, 6 oct. : elles n'apparaissaient que dans « À toi de jouer » et
+ * disparaissaient avec lui). Toucher une pastille filtre « À toi de jouer » (même préférence) ; la même, ou « Tout »,
+ * retire le filtre. Rien à faire : rien affiché. UNE règle : `comptesAToi`.
+ */
+function PastillesAToi({ elements }: { elements: ElementAToi[] }) {
+  const g = useGlobal()
+  const toast = useToast()
+  const comptes = useMemo(() => comptesAToi(elements), [elements])
+  const filtre = filtreEffectif(g.prefs[PREF_FILTRE_A_TOI], elements)
+  if (!pastillesVisibles(elements)) return null
+  const choisir = async (type: TypeAToi | null) => {
+    try { await g.poser(PREF_FILTRE_A_TOI, type && filtre !== type ? type : 'tout') }
+    catch (err) { toast.erreur(`Filtre non retenu : ${err instanceof Error ? err.message : String(err)}`); return }
+    document.querySelector('[data-testid="a-toi"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  return (
+    <div className="-mx-1 mt-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Ce qui t’attend, par geste" data-testid="filtre-a-toi">
+      {[{ type: null as TypeAToi | null, n: elements.length }, ...comptes].map((x) => {
+        const actif = filtre === x.type
+        return (
+          <button key={x.type ?? 'tout'} type="button" aria-pressed={actif} data-testid="filtre-a-toi-puce" data-type={x.type ?? 'tout'}
+            onClick={() => void choisir(x.type)}
+            className={`inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-sm ${actif ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-bord text-texte-2'}`}>
+            {x.type ? LIBELLE_FILTRE_A_TOI[x.type] : 'Tout'}<span className="tabular-nums">{x.n}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
@@ -142,19 +178,20 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
   }
   return (
     <section aria-label="Où j’en suis" data-testid="ou-jen-suis">
-      <div className="grid grid-cols-4 gap-2" data-testid="tuiles">
+      <div className="grid grid-cols-5 gap-1.5" data-testid="tuiles">
         {TUILES.map((x) => {
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', enAttente: x.cle === 'enPause' })}
-              className="rounded-2xl border border-bord bg-carte px-1 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', enAttente: x.cle === 'enPause', deCote: x.cle === 'deCote', aide: x.aide })}
+              className="min-w-0 rounded-2xl border border-bord bg-carte px-0.5 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
-              <span className="mt-1 block truncate text-xs text-texte-2">{x.libelle}</span>
+              <span className="mt-1 block truncate text-[11px] text-texte-2">{x.libelle}</span>
             </button>
           )
         })}
       </div>
+      <PastillesAToi elements={t.aToi} />
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-texte-2">
         <button type="button" onClick={changerFenetre} data-testid="fenetre-ou-jen-suis" className="underline-offset-2 hover:underline">fini = {libelleFenetre} · changer</button>
         <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-ou-jen-suis" className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline">
@@ -168,7 +205,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
 }
 
 const COLONNES: { cle: keyof QuatreNombres; libelle: string }[] = [
-  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'en attente' }, { cle: 'livre', libelle: 'fini' },
+  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'à lancer' }, { cle: 'livre', libelle: 'fini' },
 ]
 const TEINTE: Record<keyof QuatreNombres, string> = { pourToi: 'text-alerte', bouge: 'text-texte', dort: 'text-texte-2', livre: 'text-ok', expirees: 'text-attention' }
 interface LigneDetail { cle: string; nom: string; couleur: string | null; nombres: QuatreNombres; ids: LigneOuJenSuis['ids'] }
@@ -223,7 +260,7 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
 }
 
 /**
- * Une ligne de « En attente » : le titre en entier (sur plusieurs lignes), puis une phrase qui dit ce qui se passe,
+ * Une ligne de « À lancer » (clé interne enAttente) : le titre en entier (sur plusieurs lignes), puis une phrase qui dit ce qui se passe,
  * ce qui va être fait et quand, et si tu as quelque chose à faire (sinon « rien à faire »). Règle : lib/enAttente.ts.
  */
 function LigneEnAttente({ c, onOuvrir }: { c: Chantier; onOuvrir: () => void }) {
@@ -241,6 +278,7 @@ function LigneEnAttente({ c, onOuvrir }: { c: Chantier; onOuvrir: () => void }) 
           <span className="mt-0.5 block text-sm leading-snug text-texte-2" data-testid="attente-quoi">{p.quoi}</span>
           <span className={`block text-sm leading-snug ${p.aFaire ? 'font-medium text-attention' : 'text-ok'}`} data-testid="attente-suite">{p.suite}{p.aFaire ? '' : ' Rien à faire de ton côté.'}</span>
         </span>
+        <PastilleReponse cle={c.id} className="mt-0.5" />
         <ChevronRight size={16} className="mt-1 shrink-0 text-texte-2" aria-hidden />
       </button>
     </li>
@@ -265,7 +303,8 @@ function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null
   }, [liste, g.chantiers])
   return (
     <Dialog ouvert={!!liste} onFermer={onFermer} titre={`${liste?.titre ?? ''} (${liste?.n ?? 0})`}>
-      {liste && liste.n > chantiers.length ? (
+      {liste?.aide ? <p className="mb-1 text-xs text-texte-2" data-testid="aide-liste">{liste.aide.charAt(0).toUpperCase() + liste.aide.slice(1)}.</p> : null}
+      {liste && liste.n > chantiers.length && !liste.deCote && !liste.enAttente ? (
         <p className="mb-1 text-xs text-texte-2" data-testid="note-liste">Un chantier peut porter plusieurs choses à faire, et une question sur le projet n’a pas de chantier : tout est dans « À toi de jouer ».</p>
       ) : null}
       <ul className="divide-y divide-bord" data-testid="liste-ou-jen-suis">
@@ -280,13 +319,15 @@ function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null
                   <span className="block truncate text-[15px]">{c.titre}</span>
                   <span className="flex items-center gap-1.5 text-xs text-texte-2">
                     {g.projets.length > 1 ? <><PointProjet couleur={projet?.couleur} /><span className="truncate">{projet?.nom}</span><span>·</span></> : null}
-                    {liste?.fini && quandFini(c, g.moi.email, g.now)
+                    {liste?.deCote ? <span className="truncate" data-testid="quand-de-cote">{quandDeCote(c, g.now)}</span> : null}
+                    {liste?.deCote ? null : liste?.fini && quandFini(c, g.moi.email, g.now)
                       ? <span className="truncate tabular-nums" data-testid="quand-fini" title={dateLongue(c.valide_at)}>{quandFini(c, g.moi.email, g.now)}</span>
                       : <span>{infoEtat(c.etat).court}</span>}
                     {liste?.pourToi && (nbParChantier.get(c.id) ?? 0) > 1 ? <span className="shrink-0 font-medium text-alerte" data-testid="nb-choses">· {nbParChantier.get(c.id)} choses à faire</span> : null}
                   </span>
                   {ligneDe.get(c.id) ? <BarreDeLigne l={ligneDe.get(c.id)!} /> : null}
                 </span>
+                <PastilleReponse cle={c.id} />
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
               </button>
             </li>
@@ -350,7 +391,6 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
   const tri: TriAToi = g.prefs.tri_a_toi === 'anciens' ? 'anciens' : 'recents'
   // Filtre par geste attendu (Questions, À tester…) : retenu par personne, jamais une liste vide cachée.
   const filtre = filtreEffectif(g.prefs[PREF_FILTRE_A_TOI], elements)
-  const comptes = useMemo(() => comptesAToi(elements), [elements])
   const tries = useMemo(() => trierAToi(filtrerAToi(elements, filtre), tri), [elements, filtre, tri])
   const visibles = tout ? tries : tries.slice(0, A_TOI_VISIBLES)
   const nDepasses = elements.filter((e) => e.avanceDepuis).length
@@ -366,20 +406,6 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
         <p className="rounded-2xl border border-dashed border-bord px-3 py-4 text-center text-[15px] text-texte-2" data-testid="rien-ne-t-attend">Rien ne t’attend. Claude n’a besoin de rien.</p>
       ) : (
         <>
-          {pastillesVisibles(elements) ? (
-            <div className="-mx-1 mb-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Filtrer par geste attendu" data-testid="filtre-a-toi">
-              {[{ type: null as null, n: elements.length }, ...comptes].map((x) => {
-                const actif = filtre === x.type
-                return (
-                  <button key={x.type ?? 'tout'} type="button" aria-pressed={actif} data-testid="filtre-a-toi-puce" data-type={x.type ?? 'tout'}
-                    onClick={() => { setTout(false); void retenir(PREF_FILTRE_A_TOI, x.type ?? 'tout', 'Filtre') }}
-                    className={`inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border px-3 text-sm ${actif ? 'border-accent bg-accent/10 font-medium text-accent' : 'border-bord text-texte-2'}`}>
-                    {x.type ? LIBELLE_FILTRE_A_TOI[x.type] : 'Tout'}<span className="tabular-nums">{x.n}</span>
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
           {elements.length > 1 ? (
             <div className="mb-1 flex items-center justify-between gap-2 px-1 text-xs text-texte-2">
               <span data-testid="a-toi-depasses">{nDepasses ? `${nDepasses} peut-être plus à jour, en bas : Claude les revoit` : ''}</span>
@@ -495,7 +521,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
         <div className="mt-1.5 px-1" data-testid="sans-session">
           <button type="button" onClick={() => setVoirSans(!voirSans)} aria-expanded={voirSans} data-testid="voir-sans-session"
             className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
-            {sans.length} en cours sans session dessus (comptés « en attente »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
+            {sans.length} en cours sans session dessus (comptés « à lancer »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
           </button>
           {voirSans ? <div className="mt-1.5"><Liste>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</Liste></div> : null}
         </div>
@@ -619,13 +645,17 @@ function resumeSimple(r: Tableau['resume']): string {
 export const A_LANCER_VISIBLES = 5
 
 function SectionPretALancer({ lignes, avecProjet, replie, onToggle }: { lignes: LigneALancer[]; avecProjet: boolean } & Repli) {
+  const g = useGlobal()
   const [tout, setTout] = useState(false)
-  const visibles = tout ? lignes : lignes.slice(0, A_LANCER_VISIBLES)
+  // Les nouveaux sont toujours visibles, même au-delà des 5 lignes (ils arrivent en tête).
+  const nouveaux = lignes.filter((l) => estNouveau(l.c, g.now)).length
+  const visibles = tout ? lignes : lignes.slice(0, Math.max(A_LANCER_VISIBLES, nouveaux))
   return (
     <section aria-label="Prêt à lancer" data-testid="a-lancer">
       <TitreSection numero={3} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
+      {replie || !nouveaux ? null : <p className="-mt-1 mb-1.5 text-xs text-texte-2" data-testid="a-lancer-nouveaux">Dont {nouveaux} nouveau{nouveaux > 1 ? 'x' : ''} (créé{nouveaux > 1 ? 's' : ''} depuis moins de 24 h), en haut de la liste.</p>}
       {replie ? null : lignes.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien en attente : tout ce qui est prêt est déjà en route.</p>
+        <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien à lancer : tout ce qui est prêt est déjà en route.</p>
       ) : (
         <Liste>
           {visibles.map((l) => <LigneLancer key={l.c.id} l={l} avecProjet={avecProjet} />)}
@@ -649,7 +679,10 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
     <li data-testid="ligne-a-lancer" data-ligne-chantier={l.c.id}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button type="button" onClick={() => g.ouvrirChantier(l.c.projet_id, l.c.id)} className="min-w-0 flex-1 text-left">
-          <span className="line-clamp-2 text-[15px] font-medium leading-snug">{l.c.titre}</span>
+          <span className="line-clamp-2 text-[15px] font-medium leading-snug">
+            {estNouveau(l.c, g.now) ? <span className="mr-1.5 rounded-md bg-accent px-1.5 py-0.5 align-middle text-[11px] font-semibold uppercase text-accent-fg" data-testid="badge-nouveau">Nouveau</span> : null}
+            {l.c.titre}
+          </span>
           {avecProjet || details ? (
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
               {avecProjet ? <Projet projetId={l.c.projet_id} /> : null}
@@ -659,6 +692,7 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
           ) : null}
           {a ? <span className="mt-1 flex"><Barre pct={a.pourcentage} vive={false} /></span> : null}
         </button>
+        <PastilleReponse cle={l.c.id} />
         <Button taille="sm" onClick={() => setOuvert(!ouvert)} aria-expanded={ouvert} data-testid="lancer" className="shrink-0"><Rocket size={15} aria-hidden />Lancer</Button>
       </div>
       {ouvert ? (
