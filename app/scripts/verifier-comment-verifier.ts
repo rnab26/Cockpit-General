@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { verifie, bilan } from './_assert.ts'
 import {
-  etapesVerifier, segmentsAvecLiens, corpsDemandeVerifier, derniereDemandeVerifier, QUESTION_VERIFIER,
+  etapesVerifier, segmentsAvecLiens, liensDuTexte, corpsDemandeVerifier, derniereDemandeVerifier, QUESTION_VERIFIER,
 } from '../src/lib/commentVerifier.ts'
 
 console.log('verifier-comment-verifier')
@@ -72,5 +72,14 @@ if (bloc) {
   const diverge = cas.filter((t) => JSON.stringify(copie.etapesVerifier(t)) !== JSON.stringify(etapesVerifier(t))
     || JSON.stringify(copie.segmentsAvecLiens(t)) !== JSON.stringify(segmentsAvecLiens(t)))
   verifie('le module embarqué découpe et repère les liens exactement comme l’app', diverge.length === 0, diverge)
+}
+
+// Les liens à ouvrir, en gros boutons (6 oct. 2026, chantiers 2be961b8 et 95f21f04).
+{
+  const l = liensDuTexte(['1. Ouvre https://exemple.fr/page. 2. Touche le bouton', 'voir aussi (https://github.com/o/r/pull/7) et https://exemple.fr/page', 'http://pas-sur.fr/x javascript:alert(1)', null, undefined])
+  verifie('liens à ouvrir : https seulement, une fois chacun, dans l\'ordre', l.length === 2 && l[0].url === 'https://exemple.fr/page' && l[1].url === 'https://github.com/o/r/pull/7', l)
+  verifie('le domaine est affiché sans « www. »', liensDuTexte(['https://www.exemple.fr/a'])[0].domaine === 'exemple.fr')
+  verifie('rien à ouvrir : liste vide', liensDuTexte(['aucun lien ici', '']).length === 0 && liensDuTexte([]).length === 0)
+  verifie('au plus 4 boutons', liensDuTexte(['https://a.fr/1 https://a.fr/2 https://a.fr/3 https://a.fr/4 https://a.fr/5']).length === 4)
 }
 bilan('verifier-comment-verifier')

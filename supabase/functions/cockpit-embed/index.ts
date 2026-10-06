@@ -50,7 +50,7 @@ const COLONNES_CHANTIER =
 /** Les colonnes d'un message qu'un utilisateur final peut voir. */
 const COLONNES_MESSAGE =
   "id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, options, " +
-  "reponse, precision, repond_a, etat, answered_at, created_at"
+  "reponse, precision, repond_a, etat, answered_at, created_at, medias"
 
 /** Les colonnes d'une activité (progression en direct, D-07). */
 const COLONNES_ACTIVITE =
@@ -136,6 +136,97 @@ async function chantierDuProjet(sb: SupabaseClient, projet: Projet, id: string) 
   return data
 }
 
+
+// ------------------------------------------------------------ pièces jointes
+// 6 oct. 2026, chantier d1cf639b : « pas de pièces jointes à ajouter possible » dans la bulle. Le fichier ne passe
+// JAMAIS par cette fonction (limite de corps) : `televerser` rend une adresse d'envoi signée vers le stockage privé
+// `cockpit-medias` (même bucket, même chemin que l'app : `<projet>/<chantier | projet>/<uuid>-<nom>`), le navigateur
+// y dépose le fichier, puis `message` / `creer` / `corriger` joignent la liste. Le serveur refait toutes les
+// vérifications : le chemin doit être sous LE projet de la clé et le fichier doit exister.
+const BUCKET_MEDIAS = "cockpit-medias"
+const TAILLE_MAX_MEDIA = 25 * 1024 * 1024 // plus bas que les 50 Mo de l'app : ici l'appelant est un site tiers
+const MEDIAS_MAX_PAR_MESSAGE = 10
+const LECTURE_SECONDES = 3600
+
+/** Même règle que app/src/lib/medias.ts::nomSur (sans accents, ni espaces, ni caractères spéciaux). */
+function nomSur(nom: string): string {
+  const base = nom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^[-.]+|-+$/g, "")
+  return (base || "fichier").slice(-80)
+}
+
+type Media = { chemin: string; nom: string; type: string; taille: number }
+
+async function actionTeleverser(sb: SupabaseClient, projet: Projet, corps: Record<string, unknown>) {
+  const nom = texte(corps.nom).slice(0, 200)
+  if (!nom) throw new ErreurLisible(400, "Il manque le nom du fichier.")
+  const taille = Number(corps.taille)
+  if (!Number.isFinite(taille) || taille <= 0) throw new ErreurLisible(400, `« ${nom} » est vide.`)
+  if (taille > TAILLE_MAX_MEDIA) throw new ErreurLisible(400, `« ${nom} » est trop gros : 25 Mo au plus par fichier.`)
+  let dossier = "projet"
+  if (texte(corps.chantier_id)) {
+    const id = uuid(corps.chantier_id, "la demande")
+    await chantierDuProjet(sb, projet, id)
+    dossier = id
+  }
+  const chemin = `${projet.id}/${dossier}/${crypto.randomUUID()}-${nomSur(nom)}`
+  const { data, error } = await sb.storage.from(BUCKET_MEDIAS).createSignedUploadUrl(chemin)
+  if (error || !data) { console.error("cockpit-embed : adresse d'envoi refusée :", error?.message); throw new ErreurLisible(500, "Le serveur n'a pas pu préparer l'envoi du fichier. Réessaie dans un instant.") }
+  return { chemin, url: data.signedUrl }
+}
+
+/** La liste de pièces reçue, nettoyée ; refus lisible si un chemin n'est pas celui d'un fichier de CE projet. */
+async function mediasValides(sb: SupabaseClient, projet: Projet, brut: unknown): Promise<Media[]> {
+  if (brut == null) return []
+  if (!Array.isArray(brut)) throw new ErreurLisible(400, "La liste des pièces jointes est illisible.")
+  if (brut.length > MEDIAS_MAX_PAR_MESSAGE) throw new ErreurLisible(400, `${MEDIAS_MAX_PAR_MESSAGE} pièces jointes au plus par message.`)
+  const motif = new RegExp(`^${projet.id}/(projet|[0-9a-f-]{36})/[0-9a-f-]{36}-[A-Za-z0-9._-]{1,80}$`, "i")
+  const out: Media[] = []
+  for (const m of brut as Array<Record<string, unknown>>) {
+    const chemin = texte(m?.chemin)
+    if (!motif.test(chemin)) throw new ErreurLisible(400, "Une pièce jointe ne vient pas de ce projet : elle est refusée.")
+    const dossier = chemin.slice(0, chemin.lastIndexOf("/")), fichier = chemin.slice(chemin.lastIndexOf("/") + 1)
+    const { data, error } = await sb.storage.from(BUCKET_MEDIAS).list(dossier, { search: fichier, limit: 5 })
+    if (error || !(data ?? []).some((f) => f.name === fichier)) throw new ErreurLisible(400, `« ${texte(m?.nom) || fichier} » n'est pas arrivé jusqu'au serveur : renvoie-le.`)
+    const taille = Number(m?.taille)
+    out.push({
+      chemin,
+      nom: texte(m?.nom).slice(0, 200) || fichier,
+      type: texte(m?.type).slice(0, 100) || "application/octet-stream",
+      taille: Number.isFinite(taille) && taille > 0 ? Math.min(Math.round(taille), TAILLE_MAX_MEDIA) : 0,
+    })
+  }
+  return out
+}
+
+function resumeMedias(medias: Media[]): string {
+  const n = medias.length
+  return n === 1 ? "1 pièce jointe" : `${n} pièces jointes`
+}
+
+/** Un message qui ne porte que des pièces jointes (comme l'app : juste après la demande ou la correction). */
+async function ecrireMedias(sb: SupabaseClient, projet: Projet, chantierId: string, auteur: string, corps: string, medias: Media[]) {
+  if (!medias.length) return
+  const { error } = await sb.from("messages").insert({
+    projet_id: projet.id, chantier_id: chantierId, auteur, auteur_type: "utilisateur", kind: "info", corps, medias,
+  })
+  if (error) throw erreurDepuis(error)
+}
+
+/** Pour chaque message, ses pièces avec une adresse de lecture signée (1 h) ; `chemin` ne sort pas. */
+async function signerMedias(sb: SupabaseClient, messages: Array<Record<string, unknown>>) {
+  const chemins = new Set<string>()
+  for (const m of messages) for (const x of (Array.isArray(m.medias) ? m.medias : []) as Media[]) if (x?.chemin) chemins.add(x.chemin)
+  const urls = new Map<string, string>()
+  if (chemins.size) {
+    const { data } = await sb.storage.from(BUCKET_MEDIAS).createSignedUrls([...chemins], LECTURE_SECONDES)
+    for (const d of data ?? []) if (d.path && d.signedUrl) urls.set(d.path, d.signedUrl)
+  }
+  for (const m of messages) {
+    const liste = (Array.isArray(m.medias) ? m.medias : []) as Media[]
+    m.medias = liste.map((x) => ({ nom: x.nom, type: x.type, taille: x.taille, url: urls.get(x.chemin) ?? null }))
+  }
+}
+
 // ----------------------------------------------------------------- actions
 
 async function actionEtat(sb: SupabaseClient, projet: Projet) {
@@ -159,6 +250,7 @@ async function actionEtat(sb: SupabaseClient, projet: Projet) {
       .order("created_at", { ascending: true })
     if (error) throw erreurDepuis(error)
     messages = data ?? []
+    await signerMedias(sb, messages)
   }
 
   const { data: activites, error: e3 } = await sb.from("activite")
@@ -199,6 +291,7 @@ async function actionCreer(sb: SupabaseClient, projet: Projet, corps: Record<str
   const demande = texte(corps.demande)
   if (!titre) throw new ErreurLisible(400, "Donne un titre à ta demande.")
   const auteur = auteurDe(corps)
+  const medias = await mediasValides(sb, projet, corps.medias)   // refus AVANT de créer quoi que ce soit
   const { data, error } = await sb.from("chantiers").insert({
     projet_id: projet.id,
     titre,
@@ -220,6 +313,7 @@ async function actionCreer(sb: SupabaseClient, projet: Projet, corps: Record<str
     corps: `Demande créée par ${auteur}.`,
   })
   if (e2) console.error("cockpit-embed : message de création non écrit :", e2.message)
+  await ecrireMedias(sb, projet, data.id, auteur, `Pièces jointes à la demande (${resumeMedias(medias)})`, medias)
   return { chantier: { ...data, messages: [], activite: [] } }
 }
 
@@ -263,8 +357,10 @@ async function actionCorriger(sb: SupabaseClient, projet: Projet, corps: Record<
   await chantierDuProjet(sb, projet, id)
   const mots = texte(corps.mots)
   if (!mots) throw new ErreurLisible(400, "Écris ce qui ne marche pas avant d'envoyer la correction.")
+  const medias = await mediasValides(sb, projet, corps.medias)
   const { error } = await sb.rpc("corriger_chantier", { p_id: id, p_par: auteurDe(corps), p_mots: mots })
   if (error) throw erreurDepuis(error)
+  await ecrireMedias(sb, projet, id, auteurDe(corps), `Pièces jointes à la correction (${resumeMedias(medias)})`, medias)
   // Le scénario qui plante MAINTENANT remplace celui de la création : c'est
   // lui qu'une session doit rejouer. Pas de capture (désactivée) → on garde l'ancienne.
   const repro = bornerReproduction(corps.reproduction, "correction")
@@ -278,7 +374,9 @@ async function actionCorriger(sb: SupabaseClient, projet: Projet, corps: Record<
 async function actionMessage(sb: SupabaseClient, projet: Projet, corps: Record<string, unknown>) {
   const id = uuid(corps.chantier_id, "la demande")
   await chantierDuProjet(sb, projet, id)
-  const texteMsg = texte(corps.corps)
+  const medias = await mediasValides(sb, projet, corps.medias)
+  // Des pièces seules suffisent (comme dans l'app) : le texte dit alors ce qui est joint.
+  const texteMsg = texte(corps.corps) || (medias.length ? resumeMedias(medias) : "")
   if (!texteMsg) throw new ErreurLisible(400, "Le message est vide.")
   const { data, error } = await sb.from("messages").insert({
     projet_id: projet.id,
@@ -287,8 +385,10 @@ async function actionMessage(sb: SupabaseClient, projet: Projet, corps: Record<s
     auteur_type: "utilisateur",
     kind: "info",
     corps: texteMsg,
+    medias,
   }).select(COLONNES_MESSAGE).single()
   if (error) throw erreurDepuis(error)
+  await signerMedias(sb, [data as Record<string, unknown>])
   return { message: data }
 }
 
@@ -358,6 +458,7 @@ Deno.serve(async (req) => {
       case "corriger": resultat = await actionCorriger(sb, projet, corps); break
       case "message": resultat = await actionMessage(sb, projet, corps); break
       case "modifier": resultat = await actionModifier(sb, projet, corps); break
+      case "televerser": resultat = await actionTeleverser(sb, projet, corps); break
       default:
         throw new ErreurLisible(400, action ? `Action inconnue : « ${action} ».` : "Il manque le champ « action ».")
     }

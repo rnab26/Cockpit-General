@@ -14,6 +14,8 @@
 #  - la carte disparaît (répondue « PR fusionnée ou fermée ») quand la PR l'est ;
 #  - sans --etat, l'état vient de l'API GitHub (GITHUB_TOKEN si dépôt privé) ;
 #    état inconnu : on pose (l'appelant vient d'ouvrir la PR), on ne retire rien.
+#  - PR INEXISTANTE (6 oct. 2026, chantier 0fec7563) : GitHub répond 404 sur la PR alors que le dépôt répond =
+#    ce numéro n'existe pas ici (PR d'un autre dépôt…) : aucune carte posée, celle qui traîne est retirée.
 #  - PROPRE SEULEMENT (30 sept. 2026, chantier 6ef35b6e ; Raphaël : « à chaque fois
 #    il y a des conflits […] envoie-moi les PR une fois les conflits réglés ») :
 #    la carte n'est posée que si GitHub dit mergeable_state = clean (ou unstable /
@@ -67,9 +69,18 @@ pid=$(printf '%s' "$ligne" | jq -r '.id'); depot=$(printf '%s' "$ligne" | jq -r 
 
 [ "$fermee" = "1" ] && etat="closed"
 auth=(); [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
-info="{}"
+info="{}"; inexistante=0
 if [ -z "$etat" ] || { [ -z "$mstate" ] && [ "$fermee" != "1" ] && [ "$etat" = "open" ]; }; then   # l'état réel, un appel léger (échec = inconnu)
-  info=$(curl -fsS --max-time 10 ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$depot/pulls/$n" 2>/dev/null || echo "{}")
+  # Le code HTTP compte (6 oct. 2026, chantier 0fec7563) : 404 sur la PR alors que le dépôt, lui, répond = cette PR
+  # N'EXISTE PAS dans ce dépôt (numéro d'un autre dépôt, faute de frappe) ; avant, « 404 » valait « état inconnu » et la
+  # carte restait posée pour toujours (la PR #60 de Cockpit-General cherchée dans FacePro).
+  corps_pr=$(mktemp); code_pr=$(curl -sS --max-time 10 -o "$corps_pr" -w '%{http_code}' ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$depot/pulls/$n" 2>/dev/null || echo "000")
+  if [ "$code_pr" = "200" ]; then info=$(cat "$corps_pr"); else info="{}"; fi
+  rm -f "$corps_pr"
+  if [ "$code_pr" = "404" ] && [ -z "$etat" ]; then
+    code_depot=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$depot" 2>/dev/null || echo "000")
+    [ "$code_depot" = "200" ] && inexistante=1
+  fi
   if [ -z "$etat" ]; then
     if [ "$(printf '%s' "$info" | jq -r '.merged // false')" = "true" ]; then etat=merged
     else etat=$(printf '%s' "$info" | jq -r '.state // ""'); fi
@@ -79,6 +90,7 @@ if [ -z "$etat" ] || { [ -z "$mstate" ] && [ "$fermee" != "1" ] && [ "$etat" = "
 fi
 
 cle="Fusionne la PR #$n :"; pre="PR #$n pas prête"
+[ "$inexistante" = "1" ] && etat="inexistante"
 # La carte d'état « en conflit » : une seule ouverte à la fois, retrouvée par son début (deux libellés possibles).
 re_conf="^PR #$n (en conflit|à mettre à jour) :"
 existe=$("$SQL" "select count(*) filter (where answered_at is null) as ouvertes, count(*) filter (where reponse is null or reponse not like '$(q "$pre")%') as toutes from messages where projet_id = '$pid' and kind = 'action' and left(corps, ${#cle}) = '$(q "$cle")'" | jq -c '.rows[0]')
@@ -90,6 +102,18 @@ retirer_conflit() {
     || { echo "La base a refusé le retrait de la carte « en conflit » de la PR #$n." >&2; exit 1; }
 }
 conflit_ouvert() { "$SQL" "select count(*) as n from messages where projet_id = '$pid' and kind = 'action' and answered_at is null and corps ~ '$(q "$re_conf")'" | jq -r '.rows[0].n'; }
+
+if [ "$etat" = "inexistante" ]; then
+  # La PR n'existe pas dans ce dépôt : jamais de carte pour elle, et celle qui traîne est retirée (réponse AUTOMATIQUE,
+  # jamais une réponse de Raphaël). La phrase dit où chercher : c'est le plus souvent le numéro d'un AUTRE dépôt.
+  if [ "$ouvertes" != "0" ]; then
+    "$SQL" "update messages set answered_at = now(), answered_by = null, reponse = 'PR #$n pas prête (introuvable dans $(q "$depot")) : carte retirée, ce numéro n''existe pas dans ce dépôt.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
+      || { echo "La base a refusé le retrait de la carte PR #$n." >&2; exit 1; }
+    echo "Carte PR #$n retirée : cette PR n'existe pas dans $depot."
+  else echo "PAS PRÊTE : la PR #$n n'existe pas dans $depot (numéro d'un autre dépôt ?). Aucune carte posée."; fi
+  [ "$(conflit_ouvert)" = "0" ] || { retirer_conflit "introuvable dans $depot"; echo "Carte « en conflit » de la PR #$n retirée."; }
+  exit 0
+fi
 
 if [ "$etat" = "closed" ] || [ "$etat" = "merged" ]; then
   if [ "$ouvertes" != "0" ]; then

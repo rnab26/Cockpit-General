@@ -1,3 +1,4 @@
+import { TexteAvecLiens } from '../ui/TexteAvecLiens.tsx'
 import { useState, type ReactNode } from 'react'
 import { Compass, GitMerge, LockOpen, OctagonAlert, Play } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
@@ -80,7 +81,7 @@ export function BlocFusion({ message }: { message: Message }) {
     <div data-testid="bloc-fusion" className={`${CADRE} border-l-info`}>
       <p className="flex items-center gap-1.5 text-xs text-texte-2"><GitMerge size={14} className="text-info" aria-hidden />Claude propose de fusionner</p>
       <p className="whitespace-pre-wrap text-[15px] font-medium leading-snug">{message.corps}</p>
-      {message.pourquoi ? <p className="whitespace-pre-wrap text-sm text-texte-2">{message.pourquoi}</p> : null}
+      {message.pourquoi ? <p className="whitespace-pre-wrap text-sm text-texte-2"><TexteAvecLiens texte={message.pourquoi} /></p> : null}
       {fusion?.aide ? <p className="text-xs text-texte-2">{fusion.aide}</p> : null}
       {admin ? (
         <div className="grid grid-cols-2 gap-2">

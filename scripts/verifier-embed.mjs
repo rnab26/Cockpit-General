@@ -270,6 +270,98 @@ async function verifierApi(cle) {
 // borne et le nettoie (même si on lui envoie n'importe quoi), ne le renvoie
 // jamais au navigateur, et les sessions le lisent (reproduction.sh, consignes).
 const JWT_TEST = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
+// 3d. Pièces jointes (6 oct. 2026, chantier d1cf639b) : adresse d'envoi signée, dépôt direct, jointure serveur, lecture signée.
+async function verifierMediasApi(cle) {
+  console.log('\n3d. Pièces jointes (bulle)')
+  const projet = sql("select id from projets where cle_embed = '" + lit(cle) + "'")[0].id
+  const cheminsDeposes = []
+  const URL_ = process.env.SUPABASE_URL ?? 'https://bexiyvmdbxcwxasgslxp.supabase.co'
+  const deposer = async (nom, type, octets, extra = {}) => {
+    const t = await appel('televerser', { nom, type, taille: octets.length, ...extra }, cle)
+    if (t.statut !== 200) return { t }
+    const fd = new FormData(); fd.append('cacheControl', '3600'); fd.append('', new Blob([octets], { type }), nom)
+    const r = await fetch(t.corps.url, { method: 'PUT', body: fd })
+    if (r.ok) cheminsDeposes.push(t.corps.chemin)
+    return { t, put: r.status, media: { chemin: t.corps.chemin, nom, type, taille: octets.length } }
+  }
+  try {
+    const cr = await appel('creer', { titre: MARQUE + ' pièces jointes', demande: 'Demande de test des pièces jointes.' }, cle)
+    const id = cr.corps && cr.corps.chantier && cr.corps.chantier.id
+    verifie(!!id, 'une demande de test est créée', cr.statut + ' ' + JSON.stringify(cr.corps))
+    const vide = await appel('televerser', { nom: 'vide.txt', type: 'text/plain', taille: 0 }, cle)
+    verifie(vide.statut === 400 && /vide/.test(vide.corps.erreur), 'televerser : un fichier vide est refusé, lisiblement', vide.corps && vide.corps.erreur)
+    const gros = await appel('televerser', { nom: 'gros.mp4', type: 'video/mp4', taille: 30 * 1024 * 1024 }, cle)
+    verifie(gros.statut === 400 && /25 Mo/.test(gros.corps.erreur), 'televerser : plus de 25 Mo est refusé, lisiblement', gros.corps && gros.corps.erreur)
+    const sansNom = await appel('televerser', { taille: 10 }, cle)
+    verifie(sansNom.statut === 400, 'televerser : sans nom → 400', String(sansNom.statut))
+    const autre = await appel('televerser', { nom: 'a.png', type: 'image/png', taille: 10, chantier_id: randomUUID() }, cle)
+    verifie(autre.statut === 404, 'televerser : une demande qui n’est pas de ce projet → 404', String(autre.statut))
+    const faux = await appel('televerser', { nom: 'a.png', type: 'image/png', taille: 10 }, 'pas-la-bonne-cle')
+    verifie(faux.statut === 401, 'televerser : clé fausse → 401', String(faux.statut))
+
+    // Dépôt réel d'un fichier (octets reconnaissables), nom à accents et espaces : le chemin est assaini.
+    const octets = new TextEncoder().encode('contenu de test ' + randomUUID())
+    const d1 = await deposer('Capture écran 1.txt', 'text/plain', octets, { chantier_id: id })
+    verifie(d1.t.statut === 200 && d1.put === 200, 'televerser puis dépôt direct dans le stockage : 200', JSON.stringify({ t: d1.t.statut, put: d1.put, e: d1.t.corps && d1.t.corps.erreur }))
+    verifie(d1.media && d1.media.chemin.startsWith(projet + '/' + id + '/') && /^[A-Za-z0-9._\/-]+$/.test(d1.media.chemin), 'le chemin est sous CE projet et CE chantier, assaini (sans accents ni espaces)', d1.media && d1.media.chemin)
+
+    const m1 = await appel('message', { chantier_id: id, corps: 'Voici une capture', medias: [d1.media] }, cle)
+    verifie(m1.statut === 200 && m1.corps.message.medias.length === 1 && !!m1.corps.message.medias[0].url, 'message avec une pièce jointe : renvoyé avec une adresse de lecture signée', m1.statut + ' ' + JSON.stringify(m1.corps).slice(0, 300))
+    const lu = m1.corps && await fetch(m1.corps.message.medias[0].url)
+    verifie(lu && lu.ok && new TextDecoder().decode(new Uint8Array(await lu.arrayBuffer())) === new TextDecoder().decode(octets), 'l’adresse signée rend exactement le fichier déposé')
+    verifie(!JSON.stringify(m1.corps).includes('"chemin"'), 'le chemin de stockage ne sort pas (nom, type, taille, url seulement)')
+    const enBase = sql("select jsonb_array_length(medias)::int as n, medias->0->>'chemin' as chemin from messages where id = '" + m1.corps.message.id + "'")[0]
+    verifie(enBase.n === 1 && enBase.chemin === d1.media.chemin, 'en base : même format que l’app (chemin, nom, type, taille) : les sessions le lisent avec media.sh')
+
+    const d2 = await deposer('plan.png', 'image/png', new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]), { chantier_id: id })
+    const seule = await appel('message', { chantier_id: id, corps: '', medias: [d2.media] }, cle)
+    verifie(seule.statut === 200 && /pièce jointe/.test(seule.corps.message.corps), 'une pièce SEULE suffit (texte « 1 pièce jointe »)', seule.statut + ' ' + JSON.stringify(seule.corps).slice(0, 200))
+    const videTout = await appel('message', { chantier_id: id, corps: '' }, cle)
+    verifie(videTout.statut === 400, 'ni texte ni pièce : toujours « message vide »', String(videTout.statut))
+
+    // Refus côté serveur : jamais un chemin d'ailleurs, jamais un fichier qui n'a pas été déposé, jamais plus de 10.
+    const dAilleurs = { chemin: randomUUID() + '/projet/' + randomUUID() + '-x.txt', nom: 'x.txt', type: 'text/plain', taille: 3 }
+    const r1 = await appel('message', { chantier_id: id, corps: 'x', medias: [dAilleurs] }, cle)
+    verifie(r1.statut === 400 && /ne vient pas de ce projet/.test(r1.corps.erreur), 'un chemin d’un AUTRE projet est refusé', r1.corps && r1.corps.erreur)
+    const dFantome = { chemin: projet + '/' + id + '/' + randomUUID() + '-jamais-depose.txt', nom: 'jamais-depose.txt', type: 'text/plain', taille: 3 }
+    const r2 = await appel('message', { chantier_id: id, corps: 'x', medias: [dFantome] }, cle)
+    verifie(r2.statut === 400 && /pas arrivé/.test(r2.corps.erreur), 'un fichier qui n’a pas été déposé est refusé, lisiblement', r2.corps && r2.corps.erreur)
+    const r3 = await appel('message', { chantier_id: id, corps: 'x', medias: Array(11).fill(d1.media) }, cle)
+    verifie(r3.statut === 400 && /10 pièces/.test(r3.corps.erreur), 'plus de 10 pièces : refusé', r3.corps && r3.corps.erreur)
+    const r4 = await appel('message', { chantier_id: id, corps: 'x', medias: [{ chemin: '../../etc/passwd', nom: 'p', type: 't', taille: 1 }] }, cle)
+    verifie(r4.statut === 400 || r4.statut === 403, 'un chemin piégé (../) est refusé (400 par la fonction, ou 403 par le pare-feu de la plateforme avant elle)', String(r4.statut))
+    const nMsg = sql("select count(*)::int as n from messages where chantier_id = '" + id + "' and kind = 'info'")[0].n
+    verifie(nMsg >= 3, 'les refus n’ont rien écrit (seuls les messages valides sont en base)', String(nMsg))
+
+    // Création d'une demande AVEC pièces : un message de pièces juste après, refus AVANT toute création.
+    const d3 = await deposer('maquette.txt', 'text/plain', new TextEncoder().encode('maquette'))
+    const avant = sql("select count(*)::int as n from chantiers c join projets p on p.id = c.projet_id where p.cle_embed = '" + lit(cle) + "'")[0].n
+    const mauvais = await appel('creer', { titre: MARQUE + ' refusée', demande: 'x', medias: [dFantome] }, cle)
+    const apres = sql("select count(*)::int as n from chantiers c join projets p on p.id = c.projet_id where p.cle_embed = '" + lit(cle) + "'")[0].n
+    verifie(mauvais.statut === 400 && apres === avant, 'creer avec une pièce invalide : refusé AVANT de créer la demande', mauvais.statut + ' ' + (apres - avant) + ' demande(s) créée(s)')
+    const cr2 = await appel('creer', { titre: MARQUE + ' avec pièces', demande: 'x', medias: [d3.media] }, cle)
+    const idCr2 = cr2.corps && cr2.corps.chantier && cr2.corps.chantier.id
+    const e = await appel('etat', {}, cle)
+    const c2 = ((e.corps && e.corps.chantiers) || []).find((c) => c.id === idCr2)
+    verifie(cr2.statut === 200 && c2 && c2.messages.some((m) => m.medias && m.medias.length === 1 && m.medias[0].nom === 'maquette.txt' && m.medias[0].url), 'creer avec pièces : le fil de la nouvelle demande les porte (lecture signée)', cr2.statut)
+
+    // Correction avec pièces (la demande doit être « à vérifier »).
+    sql("update chantiers set etat = 'a_verifier', livre_at = now() where id = '" + id + "'")
+    const d4 = await deposer('erreur.txt', 'text/plain', new TextEncoder().encode('erreur'), { chantier_id: id })
+    const co = await appel('corriger', { chantier_id: id, mots: 'Ça ne marche pas, voir la pièce', medias: [d4.media] }, cle)
+    const e2 = await appel('etat', {}, cle)
+    const c1 = ((e2.corps && e2.corps.chantiers) || []).find((c) => c.id === id)
+    verifie(co.statut === 200 && c1 && c1.messages.some((m) => m.medias && m.medias.some((x) => x.nom === 'erreur.txt')), 'corriger avec pièces : la correction part, les pièces suivent dans le fil', co.statut + ' ' + JSON.stringify(co.corps))
+    const fuites = [...clesProfondes(e2.corps || {})].filter((k) => CHAMPS_INTERDITS.includes(k) || k === 'chemin')
+    verifie(fuites.length === 0, 'etat avec pièces : aucun champ interne ni chemin de stockage', fuites.join(', ') || 'rien ne fuit')
+  } finally {
+    if (cheminsDeposes.length) {
+      const r = await fetch(URL_ + '/storage/v1/object/cockpit-medias', { method: 'DELETE', headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: cheminsDeposes }) })
+      if (!r.ok) ko('nettoyage des pièces de test', String(r.status))
+    }
+  }
+}
+
 async function verifierReproductionApi(cle) {
   console.log('\n3c. Reproduction : bornée, nettoyée, jamais renvoyée')
   const ids = []
@@ -589,6 +681,76 @@ async function verifierNavigateur(cle) {
     verifie(/Pas encore examinée/.test(badge), 'la nouvelle carte porte « Pas encore examinée »', badge)
     await page.screenshot({ path: path.join(SCRATCH, 'embed-3-apres-creation.png'), fullPage: true })
 
+    // --- Saisie fluide et pièces jointes (6 oct. 2026, chantier d1cf639b)
+    const emb = page.locator('.cockpit-embed')
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    // A. Taper ne redessine rien : le champ garde son nœud, son focus ; aucune reconstruction de l'écran.
+    await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; [...r.querySelectorAll('.btn')].find((b) => /Nouvelle demande/.test(b.textContent)).click() })
+    await emb.locator('[data-focus="nouveau-titre"]').click()
+    await page.evaluate(() => {
+      const r = document.querySelector('.cockpit-embed').shadowRoot
+      window.__champ = r.querySelector('[data-focus="nouveau-titre"]')
+      window.__zone = r.querySelector('[data-focus="nouveau-demande"]')
+      window.__hauteur0 = window.__zone.getBoundingClientRect().height
+      window.__rebuilds = 0
+      new MutationObserver((l) => { window.__rebuilds += l.filter((m) => m.target.classList && m.target.classList.contains('ck')).length }).observe(r.querySelector('.ck'), { childList: true })
+    })
+    await page.keyboard.type('Bouton Exporter cassé sur mobile', { delay: 5 })
+    await emb.locator('[data-focus="nouveau-demande"]').click()
+    await page.keyboard.type('Ligne un\nLigne deux\nLigne trois\nLigne quatre\nLigne cinq\nLigne six', { delay: 3 })
+    const fluide = await page.evaluate(() => {
+      const r = document.querySelector('.cockpit-embed').shadowRoot
+      return { memeChamp: r.querySelector('[data-focus="nouveau-titre"]') === window.__champ, memeZone: r.querySelector('[data-focus="nouveau-demande"]') === window.__zone,
+        focus: r.activeElement === window.__zone, rebuilds: window.__rebuilds, titre: window.__champ.value, h0: window.__hauteur0, h1: window.__zone.getBoundingClientRect().height,
+        bouton: ![...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).disabled }
+    })
+    verifie(fluide.memeChamp && fluide.memeZone && fluide.focus && fluide.rebuilds === 0 && fluide.titre === 'Bouton Exporter cassé sur mobile', 'taper ne redessine pas l’écran : mêmes champs, focus gardé, 0 reconstruction, texte intact', JSON.stringify(fluide))
+    verifie(fluide.h1 > fluide.h0 && fluide.bouton, 'le champ grandit avec le texte, et « Ajouter la demande » s’active en tapant', fluide.h0 + ' → ' + fluide.h1)
+    // B. Pièces jointes sur une nouvelle demande : envoi réel, état dit, refus lisibles, rien ne part à moitié.
+    await emb.locator('[data-pj-input]').first().setInputFiles([
+      { name: 'Capture écran très longue avec un nom qui dépasse largement la largeur du téléphone.png', mimeType: 'image/png', buffer: png },
+      { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes de test') },
+      { name: 'vide.txt', mimeType: 'text/plain', buffer: Buffer.alloc(0) },
+    ])
+    await page.waitForFunction(() => document.querySelector('.cockpit-embed').shadowRoot.querySelectorAll('.pj-item[data-pj="ok"]').length === 2, null, { timeout: 30000 })
+    const pj = await page.evaluate(() => {
+      const r = document.querySelector('.cockpit-embed').shadowRoot
+      const items = [...r.querySelectorAll('.pj-item')].map((i) => ({ statut: i.getAttribute('data-pj'), texte: i.textContent, img: !!i.querySelector('img') }))
+      return { items, blocage: (r.querySelector('[data-pj-blocage]') || {}).textContent || '', bouton: [...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).disabled,
+        scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }
+    })
+    verifie(pj.items.length === 3 && pj.items.filter((i) => i.statut === 'ok').length === 2 && pj.items.some((i) => i.statut === 'echec' && /vide/i.test(i.texte)), 'deux pièces « Prêt ✓ », le fichier vide refusé lisiblement', JSON.stringify(pj.items))
+    verifie(pj.items[0].img, 'une image montre sa vignette')
+    verifie(/n’est pas parti/.test(pj.blocage) && pj.bouton, 'une pièce en échec grise « Ajouter » et le dit', pj.blocage)
+    verifie(pj.scroll <= pj.client, 'un nom de fichier très long ne fait pas défiler la page à l’horizontale', pj.scroll + ' / ' + pj.client)
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-3b-pieces.png'), fullPage: true })
+    await emb.locator('.pj-item[data-pj="echec"] button[aria-label^="Retirer"]').click()
+    const apresRetrait = await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return { n: r.querySelectorAll('.pj-item').length, bouton: [...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).disabled } })
+    verifie(apresRetrait.n === 2 && !apresRetrait.bouton, 'retirer la pièce en échec libère « Ajouter la demande »', JSON.stringify(apresRetrait))
+    await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; [...r.querySelectorAll('.btn')].find((b) => /Ajouter la demande/.test(b.textContent)).click() })
+    await page.waitForFunction(() => [...document.querySelector('.cockpit-embed').shadowRoot.querySelectorAll('.carte .titre')].some((el) => el.textContent === 'Bouton Exporter cassé sur mobile'), null, { timeout: 20000 })
+    const creeAvecPj = sql("select c.id, (select count(*)::int from messages m where m.chantier_id = c.id and jsonb_array_length(m.medias) = 2) as n from chantiers c where c.titre = 'Bouton Exporter cassé sur mobile' and c.projet_id = (select id from projets where cle_embed = '" + lit(cle) + "')")[0]
+    verifie(creeAvecPj && creeAvecPj.n === 1, 'la demande créée porte ses 2 pièces dans son fil (en base)', JSON.stringify(creeAvecPj))
+    const restes = await page.evaluate(() => { const r = document.querySelector('.cockpit-embed').shadowRoot; return { pj: r.querySelectorAll('.pj-item').length, formulaire: !!r.querySelector('.formulaire') } })
+    verifie(restes.pj === 0 && !restes.formulaire, 'après l’envoi : formulaire fermé, plus aucune pièce en attente', JSON.stringify(restes))
+    // C. Un message avec une pièce sur une carte existante, envoyé au clavier (Ctrl+Entrée), puis vu dans l'historique.
+    const carteC = emb.locator('[data-chantier="' + chantierCree + '"]')
+    await carteC.locator('button', { hasText: 'Ajouter un message' }).click()
+    await carteC.locator('textarea').click()
+    await page.keyboard.type('Voici ce que je vois', { delay: 3 })
+    await carteC.locator('[data-pj-input]').setInputFiles([{ name: 'ecran.png', mimeType: 'image/png', buffer: png }])
+    await page.waitForFunction((id) => !!document.querySelector('.cockpit-embed').shadowRoot.querySelector('[data-chantier="' + id + '"] .pj-item[data-pj="ok"]'), chantierCree, { timeout: 30000 })
+    await page.keyboard.press('Control+Enter')
+    await page.waitForFunction((id) => !document.querySelector('.cockpit-embed').shadowRoot.querySelector('[data-chantier="' + id + '"] [data-focus^="msg-"]'), chantierCree, { timeout: 20000 })
+    const msgPj = sql("select jsonb_array_length(medias)::int as n, corps from messages where chantier_id = '" + chantierCree + "' and corps = 'Voici ce que je vois'")[0]
+    verifie(msgPj && msgPj.n === 1, 'Ctrl+Entrée envoie le message avec sa pièce (en base)', JSON.stringify(msgPj))
+    await page.waitForFunction((id) => !!document.querySelector('.cockpit-embed').shadowRoot.querySelector('[data-chantier="' + id + '"] .hist [data-pieces] img.vignette'), chantierCree, { timeout: 20000 })
+    ok('l’historique montre la pièce en vignette cliquable (adresse signée)')
+    const lien = await page.evaluate((id) => { const a = document.querySelector('.cockpit-embed').shadowRoot.querySelector('[data-chantier="' + id + '"] .hist [data-pieces] a'); return a ? { href: a.href, cible: a.target, rel: a.rel } : null }, chantierCree)
+    verifie(lien && /^https:\/\//.test(lien.href) && lien.cible === '_blank' && /noopener/.test(lien.rel), 'la pièce s’ouvre dans un nouvel onglet, sans accès à la page (noopener)', JSON.stringify(lien))
+    await page.screenshot({ path: path.join(SCRATCH, 'embed-3c-message-piece.png'), fullPage: true })
+    chantierCree = chantierCree
+
     const largeur = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
     verifie(largeur.scroll <= largeur.client, 'aucun défilement horizontal', JSON.stringify(largeur))
 
@@ -761,6 +923,16 @@ async function verifierNavigateur(cle) {
 // Le projet de test : sa clé, un chantier visible et un chantier INTERNE
 // (visible_utilisateurs = false, avec des notes) pour que « etat » ait de quoi
 // montrer ET de quoi cacher.
+// Les pièces jointes déposées par les tests vivent dans le stockage, pas en cascade avec le projet : on les efface.
+async function nettoyerMedias(idProjet) {
+  const lignes = sql("select m.medias->0->>'chemin' as c0, m.medias as medias from messages m where m.projet_id = '" + idProjet + "' and jsonb_array_length(m.medias) > 0")
+  const chemins = lignes.flatMap((l) => (l.medias || []).map((x) => x.chemin))
+  if (!chemins.length) return
+  const URL_ = process.env.SUPABASE_URL ?? 'https://bexiyvmdbxcwxasgslxp.supabase.co'
+  const r = await fetch(URL_ + '/storage/v1/object/cockpit-medias', { method: 'DELETE', headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: chemins }) })
+  if (!r.ok) ko('nettoyage des pièces de test (stockage)', String(r.status))
+}
+
 function creerProjetTest() {
   const id = randomUUID()
   const cle = (randomUUID() + randomUUID()).replace(/-/g, '')
@@ -779,6 +951,7 @@ try {
   projetTest = creerProjetTest()
   await verifierPresenceParite()
   await verifierApi(projetTest.cle)
+  await verifierMediasApi(projetTest.cle)
   await verifierReproductionApi(projetTest.cle)
   if (!process.env.SANS_NAVIGATEUR) await verifierNavigateur(projetTest.cle)
   if (!process.env.SANS_NAVIGATEUR) await verifierReproductionNavigateur(projetTest.cle)
@@ -786,6 +959,7 @@ try {
   ko('exception', e.stack || String(e))
 } finally {
   try {
+    if (projetTest) await nettoyerMedias(projetTest.id)
     if (projetTest) await purgerProjetsDeTest(sql, [projetTest.id], PREFIXE)
     const idP = projetTest ? projetTest.id : '00000000-0000-0000-0000-000000000000'
     const reste = sql("select (select count(*) from projets where slug = '" + SLUG + "')::int + (select count(*) from supprimes where projet_id = '" + idP + "')::int + (select count(*) from chantiers c join projets p on p.id = c.projet_id where c.titre like '" + lit(MARQUE) + "%' and p.slug not like 'test-%')::int as n")[0].n
