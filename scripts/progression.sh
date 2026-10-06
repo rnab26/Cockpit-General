@@ -132,6 +132,13 @@ if [ -n "${verifier//[[:space:]]/}" ]; then
     exit 2
   fi
 fi
+# Vocabulaire : mots simples (scripts/clarte.py). Le résumé de --termine et --verifier ne sont lus que par Raphaël.
+if [ -n "${verifier//[[:space:]]/}" ]; then
+  printf '%s\0' "--verifier" "$verifier" | python3 "$RACINE/scripts/clarte.py" || exit 2
+fi
+if [ "$statut" = "termine" ] && [ -n "$chantier" ] && [ -z "$agent" ]; then
+  printf '%s\0' "le résumé de --termine" "$etape" | python3 "$RACINE/scripts/clarte.py" || exit 2
+fi
 # Le lien exact de ce qu'il doit ouvrir (Raphaël, 30 sept. 2026 : « sans le lien exact de ce que je dois ouvrir »).
 if [ -n "${verifier//[[:space:]]/}" ] && ! printf '%s' "$verifier" | grep -qE 'https?://[^[:space:]]+[^[:space:].,;)]' && [ -z "${sans_lien//[[:space:]]/}" ]; then
   echo "Refusé : --verifier n'a aucun lien. Mets l'adresse EXACTE à ouvrir (https://…) dans l'étape 1, pour que Raphaël n'ait rien à chercher. Rien à ouvrir (un script, la base) : ajoute --sans-lien \"pourquoi\"." >&2
@@ -207,6 +214,7 @@ if [ -n "$point" ]; then
   if [ "$np" -eq 0 ] || [ "$np" -gt 400 ]; then
     echo "Refusé (règle de clarté) : --point fait $np caractères, 1 à 400 : la réponse d'abord, en mots simples." >&2; exit 2
   fi
+  printf '%s\0' "--point" "$point" | python3 "$RACINE/scripts/clarte.py" || exit 2
   if [ -z "$chantier" ]; then
     # Fil du projet (« Écrire à Claude » hors chantier).
     r=$("$SQL" "select repondre_dans_fil('$(q "$projet")', null, '$(q "$session")', '$(q "$point")') as r" | jq -r '.rows[0].r // empty')
