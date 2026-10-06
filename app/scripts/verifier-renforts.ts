@@ -1,7 +1,7 @@
 // Les renforts (src/lib/renforts.ts, 0024) : ce que dit chaque ligne, quand le
 // bouton marche, ce qu'on dit après le clic. Les nombres viennent de la base.
 import { verifie, bilan } from './_assert.ts'
-import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, peutRelancer, erreurEffacement, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
+import { boutonRenforts, alerteSaturation, libelleAuto, erreurSeuilAuto, origineRenfort, type EtatAuto, erreurReglageRenforts, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, ligneRenfort, messageDemande, renfortsEnRoute, blocUtile, partagerRenforts, peutRelancer, erreurEffacement, type EtatRenforts, type Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-renforts')
 const now = new Date('2026-09-29T12:00:00Z')
@@ -75,4 +75,10 @@ verifie('seuil : vide = défaut, 1 à 20 sinon', erreurSeuilAuto('') === null &&
   && !!erreurSeuilAuto('0') && !!erreurSeuilAuto('21') && !!erreurSeuilAuto('2.5') && !!erreurSeuilAuto('abc'))
 verifie('origine : un renfort auto dit l’heure et pourquoi ; un renfort manuel ne dit rien', /^ouvert automatiquement à \d+ h \d\d parce que 5 chantiers attendaient$/.test(origineRenfort(r({ origine: 'auto', file: 5, seuil: 3 })) ?? '')
   && origineRenfort(r({ origine: 'manuel' })) === null && origineRenfort(r({})) === null && /ouvert automatiquement/.test(origineRenfort(r({ origine: 'auto' })) ?? ''))
+const mix = [r({ id: 'a', statut: 'actif' }), r({ id: 'b', statut: 'archive', origine: 'auto', file: 3 }), r({ id: 'c', statut: 'fini' }), r({ id: 'd', statut: 'erreur', erreur: 'x' }), r({ id: 'e', statut: 'demande' })]
+const pt = partagerRenforts(mix)
+verifie('écran propre : la liste = en route, en attente, erreurs ; les terminés (fini ou archivé) vont à l’historique', pt.visibles.map((x) => x.id).join() === 'a,d,e' && pt.historique.map((x) => x.id).join() === 'b,c')
+verifie('écran propre : « Historique (N) » ; tout est terminé → liste vide, historique complet ; rien → Historique (0)', pt.libelleHistorique === 'Historique (2)' && partagerRenforts(mix.slice(1, 3)).visibles.length === 0 && partagerRenforts(mix.slice(1, 3)).historique.length === 2 && partagerRenforts([]).libelleHistorique === 'Historique (0)')
+verifie('écran propre : rien n’est perdu (visibles + historique = tous)', pt.visibles.length + pt.historique.length === mix.length)
+verifie('écran propre : des renforts seulement terminés ne rendent pas le bloc utile ; une erreur ou un en route, si', !blocUtile({ attente: [], renforts: [mix[1], mix[2]] }) && blocUtile({ attente: [], renforts: [mix[1], mix[3]] }) && blocUtile({ attente: [], renforts: [mix[0]] }))
 bilan('verifier-renforts')

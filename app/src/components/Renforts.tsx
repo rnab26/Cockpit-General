@@ -9,7 +9,7 @@ import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIBELLE_LANCER, LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
 import {
-  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, peutRelancer, erreurEffacement, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, messageDemande,
+  AGENTS_MAX, AGENTS_PARALLELE_MAX, EFFORTS, MODELES, SESSIONS_MAX, erreurReglageModeles, erreurReglageFermeture, erreurSeuilBascule, libelleFrein, libelleBascule, blocUtile, boutonRenforts, peutRelancer, erreurEffacement, alerteSaturation, erreurReglageRenforts, erreurSeuilAuto, libelleAuto, origineRenfort, ligneRenfort, partagerRenforts, messageDemande,
   type CodeLigne, type EffortClaude, type EtatModeles, type EtatRenforts, type ModeleClaude, type Renfort, type ResultatDemande,
 } from '../lib/renforts.ts'
 
@@ -44,6 +44,7 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
   const [envoi, setEnvoi] = useState(false)
   const [dernier, setDernier] = useState<{ ok: boolean; texte: string } | null>(null)
   const [reglages, setReglages] = useState(false)
+  const [histo, setHisto] = useState(false)
   // Le projet n'existe plus (supprimé pendant l'affichage) : la base renvoie null, on ne montre rien.
   const [disparu, setDisparu] = useState(false)
   const vivant = useRef(true)
@@ -113,6 +114,21 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
   if (!toujours && !blocUtile(etat)) return null
   const b = boutonRenforts(etat)
   const ligneDe = (r: Renfort) => ligneRenfort(r, etat.chef, g.now, { projet: etat.projet ?? projet.nom, relais: etat.relais, relais_passage: etat.relais_passage })
+  const part = partagerRenforts(etat.renforts)
+  const ligneJsx = (r: Renfort, detail: boolean) => {
+    const l = ligneDe(r)
+    return (
+      <li key={r.id} className="px-2.5 py-2" data-testid="renfort" data-code={l.code}>
+        <p className="flex items-baseline justify-between gap-2 text-sm">
+          <span className="min-w-0 truncate font-medium">{r.section}</span>
+          <span className={`shrink-0 text-xs font-medium ${TEINTE[l.code]}`} data-testid="renfort-etat">{l.etat}</span>
+        </p>
+        <p className={`text-xs leading-snug ${l.code === 'erreur' ? 'text-alerte' : 'text-texte-2'}`}>{l.detail}</p>
+        {detail && origineRenfort(r) ? <p className="text-xs leading-snug text-texte-2" data-testid="renfort-origine">{origineRenfort(r)}</p> : null}
+        {peutRelancer(l) ? <Button taille="sm" className="mt-1" chargement={enCours === r.id} onClick={() => void relancer(r)} data-testid="renfort-relancer">Relancer</Button> : null}
+      </li>
+    )
+  }
   const nErreurs = etat.renforts.filter((r) => ligneDe(r).code === 'erreur').length
   const alerte = alerteSaturation(etat)
   const nAttente = etat.attente.reduce((n, a) => n + a.n, 0)
@@ -147,23 +163,26 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
       <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-aide">{b.aide}</p>
       <p className="mt-1 text-xs leading-snug text-texte-2" data-testid="renforts-auto">{libelleAuto(etat.auto, etat.frein_jusqu_a)}</p>
       {dernier ? <p className={`mt-1 text-xs leading-snug ${dernier.ok ? 'text-ok' : 'text-alerte'}`} role="status" data-testid="renforts-resultat">{dernier.texte}</p> : null}
-      {etat.renforts.length ? (
+      {part.visibles.length ? (
         <ul className="mt-2 divide-y divide-bord/70 rounded-xl border border-bord" data-testid="renforts-liste">
-          {etat.renforts.map((r) => {
-            const l = ligneDe(r)
-            return (
-              <li key={r.id} className="px-2.5 py-2" data-testid="renfort" data-code={l.code}>
-                <p className="flex items-baseline justify-between gap-2 text-sm">
-                  <span className="min-w-0 truncate font-medium">{r.section}</span>
-                  <span className={`shrink-0 text-xs font-medium ${TEINTE[l.code]}`} data-testid="renfort-etat">{l.etat}</span>
-                </p>
-                <p className={`text-xs leading-snug ${l.code === 'erreur' ? 'text-alerte' : 'text-texte-2'}`}>{l.detail}</p>
-                {origineRenfort(r) ? <p className="text-xs leading-snug text-texte-2" data-testid="renfort-origine">{origineRenfort(r)}</p> : null}
-                {peutRelancer(l) ? <Button taille="sm" className="mt-1" chargement={enCours === r.id} onClick={() => void relancer(r)} data-testid="renfort-relancer">Relancer</Button> : null}
-              </li>
-            )
-          })}
+          {part.visibles.map((r) => ligneJsx(r, false))}
         </ul>
+      ) : (
+        <p className="mt-2 text-xs leading-snug text-texte-2" data-testid="renforts-rien">Aucun renfort ne tourne.</p>
+      )}
+      {part.historique.length ? (
+        <div className="mt-1.5" data-testid="renforts-historique" data-ouvert={histo ? 'oui' : 'non'}>
+          <button type="button" onClick={() => setHisto(!histo)} aria-expanded={histo} data-testid="renforts-historique-ouvrir"
+            className="inline-flex items-center gap-0.5 text-xs text-texte-2 underline-offset-2 hover:underline">
+            {part.libelleHistorique}
+            <ChevronDown size={14} className={`transition ${histo ? 'rotate-180' : ''}`} aria-hidden />
+          </button>
+          {histo ? (
+            <ul className="mt-1 divide-y divide-bord/70 rounded-xl border border-bord" data-testid="renforts-historique-liste">
+              {part.historique.map((r) => ligneJsx(r, true))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
       {nErreurs ? (
         <div className="mt-1.5 flex items-center justify-between gap-2" data-testid="renforts-erreurs">
