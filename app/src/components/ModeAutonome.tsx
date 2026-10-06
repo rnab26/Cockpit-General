@@ -34,7 +34,7 @@ function Interrupteur({ allume, enCours, onBasculer, libelle }: { allume: boolea
  * éviter les crédits inutiles »). Réservé à l'admin (regler_autonome le vérifie aussi).
  */
 export function ModeAutonome({ projet }: { projet: Projet }) {
-  const { admin, now, chantiers, activites, taches, sessions, rechargerProjets } = useGlobal()
+  const { admin, now, chantiers, activites, taches, sessions, rechargerProjets, prenables } = useGlobal()
   const toast = useToast()
   const [ouvert, setOuvert] = useState(false)
   const [heure, setHeure] = useState(HEURE_DEFAUT)
@@ -44,7 +44,8 @@ export function ModeAutonome({ projet }: { projet: Projet }) {
   const [enCours, setEnCours] = useState(false)
   if (!admin) return null
   const actif = autonomeActif(projet, now)
-  const prets = chantiersPrenables(chantiers, projet.id, now, activites, taches, sessions)
+  // La base fait foi (0065) ; la copie locale ne sert que tant qu'elle n'a pas répondu.
+  const prets = prenables?.get(projet.id) ?? chantiersPrenables(chantiers, projet.id, now, activites, taches, sessions)
   const etat = etatAutonome(projet, prets, travailEnCours(chantiers, taches, projet.id, now), now)
   const arretH = projet.autonome_arret_vide_h ?? ARRET_VIDE_DEFAUT
   const libellePrets = `${prets} chantier${prets > 1 ? 's' : ''} prêt${prets > 1 ? 's' : ''}`
