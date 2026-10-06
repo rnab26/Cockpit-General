@@ -988,8 +988,9 @@ try {
     sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values ('${projet.id}', '${AC1.id}', 'verifier-web', 'session', 'action', '${MARQUE} Fusionne la PR de test')`)
     await actualiser()
     const elA = await elementAToi(AC1.id, 'action')
-    verifie('action : la ligne dit « Claude attend un geste de toi », bouton « Faire »',
-      /Claude attend un geste de toi/.test(await elA.getByTestId('attente-a-toi').textContent()) && (await elA.getByTestId('verbe-a-toi').textContent()).trim() === 'Faire')
+    // Depuis e069feb : plus de bouton « Faire » qui ouvre un fil, les trois réponses sont sur la ligne même.
+    verifie('action : la ligne dit « Claude attend un geste de toi », avec « Fait » directement dessus',
+      /Claude attend un geste de toi/.test(await elA.getByTestId('attente-a-toi').textContent()) && await elA.getByTestId('action-fait').count() === 1 && await elA.getByTestId('verbe-a-toi').count() === 0)
     const puceA = page.locator('[data-testid="filtre-a-toi-puce"][data-type="action"]')
     verifie('pastille « Actions » avec son compteur, à côté des autres', await puceA.count() === 1 && /^Actions\s*\d+$/.test((await puceA.textContent()).trim()), await puceA.count() ? await puceA.textContent() : null)
     await puceA.click()
@@ -1009,7 +1010,8 @@ try {
     const elA2 = await elementAToi(AC2.id, 'action')
     verifie('action : « Fait / Pas encore / Ça bloque » directement sur la ligne, sans ouvrir de fil', await elA2.getByTestId('action-fait').count() === 1 && await elA2.getByTestId('action-pas-encore').count() === 1 && await elA2.getByTestId('action-bloque').count() === 1)
     await elA2.getByTestId('action-fait').click()
-    await page.waitForTimeout(1500)
+    // La ligne part quand la réponse est enregistrée ET les données rechargées (plus lent que 1,5 s sur un réseau lent).
+    await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC2.id}"]`).waitFor({ state: 'detached', timeout: 20000 }).catch(() => {})
     const repA = sql(`select answered_at is not null as repondu, etat from messages where chantier_id = '${AC2.id}' and kind = 'action'`)[0]
     verifie('action faite sur la ligne : réponse enregistrée (fait), sans fil ouvert, la ligne quitte « À toi »', repA?.repondu === true && repA?.etat === 'fait' && await page.locator('[data-testid="conversation"]').count() === 0 && await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC2.id}"]`).count() === 0, repA)
   }
@@ -1058,7 +1060,7 @@ try {
     '--copier', 'Nom du secret|RUNPOD_API_KEY', '--image', imgFichier])
   await allerCockpit()
   await actualiser()
-  await (await elementAToi(AM.id, 'action')).getByTestId('verbe-a-toi').click()
+  await (await elementAToi(AM.id, 'action')).getByTestId('titre-a-toi').click() // le titre ouvre le fil (plus de bouton « Faire » sur une action)
   await attendreConv(AM.titre)
   const blocAM = conv().getByTestId('bloc-question')
   const lienAM = blocAM.getByTestId('marche-lien').first()
@@ -1086,7 +1088,7 @@ try {
   const msgAR = sql(`select id from messages where chantier_id = '${AR.id}' and kind = 'action'`)[0].id
   await allerCockpit()
   await actualiser()
-  await (await elementAToi(AR.id, 'action')).getByTestId('verbe-a-toi').click()
+  await (await elementAToi(AR.id, 'action')).getByTestId('titre-a-toi').click() // le titre ouvre le fil
   await attendreConv(AR.titre)
   const blocAR = conv().getByTestId('bloc-question')
   await blocAR.waitFor({ timeout: 10000 })
@@ -1927,6 +1929,8 @@ try {
   verifie('abandonné : toast, en base archivé, ligne « Abandonné. » dans le fil', await toastAuPremierPlan(/abandonné/) && !!ch()?.archived_at
     && sql(`select count(*) as n from messages m join chantiers c on c.id = m.chantier_id where c.titre = '${esc(titreTest)}' and m.corps = 'Abandonné.'`)[0].n === 1, ch())
   await conv().getByTestId('menu-chantier').click()
+  // Le menu ne propose « Désarchiver » qu'une fois l'écran rechargé (même attente que plus haut).
+  await conv().getByTestId('archiver').filter({ hasText: 'Désarchiver' }).waitFor({ timeout: 8000 }).catch(() => {})
   await conv().getByTestId('archiver').click()
   verifie('« Désarchiver » le rend (réversible)', await toastAuPremierPlan(/désarchivé/) && !ch()?.archived_at)
   await conv().getByTestId('menu-chantier').click()
