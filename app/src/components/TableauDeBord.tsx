@@ -32,7 +32,7 @@ import { FiletSecurite } from './FiletSecurite.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
 import { bulleActive, cleBulle } from '../lib/bulleAide.ts'
-import { basculerRepli, comptesAToi, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
+import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
 
 /**
  * L'accueil = le modèle A « Tableau de bord » (Raphaël, 29 sept. 2026 : « vas-y
@@ -141,7 +141,7 @@ function PastillesAToi({ elements }: { elements: ElementAToi[] }) {
   const toast = useToast()
   const comptes = useMemo(() => comptesAToi(elements), [elements])
   const filtre = filtreEffectif(g.prefs[PREF_FILTRE_A_TOI], elements)
-  if (elements.length === 0) return null
+  if (!pastillesVisibles(elements)) return null
   const choisir = async (type: TypeAToi | null) => {
     try { await g.poser(PREF_FILTRE_A_TOI, type && filtre !== type ? type : 'tout') }
     catch (err) { toast.erreur(`Filtre non retenu : ${err instanceof Error ? err.message : String(err)}`); return }
