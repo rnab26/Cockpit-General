@@ -6,7 +6,8 @@
 //   ça avance  = « Ça avance tout seul »   (entonnoir.caAvanceToutSeul, SEULEMENT ce qui a une
 //                preuve de vie : session ou assistant qui travaille vraiment — Raphaël, 30 sept. :
 //                « sinon c'est de la fausse information »)
-//   en pause   = « Prêt à lancer » + « Sans session dessus » (en cours, mais personne ne travaille)
+//   à lancer   = « Prêt à lancer » + « Sans session dessus » (en cours, mais personne ne travaille) ; clé interne `enPause`
+//   de côté    = chantiers mis de côté ou reportés (état « reporte », pas abandonnés) : ils n'étaient listés nulle part
 //   fini       = certifiés dans la période (ouJenSuis.estFiniDans)
 // Pur, vérifié par scripts/verifier-tableau-de-bord.ts.
 import type { Activite, Chantier, Message, SessionClaude, Tache } from './types.ts'
@@ -31,10 +32,12 @@ export interface TableauDeBord {
   horsChantier: LigneHorsChantier[]
   pretALancer: LigneALancer[]
   fini: Chantier[]
+  /** Mis de côté ou reportés (6 oct. 2026) : volontairement hors du travail, mais retrouvables d'un toucher. */
+  deCote: Chantier[]
   /** Le détail par session (replié sous « Ça avance tout seul ») et son résumé chiffré. */
   travail: QuiTravaille[]
   resume: Resume
-  tuiles: { pourToi: number; caAvance: number; enPause: number; fini: number }
+  tuiles: { pourToi: number; caAvance: number; enPause: number; deCote: number; fini: number }
 }
 
 export function tableauDeBord(
@@ -48,9 +51,11 @@ export function tableauDeBord(
   const pretALancer = aLancer(d.chantiers, d.activites, d.messages, now, silenceMs, ordreProjets, projetId, d.taches).flatMap((g) => g.lignes)
   const fini = d.chantiers.filter((c) => (!projetId || c.projet_id === projetId) && estFiniDans(c, fenetre, now))
     .sort((a, b) => (b.valide_at ?? '').localeCompare(a.valide_at ?? ''))
+  const deCote = d.chantiers.filter((c) => c.etat === 'reporte' && !c.archived_at && (!projetId || c.projet_id === projetId))
+    .sort((a, b) => (a.reporte_jusqu_a ?? '9').localeCompare(b.reporte_jusqu_a ?? '9') || b.updated_at.localeCompare(a.updated_at))
   return {
-    aToi: elements, caAvance, sansSession, horsChantier: horsChantier(travail), pretALancer, fini, travail, resume: resumeTravail(travail),
-    tuiles: { pourToi: elements.length, caAvance: caAvance.length, enPause: pretALancer.length + sansSession.length, fini: fini.length },
+    aToi: elements, caAvance, sansSession, horsChantier: horsChantier(travail), pretALancer, fini, deCote, travail, resume: resumeTravail(travail),
+    tuiles: { pourToi: elements.length, caAvance: caAvance.length, enPause: pretALancer.length + sansSession.length, deCote: deCote.length, fini: fini.length },
   }
 }
 

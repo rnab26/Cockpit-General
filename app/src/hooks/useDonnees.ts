@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import type { Activite, Chantier, Message, Projet, Section, SessionClaude, Tache } from '../lib/types.ts'
 import { chargerEtatEcran } from '../lib/etatEcran.ts'
 import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
+import { abonner, etatFile } from '../lib/fetchResilient.ts'
+import { fusionnerEnAttente } from '../lib/fileAttente.ts'
 import { remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
@@ -147,31 +149,43 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     if (!error && data) setProjets(data as Projet[])
   }, [])
 
-  // Un seul rechargement à la fois : retour sur l'appli, direct rétabli, sondage et bouton partagent le même passage.
+  // Un seul rechargement À LA FOIS (retour sur l'appli, direct rétabli, sondage et bouton partagent le passage)…
+  // …mais jamais un passage PÉRIMÉ : une lecture déjà partie a pu commencer AVANT l'écriture qui vient d'avoir lieu
+  // (revue du 5 oct. : après « Je ne peux pas vérifier » ou « Fait », l'écran gardait l'ancien état jusqu'au sondage
+  // suivant). Une demande qui arrive pendant un passage en programme donc UN de plus juste derrière, partagé par
+  // toutes les demandes du moment.
   const enCours = useRef<Promise<void> | null>(null)
+  const suivant = useRef<{ p: Promise<void>; silencieux: boolean } | null>(null)
   const dejaCharge = useRef(false)
   const recharger = useCallback((silencieux = false): Promise<void> => {
-    if (enCours.current) return enCours.current
-    const p = (async () => {
-    if (!silencieux) setChargement(true)
-    const debut = Date.now()
-    try {
-      await Promise.all([...TABLES.map((t) => chargerTable(t)), rechargerProjets()])
-      setErreur(null)
-      setDerniereMaj(new Date())
-      setRechargeDu((avant) => Math.max(avant ?? 0, debut))
-      setCharge(true)
-      dejaCharge.current = true
-    } catch (e) {
-      // Une lecture silencieuse qui échoue (coupure brève, appli en arrière-plan) ne remplace rien et n'affiche rien :
-      // les dernières données restent à l'écran.
-      if (!(silencieux && dejaCharge.current)) setErreur(messageErreur(e))
-    } finally {
-      setChargement(false)
+    const lancer = (sil: boolean): Promise<void> => {
+      const p = (async () => {
+        if (!sil) setChargement(true)
+        const debut = Date.now()
+        try {
+          await Promise.all([...TABLES.map((t) => chargerTable(t)), rechargerProjets()])
+          setErreur(null)
+          setDerniereMaj(new Date())
+          setRechargeDu((avant) => Math.max(avant ?? 0, debut))
+          setCharge(true)
+          dejaCharge.current = true
+        } catch (e) {
+          // Une lecture silencieuse qui échoue (coupure brève, appli en arrière-plan) ne remplace rien et n'affiche rien :
+          // les dernières données restent à l'écran.
+          if (!(sil && dejaCharge.current)) setErreur(messageErreur(e))
+        } finally {
+          setChargement(false)
+        }
+      })().finally(() => { enCours.current = null })
+      enCours.current = p
+      return p
     }
-    })().finally(() => { enCours.current = null })
-    enCours.current = p
-    return p
+    if (!enCours.current) return lancer(silencieux)
+    if (suivant.current) { suivant.current.silencieux = suivant.current.silencieux && silencieux; return suivant.current.p }
+    const file: { p: Promise<void>; silencieux: boolean } = { p: Promise.resolve(), silencieux }
+    file.p = enCours.current.then(() => { suivant.current = null; return lancer(file.silencieux) })
+    suivant.current = file
+    return file.p
   }, [chargerTable, rechargerProjets])
 
   const rechargerCible = useCallback((table: Table) => {
@@ -229,11 +243,14 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     return error ? null : (data as Message | null)
   }, [])
 
+  // Les messages écrits hors ligne (gardés dans la file de l'appareil) se voient dans la bulle et le fil, marqués.
+  const file = useSyncExternalStore(abonner, etatFile, etatFile)
+  const messagesAffiches = useMemo(() => fusionnerEnAttente(messages, file.elements), [messages, file.elements])
   const ids = useMemo(() => new Set(projets.map((p) => p.id)), [projets])
   const vis = useMemo(() => ({
-    sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messages, ids),
+    sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messagesAffiches, ids),
     activites: lignesVisibles(activites, ids), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
-  }), [ids, sections, chantiers, messages, activites, sessions, taches])
+  }), [ids, sections, chantiers, messagesAffiches, activites, sessions, taches])
 
   return {
     projets, projet, projetId, vue, choisirVue, chargerProjets,

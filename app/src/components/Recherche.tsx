@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquareText, Search, X } from 'lucide-react'
 import { Button } from '../ui/Button.tsx'
 import { useGlobal } from '../contexte.ts'
+import { PastilleReponse } from './PastilleReponse.tsx'
+import { cleFil } from '../lib/lecture.ts'
 import { chercher } from '../lib/vueProjet.ts'
 import { VUE_TOUT } from '../hooks/useDonnees.ts'
 import { PointProjet } from './Icones.tsx'
@@ -59,6 +61,7 @@ export function BarreRecherche({ onFermer }: { onFermer: () => void }) {
                       <span className="block truncate text-[15px] font-medium">{r.titre}</span>
                       {r.extrait ? <span className="block truncate text-xs text-texte-2">{r.extrait}</span> : null}
                     </span>
+                    <PastilleReponse cle={cleFil(r.projetId, r.chantierId)} className="mt-0.5" />
                     {!projetId && p ? <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-texte-2"><PointProjet couleur={p.couleur} />{p.nom}</span> : null}
                   </button>
                 </li>

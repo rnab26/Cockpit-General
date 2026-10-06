@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import type { Moi } from '../lib/types.ts'
@@ -24,13 +24,23 @@ function avecDelai<T>(p: PromiseLike<T>, message = MESSAGE_LENT, ms = DELAI_SERV
 export function useAuth() {
   const [etat, setEtat] = useState<EtatAuth>({ pret: false, session: null, moi: null, erreurMoi: null, recuperation: false })
 
+  const relance = useRef<number | null>(null)
   const chargerMoi = useCallback(async () => {
+    if (relance.current != null) { window.clearTimeout(relance.current); relance.current = null }
+    // Serveur de données en panne : on réessaie seul toutes les 10 s (tant qu'on est connecté).
+    const reessayer = () => {
+      relance.current = window.setTimeout(() => {
+        relance.current = null
+        void supabase.auth.getSession().then(({ data }) => { if (data.session) void chargerMoi() })
+      }, 10_000)
+    }
     try {
       const { data, error } = await avecDelai(supabase.rpc('moi'))
-      if (error) { setEtat((e) => ({ ...e, moi: null, erreurMoi: messageErreur(error) })); return }
+      if (error) { setEtat((e) => ({ ...e, moi: null, erreurMoi: messageErreur(error) })); reessayer(); return }
       setEtat((e) => ({ ...e, moi: data as Moi, erreurMoi: null }))
     } catch (err) {
       setEtat((e) => ({ ...e, moi: null, erreurMoi: messageErreur(err) }))
+      reessayer()
     }
   }, [])
 
