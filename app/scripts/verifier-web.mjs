@@ -344,13 +344,13 @@ try {
   console.log('  — accueil « Tout » (tableau de bord)')
   verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
   const bTuiles = await page.getByTestId('tuiles').boundingBox()
-  verifie('les quatre tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 4, bTuiles)
+  verifie('les cinq tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 5, bTuiles)
   const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
   verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
   // 30/09 : « en pause » = « Prêt à lancer » + les « en cours sans session dessus » (repliés sous « Ça avance »).
   const nSans = await page.getByTestId('voir-sans-session').count() ? Number(((await page.getByTestId('voir-sans-session').textContent()) ?? '').match(/^\s*(\d+)/)?.[1] ?? 0) : 0
-  verifie('tuile « en attente » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
+  verifie('tuile « à lancer » = « Prêt à lancer » + « sans session dessus »', await nTuile('enPause') === Number(await page.getByTestId('a-lancer-total').textContent()) + nSans)
   // Le détail est ouvert d'emblée (30 sept.) : pas de toucher pour l'ouvrir.
   verifie('« Détail par projet » ouvert d\'emblée', await page.getByTestId('detail-ou-jen-suis').getAttribute('aria-expanded') === 'true')
   // Les projets jetables d'un AUTRE banc (verifier-base, verifier-embed… lancés en même temps) naissent et
@@ -377,18 +377,29 @@ try {
   // « En attente » (chantier 37405805) : chaque ligne dit ce qui se passe, ce qui va être fait, et « rien à faire » ou le geste.
   if (await nTuile('enPause')) {
     await page.getByTestId('tuile-enPause').click()
-    const dlgE = page.getByRole('dialog').filter({ hasText: 'En attente' })
+    const dlgE = page.getByRole('dialog').filter({ hasText: 'À lancer' })
     await dlgE.waitFor({ timeout: 5000 })
     const lignesE = dlgE.getByTestId('ligne-en-attente')
     const nE = await lignesE.count()
     const textesE = await lignesE.evaluateAll((els) => els.map((e) => [...e.querySelectorAll('[data-testid="attente-quoi"],[data-testid="attente-suite"]')].map((x) => x.textContent).join(' ')))
-    verifie('tuile « en attente » : chaque ligne dit ce qui se passe et ce qui va être fait, sans jargon',
+    verifie('tuile « à lancer » : chaque ligne dit ce qui se passe et ce qui va être fait, sans jargon',
       nE >= 1 && (await dlgE.getByTestId('attente-quoi').count()) === nE && (await dlgE.getByTestId('attente-suite').count()) === nE
       && textesE.every((t) => !/renfort\/|réservé|abandonné/.test(t) && /(Rien à faire|Lancer|repris|prend|prendra|relance)/.test(t)), textesE)
     verifie('…titre entier (pas tronqué) et pas de débordement horizontal',
       !(await dlgE.getByTestId('ligne-en-attente').first().locator('span.truncate').count()) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     await page.keyboard.press('Escape')
     await dlgE.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  }
+  // « De côté » (6 oct. 2026, chantier 1724cd4f) : les chantiers mis de côté / reportés étaient listés nulle part.
+  verifie('plus aucune tuile ne s’appelle « en attente » (ambigu : on ne sait pas ce qui attend quoi)', !/en attente/i.test(await page.getByTestId('tuiles').innerText()))
+  if (await nTuile('deCote')) {
+    await page.getByTestId('tuile-deCote').click()
+    const dlgC = page.getByRole('dialog').filter({ hasText: 'De côté' })
+    await dlgC.waitFor({ timeout: 5000 })
+    verifie('tuile « de côté » : autant de lignes que le nombre, chacune dit « Mis de côté » ou la date de report',
+      await dlgC.getByTestId('ligne-liste-ou-jen-suis').count() === await nTuile('deCote') && (await dlgC.getByTestId('quand-de-cote').allTextContents()).every((t) => /Mis de côté|Reporté au|Report échu/.test(t)))
+    await page.keyboard.press('Escape')
+    await dlgC.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
   }
   // « Fini » (chantier 3cea6ae9) : chaque ligne dit quand et par qui, le plus récemment certifié en haut.
   if (await nTuile('fini')) {
@@ -486,7 +497,7 @@ try {
   const vpNav = page.viewportSize()
   const barreNav = await page.getByTestId('barre-onglets').boundingBox()
   const bTabsNav = await page.getByTestId('barre-onglets').getByRole('tab').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
-  verifie('barre du bas : 5 onglets sur une ligne, collée en bas de l’écran, dans la largeur', bTabsNav.length === 5 && new Set(bTabsNav).size === 1 && Math.abs(barreNav.y + barreNav.height - vpNav.height) <= 1 && barreNav.width <= vpNav.width, [bTabsNav, barreNav, vpNav])
+  verifie('barre du bas : 6 onglets sur une ligne, collée en bas de l’écran, dans la largeur', bTabsNav.length === 6 && new Set(bTabsNav).size === 1 && Math.abs(barreNav.y + barreNav.height - vpNav.height) <= 1 && barreNav.width <= vpNav.width, [bTabsNav, barreNav, vpNav])
   verifie('barre du bas : onglet « Projet » allumé, les trois icônes de la page et la loupe d’en-tête n’existent plus', (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('onglets-projet').count() === 0 && await page.locator('header [data-testid="loupe"]').count() === 0)
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
   const barreBasNav = await page.getByTestId('barre-onglets').boundingBox()
@@ -1738,13 +1749,17 @@ try {
   verifie('limite atteinte : bouton inactif, « Déjà 1 renfort en route (maximum 1) »', await renf().getByTestId('lancer-renforts').isDisabled() && /Déjà 1 renfort en route \(maximum 1\)/.test(await renf().getByTestId('renforts-aide').textContent()))
   verifie('projet de test : aucune session à ouvrir pour la chef (renforts_a_ouvrir vide)', sql(`select renforts_a_ouvrir('${SLUG}') as r`)[0].r.ouvrir.length === 0)
   await capture(page, 'renforts-demande')
-  const relireRenforts = async (code) => { await actualiser(); await page.waitForFunction(({ slug, code }) => document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renfort"]`)?.getAttribute('data-code') === code, { slug: SLUG, code }, { timeout: 10000 }).catch(() => {}) }
+  const ouvrirHistoRenforts = async () => { const h = renf().getByTestId('renforts-historique'); await h.waitFor({ timeout: 10000 }).catch(() => {}); if (await h.count() && (await h.getAttribute('data-ouvert')) === 'non') await renf().getByTestId('renforts-historique-ouvrir').click() }
+  const relireRenforts = async (code) => { await actualiser(); if (code === 'erreur' || code === 'termine') await ouvrirHistoRenforts(); await page.waitForFunction(({ slug, code }) => document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renfort"]`)?.getAttribute('data-code') === code, { slug: SLUG, code }, { timeout: 10000 }).catch(() => {}) }
   sql(`select renfort_session('${rdem[0].id}', 'session_test_web')`)
   await relireRenforts('en_route')
   verifie('état « En route » (session notée par la chef)', /En route/.test(await renf().getByTestId('renfort').first().textContent()), await renf().getByTestId('renfort').first().textContent())
   sql(`select renfort_erreur('${rdem[0].id}', 'create_session refusé (test)')`)
   await relireRenforts('erreur')
   verifie('état « Erreur », le texte visible', /Erreur/.test(await renf().getByTestId('renfort').first().textContent()) && /create_session refusé \(test\)/.test(await renf().getByTestId('renfort').first().textContent()))
+  verifie('historique replié par défaut après rechargement (rien ne tourne) : libellé « N renfort terminé · Afficher », ligne cachée', await (async () => { await actualiser(); const h = renf().getByTestId('renforts-historique'); await h.waitFor({ timeout: 10000 }); return (await h.getAttribute('data-ouvert')) === 'non' && /1 renfort terminé dont 1 en erreur · Afficher/.test(await h.textContent()) && await renf().getByTestId('renfort').count() === 0 && /Aucun renfort ne tourne/.test(await renf().getByTestId('renforts-rien').textContent()) })())
+  await ouvrirHistoRenforts()
+  verifie('historique ouvert : phrase d’explication et ligne revue', await renf().getByTestId('renfort').count() === 1 && /Rien n’est supprimé/.test(await renf().getByTestId('renforts-historique').textContent()))
   verifie('après l’erreur, le bouton se rouvre', await renf().getByTestId('lancer-renforts').isEnabled())
   sql(`update renforts set statut = 'archive', faits = 2, fini_at = now(), archive_at = now(), erreur = null where id = '${rdem[0].id}'`)
   await relireRenforts('termine')

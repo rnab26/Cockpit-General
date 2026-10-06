@@ -15,10 +15,11 @@ export function navMobileActive(vue: Vue, tactile: boolean): boolean {
 /** Hauteur de la barre (hors zone de sécurité) : une seule valeur, lue par le CSS (--nav-h) pour tout ce qui est collé en bas. */
 export const HAUTEUR_BARRE_PX = 56
 
-export type OngletBarre = 'accueil' | 'projet' | 'recherche' | 'couts' | 'reglages'
+export type OngletBarre = 'accueil' | 'projet' | 'recherche' | 'discussion' | 'couts' | 'reglages'
 
 /** Quel onglet de la barre est allumé, selon l'écran affiché. */
-export function ongletBarreActif(vueTout: boolean, onglet: OngletProjet, recherche: boolean): OngletBarre {
+export function ongletBarreActif(vueTout: boolean, onglet: OngletProjet, recherche: boolean, discussion = false): OngletBarre {
+  if (discussion) return 'discussion'
   if (recherche) return 'recherche'
   if (vueTout) return 'accueil'
   return onglet === 'couts' ? 'couts' : onglet === 'reglages' ? 'reglages' : 'projet'

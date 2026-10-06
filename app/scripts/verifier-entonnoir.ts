@@ -3,7 +3,7 @@
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
 import { estAction, separerChat } from '../src/lib/discussion.ts'
-import { enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
+import { estNouveau, nouveauxDabord, ouApparait, enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST, etatVerification } from '../src/lib/presence.ts'
 
@@ -308,6 +308,18 @@ console.log('verifier-entonnoir')
     [M('qv', 'ck', 'cv', 'question', 10), M('qa', 'ck', 'ar', 'question', 10)])
   verifie('« À toi » : une question ouverte d’un chantier certifié (donc archivé « Fini ») y reste', t.some((e) => e.message?.id === 'qv'), t.map((e) => e.cle))
   verifie('« À toi » : celle d’un chantier archivé sans être certifié n’y est pas', !t.some((e) => e.message?.id === 'qa'))
+}
+
+// 4. Nouveaux chantiers (6 oct. 2026) : visibles en tête de « Prêt à lancer »
+{
+  const n = (id: string, etat: string, min: number, extra: object = {}) => ({ ...C(id, 'ck', etat as never), created_at: il(min), ...extra })
+  verifie('nouveau : créé il y a 5 min, libre → nouveau', estNouveau(n('a', 'libre', 5), now))
+  verifie('nouveau : à trier aussi', estNouveau(n('a', 'a_trier', 5), now))
+  verifie('nouveau : créé il y a 2 jours → plus nouveau', !estNouveau(n('a', 'libre', 2 * 24 * 60), now))
+  verifie('nouveau : déjà en cours / archivé → non', !estNouveau(n('a', 'en_cours', 5), now) && !estNouveau(n('a', 'libre', 5, { archived_at: il(1) }), now))
+  const l = nouveauxDabord([{ c: n('vieux', 'libre', 3000) }, { c: n('n1', 'libre', 60) }, { c: n('n2', 'a_trier', 10) }], now)
+  verifie('nouveau : les nouveaux en tête, le plus récent d’abord', l.map((x) => x.c.id).join(',') === 'n2,n1,vieux', l.map((x) => x.c.id))
+  verifie('nouveau : on dit où il apparaît', ouApparait('libre').includes('Prêt à lancer') && ouApparait('a_cadrer').includes('À toi'))
 }
 
 bilan('verifier-entonnoir')

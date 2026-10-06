@@ -7,6 +7,7 @@ import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Champ, Input, Select, Textarea } from '../ui/Champs.tsx'
 import { ETATS, PRIORITES, infoEtat } from '../lib/etats.ts'
+import { ouApparait } from '../lib/entonnoir.ts'
 import { lireProches, libelleCreer, texteConfirmationCompleter, texteConfirmationFusion, type ChantierProche } from '../lib/fusion.ts'
 import { MEDIAS_MAX_PAR_MESSAGE, TAILLE_MAX_MEDIA, resumeMedias } from '../lib/medias.ts'
 import type { Etat, Priorite } from '../lib/types.ts'
@@ -23,7 +24,7 @@ import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx
  * ouverte sur les pièces non parties, avec « réessayer ».
  */
 export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFermer: () => void }) {
-  const { admin, projet, sections, recharger, moi, par } = useCockpit()
+  const { admin, projet, sections, recharger, moi, par, ouvrirChantier } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
   const pj = useMediasAJoindre(projet.id, null, { differe: true })
@@ -145,7 +146,10 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
       return
     }
     const avec = nb ? `, avec ${nb} pièce${nb > 1 ? 's' : ''} jointe${nb > 1 ? 's' : ''}` : ''
-    toast.succes(admin ? `Chantier « ${titre.trim()} » créé${avec}.` : `Demande envoyée${avec} : elle apparaît « Pas encore examinée ».`)
+    const msg = admin ? `Chantier « ${titre.trim()} » créé${avec}. ${ouApparait(etat)}` : `Demande envoyée${avec} : elle apparaît « Pas encore examinée ».`
+    const ouvrir = () => ouvrirChantier(id)
+    if (admin) toast.avecAction(msg, { libelle: 'Voir', onClick: ouvrir }, 10000)
+    else toast.succes(msg)
     fermer()
   }
 
