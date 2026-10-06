@@ -1,6 +1,6 @@
 // Filet de sécurité (src/lib/filet.ts, 0044) : les mots de l'écran pour chaque état.
 import { verifie, bilan } from './_assert.ts'
-import { phraseFilet, detailsFilet, dureeCourte, phraseReponse, phraseChef, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
+import { phraseFilet, detailsFilet, phraseChef, phraseReaction, dureeLisible, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
 
 console.log('verifier-filet')
 const base: EtatFiletBase = { statut: 'actif', projet_actif: true, plafond: 6, delai_min: 10, aujourdhui: 1, dernier_at: '2026-09-30T10:05:00Z',
@@ -29,12 +29,13 @@ for (const st of ['actif', 'eteint', 'global_eteint', 'cron_absent', 'sans_jeton
 const d = detailsFilet({ ...base, attente: att }).join(' | ')
 verifie('détails : dernier réveil, ce qui attend, compte du jour, délai', /Dernier réveil : 13:05/.test(d) && /Ce qui attend/.test(d) && /1 sur 6/.test(d) && /10 min/.test(d), d)
 // 0071 : délai réel de réponse et chef muette, en mots.
-verifie('durées lisibles', dureeCourte(45) === '45 s' && dureeCourte(240) === '4 min' && dureeCourte(7800) === '2 h 10' && dureeCourte(null) === '—')
-const rep = { n: 5, repondus: 4, en_attente: 1, attente_depuis_s: 600, mediane_s: 240, p90_s: 900, dernier_s: 30 }
-const pr = phraseReponse(rep)
-verifie('phrase de réponse : médiane, dernière, attente', /4 min/.test(pr) && /30 s/.test(pr) && /1 message\(s\) attendent depuis 10 min/.test(pr), pr)
-verifie('aucun message : pas de phrase', phraseReponse({ ...rep, n: 0 }) === '' && phraseReponse(null) === '')
 verifie('chef muette : dit pourquoi ; chef qui répond : rien', /pleine/.test(phraseChef({ repond: false, raison: 'jetons' })) && /ne réagit pas/.test(phraseChef({ repond: false, raison: 'sans_passe' })) && phraseChef({ repond: true, raison: 'ok' }) === '')
-const d2 = detailsFilet({ ...base, attente: att, cadence_min: 1, reveil_ecart_min: 5, chef_reactif_min: 5, reponse: rep, chef: { repond: false, raison: 'jetons' } }).join(' | ')
-verifie('détails : cadence, délai de réponse, chef pleine', /toutes les 1 min/.test(d2) && /Réponse en 4 min/.test(d2) && /pleine/.test(d2), d2)
+const d2 = detailsFilet({ ...base, attente: att, cadence_min: 1, reveil_ecart_min: 5, chef_reactif_min: 5, chef: { repond: false, raison: 'jetons' } }).join(' | ')
+verifie('détails : cadence, chef pleine', /toutes les 1 min/.test(d2) && /pleine/.test(d2), d2)
+verifie('durées lisibles', dureeLisible(45) === '45 s' && dureeLisible(240) === '4 min' && dureeLisible(7800) === '2 h 10', [dureeLisible(45), dureeLisible(240), dureeLisible(7800)])
+const rx = { jours: 7, messages: 12, repondus: 10, sans_reponse: 2, mediane_s: 240, p90_s: 900, pire_s: 3000, dernier_s: 60, plus_ancien_sans_reponse: null }
+const pr = phraseReaction(rx)
+verifie('réaction : médiane en titre, détail avec p90 et sans réponse', /^Réponse en 4 min/.test(pr.titre) && /15 min/.test(pr.detail) && /2 sans réponse/.test(pr.detail), pr)
+verifie('réaction : rien à mesurer', /Pas encore/.test(phraseReaction({ ...rx, messages: 0 }).titre) && /Pas encore/.test(phraseReaction(null).titre))
+verifie('réaction : messages mais aucune réponse', /Aucune réponse/.test(phraseReaction({ ...rx, repondus: 0, mediane_s: null }).titre))
 bilan('verifier-filet')

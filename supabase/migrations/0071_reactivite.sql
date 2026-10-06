@@ -164,35 +164,6 @@ begin
   return 'envoye';
 end $$;
 
--- ------------------------------------------------ 3. le délai réel message → première réponse (mesuré, affiché)
-create or replace function cockpit.delai_reponse(p_projet text, p_jours int default 7) returns jsonb
-  language plpgsql stable security definer set search_path = cockpit, pg_temp as $$
-declare v_pid uuid; v jsonb;
-begin
-  perform cockpit.exiger(cockpit.est_admin() or cockpit.est_service(), 'réservé à l''admin du cockpit');
-  select id into v_pid from cockpit.projets where slug = p_projet;
-  if v_pid is null then return null; end if;
-  with libres as (
-    select m.id, m.created_at, m.chantier_id from cockpit.messages m
-     where m.projet_id = v_pid and m.auteur_type in ('proprietaire', 'utilisateur') and m.kind in ('info', 'constat', 'reponse')
-       and m.created_at > now() - make_interval(days => greatest(coalesce(p_jours, 7), 1)) and cockpit.est_message_libre(m)),
-  rep as (
-    select l.*, (select min(s.created_at) from cockpit.messages s
-                  where s.projet_id = v_pid and s.chantier_id is not distinct from l.chantier_id
-                    and s.auteur_type = 'session' and s.created_at > l.created_at) as r from libres l),
-  d as (select *, extract(epoch from r - created_at) as s from rep)
-  select jsonb_build_object(
-      'jours', greatest(coalesce(p_jours, 7), 1), 'n', count(*), 'repondus', count(r), 'en_attente', count(*) filter (where r is null),
-      'attente_depuis_s', (max(extract(epoch from now() - created_at)) filter (where r is null))::int,
-      'mediane_s', (percentile_cont(0.5) within group (order by s))::int,
-      'p90_s', (percentile_cont(0.9) within group (order by s))::int,
-      'max_s', (max(s))::int,
-      'dernier_s', (select d2.s::int from d d2 where d2.r is not null order by d2.created_at desc limit 1),
-      'dernier_at', (select d2.created_at from d d2 where d2.r is not null order by d2.created_at desc limit 1))
-    into v from d;
-  return v;
-end $$;
-
 -- ------------------------------------------------ 4. la boucle (cron) : libération puis filet, une seule tâche, cadence réglable
 create or replace function cockpit.boucle_reactive() returns jsonb
   language plpgsql security definer set search_path = cockpit, pg_temp as $$
@@ -326,19 +297,19 @@ begin
     'dernier_at', j.at, 'prochain_at', case when j.at is null then null else greatest(j.at + v_ecart, now()) end, 'ecart_min', (extract(epoch from v_ecart) / 60)::int,
     'dernier_pourquoi', j.pourquoi, 'attente', v_att, 'vivant', cockpit.filet_vivant(pr.id),
     'cadence_min', v_cad, 'reveil_ecart_min', pr.reveil_ecart_min, 'chef_reactif_min', pr.chef_reactif_min,
-    'chef', cockpit.chef_repond(pr.id), 'reponse', cockpit.delai_reponse(p_projet, 7));
+    'chef', cockpit.chef_repond(pr.id));
 end $function$;
 
 -- ------------------------------------------------ 6. droits (nommés, jamais PUBLIC) et mise en route
 revoke all on function cockpit.chef_depasse(uuid), cockpit.agents_comptes(text, uuid), cockpit.chef_repond(uuid), cockpit.filet_ecart_projet(uuid),
-  cockpit.delai_reponse(text, int), cockpit.boucle_reactive(), cockpit.planifier_boucle(int), cockpit.regler_cadence(int),
+  cockpit.boucle_reactive(), cockpit.planifier_boucle(int), cockpit.regler_cadence(int),
   cockpit.regler_reactivite(text, int, int), cockpit.noter_releve_chef(text, text, text),
   cockpit.agents_actifs(text, uuid), cockpit.chef_a_renouveler(text), cockpit.filet_vivant(uuid), cockpit.reveiller_chef(uuid, uuid, text),
   cockpit.filet_passe(text, boolean, boolean), cockpit.etat_filet(text) from public, anon, authenticated;
 grant execute on function cockpit.chef_depasse(uuid), cockpit.agents_comptes(text, uuid), cockpit.chef_repond(uuid), cockpit.filet_ecart_projet(uuid),
   cockpit.boucle_reactive(), cockpit.planifier_boucle(int), cockpit.noter_releve_chef(text, text, text),
   cockpit.agents_actifs(text, uuid), cockpit.filet_vivant(uuid), cockpit.reveiller_chef(uuid, uuid, text), cockpit.filet_passe(text, boolean, boolean) to service_role;
-grant execute on function cockpit.delai_reponse(text, int), cockpit.regler_cadence(int), cockpit.regler_reactivite(text, int, int),
+grant execute on function cockpit.regler_cadence(int), cockpit.regler_reactivite(text, int, int),
   cockpit.chef_a_renouveler(text), cockpit.etat_filet(text) to authenticated, service_role;
 
 select cockpit.planifier_boucle(coalesce((select cadence_min from cockpit.filet_reglage where id = 1), 1));

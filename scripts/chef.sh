@@ -302,7 +302,7 @@ fi
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
 # (ouverte par /fire) ne vole jamais une chef vivante : elle sert seulement ce qui
-# attend Raphaël (« attente ») puis s'arrête ; chef morte ou absente → elle devient chef.
+# attend Raphaël et les chantiers prenables (« attente », 0071) puis s'arrête ; chef morte ou absente → elle devient chef.
 attente=""; releve_prise=0
 if [ "$mode" = "releve" ] && [ -n "$sid" ] && [ "$chef" != "$sid" ]; then
   # 0071 (Raphaël, 6 oct. : « les chantiers à lancer ne se lancent pas tout seuls ») : une chef « vivante » (vue < 3 h)
@@ -489,7 +489,9 @@ while [ ${#donnes[@]} -lt "$libres" ]; do
   donnes+=("$(printf '%s' "$v" | jq -c --arg br "$br" '. + {branche: $br, verif: true}')")
 done
 # Un chantier par place libre si le mode autonome du projet est allumé, le plus ancien d'abord.
-if [ -z "$attente" ] && [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
+# 0071 : la session réveillée (« attente ») sert AUSSI ces chantiers : la chef vit mais n'a rien lancé (c'est pour cela
+# que le filet l'a réveillée) ; sans cela, les chantiers prenables restaient des heures sans personne (constaté le 6 oct.).
+if [ "$(printf '%s' "$etat" | jq -r '.autonome // false')" = "true" ]; then
   while [ ${#donnes[@]} -lt "$libres" ]; do
     br="agent/$(date +%s%N | tail -c 7)"
     c=$(un "select prochain_chantier_autonome($P, null, '$br') as c" | jq -c '.c // empty')
@@ -529,7 +531,7 @@ fi
 [ -n "$groupes_txt" ] && printf '%s\n' "$groupes_txt"
 
 if [ -n "$attente" ]; then
-  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers seulement ce qui attend Raphaël. Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
+  echo "RELÈVE de $projet (réveil immédiat) : la chef ($chef) vit mais dort ; tu sers ce qui attend Raphaël ET les chantiers prenables (la chef n’a rien lancé). Lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Chaque chantier est déjà réservé à sa branche. Tu ne deviens pas chef. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » ; effort — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
   echo "Quand un agent a fini : relis son rapport, puis relance $CHEF_CMD --releve ; quand il répond RIEN, termine en une ligne. Ne fais PAS le travail toi-même."
 else
 echo "SESSION CHEF de $projet : lance $nb agent(s) MAINTENANT, un par chantier ci-dessous (outil Agent, run_in_background: true, isolation: \"worktree\"). Tous sont de CE projet : les autres projets ont chacun leur chef, dans leur propre session. Chaque chantier est déjà réservé à sa branche. Économie des modèles (0035) : lance CHAQUE agent avec le paramètre model de l’outil Agent tel qu’indiqué sur sa ligne « ━━ Agent … [model: X] » (jamais plus lourd : Raphaël règle ça dans le cockpit) ; effort de raisonnement — $EFFORT_TXT. ${note_frein:-} ${note_palier:-}BASCULE automatique : AVANT de lancer, lis get_session → external_metadata.rate_limit_info et note-le : $CHEF_CMD --usage <status> --fenetre <rateLimitType> --reset <resetsAt> (aucun pourcentage n’existe dans rate_limit_info : n’en invente jamais, ajoute [pct] seulement s’il t’est donné). Il répond les modèles ET l’effort à utiliser (ils remplacent ceux des lignes [model: X] et de l’effort ci-dessus) ; tu ne réduis JAMAIS le nombre d’agents à cause de l’usage."
