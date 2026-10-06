@@ -37,6 +37,13 @@ export function dateSaisie(valeur: string, now: Date): Date | null {
 
 const JOUR = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' })
 
+/** La version courte, pour une ligne de liste (tuile « de côté ») : « Reporté au 12 octobre » ou « Mis de côté ». */
+export function quandDeCote(c: Pick<Chantier, 'reporte_jusqu_a'>, now: Date): string {
+  const t = c.reporte_jusqu_a ? Date.parse(c.reporte_jusqu_a) : NaN
+  if (Number.isNaN(t)) return 'Mis de côté, sans date'
+  return t > now.getTime() ? `Reporté au ${JOUR.format(new Date(t))}` : 'Report échu : revient dans « Prêt à lancer »'
+}
+
 /** Ce que dit la bulle d'un chantier mis de côté ou reporté. */
 export function texteReporte(c: Pick<Chantier, 'etat' | 'reporte_jusqu_a' | 'archived_at'>, now: Date): string | null {
   if (c.etat !== 'reporte') return null

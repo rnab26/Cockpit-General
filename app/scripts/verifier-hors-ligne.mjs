@@ -175,6 +175,15 @@ try {
   await bandeau.waitFor({ timeout: 15000 }).catch(() => {})
   verifie('après rechargement hors ligne : toujours « 1 élément enregistré »', /1 élément enregistré/.test(await page.getByTestId('bandeau-texte').innerText().catch(() => '')))
 
+  // --- 4 bis. le message écrit hors ligne se VOIT dans la bulle (même après rechargement), marqué « en attente d'envoi »
+  await page.getByTestId('bulle-aide-bouton').click()
+  await page.getByTestId('bulle-aide-message').filter({ hasText: t1 }).waitFor({ timeout: 10000 }).catch(() => {})
+  const ligneT1 = page.getByTestId('bulle-aide-message').filter({ hasText: t1 })
+  verifie('bulle : le message écrit hors ligne est affiché après rechargement', await ligneT1.count() === 1)
+  verifie('bulle : il est marqué « En attente d’envoi »', /En attente d’envoi/.test(await ligneT1.innerText().catch(() => '')))
+  await page.screenshot({ path: `${CAPTURES}/hors-ligne-message-en-attente.png` })
+  await page.keyboard.press('Escape')
+
   // --- 5. un deuxième message hors ligne s'ajoute derrière (ordre conservé)
   const t2 = 'Deuxième message hors ligne — ' + randomUUID().slice(0, 6)
   await envoyer(t2)
@@ -188,6 +197,11 @@ try {
   const lignes = sql(`select corps from messages where projet_id = '${projetId}' order by created_at, id`)
   verifie('au retour du réseau : les 2 messages arrivent en base', lignes.length === 2, lignes)
   verifie('dans l’ordre où ils ont été écrits', lignes[0]?.corps === t1 && lignes[1]?.corps === t2, lignes)
+  await page.getByTestId('bulle-aide-bouton').click()
+  await page.getByTestId('bulle-aide-message').filter({ hasText: t1 }).waitFor({ timeout: 10000 }).catch(() => {})
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid=message-en-attente]').length === 0, null, { timeout: 15000 }).catch(() => {})
+  verifie('bulle : une fois parti, le message est normal (plus de marque, pas de doublon)', await page.getByTestId('message-en-attente').count() === 0 && await page.getByTestId('bulle-aide-message').filter({ hasText: t1 }).count() === 1)
+  await page.keyboard.press('Escape')
   await bandeau.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
   verifie('le bandeau disparaît quand tout est parti', await bandeau.count() === 0)
 
@@ -225,7 +239,7 @@ try {
   await envoyer('À abandonner — ' + randomUUID().slice(0, 6))
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
   if (await bandeau.getByLabel('Voir le détail').count()) await bandeau.getByLabel('Voir le détail').click()
-  await page.getByRole('button', { name: 'Abandonner' }).click()
+  await page.getByTestId('liste-file-attente').getByRole('button', { name: 'Abandonner' }).click()
   verifie('abandonner : une confirmation est demandée avant d’effacer', await page.getByText('Abandonner cet envoi ?').isVisible())
   await page.getByRole('button', { name: 'Abandonner', exact: true }).last().click()
   await pause(1000)
