@@ -15,6 +15,7 @@
 #   scripts/chef.sh --releve        ce que lance la ROUTINE de réveil (30 sept.) : la chef → la passe ;
 #                                   une autre session (ouverte par /fire) → si la chef vit, seulement ce
 #                                   qui attend (réponses, « où ça en est », messages) ; sinon elle devient chef
+#   scripts/chef.sh --consignes     redonne les consignes GARDÉES des chantiers réservés par la passe dont l'agent n'est pas lancé (0068)
 #   scripts/chef.sh --texte-routine le texte exact du prompt de la routine de réveil du projet
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
 #   scripts/chef.sh --reveil <trig_…> [--distante <session_…>] [--minute <0-59>]   note le réveil horaire
@@ -52,6 +53,7 @@ while [ $# -gt 0 ]; do
     --prendre) mode="prendre"; shift ;;
     --releve)  mode="releve"; shift ;;
     --texte-routine) mode="texte_routine"; shift ;;
+    --consignes) mode="consignes"; shift ;;
     --etat)    mode="etat"; shift ;;
     --reveil)  mode="reveil"; reveil="${2:-}"; shift 2 ;;
     --distante) distante="${2:-}"; shift 2 ;;
@@ -261,6 +263,16 @@ pid=$(printf '%s' "$etat" | jq -r '.projet_id // empty')
 [ -n "$pid" ] || { echo "RIEN — projet $projet inconnu du cockpit. Termine ta réponse en une ligne."; exit 0; }
 # 0041/0046 : une réservation sans signe de vie depuis le délai du projet (projets.delai_sans_signe_min, 3 min par défaut) est libérée AVANT de compter ce qui attend (aucun chantier « tenu » pour rien).
 un "select liberer_silencieux($P) as n" >/dev/null
+# --consignes (0068) : redonne les consignes GARDÉES des chantiers réservés par la passe dont l'agent n'est pas lancé.
+if [ "$mode" = "consignes" ]; then
+  tout=$(un "select consignes_passe_a_relire($P) as r" | jq -c '.r // []')
+  n=$(printf '%s' "$tout" | jq 'length')
+  if [ "$n" -eq 0 ]; then echo "RIEN — aucune consigne gardée en attente d'agent dans $projet. Termine ta réponse en une ligne."; exit 0; fi
+  echo "CONSIGNES GARDÉES de $projet : $n chantier(s) réservé(s) par la passe, aucun agent lancé dessus. Lance un agent par consigne (outil Agent, run_in_background: true, isolation: \"worktree\", model de sa ligne) ; sans agent dans les $(un "select passe_lancement_min as m from projets where id = '$pid'" | jq -r '.m // 5') min suivant la réservation, le chantier est rendu à la file."
+  echo
+  printf '%s' "$tout" | jq -r '.[] | .consigne + "\n"'
+  exit 0
+fi
 chef=$(printf '%s' "$etat" | jq -r 'if .actif == false then "" else (.session_id // "") end')
 # --releve (la routine de réveil) : la chef → la passe normale. Une AUTRE session
 # (ouverte par /fire) ne vole jamais une chef vivante : elle sert seulement ce qui
@@ -352,7 +364,20 @@ rien() {
   if [ -n "$renf_txt" ]; then printf '%s\n%s Fais seulement ces gestes, puis termine ta réponse en une ligne.\n' "$renf_txt" "$1"; else echo "RIEN — $1 Termine ta réponse en une ligne."; fi
   exit 0
 }
-if [ "$libres" -le 0 ]; then rien "$agents agent(s) travaillent déjà sur $projet (maximum $maxa)."; fi
+# 0068 : les chantiers que la passe PRÉCÉDENTE a réservés sans qu'aucun agent démarre (consigne perdue, sortie
+# tronquée, session arrêtée) reviennent d'abord, avec LEUR consigne gardée en base, au lieu d'un RIEN. Ils occupent
+# des places ; une minute de grâce évite de les redonner à l'agent qu'on vient de lancer et qui n'a pas encore signalé.
+delai_passe=$(un "select passe_lancement_min as m from projets where id = '$pid'" | jq -r '.m // 5')
+relues=(); jeunes=0
+if [ -z "$attente" ]; then
+  while IFS= read -r l; do [ -n "$l" ] && relues+=("$l"); done < <(un "select consignes_passe_a_relire($P) as r" | jq -c '(.r // [])[] | select(.minutes >= 1)')
+  jeunes=$(un "select jsonb_array_length(consignes_passe_a_relire($P)) as n" | jq -r '.n // 0'); jeunes=$(( jeunes - ${#relues[@]} ))
+fi
+# Jamais plus que les places libres : un agent déjà au travail garde sa place (les autres consignes restent gardées).
+[ "$libres" -lt 0 ] && libres=0
+[ ${#relues[@]} -gt "$libres" ] && relues=("${relues[@]:0:$libres}")
+libres=$(( libres - ${#relues[@]} ))
+if [ "$libres" -le 0 ] && [ ${#relues[@]} -eq 0 ]; then rien "$agents agent(s) travaillent déjà sur $projet (maximum $maxa)."; fi
 
 donnes=()
 # D'abord les RÉPONSES de Raphaël que personne n'a reprises (0017), dans CE
@@ -409,8 +434,8 @@ if [ -z "$attente" ] && [ "${FREIN_ON:-0}" != "1" ] && [ ${#donnes[@]} -lt "$lib
   revue=$(COCKPIT_PROJET="$projet" COCKPIT_SQL="$SQL" bash "$(dirname "${BASH_SOURCE[0]}")/revue-a-toi.sh" 2>/dev/null)
   case "$revue" in RIEN*|"") revue="" ;; esac
 fi
-nb=$(( ${#donnes[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
-if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $projet ($agents agent(s) au travail)."; fi
+nb=$(( ${#donnes[@]} + ${#relues[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
+if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $projet ($agents agent(s) au travail)$([ "$jeunes" -gt 0 ] && echo " ; $jeunes chantier(s) réservé(s) par la passe à l’instant attendent leur agent (consigne perdue ? $CHEF_CMD --consignes)")."; fi
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
 
 # REGROUPER AVANT DE LANCER (5 oct. 2026, 0052, chantier 8486b809) : Raphaël : « la chef doit réfléchir à
@@ -440,7 +465,7 @@ echo "Quand un agent a fini : relis son rapport, dis en 2 lignes à Raphaël ce 
 fi
 echo
 VERDICT="${COCKPIT_VERDICT_CMD:-scripts/verdict.sh}"
-for c in "${donnes[@]}"; do
+consigne_de() { local c="$1"
   if [ "$(printf '%s' "$c" | jq -r '.reponse_prise // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg prfus "$PRFUS" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
 "━━ Agent « Réponse : \(.titre) » [model: \($ENV.MODELE_CODE)] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
@@ -456,7 +481,7 @@ Demande du chantier :
 Fais ce que cette réponse annonce. Lis d’abord le fil du chantier (ce que la question proposait exactement).\(if .depense then "\nCette réponse engage une DÉPENSE : respecte les barrières de budget du CLAUDE.md global — solde relevé AVANT de lancer, plafond de durée côté fournisseur, annulation automatique au-delà d’un plafond dans le script, surveillance job par job toutes les 10 minutes (annuler tout job au-delà de 2× sa durée normale), jamais au-delà du montant accepté." else "" end)
 Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch -c \(.branche), et travaille sur cette branche (jamais directement sur main ; ta copie à toi ; le cockpit te reconnaît à ce nom). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Réponse : \(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. Aucune suppression ni envoi en son nom ; aucune dépense au-delà de ce que sa réponse accepte. Une nouvelle décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, fusion dans main seulement si tout est vert (si la plateforme refuse la fusion, « merge without review » : n’insiste pas et ne cherche aucun détour ; SANS CONFLIT : JUSTE avant d’ouvrir la PR, git fetch origin puis git merge origin/main dans ta branche (garde les DEUX côtés ; une migration dont le numéro est déjà pris : renumérote-la avec scripts/prochaine-migration.sh, appelé au moment d’écrire le fichier, jamais « le suivant » deviné) et relance les tests rapides ; pousse ta branche, ouvre la PR, puis IMMÉDIATEMENT COCKPIT_PROJET=\(.slug) \($prfus) <N> (la carte « À toi » avec le lien et les 2 gestes ; elle n’est posée QUE si la PR est propre : le script répond « PAS PRÊTE : … » sinon, et la chef s’en occupe ; sans doublon, retirée seule à la fusion ; ne pose jamais cette action à la main) ; ne termine jamais en laissant une branche finie sans PR ni carte ; DÉPLOIEMENT PAR LOT : une PR = toute la vague de correctifs du même sujet, jamais une PR ou un redéploiement par correctif ; une fonction Supabase se déploie une fois en fin de lot avec scripts/deployer-fonction.sh, qui ne renvoie rien si elle est inchangée), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. Ouvre https://… (le lien EXACT) 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
-    echo; continue
+    echo; return 0
   fi
   if [ "$(printf '%s' "$c" | jq -r '.message_pris // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" '
@@ -479,7 +504,7 @@ Juste avant, dans le fil :
 5. Une décision de Raphaël nécessaire → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté), puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide.
 Aucune dépense, suppression ni envoi en son nom. Ne change pas l’état du chantier pour rien (il est seulement réservé à ta branche 60 min). Rends un rapport de 3 lignes : ce que tu as répondu, ce que tu as fait, ce qui reste.
 ---"'
-    echo; continue
+    echo; return 0
   fi
   if [ "$(printf '%s' "$c" | jq -r '.point // false')" = "true" ]; then
     printf '%s' "$c" | jq -r --arg prog "$PROG" --arg sql "${COCKPIT_SQL_CMD:-scripts/sql.sh}" '
@@ -498,11 +523,11 @@ COCKPIT_PROJET=\(.slug) \($prog) --chantier \(.id) --point \"Fait : … Pour fin
 3. Termine ta ligne : COCKPIT_PROJET=\(.slug) \($prog) --agent \"Point : \(.titre)\" --termine \"Réponse écrite dans le fil\"
 Ne réserve pas le chantier, ne code rien. Rends un rapport de 2 lignes.
 ---"'
-    echo; continue
+    echo; return 0
   fi
   if [ "$(printf '%s' "$c" | jq -r '.verif // false')" = "true" ]; then
     printf '%s' "$c" | verif_bloc
-    echo; continue
+    echo; return 0
   fi
   printf '%s' "$c" | jq -r --arg prog "$PROG" --arg dem "$DEM" --arg prfus "$PRFUS" --arg repro "$(repro_ligne "$(printf '%s' "$c" | jq -r '.id // empty')")" '
 "━━ Agent « \(.titre) » [model: \($ENV.MODELE_CODE)] (projet \(.slug), dépôt \(.depot), branche \(.branche), chantier \(.id))
@@ -515,7 +540,23 @@ Demande :
 Règles : lis CLAUDE.md et docs/REPRISE.md du dépôt. Commence par : git switch -c \(.branche), et travaille sur cette branche (jamais directement sur main ; ta copie à toi ; le cockpit te reconnaît à ce nom). À chaque étape : COCKPIT_PROJET=\(.slug) \($prog) --agent \"\(.titre)\" --chantier \(.id) --etape \"…\" --pct N --eta M. AUCUNE dépense, suppression ou envoi en son nom. Une décision de Raphaël → COCKPIT_PROJET=\(.slug) \($dem) (règle de clarté : une phrase, 2 à 4 réponses prêtes) puis rends la main. Un geste manuel de Raphaël (clé, réglage, clic) : seulement si aucun chemin technique n’existe, et par COCKPIT_PROJET=\(.slug) \($dem) --action avec --lien \"https://…|libellé\" (la page EXACTE), --etape (un geste numéroté chacune, nom exact du bouton), --copier \"libellé|texte\" (prêt à coller) et --image si ça aide. Sinon mène-le au bout : tests du dépôt, commit, push de ta branche, puis fusion dans main seulement si tout est vert (si la plateforme refuse la fusion, « merge without review » : n’insiste pas et ne cherche aucun détour ; SANS CONFLIT : JUSTE avant d’ouvrir la PR, git fetch origin puis git merge origin/main dans ta branche (garde les DEUX côtés ; une migration dont le numéro est déjà pris : renumérote-la avec scripts/prochaine-migration.sh, appelé au moment d’écrire le fichier, jamais « le suivant » deviné) et relance les tests rapides ; pousse ta branche, ouvre la PR, puis IMMÉDIATEMENT COCKPIT_PROJET=\(.slug) \($prfus) <N> (la carte « À toi » avec le lien et les 2 gestes ; elle n’est posée QUE si la PR est propre : le script répond « PAS PRÊTE : … » sinon, et la chef s’en occupe ; sans doublon, retirée seule à la fusion ; ne pose jamais cette action à la main) ; ne termine jamais en laissant une branche finie sans PR ni carte ; DÉPLOIEMENT PAR LOT : une PR = toute la vague de correctifs du même sujet, jamais une PR ou un redéploiement par correctif ; une fonction Supabase se déploie une fois en fin de lot avec scripts/deployer-fonction.sh, qui ne renvoie rien si elle est inchangée), vérification en ligne, et \($prog) --chantier \(.id) --termine \"…\" --verifier \"1. Ouvre https://… (le lien EXACT) 2. …\" --en-ligne/--pas-en-ligne. Rends un rapport de 5 lignes : livré, vérifié, reste.
 ---"'
   echo
+}
+# 0068 : chaque consigne affichée est GARDÉE en base avec sa réservation (relisible : --consignes, ou le prochain
+# appel tant que l'agent n'est pas lancé) ; sans agent lancé au bout de projets.passe_lancement_min, le chantier
+# est rendu à la file (liberer_silencieux_coeur). Une session qui perd la sortie ne perd plus rien.
+nres=0
+for c in "${donnes[@]}"; do
+  txt=$(consigne_de "$c"); printf '%s\n\n' "$txt"
+  cid=$(printf '%s' "$c" | jq -r '.id // empty')
+  if [ -n "$cid" ]; then
+    if "$SQL" "select noter_consigne_passe('$(q "$projet")', '$cid', '$(q "$(printf '%s' "$c" | jq -r '.branche // empty')")', '$(q "$(printf '%s' "$c" | jq -r '.etat_avant // empty')")', '$(q "$(printf '%s' "$c" | jq -r '.titre // empty')")', '$(q "$txt")') as r" >/dev/null 2>&1; then nres=$((nres+1)); fi
+  fi
 done
+if [ ${#relues[@]} -gt 0 ]; then
+  echo "━━ CONSIGNES RELUES : ${#relues[@]} chantier(s) déjà réservé(s) par une passe précédente, AUCUN agent lancé dessus (consigne perdue ou session arrêtée). Lance un agent pour CHACUN, avec la consigne telle quelle ; sans agent lancé dans les $delai_passe min suivant leur réservation, ils sont rendus à la file tout seuls."
+  for r in "${relues[@]}"; do printf '%s\n\n' "$(printf '%s' "$r" | jq -r '.consigne')"; done
+fi
+echo "PASSE : $nres chantier(s) réservé(s) à l'instant, ${#relues[@]} relu(s) d'une passe précédente, soit $nb agent(s) à lancer. Une consigne perdue se relit : $CHEF_CMD --consignes (jamais besoin d'une nouvelle session)."
 if [ -n "$revue" ]; then
   echo "━━ Agent « Revoir À toi de jouer » [model: $MODELE_LEGER] (projet $projet, dépôt $depot, aucune branche : il ne code pas)"
   echo "Consigne à lui donner, telle quelle :"
