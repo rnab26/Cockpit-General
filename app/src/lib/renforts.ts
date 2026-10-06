@@ -208,9 +208,24 @@ export function erreurReglageRenforts(sessions: number, agents: number): string 
   return null
 }
 
-/** Faut-il montrer le bloc ? (quelque chose attend, ou un renfort récent à suivre) */
+/** Un renfort fini (« Terminé ») : plus rien à suivre, il ne va que dans l'historique. */
+export function renfortTermine(r: Renfort): boolean {
+  return r.statut !== 'demande' && r.statut !== 'actif' && r.statut !== 'erreur'
+}
+
+/**
+ * UNE règle de l'écran Renforts : la liste ne montre que ce qui est vivant (en route, en attente) et les
+ * vraies erreurs (avec « Relancer ») ; les renforts terminés vont dans « Historique (N) », replié.
+ * L'ordre de la base est gardé. Rien n'est supprimé.
+ */
+export function partagerRenforts(renforts: Renfort[]): { visibles: Renfort[]; historique: Renfort[]; libelleHistorique: string } {
+  const historique = renforts.filter(renfortTermine)
+  return { visibles: renforts.filter((r) => !renfortTermine(r)), historique, libelleHistorique: `Historique (${historique.length})` }
+}
+
+/** Faut-il montrer le bloc ? (quelque chose attend, ou un renfort à suivre : un renfort terminé n'en est plus un) */
 export function blocUtile(e: Pick<EtatRenforts, 'attente' | 'renforts'>): boolean {
-  return e.attente.length > 0 || e.renforts.length > 0
+  return e.attente.length > 0 || e.renforts.some((r) => !renfortTermine(r))
 }
 
 /** Économie des modèles (0035) : ce que la base porte (etat_modeles) et les libellés de l'écran. */
