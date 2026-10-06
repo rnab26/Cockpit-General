@@ -1738,13 +1738,17 @@ try {
   verifie('limite atteinte : bouton inactif, « Déjà 1 renfort en route (maximum 1) »', await renf().getByTestId('lancer-renforts').isDisabled() && /Déjà 1 renfort en route \(maximum 1\)/.test(await renf().getByTestId('renforts-aide').textContent()))
   verifie('projet de test : aucune session à ouvrir pour la chef (renforts_a_ouvrir vide)', sql(`select renforts_a_ouvrir('${SLUG}') as r`)[0].r.ouvrir.length === 0)
   await capture(page, 'renforts-demande')
-  const relireRenforts = async (code) => { await actualiser(); await page.waitForFunction(({ slug, code }) => document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renfort"]`)?.getAttribute('data-code') === code, { slug: SLUG, code }, { timeout: 10000 }).catch(() => {}) }
+  const ouvrirHistoRenforts = async () => { const h = renf().getByTestId('renforts-historique'); await h.waitFor({ timeout: 10000 }).catch(() => {}); if (await h.count() && (await h.getAttribute('data-ouvert')) === 'non') await renf().getByTestId('renforts-historique-ouvrir').click() }
+  const relireRenforts = async (code) => { await actualiser(); if (code === 'erreur' || code === 'termine') await ouvrirHistoRenforts(); await page.waitForFunction(({ slug, code }) => document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renfort"]`)?.getAttribute('data-code') === code, { slug: SLUG, code }, { timeout: 10000 }).catch(() => {}) }
   sql(`select renfort_session('${rdem[0].id}', 'session_test_web')`)
   await relireRenforts('en_route')
   verifie('état « En route » (session notée par la chef)', /En route/.test(await renf().getByTestId('renfort').first().textContent()), await renf().getByTestId('renfort').first().textContent())
   sql(`select renfort_erreur('${rdem[0].id}', 'create_session refusé (test)')`)
   await relireRenforts('erreur')
   verifie('état « Erreur », le texte visible', /Erreur/.test(await renf().getByTestId('renfort').first().textContent()) && /create_session refusé \(test\)/.test(await renf().getByTestId('renfort').first().textContent()))
+  verifie('historique replié par défaut après rechargement (rien ne tourne) : libellé « N renfort terminé · Afficher », ligne cachée', await (async () => { await actualiser(); const h = renf().getByTestId('renforts-historique'); await h.waitFor({ timeout: 10000 }); return (await h.getAttribute('data-ouvert')) === 'non' && /1 renfort terminé dont 1 en erreur · Afficher/.test(await h.textContent()) && await renf().getByTestId('renfort').count() === 0 && /Aucun renfort ne tourne/.test(await renf().getByTestId('renforts-rien').textContent()) })())
+  await ouvrirHistoRenforts()
+  verifie('historique ouvert : phrase d’explication et ligne revue', await renf().getByTestId('renfort').count() === 1 && /Rien n’est supprimé/.test(await renf().getByTestId('renforts-historique').textContent()))
   verifie('après l’erreur, le bouton se rouvre', await renf().getByTestId('lancer-renforts').isEnabled())
   sql(`update renforts set statut = 'archive', faits = 2, fini_at = now(), archive_at = now(), erreur = null where id = '${rdem[0].id}'`)
   await relireRenforts('termine')
