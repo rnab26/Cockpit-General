@@ -208,7 +208,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   const prenables = usePrenables(admin, d.derniereMaj)
   const global: Global = {
     moi, admin, par: moi.email, projets: d.projets, sections: d.sections, chantiers: d.chantiers, messages: d.messages, activites: d.activites,
-    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, prenables, nonLus, vue, ouvrirChantier, contexteDe,
+    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, passagesComplets: d.passagesComplets, prenables, nonLus, vue, ouvrirChantier, contexteDe,
   }
 
   const pastilles = useMemo(() => {
@@ -264,7 +264,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const entete = (
     <EnTete projets={d.projets} projet={d.projet} vueTout={vueTout} choisirVue={changerVue} pastilles={pastilles} admin={admin} chargement={d.chargement} direct={d.direct}
-      derniereMaj={d.derniereMaj} rechargeDu={d.rechargeDu} onActualiser={() => void d.recharger()} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'}
+      derniereMaj={d.derniereMaj} rechargeDu={d.rechargeDu} onActualiser={() => void d.recharger(false, true)} onNouveau={() => setDialogue('nouveau')} onMenu={onMenu} selectionActive={selectionActive} installable={installation.etat !== 'installee'}
       recherche={recherche} onRecherche={setRecherche} barreBas={barreBas} />
   )
   const reglages = <Reglages ouvert={dialogue === 'reglages'} onFermer={() => setDialogue(null)} theme={theme} changerTheme={changerTheme} onProjets={() => setDialogue('projets')} seDeconnecter={seDeconnecter} onAideInstallation={() => setDialogue('installer')} />
@@ -295,7 +295,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
       <div className={`min-h-dvh ${selectionActive && !vueTout ? (barreBas ? 'pb-56' : 'pb-40') : barreBas ? 'pb-24' : 'pb-8'}`}>
         {entete}
         <main className="mx-auto max-w-3xl lg:max-w-5xl space-y-3 px-3 pt-4">
-          {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger()} /> : null}
+          {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger(false, true)} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-5" data-testid="vue-tout">
               <TableauDeBord projetId={null} />

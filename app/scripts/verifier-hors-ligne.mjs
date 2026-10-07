@@ -27,7 +27,7 @@ const SLUG = `${PREFIXE}${randomUUID().slice(0, 8)}`
 const sql = (q) => { const j = JSON.parse(execFileSync(sqlSh, [q], { encoding: 'utf8' })); if (!j.ok) throw new Error(j.error); return j.rows }
 const esc = (v) => String(v).replace(/'/g, "''")
 let total = 0, echecs = 0
-const verifie = (nom, ok, detail) => { total++; console.log(`  ${ok ? '✓' : '✗'} ${nom}${!ok && detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`); if (!ok) echecs++ }
+const verifie = (nom, ok, detail) => { total++; if (process.env.DEBUG_RESEAU) console.log(new Date().toISOString().slice(14, 23), 'VERIF'); console.log(`  ${ok ? '✓' : '✗'} ${nom}${!ok && detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`); if (!ok) echecs++ }
 const pause = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const serveur = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: racineApp, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
@@ -72,16 +72,25 @@ try {
     } catch { await route.abort('failed') }
   })
   const page = await ctx.newPage()
-  if (process.env.DEBUG_RESEAU) { page.on('requestfailed', (r) => console.log('FAIL', r.url().slice(0, 120), r.failure()?.errorText)); page.on('response', (r) => console.log(r.status(), r.url().slice(0, 140))); page.on('console', (m) => console.log('CONSOLE', m.text().slice(0, 200))) }
+  if (process.env.DEBUG_RESEAU) { const T0 = Date.now(); const ts = () => String(Math.round((Date.now() - T0) / 100) / 10).padStart(6); page.on('requestfailed', (r) => console.log(ts(), 'FAIL', r.url().slice(0, 120), r.failure()?.errorText)); page.on('request', (r) => { if (r.method() !== 'GET') console.log(ts(), '->', r.method(), r.url().slice(0, 100)) }); page.on('response', (r) => console.log(ts(), r.status(), r.url().slice(0, 140))); page.on('console', (m) => console.log('CONSOLE', m.text().slice(0, 200))) }
   const erreurs = []
   page.on('pageerror', (e) => erreurs.push(String(e)))
   const bandeau = page.getByTestId('bandeau-file-attente')
+  // Depuis le 6 oct. (barre du bas, chantier 6bb045e0) la bulle flottante n'existe plus : le chat s'ouvre par l'onglet « Discussions ».
+  // Le chat ouvert depuis « Discussions » se ferme en deux temps : le chat, puis la liste.
+  const fermerListeChats = async () => { if (await page.getByTestId('discussions-liste').isVisible().catch(() => false)) await page.keyboard.press('Escape') }
+  const ouvrirBulle = async () => {
+    if (await page.getByTestId('bulle-aide-bouton').count()) { await page.getByTestId('bulle-aide-bouton').click(); return }
+    if (!(await page.getByTestId('discussions-liste').isVisible().catch(() => false))) await page.getByTestId('onglet-barre-discussions').click()
+    await page.locator(`[data-testid="discussion-ligne"][data-projet="${SLUG}"]`).click()
+  }
   const envoyer = async (texte) => {
-    await page.getByTestId('bulle-aide-bouton').click()
+    await ouvrirBulle()
     await page.getByTestId('bulle-aide-saisie').fill(texte)
     await page.getByTestId('bulle-aide-envoyer').click()
     await page.waitForFunction(() => document.querySelector('[data-testid=bulle-aide-saisie]')?.value === '', null, { timeout: 20000 }).catch(() => {})
     await page.keyboard.press('Escape') // referme la fenêtre d'aide pour voir le bandeau
+    await fermerListeChats()
     await page.getByTestId('bulle-aide-bouton').waitFor({ timeout: 5000 }).catch(() => {})
   }
 
@@ -176,13 +185,14 @@ try {
   verifie('après rechargement hors ligne : toujours « 1 élément enregistré »', /1 élément enregistré/.test(await page.getByTestId('bandeau-texte').innerText().catch(() => '')))
 
   // --- 4 bis. le message écrit hors ligne se VOIT dans la bulle (même après rechargement), marqué « en attente d'envoi »
-  await page.getByTestId('bulle-aide-bouton').click()
+  await ouvrirBulle()
   await page.getByTestId('bulle-aide-message').filter({ hasText: t1 }).waitFor({ timeout: 10000 }).catch(() => {})
   const ligneT1 = page.getByTestId('bulle-aide-message').filter({ hasText: t1 })
   verifie('bulle : le message écrit hors ligne est affiché après rechargement', await ligneT1.count() === 1)
   verifie('bulle : il est marqué « En attente d’envoi »', /En attente d’envoi/.test(await ligneT1.innerText().catch(() => '')))
   await page.screenshot({ path: `${CAPTURES}/hors-ligne-message-en-attente.png` })
   await page.keyboard.press('Escape')
+  await fermerListeChats()
 
   // --- 5. un deuxième message hors ligne s'ajoute derrière (ordre conservé)
   const t2 = 'Deuxième message hors ligne — ' + randomUUID().slice(0, 6)
@@ -197,11 +207,12 @@ try {
   const lignes = sql(`select corps from messages where projet_id = '${projetId}' order by created_at, id`)
   verifie('au retour du réseau : les 2 messages arrivent en base', lignes.length === 2, lignes)
   verifie('dans l’ordre où ils ont été écrits', lignes[0]?.corps === t1 && lignes[1]?.corps === t2, lignes)
-  await page.getByTestId('bulle-aide-bouton').click()
+  await ouvrirBulle()
   await page.getByTestId('bulle-aide-message').filter({ hasText: t1 }).waitFor({ timeout: 10000 }).catch(() => {})
   await page.waitForFunction(() => document.querySelectorAll('[data-testid=message-en-attente]').length === 0, null, { timeout: 15000 }).catch(() => {})
   verifie('bulle : une fois parti, le message est normal (plus de marque, pas de doublon)', await page.getByTestId('message-en-attente').count() === 0 && await page.getByTestId('bulle-aide-message').filter({ hasText: t1 }).count() === 1)
   await page.keyboard.press('Escape')
+  await fermerListeChats()
   await bandeau.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
   verifie('le bandeau disparaît quand tout est parti', await bandeau.count() === 0)
 
@@ -210,7 +221,9 @@ try {
   const t3 = 'Réponse perdue — ' + randomUUID().slice(0, 6)
   await envoyer(t3)
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('réponse perdue : le serveur a déjà la ligne, l’appareil la croit en attente', sql(`select count(*)::int as n from messages where projet_id = '${projetId}' and corps = '${esc(t3)}'`)[0].n === 1)
+  const aLaLigne = () => sql(`select count(*)::int as n from messages where projet_id = '${projetId}' and corps = '${esc(t3)}'`)[0].n === 1
+  for (let i = 0; i < 16 && !aLaLigne(); i++) await pause(500)
+  verifie('réponse perdue : le serveur a déjà la ligne, l’appareil la croit en attente', aLaLigne())
   reseau = 'ok'
   await page.getByTestId('renvoyer-maintenant').click()
   await bandeau.waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})

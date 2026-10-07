@@ -65,6 +65,8 @@ export interface Global {
   recharger: (silencieux?: boolean) => Promise<void>
   /** Relit la liste des projets (mode autonome, dépôt…). */
   rechargerProjets: () => Promise<void>
+  /** Compteur des relectures COMPLÈTES terminées (chargement, « Actualiser », passage de 5 min) : les blocs qui lisent ailleurs qu'ici s'y accrochent. */
+  passagesComplets: number
   /** « N chantiers prêts » par projet, lu en base (0065) ; null : pas encore reçu, l'écran retombe sur sa copie locale. */
   prenables: Map<string, number> | null
   /** Réponses de Claude pas encore lues, par fil (lib/lecture.ts). */
