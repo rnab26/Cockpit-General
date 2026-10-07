@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Play, UsersRound } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
@@ -65,10 +65,20 @@ function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: 
     const t = window.setInterval(() => void charger(), SONDAGE_MS)
     return () => { vivant.current = false; window.clearInterval(t) }
   }, [charger])
+  // Relu seulement quand un chantier DE CE PROJET a bougé (signature = nombre + dernière modification) : avant (7 oct.),
+  // chaque chantier modifié n'importe où relançait la lecture de TOUS les blocs de « Tout » (13 requêtes par clic).
+  const signature = useMemo(() => {
+    let n = 0, max = ''
+    for (const c of g.chantiers) if (c.projet_id === projet.id) { n++; if (c.updated_at > max) max = c.updated_at }
+    // + chaque relecture COMPLÈTE (« Actualiser ») : l'état des renforts ne vit pas dans les tables lues par l'écran.
+    return `${n}:${max}:${g.passagesComplets}`
+  }, [g.chantiers, g.passagesComplets, projet.id])
+  const premiere = useRef(true)
   useEffect(() => {
+    if (premiere.current) { premiere.current = false; return }   // le montage a déjà lu
     const t = window.setTimeout(() => void charger(), 1500)
     return () => window.clearTimeout(t)
-  }, [g.chantiers, charger])
+  }, [signature, charger])
 
   const lancer = async () => {
     setEnvoi(true)
