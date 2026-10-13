@@ -15,7 +15,7 @@ choses, allège ton process, fais au plus simple possible, pour que je puisse fa
   aurait dit des doublons. Les vrais doublons de titres sont rares : 19 chantiers FacePro créés en 5 jours, 2 paires
   proches ; sur 20 fusions suggérées depuis le 28 sept., 11 acceptées, 1 refusée (le reste « sans objet »).
 - 26 chantiers FacePro « en cours », dont 24 sans session, beaucoup ouverts par des sessions qui se sont arrêtées sans jamais
-  les terminer (aucune étape, aucune activité) : c'est ce qui donne « 24 chantiers attendent une session ».
+  les terminer (aucune étape, aucune activité) : c'est l'essentiel de « N chantiers attendent une session ».
 
 ## Ce qui est livré
 
@@ -26,8 +26,10 @@ choses, allège ton process, fais au plus simple possible, pour que je puisse fa
 2. **L'accueil simple est la vue par défaut** (`AccueilSimple.tsx`, règles `lib/vueAccueil.ts`) : trois blocs.
    - **À toi** : cinq demandes au plus (le plus récent en haut), puis « Voir les N autres » ; dessous une ligne repliée
      « N livrés à tester · sans urgence » qui s'ouvre sur la liste ; vide : « Rien ne t'attend ».
-   - **En cours** : ce qui avance vraiment (barre, étape) ; « N chantiers attendent une session · Lancer » ouvre la liste
-     de ce qui attend.
+   - **En cours** : ce qui avance vraiment (barre, étape) ; « N chantiers attendent une session · Voir » ouvre la liste
+     de ce qui attend (chaque ligne dit ce qui va se passer et si tu as quelque chose à faire).
+     « Personne ne travaille » ne ment pas : si des conversations travaillent sans chantier précis, la phrase le dit
+     (`phraseSansChantier`).
    - **Livré** : les trois derniers certifiés (« Certifié par toi à 12:17 »), « changer » la période.
    « Vue détaillée » (bas de page) rend l'ancien accueil (tuiles, tableau par section, renforts, réglages) ; « Vue simple »
    (haut) y ramène. Retenu par appareil (`localStorage` `cockpit_accueil`, `simple` | `detaillee`). Les bancs qui parcourent
@@ -36,7 +38,7 @@ choses, allège ton process, fais au plus simple possible, pour que je puisse fa
    chantier, le « Sujet : … » du message, sinon sa première phrase ; la 2e ligne d'une question ou d'une action est la
    QUESTION elle-même (jamais « Claude te pose une question » quand le texte existe ; l'alerte « Claude a avancé depuis »
    passe d'abord). Un nom de conversation illisible (« Chantier cockpit 9dcc2c9a-… », un identifiant) n'est plus affiché
-   (`nomIllisible`, `lib/sessions.ts`).
+   (`nomIllisible`, `lib/sessions.ts`). L'aperçu du dernier message sous « Écrire à Claude » montre le sujet, pas la ligne brute « Sujet : … » (`apercuDe`).
 4. **Chat plié** (`BulleFlottanteAide.tsx`) : l'historique d'abord ; « À faire ici (N) » = une ligne par demande (icône,
    sujet, question, geste), une seule carte dépliée à la fois (la seule demande, d'emblée), cinq lignes puis « Voir les N
    autres » ; « N livrés à tester » replié. La liste des discussions dit « N à faire » (demandes) et « N à tester » (gris).
@@ -59,7 +61,9 @@ dans le contexte, ni la session visible dans l'app (aucune ligne `sessions` avan
 ni « un sujet = un fil », ni les réponses en direct. Preuve : la session de ce lot (`fd8d658a…`) n'existait pas en base
 avant `suivre(...)` ; les seules sessions du jour étaient trois « démarrages » de 0 s sur la branche `main` à 00:28-00:29
 (déduit : un préchauffage du conteneur), qui posent pourtant `branchement_vu_at` : l'icône « branché » de l'app peut donc être
-verte sans qu'aucune vraie session soit connectée (non corrigé : voir « Non fait »).
+verte sans qu'aucune vraie session soit connectée. **Corrigé** : l'icône (liste des projets, en-tête) exige aussi une VRAIE
+session (`sessionReelle`, `lib/branchement.ts` : vivante, ou durée d'au moins 2 minutes, vue depuis moins de 24 h) ; un membre
+(qui ne lit pas les sessions) garde la règle d'avant.
 
 `bash scripts/connecter.sh [--projet <slug>]` (depuis n'importe quel dossier) fait à la main ce que fait le hook de
 démarrage : il affiche l'état du projet (le MÊME texte), pose `branchement_vu_at` et déclare la session (`suivre`).
@@ -68,8 +72,6 @@ hooks : pas de réponses en direct tant qu'il n'est pas relancé. `scripts/verif
 
 ## Non fait, dit franchement
 
-- **L'icône « branché » reste trompeuse** : `branchement_vu_at` est posé par n'importe quel démarrage de hook, même un
-  préchauffage de 0 s. Une preuve honnête = une session vue depuis plus de 2 minutes ou une écriture de session.
 - **Les chantiers ouverts puis jamais terminés** (26 FacePro « en cours ») : rien ne les clôt tout seul. Piste : à la fin
   d'un tour, le hook d'arrêt compte les commits poussés depuis l'ouverture du chantier (faits, pas déclarations) et les
   pose comme jalon « poussé » ; une session morte avec commits = « livré, à vérifier ». Non fait : demande une décision.

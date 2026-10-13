@@ -5,7 +5,7 @@ import { trierAToi, type ElementAToi, type TriAToi } from '../lib/entonnoir.ts'
 import { FENETRES } from '../lib/fenetre.ts'
 import { quandFini } from '../lib/ouJenSuis.ts'
 import { dateLongue } from '../lib/dates.ts'
-import { libelleATester, libelleEnAttente, VISIBLES_ACCUEIL } from '../lib/vueAccueil.ts'
+import { libelleATester, libelleEnAttente, phraseSansChantier, VISIBLES_ACCUEIL } from '../lib/vueAccueil.ts'
 import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { Button } from '../ui/Button.tsx'
 import { EcrireAuProjet, LigneAToi, LigneAvance, ListeChantiers, ListeUl, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
@@ -47,7 +47,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
       <Bloc titre="En cours" sous="Ce sur quoi Claude travaille" n={t.caAvance.length} testId="accueil-en-cours">
         {t.caAvance.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-[15px] text-texte-2" data-testid="accueil-personne">
-            Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.
+            {phraseSansChantier(t.resume, !!projetId) ?? <>Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.</>}
           </p>
         ) : <EnCours lignes={t.caAvance} avecProjet={avecProjet} />}
         {attente ? (
@@ -56,7 +56,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
             className="flex min-h-11 w-full items-center gap-2 rounded-2xl border border-bord bg-carte px-3 text-left text-[15px] transition hover:bg-carte-2 active:scale-[.99]">
             <Rocket size={16} className="shrink-0 text-texte-2" aria-hidden />
             <span className="flex-1">{libelleEnAttente(attente)}</span>
-            <span className="text-sm font-medium text-accent">Lancer</span>
+            <span className="text-sm font-medium text-accent">Voir</span>
             <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
           </button>
         ) : null}

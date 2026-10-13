@@ -154,6 +154,12 @@ export function sujetEtDetail(e: Pick<ElementAToi, 'type' | 'chantier' | 'messag
   return { sujet, detail: coupe ? extrait(brut, DETAIL_MAX) : suite ? extrait(suite, DETAIL_MAX) : null }
 }
 
+/** Un aperçu d'une ligne d'un message (sans sa citation « > ») : son « Sujet : … » s'il en a un, sinon son début. */
+export function apercuDe(corps: string | null, max = 120): string {
+  const { sujet, reste } = sujetDe(citationDe(corps).reste.trim())
+  return extrait(sujet ?? reste ?? '', max)
+}
+
 /**
  * La deuxième ligne d'une carte : la question elle-même quand il y en a une, sinon ce qu'on attend de toi
  * (« Claude te pose une question », « livré, à tester »…). Si Claude a travaillé dessus depuis, l'alerte passe d'abord.

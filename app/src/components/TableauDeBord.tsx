@@ -34,7 +34,7 @@ import { quandDeCote } from '../lib/reporter.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
-import { bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
+import { apercuDe, bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
 import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
 
 /**
@@ -118,7 +118,7 @@ export function EcrireAuProjet({ projetId }: { projetId: string }) {
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] text-texte-2">Écrire à Claude sur ce projet…</span>
         <span className="block truncate text-xs text-texte-2" data-testid="ecrire-projet-aide">
-          {dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${dernier.corps}` : 'Plusieurs sujets ? Claude ouvre un fil par sujet et répond dans chacun.'}
+          {dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${apercuDe(dernier.corps)}` : 'Plusieurs sujets ? Claude ouvre un fil par sujet et répond dans chacun.'}
         </span>
       </span>
       <PastilleReponse cle={cleFil(projetId, null)} />

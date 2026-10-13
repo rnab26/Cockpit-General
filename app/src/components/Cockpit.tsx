@@ -10,6 +10,7 @@ import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { PREF_LU_DEPUIS, PREF_LU_FILS, lireLus, reponsesNonLues, totalNonLus } from '../lib/lecture.ts'
 import { aToi, pastillesProjet } from '../lib/entonnoir.ts'
+import { estBranche } from '../lib/branchement.ts'
 import { bulleActive, cartesAFaire, notifsChat } from '../lib/bulleAide.ts'
 import { autonomeActif, chantiersPrenables, etatAutonome, travailEnCours } from '../lib/autonome.ts'
 import { Layers, Lock } from 'lucide-react'
@@ -224,7 +225,9 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
       const auto = admin && autonomeActif(p, now)
         ? (etatAutonome(p, (prenables?.get(p.id) ?? chantiersPrenables(d.chantiers, p.id, now, d.activites, d.taches, d.sessions)), travailEnCours(d.chantiers, d.taches, p.id, now), now).alerte ? 'alerte' : 'actif')
         : null
-      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto })
+      // « Branché » = un démarrage avec le hook ET une vraie session (l'admin lit toutes les sessions ; un membre garde la règle d'avant).
+      const branche = admin ? estBranche(p, now, d.sessions.filter((x) => x.projet_id === p.id)) : undefined
+      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto, branche })
     }
     return m
   }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin, prenables])

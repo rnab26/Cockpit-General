@@ -6,6 +6,10 @@ ne le remplace pas. Français, concis, autonomie une fois la tâche confirmée.
 **Tu reprends le travail ? Lis d'abord `docs/REPRISE.md`** (état, ce qui n'est
 pas encore en ligne, la suite, les pièges), puis les décisions de Raphaël.
 
+**Aucun bloc « Cockpit » dans ton contexte au démarrage ?** Session ouverte sur plusieurs dépôts : elle démarre
+dans `/home/user`, aucun hook ne tourne (cause du « projet débranché » du 13 oct.). Lance d'abord
+`bash /home/user/Cockpit-General/scripts/connecter.sh` : état du projet, et ta session devient visible dans l'app.
+
 ## Ce que c'est, et pourquoi il existe
 
 Le cockpit unique de tous les projets de Raphaël : une base Supabase
@@ -54,13 +58,15 @@ cockpit` (réservée à service_role).
 cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
+node app/scripts/verifier-accueil.mjs                     # accueil simple (3 blocs), vue détaillée, chat plié, classer sans test (projets jetables, téléphone)
+node scripts/verifier-connecter.mjs                        # connecter.sh : brancher à la main une session sans hooks (dossier sans dépôt, projet jetable)
 node app/scripts/verifier-bulle.mjs                       # bulle d'aide : visible par défaut (projet et « Tout »), message → fil du projet, réponse de session → bulle, réglage d'extinction
 node app/scripts/verifier-creation.mjs                   # « + Chantier » près d'un chantier existant : suggestion, compléter, fusionner, créer quand même (projet jetable, téléphone)
 node app/scripts/verifier-depenses.mjs                    # Coûts : prestataires, dépenses par période, factures jointes, envoi à la compta (projet jetable, téléphone)
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
 node scripts/verifier-emplacement.mjs                      # où le cockpit apparaît : analyse du dépôt (choix possibles seulement) + module en mode bouton / page
 node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
-node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33)
+node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33), réveil horaire (§55), classer sans test (§56)
 node scripts/verifier-reponses.mjs                         # ses réponses arrivent aux sessions, ses messages de session arrivent dans le fil, un sujet = un fil à l'arrêt (vrais hooks)
 node scripts/verifier-renouvellement.mjs                   # session chef renouvelée au seuil de jetons : hook (jetons du transcript), règle, passe de chef.sh, réglage (projet jetable)
 node scripts/verifier-correctifs.mjs                       # règle de tri « Correctifs » sur une table de cas (lecture seule)
@@ -631,6 +637,10 @@ Raphaël : « les chantiers à lancer ne se lancent pas tout seuls ; la boucle n
 ## Réveils récurrents coupés : la relecture, pas le travail (13 oct. 2026, migration 0078)
 
 Raphaël (13 oct., après le lot de la nuit) : « coupe les réveils avec la relecture qui prend 750 000 jetons ou des choses comme ça, corrige le problème de relecture. » **Cause MESURÉE** (`get_session`, coût théorique API) : une routine à session PERSISTANTE garde tout son contexte et le relit à chaque réveil : « passage horaire du chef » du cockpit 514 470 jetons (155 réveils en 6 jours, 91 M relus pour 24 000 écrits), Trieur chaque heure 741 659, relance du quota toutes les 4 h 719 214, Jarvis (Opus) toutes les 6 h 399 039. Un réveil NEUF coûte aussi ~287 000 jetons dès son premier appel (déduit : les CLAUDE.md des 7 dépôts attachés à la routine). **Fait** : les quatre routines sont en pause, rien supprimé (`update_trigger enabled=false` : `trig_01S7UDeVZ8L4hB551EXgnEyh` cockpit horaire, `trig_015S4ox6ncE2kZmF81BSW4WK` Trieur, `trig_01Qa4CkHhmttwYwD4m5pacC2` relance du quota, `trig_01AbpcwCgpLeVMTtyCfqRguQ` Jarvis) ; le réveil immédiat du cockpit (`trig_01VseAzWomoQETWZcXtquBpB`, il porte le jeton) RESTE. **Pour que la coupure tienne** : `chefs.reveil_horaire` (vrai par défaut, faux pour cockpit). Faux : `chef.sh --prendre` ne demande plus de créer ou déplacer une routine horaire (avant, chaque nouvelle chef en recréait une et la relecture revenait toute seule) et `prochain_passage_chef` n'annonce plus de passage horaire. Réglage : `chef.sh --reveil-horaire oui|non` (ne touche pas la routine elle-même). Rallumer un réveil = `update_trigger enabled=true`, seulement sur sa demande. `verifier-base` §55. **Limites dites** : sans passage horaire, un chantier abandonné ou une PR en conflit n'est repris qu'au prochain événement (message de Raphaël, renfort demandé, session ouverte) ; un réveil immédiat neuf relit encore ~287 000 jetons (réduire les dépôts attachés à la routine se fait dans claude.ai/code/routines, aucun outil ne le fait) ; `list_triggers` rend ~11 000 jetons et `update_trigger` ~2 000 par routine (prompt compris) : à n'appeler que si nécessaire.
+
+## Accueil simple, « pour toi » = les demandes, « à tester » à part (13 oct. 2026, migration 0079)
+
+Raphaël (13 oct.) : « trop d'informations », « 30 actions à faire avant de voir l'historique du chat », « pas toujours les sujets », « fais au plus simple ». Mesuré : « pour toi » = 69 dont 56 chantiers livrés qui n'attendent qu'un test. **Détail, mesures, limites : `docs/accueil-simple.md`.** UNE règle `estDemande` (`lib/entonnoir.ts`) : « pour toi » (tuile, onglets, pastille du chat) ne compte que les demandes, « à tester » a sa liste ; accueil SIMPLE par défaut (À toi / En cours / Livré, `AccueilSimple.tsx`), « Vue détaillée » = l'ancien écran (`localStorage cockpit_accueil` ; les bancs de l'ancien écran posent `detaillee`) ; chaque carte dit son sujet (`sujetEtDetail`) ; chat plié (historique d'abord, une ligne par demande) ; « Classer sans test » (0079 : jamais « certifié », annulable ; classement auto réglable, vide = jamais, règle `livre_sans_retour`, job `cockpit-livres-classes`) ; `scripts/connecter.sh` branche à la main une session sans hooks. L'icône « branché » exige une VRAIE session (`sessionReelle`, `lib/branchement.ts` : un démarrage de 0 s ne compte plus). Non fait : les chantiers ouverts puis jamais terminés, un éventuel hook utilisateur. Bancs : `verifier-accueil.mjs`, `verifier-connecter.mjs`, `verifier-base` §56.
 
 ## Déplacer un chantier vers un autre projet (30 sept. 2026, migration 0038)
 

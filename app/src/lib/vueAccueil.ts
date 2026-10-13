@@ -34,3 +34,15 @@ export function libelleATester(n: number): string {
 export function libelleEnAttente(n: number): string {
   return n > 1 ? `${n} chantiers attendent une session` : `${n} chantier attend une session`
 }
+
+/**
+ * « Personne ne travaille » ne doit pas mentir : quand des conversations ou des assistants travaillent mais qu'aucun chantier
+ * n'a de barre, la phrase le dit (« Claude travaille sur ce projet (2 conversations), mais sans chantier précis »).
+ * Rien (null) quand personne ne travaille vraiment.
+ */
+export function phraseSansChantier(r: { sessions: number; agents: number }, projet: boolean): string | null {
+  const morceaux: string[] = []
+  if (r.sessions > 0) morceaux.push(`${r.sessions} conversation${r.sessions > 1 ? 's' : ''}`)
+  if (r.agents > 0) morceaux.push(`${r.agents} assistant${r.agents > 1 ? 's' : ''}`)
+  return morceaux.length ? `Claude travaille ${projet ? 'sur ce projet ' : ''}(${morceaux.join(' · ')}), mais sans chantier précis.` : null
+}

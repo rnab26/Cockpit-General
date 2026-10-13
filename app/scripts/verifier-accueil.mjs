@@ -10,6 +10,7 @@
 //     de l'onglet Discussions ne compte pas les tests ;
 //   - état vide : « Rien ne t'attend », « Personne ne travaille » ; aucun défilement horizontal ; aucune erreur JavaScript.
 // Court (~1 min). Usage : node app/scripts/verifier-accueil.mjs   (build d'abord : cd app && npm run build)
+//   BASE_URL=https://rnab26.github.io/Cockpit-General/ node app/scripts/verifier-accueil.mjs   (le même parcours sur le site en ligne)
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -27,7 +28,8 @@ const EMAIL = process.env.COCKPIT_TEST_EMAIL ?? 'test-cockpit@cockpit.local'
 const SR = process.env.SUPABASE_SERVICE_ROLE_KEY
 if (!SR) { console.error('SUPABASE_SERVICE_ROLE_KEY absent.'); process.exit(2) }
 const PORT = Number(process.env.PORT ?? 4175)
-const BASE = `http://127.0.0.1:${PORT}/Cockpit-General/`
+// BASE_URL = rejouer le MÊME parcours sur le site en ligne (règle « en prod = fini ») : aucun serveur local n'est lancé.
+const BASE = process.env.BASE_URL ?? `http://127.0.0.1:${PORT}/Cockpit-General/`
 const PREFIXE = 'test-accueil-'
 const SLUG = `${PREFIXE}${randomUUID().slice(0, 8)}`
 const SLUG_VIDE = `${PREFIXE}vide-${randomUUID().slice(0, 6)}`
@@ -36,10 +38,10 @@ const esc = (v) => String(v).replace(/'/g, "''")
 let total = 0, echecs = 0
 const verifie = (nom, ok, detail) => { total++; console.log(`  ${ok ? '✓' : '✗'} ${nom}${!ok && detail !== undefined ? ` — ${JSON.stringify(detail)}` : ''}`); if (!ok) echecs++ }
 
-const serveur = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: racineApp, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
-const arreter = () => { try { process.kill(-serveur.pid, 'SIGTERM') } catch {} }
+const serveur = process.env.BASE_URL ? null : spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], { cwd: racineApp, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+const arreter = () => { try { if (serveur) process.kill(-serveur.pid, 'SIGTERM') } catch {} }
 process.on('exit', arreter)
-await new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('vite preview ne démarre pas')), 20000); serveur.stdout.on('data', (d) => { if (String(d).includes('Local:')) { clearTimeout(t); res() } }) })
+if (serveur) await new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('vite preview ne démarre pas')), 20000); serveur.stdout.on('data', (d) => { if (String(d).includes('Local:')) { clearTimeout(t); res() } }) })
 
 const ids = { projet: randomUUID(), vide: randomUUID() }
 let navigateur = null, moiId = null
@@ -225,6 +227,22 @@ try {
     await page.getByTestId('rien-ne-t-attend').count() === 1 && (await page.getByTestId('accueil-personne').innerText()).includes('Personne ne travaille sur ce projet')
     && await page.getByTestId('accueil-rien-livre').count() === 1 && await page.getByTestId('accueil-a-tester').count() === 0 && await page.getByTestId('accueil-en-attente').count() === 0)
   await page.screenshot({ path: `${CAPTURES}/accueil-simple-vide.png` })
+  // --- 7. l'icône « branché » exige une VRAIE session (13 oct. : un démarrage de 0 s la laissait verte alors que la session n'avait aucun hook)
+  const iconeBranche = async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByTestId('accueil-simple').waitFor({ timeout: 30000 })
+    await page.getByTestId('choix-projet-bouton').click()
+    await page.getByTestId('liste-projets').waitFor({ timeout: 10000 })
+    const n = await page.getByTestId(`onglet-${SLUG}`).getByTestId('icone-branche').count()
+    await page.keyboard.press('Escape')
+    return n
+  }
+  await page.goto(BASE + `#projet=${SLUG}`, { waitUntil: 'domcontentloaded' })
+  sql(`update projets set branchement_vu_at = now() where id = '${ids.projet}'`)
+  sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at, fin_at) values ('${randomUUID()}', '${ids.projet}', 'main', now(), now(), now())`)
+  verifie('le hook a démarré mais seulement une session de 0 s (préchauffage) : l’icône « branché » reste ÉTEINTE', await iconeBranche() === 0)
+  sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at, fin_at) values ('${randomUUID()}', '${ids.projet}', 'claude/test-accueil', now() - interval '20 minutes', now(), null)`)
+  verifie('une vraie session vivante : l’icône « branché » s’allume', await iconeBranche() === 1)
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++

@@ -1,6 +1,6 @@
 // « Branché ? » (src/lib/branchement.ts) : preuves lues, jamais supposées.
 import { verifie, bilan } from './_assert.ts'
-import { etatBranchement, estBranche } from '../src/lib/branchement.ts'
+import { etatBranchement, estBranche, sessionReelle } from '../src/lib/branchement.ts'
 const now = new Date('2026-09-29T02:00:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
 console.log('verifier-branchement')
@@ -28,5 +28,19 @@ console.log('verifier-branchement')
   verifie('estBranche : session récente → vrai', estBranche({ branchement_vu_at: il(3) }, now))
   verifie('estBranche : jamais vu → faux', !estBranche({}, now))
   verifie('estBranche : plus de 24 h → faux', !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now))
+}
+// 13 oct. 2026 : un « démarrage » de 0 s (préchauffage du conteneur) ne prouve pas qu'une session est branchée.
+{
+  const S = (demarreIl: number, vuIl: number, finIl: number | null) => ({ demarre_at: il(demarreIl), vu_at: il(vuIl), fin_at: finIl === null ? null : il(finIl) })
+  verifie('vraie session : encore vivante', sessionReelle(S(30, 1, null), now))
+  verifie('vraie session : finie après plus de 2 minutes', sessionReelle(S(60, 5, 5), now) && sessionReelle(S(10, 2, 7), now))
+  verifie('pas une vraie session : un démarrage de 0 s, ou de 1 minute', !sessionReelle(S(500, 500, 500), now) && !sessionReelle(S(10, 9, 9), now))
+  verifie('pas une vraie session : plus vue depuis 24 h', !sessionReelle(S(3 * 24 * 60, 2 * 24 * 60, null), now))
+  const preuve = { branchement_vu_at: il(3) }
+  verifie('estBranche avec les sessions : le préchauffage seul (0 s) n’allume PAS l’icône', !estBranche(preuve, now, [S(3, 3, 3)]))
+  verifie('estBranche avec les sessions : une vraie session l’allume', estBranche(preuve, now, [S(3, 3, 3), S(40, 1, null)]))
+  verifie('estBranche sans la liste des sessions (membre) : la règle d’avant', estBranche(preuve, now))
+  verifie('estBranche : sans démarrage récent, une session vivante ne suffit pas (la preuve du hook manque)', !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(40, 1, null)]))
+  verifie('estBranche : aucune session du tout → éteinte', !estBranche(preuve, now, []))
 }
 bilan('verifier-branchement')

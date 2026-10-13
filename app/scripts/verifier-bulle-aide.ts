@@ -1,6 +1,6 @@
 // Bulle flottante d'aide : allumée par défaut, projet choisi en vue « Tout », fil libre.
 import { verifie, bilan } from './_assert.ts'
-import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, citer, cleBulle, cartesAFaire, constructeurVoix, detailDeCarte, filDeLaBulle, notifsChat, messageVoix, projetDeLaBulle, sujetDe, sujetEtDetail } from '../src/lib/bulleAide.ts'
+import { aCiter, auteurDe, avecCitation, bulleActive, citationDe, citer, cleBulle, cartesAFaire, constructeurVoix, apercuDe, detailDeCarte, filDeLaBulle, notifsChat, messageVoix, projetDeLaBulle, sujetDe, sujetEtDetail } from '../src/lib/bulleAide.ts'
 import { estMessageLibre } from '../src/lib/discussion.ts'
 
 console.log('verifier-bulle-aide')
@@ -66,6 +66,9 @@ verifie('sujet : une action dont le texte REDIT le titre (même début, coupure 
   sd({ titre: 'Fusionne la PR #58 : Tête entière vidéo : lèvres lips_motion par défaut (suivi…' }, 'Fusionne la PR #58 : Tête entière vidéo : lèvres lips_motion par défaut (suivi des lèvres)', 'action').detail === null
   && sd({ titre: 'Choix' }, 'Veux-tu A ou B ?').detail === 'Veux-tu A ou B ?')
 verifie('sujet : un chantier à tester / à cadrer n’a pas de détail inventé (la phrase d’attente suffit)', sd({ titre: 'T' }, 'texte', 'a_verifier').detail === null && sd({ titre: 'T' }, null, 'a_cadrer').detail === null)
+verifie('aperçu d’une ligne : le « Sujet : » s’il y en a un, sinon le début ; la citation « > » n’y est pas ; jamais plus long que demandé',
+  apercuDe('Sujet : Solde RunPod. Peux-tu recharger le compte ?') === 'Solde RunPod' && apercuDe('Bonjour,   où en est la tasse ?') === 'Bonjour, où en est la tasse ?'
+  && apercuDe('> Veux-tu A ?\nA, merci') === 'A, merci' && apercuDe(null) === '' && apercuDe('mot '.repeat(60), 40).length <= 41)
 const now0 = new Date('2026-10-13T10:00:00Z')
 verifie('2e ligne : la question elle-même ; sinon ce qu’on attend ; l’alerte « Claude a avancé » passe d’abord',
   detailDeCarte({ type: 'question', chantier: { titre: 'T' }, message: { corps: 'Veux-tu A ?' } } as any, now0) === 'Veux-tu A ?'

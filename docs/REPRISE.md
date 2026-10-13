@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 13 oct. 2026 (section 0 ci-dessous). Les sections 1 et
+Dernière mise à jour : 13 oct. 2026 (sections 0 et 0 bis ci-dessous). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
@@ -63,6 +63,18 @@ en pause (rien supprimé) et le cockpit n'en recrée plus (migration 0078, `chef
 rendre « bon » sur la lettre d'une étape alors que le problème de fond demeure (relire son verdict) ; une
 session ouverte hors du dépôt n'a pas les hooks : elle se rend visible avec `suivre('cockpit', {"session_id":…,
 "hook_event_name":"Vie"})`.
+
+## 0 bis. Suite du 13 oct. 2026 (matin) : « simplifie, fais au plus simple » — accueil simple, demandes ≠ à tester, classer sans test
+
+Demande de Raphaël : trop d'informations, 30 actions avant l'historique du chat, cartes sans sujet, rien de coordonné avec
+ses sessions Claude, « le projet Cockpit n'est pas branché ». **Tout est dans `docs/accueil-simple.md`** (mesures, règles,
+limites). En une phrase : « pour toi » ne compte plus que les demandes (69 → 13), l'accueil passe à 3 blocs, le chat se
+plie, les livrés non testés se classent d'un geste ou tout seuls (réglage, vide = jamais), et `scripts/connecter.sh`
+branche une session sans hooks (cause du « débranché » : session ouverte sur plusieurs dépôts, cwd = `/home/user`) ; l'icône « branché » exige une vraie session.
+**Vérifié** : verifier-web 477 (sur l'ancien écran), bulle 42, hors ligne 36, création 18, coûts 27, vitesse 6, accueil 47,
+connecter 11, base 842 (dont §56 : 15), 48 suites pures ; app tsc + build. **À constater par Raphaël** : l'écran sur son téléphone, un classement réel.
+**Non fait** (voir le doc) : clôture des chantiers ouverts puis jamais terminés (piste : commits
+poussés comme preuve), hook utilisateur (non vérifié : copie de `dotfiles/.claude/settings.json` ?), auto-fusion, CLAUDE.md de 122 Ko.
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
