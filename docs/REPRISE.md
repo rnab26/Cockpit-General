@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis et 0 ter ci-dessous). Les sections 1 et
+Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis, 0 ter et 0 quinquies ci-dessous). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
@@ -119,6 +119,23 @@ touchent pas sans lui ; 6 numéros de migration en double (0033, 0038, 0046, 005
 donc sans risque pour un rejeu ; 16 chantiers FacePro « en cours » que personne ne tient (du travail à relancer, pas de la saleté) ; 11 cartes FacePro à lui.
 **Déduit, non vérifié** : le CLAUDE.md global du compte (`/root/.claude/CLAUDE.md`) est pris des dotfiles au démarrage d'une session ; les trois règles ajoutées
 aux dotfiles aujourd'hui n'arrivent donc qu'aux NOUVELLES sessions.
+
+## 0 quinquies. Les reçus Claude dans Coûts (13 oct. 2026, soir) : « Configure-le que ce soit constant »
+
+Chantier `72a8d0f4`. Procédure complète, garde-fous, coûts mesurés, voie gratuite : **`docs/recus-par-email.md`** (à lire avant d'y toucher).
+
+**Fait et vérifié** : migration 0083 appliquée (colonnes `services.import_*`) ; `scripts/importer-recus.py` + `scripts/verifier-recus.mjs` 49/49 (projet jetable, aucun reste) ;
+carte du prestataire (ligne « Import automatique des reçus », date de départ dans le crayon) : `verifier-depenses.ts` 30/30, `verifier-depenses.mjs` 36/36 sur écran de téléphone ;
+les 7 reçus de Raphaël (juillet à octobre, lus dans sa boîte avec son accord) se lisent avec le lecteur sur leurs vrais textes ; seul le PDF du plus récent était encore
+téléchargeable (les liens Stripe expirent : valable à 11 jours, expiré à 33 ; liens jamais modifiés pour contourner).
+
+**Pas fait, et pourquoi** : (1) la routine hebdomadaire existe (`trig_01HViAL4dDqkdXTKmjrRmHJ8`) mais est **EN PAUSE** : elle n'a aucun connecteur Gmail (`create_trigger` refuse `connectors`
+pour cette organisation ; l'essai à blanc a montré une session sans outil `mcp__`, avec dépôt clonable, clé de base présente, python3 et pdftotext) ; il faut le geste de Raphaël dans
+claude.ai/code/routines › Edit › Connectors, **et sa décision** : un connecteur Gmail donne à la routine tous ses outils (envoi compris) sans permission, seul son texte l'en empêche. Alternative sans
+ce risque ni jetons : un petit programme dans son compte Google (Apps Script), à construire. (2) L'historique des 7 reçus n'est PAS dans Coûts : la plateforme a refusé qu'une session écrive les
+lignes (« Modify Shared Resources ») ; il entre avec son « oui » précis, ou quand il recule la date de départ dans Coûts.
+**Piège** : un passage réussi de la routine écrasera le battement « échec » que j'ai posé volontairement (la carte du prestataire Claude dit aujourd'hui, vrai, que la tâche n'a pas accès à Gmail).
+**Effet de bord de l'essai** : la session d'essai a envoyé une notification sur le téléphone de Raphaël (« Import impossible… »), parce que le dépôt n'était pas encore fusionné.
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
