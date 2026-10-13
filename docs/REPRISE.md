@@ -6,11 +6,77 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 29 sept. 2026, ~02 h 35 (heure d'Israël), fin de la
-session `session_01B94XRweeYVuqGoJXTyjimP` (trop longue, Raphaël a demandé
-de reprendre dans une session fraîche).
+Dernière mise à jour : 13 oct. 2026 (sections 0 et 0 bis ci-dessous). Les sections 1 et
+suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
+dépôt font foi.
 
-## 1. Ce qui est EN LIGNE et vérifié
+## 0. Lot du 13 oct. 2026 (00 h 30 – 01 h 40, heure d'Israël) — traité en lot, jetons économisés
+
+Demande de Raphaël (depuis son téléphone) : traiter les chantiers qui attendent, vérifier que tout
+fonctionne et que tout est branché, ne pas brûler ses jetons. Session chef : celle de sa demande.
+
+**Vérifié (preuves : journaux de ce lot, fils des chantiers)**
+- Site en ligne = `main` (`version.json` c6500bb35093), déploiement et CI verts, aucune PR ouverte.
+- Base : 3 tâches pg_cron actives, 0 échec sur 1 h ; fonctions cockpit-embed v12, cockpit-mcp v2,
+  cockpit-push v2 actives. Réveil immédiat vivant : un renfort demandé à 00:29:11 a ouvert une session
+  de routine (pg_net 200, `routine_fire`).
+- Bancs : app (tsc + build) et 46 suites pures ; clarté 12, correctifs 32, fusion 17 ; MCP 36 ; push 10 ;
+  embed 147 ; emplacement 19 ; greffe 44 ; sessions hors ligne 12 ; réponses 64 ; renouvellement 19 ;
+  base 820 (819 + 1 témoin ajouté, rejouée en entier après correction) ; web 477 ; bulle 42 ; vitesse 6 ; création 18 ; coûts 27 ; hors ligne 36.
+- Trois bancs étaient rouges pour des raisons de TEST seulement (aucune régression du produit) et ont été
+  remis d'équerre : `verifier-base` §44 (le titre « PR avec CI » est refusé par la règle de vocabulaire
+  depuis 5084dfb : la carte n'était jamais posée), `verifier-web` (6 onglets, règle 0076, liens en boutons,
+  message de création : le parcours s'arrêtait sur une exception et ~400 lignes de contrôles ne tournaient
+  plus), `verifier-hors-ligne` (la file porte aussi des écritures internes, ex. `lu_fils` : le bandeau dit
+  « 2 éléments » pour un message ; les contrôles ciblent maintenant NOS messages).
+
+**Défaut réel trouvé (cause prouvée par le journal de la session de réveil)**
+La session ouverte par le réveil immédiat (routine « ⚡ Cockpit — réveil immédiat ») n'a pas l'outil
+`create_session` : elle ne peut pas ouvrir de renforts pour un AUTRE projet. Elle a mis en erreur les 4 renforts
+FacePro (« outil create_session absent de la session relais »). `cible_reveil` envoie vers la chef relais (cockpit)
+tant que la chef du projet n'est pas vivante, donc FacePro (sans réveil propre) ne démarre jamais seul ; la
+protection anti-boucle a pausé ses ouvertures automatiques jusqu'à 06 h 29. Une session ouverte par Raphaël
+(comme celle de ce lot) a `create_session`. Décision posée à Raphaël (carte « FacePro : aucune session ne
+s'ouvre seule »), dans le fil du chantier « Chantiers qui ne se lancent pas seuls ».
+
+**Consommation (mesurée avec `get_session`, coût théorique API, pas la facture de Raphaël)**
+Les réveils récurrents relisent un énorme contexte à chaque fois, contre ~140 000 jetons par agent du lot :
+passage horaire du chef cockpit (contexte 514 000, 155 réveils depuis le 6 oct., 91 M de jetons relus, ~48 $),
+Trieur toutes les heures (741 000, 499 réveils), Jarvis sur Opus toutes les 6 h (399 000, dernier passage
+« rien à prendre »), relance du quota toutes les 4 h (719 000, 79 réveils). Les cumuls en dollars (Trieur ~899 $,
+Jarvis ~4 562 $, relance ~89 $) incluent le travail passé de ces sessions : ne pas les lire comme le coût des
+seuls réveils. Un réveil neuf charge ~287 000 jetons dès son premier appel (mesuré) ; déduit : les CLAUDE.md
+des 7 dépôts attachés à la routine. Raphaël a tranché le 13 oct. (matin) : COUPER. Fait : les quatre routines sont
+en pause (rien supprimé) et le cockpit n'en recrée plus (migration 0078, `chefs.reveil_horaire`) : voir CLAUDE.md
+« Réveils récurrents coupés ». Reste le réveil immédiat du cockpit (jeton).
+
+**Petits défauts notés, non corrigés** (chantiers mis de côté)
+- Une demande de renfort dont le travail a été fait ailleurs finit en « Jamais ouvert » (`renforts_expirer`,
+  0062 ne traite que `actif`) ; la passe de la chef peut réserver pour ses agents les chantiers qu'elle vient
+  de mettre dans un renfort automatique (`renforts_a_ouvrir` avant la réservation dans `chef.sh`). Fermé à la
+  main par `renfort.sh --archive`.
+- Le bandeau hors ligne compte les écritures internes (« lu jusqu'à ») comme des éléments à envoyer.
+- 126 branches `agent/*`, 20 `renfort/*`, 18 `claude/*` jamais supprimées sur le dépôt distant.
+- Le CLAUDE.md du dépôt pèse 122 Ko (~33 000 jetons) : chargé par chaque agent et chaque réveil.
+
+**Pièges de méthode** : `list_triggers` rend ~11 000 jetons (préférer `get_trigger`) ; un agent « Vérifier » peut
+rendre « bon » sur la lettre d'une étape alors que le problème de fond demeure (relire son verdict) ; une
+session ouverte hors du dépôt n'a pas les hooks : elle se rend visible avec `suivre('cockpit', {"session_id":…,
+"hook_event_name":"Vie"})`.
+
+## 0 bis. Suite du 13 oct. 2026 (matin) : « simplifie, fais au plus simple » — accueil simple, demandes ≠ à tester, classer sans test
+
+Demande de Raphaël : trop d'informations, 30 actions avant l'historique du chat, cartes sans sujet, rien de coordonné avec
+ses sessions Claude, « le projet Cockpit n'est pas branché ». **Tout est dans `docs/accueil-simple.md`** (mesures, règles,
+limites). En une phrase : « pour toi » ne compte plus que les demandes (69 → 13), l'accueil passe à 3 blocs, le chat se
+plie, les livrés non testés se classent d'un geste ou tout seuls (réglage, vide = jamais), et `scripts/connecter.sh`
+branche une session sans hooks (cause du « débranché » : session ouverte sur plusieurs dépôts, cwd = `/home/user`) ; l'icône « branché » exige une vraie session.
+**Vérifié** : verifier-web 477 (sur l'ancien écran), bulle 42, hors ligne 36, création 18, coûts 27, vitesse 6, accueil 47,
+connecter 11, base 842 (dont §56 : 15), 48 suites pures ; app tsc + build. **À constater par Raphaël** : l'écran sur son téléphone, un classement réel.
+**Non fait** (voir le doc) : clôture des chantiers ouverts puis jamais terminés (piste : commits
+poussés comme preuve), hook utilisateur (non vérifié : copie de `dotfiles/.claude/settings.json` ?), auto-fusion, CLAUDE.md de 122 Ko.
+
+## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
 - App https://rnab26.github.io/Cockpit-General/ (Pages depuis `gh-pages`,
   poussé par `deploy.yml` à chaque push sur `main`). Version en ligne = l'écran

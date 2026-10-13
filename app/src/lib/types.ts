@@ -43,6 +43,8 @@ export interface Projet {
   /** Où partent les factures (0052) : moyen et destinataire (e-mail, numéro WhatsApp, nom). */
   compta_canal?: 'email' | 'whatsapp' | 'autre' | null
   compta_destinataire?: string | null
+  /** Classer sans test les chantiers livrés restés sans un mot de Raphaël après N jours (0079, 1-90) ; null = jamais. */
+  livres_classes_apres_j?: number | null
 }
 
 export interface Section {
