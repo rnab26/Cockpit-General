@@ -98,6 +98,28 @@ fusion e68212c), la carte « FacePro : aucune session ne s'ouvre seule ».
 **Le moteur est un projet comme les autres** (13 oct., soir ; Raphaël : « c'est lui le moteur qui va reproduire tout ce qu'on fait pour les projets branchés »). Vérifié en base : `cockpit` a un dépôt, le rapprochement allumé et ses propres hooks, mais `rapproche_at` était VIDE (déduit : aucune session à hooks ne s'est ouverte dans le dépôt depuis la mise en ligne, le dernier branchement vu datait de 09 h 00 UTC ; ma session, ouverte sur deux dépôts, n'a pas de hooks) ; son premier passage a eu lieu à 17 h 46 UTC via `scripts/connecter.sh` (2 chantiers examinés, aucun à fermer). Trouvé en le faisant : un `--essai` posait le repère de 20 min des hooks et faisait sauter le vrai passage suivant ; corrigé avec son test (échoue sur l'ancien code). Et ses sessions n'avaient pas les quatre gestes du bloc (le moteur n'a pas le bloc écrit par `brancher.sh`) : ils sont dans son CLAUDE.md, gardés contre une dérive par `verifier-rapprochement` §9.
 **Aussi trouvé sur le moteur (13 oct., soir) : l'écran « Réveil automatique » mentait.** Il disait « Il manque le jeton du réveil / Coller le jeton » alors que le jeton existe (dernier réveil : HTTP 200). Vraie cause : aucune session chef n'est vivante nulle part, donc `cible_reveil()` est nulle et rien n'est tiré (`aucune_chef`). Corrigé par la migration 0082 (statut `sans_chef`, texte, bouton « Lancer une session autonome ») : voir la section « Filet de sécurité » du CLAUDE.md. **Pas décidé** : rouvrir une session tout seul quand aucune chef n'est ouverte (≈ 290 000 jetons à chaque fois) : à Raphaël, carte « FacePro : aucune session ne s'ouvre seule ». **EN LIGNE** (PR #134 puis #135, site en version `ddd8b89cef9c` à 18 h 14 UTC ; migration 0082 appliquée à la base à 18 h 15 UTC) : rejoué sur le VRAI projet « cockpit » du site, écran de téléphone, lecture seule : « Réveil automatique » dit « Bloqué : aucune session chef n'est ouverte » + « Lancer une session autonome », « Chantiers et GitHub » dit « À jour : dernier passage il y a 28 min » ; FacePro et melissa-nabet sont aussi en `sans_chef` (même cause). Vérifié : collecteur 59/59, filet 29/29, écran du filet 13/13, web 492/492, base §38 24/24, 49 suites pures. Le collecteur corrigé est servi par `raw.githubusercontent.com` (donc par le lanceur de tous les projets branchés, 10 min). Chantier du moteur : 721648a9 (« à vérifier »). Constaté aussi : une demande de renfort dont le chantier est déjà livré reste « demandée » puis tombera en « Jamais ouvert » au bout de 3 h (renfort 99e50148 du moteur, créé à 15 h 27 pour mon propre chantier) : chantier 4b0ea892 (reporté).
 
+## 0 quater. Nettoyage du 13 oct. 2026 (soir), demandé par Raphaël avant ses tests
+
+**Retiré (rien d'autre n'a été touché)** : 9 sessions de test du 29 sept. restées dans le VRAI projet « cockpit » (identifiants `test-…`, aucune
+dépendance ; `restesDansLesVraisProjets` les compte désormais, banc §21) ; la demande de renfort 99e50148, périmée (son chantier était déjà livré,
+`renfort_travail_restant` = 0 : elle aurait fait ouvrir une session pour rien ; geste documenté `renfort.sh --archive`) ; un `.pyc` suivi par erreur
+(commit bab28a6) et `__pycache__/` désormais ignoré ; deux chemins faux de la doc ; une affirmation périmée (« le filet du moteur reste éteint » : il est
+allumé sur les trois projets) ; mes 4 branches locales vides et 2 repères de cache de projets de test disparus.
+
+**Vérifié, tout vert** (rejoué un banc à la fois, base 881/881 en 537 s) : syntaxe des scripts, `tsc`, 49 suites pures, clarté 12, sessions hors ligne 12,
+réponses 64, greffe 48, rapprochement 59, connecter 11, renouvellement 19, correctifs 32, fusion 17, emplacement 19, embed 147, MCP 36, push 8 (des appareils
+réels sont abonnés : le banc n'envoie rien), accueil 53, bulle 42, création 18, coûts 27, hors ligne 36, vitesse 6 ; sur le SITE EN LIGNE : réveil 13/13 et
+rapprochement 16/16 ; `verifier-web` 492/492 plus tôt dans la journée (même code d'app). Après la série : 0 projet, ligne, session, fichier de test ; file
+d'attente locale vide ; les 4 tâches planifiées de la base actives, 0 échec sur 3 h.
+
+**Constaté, PAS touché** : 47 lignes de progression « en cours » abandonnées (35 FacePro, 12 moteur, depuis le 29 sept.), invisibles dans l'app (elle exige un
+signe de vie récent) : chantier 4267e6a8 (mis de côté ; ne JAMAIS les passer en « termine », `livre_sans_suite` lit ce statut) ; 174 branches distantes de
+Cockpit-General dont 131 déjà dans `main` (hors sessions, sauvegarde, déploiement) : suppression = accord de Raphaël, carte posée, les 37 non fusionnées ne se
+touchent pas sans lui ; 6 numéros de migration en double (0033, 0038, 0046, 0052, 0059, 0060), aucune fonction redéfinie par les deux fichiers d'un même numéro,
+donc sans risque pour un rejeu ; 16 chantiers FacePro « en cours » que personne ne tient (du travail à relancer, pas de la saleté) ; 11 cartes FacePro à lui.
+**Déduit, non vérifié** : le CLAUDE.md global du compte (`/root/.claude/CLAUDE.md`) est pris des dotfiles au démarrage d'une session ; les trois règles ajoutées
+aux dotfiles aujourd'hui n'arrivent donc qu'aux NOUVELLES sessions.
+
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
 - App https://rnab26.github.io/Cockpit-General/ (Pages depuis `gh-pages`,
@@ -149,7 +171,7 @@ git fetch origin sauvegarde/comment-verifier
 git checkout origin/sauvegarde/comment-verifier -- app/   # récupère l'écran en cours
 cd app && npm ci && npx tsc -b && npm run build
 node --experimental-strip-types scripts/verifier-*.ts
-node scripts/verifier-web.mjs          # parcours réel, écran de téléphone
+node app/scripts/verifier-web.mjs      # parcours réel, écran de téléphone
 ```
 
 Ce que cette refonte doit livrer (demandes de Raphaël des 28-29 sept.) :
