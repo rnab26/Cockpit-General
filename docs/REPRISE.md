@@ -46,8 +46,9 @@ Trieur toutes les heures (741 000, 499 réveils), Jarvis sur Opus toutes les 6 h
 « rien à prendre »), relance du quota toutes les 4 h (719 000, 79 réveils). Les cumuls en dollars (Trieur ~899 $,
 Jarvis ~4 562 $, relance ~89 $) incluent le travail passé de ces sessions : ne pas les lire comme le coût des
 seuls réveils. Un réveil neuf charge ~287 000 jetons dès son premier appel (mesuré) ; déduit : les CLAUDE.md
-des 7 dépôts attachés à la routine. Décision posée à Raphaël (carte « Des réveils automatiques relisent… »),
-rien coupé.
+des 7 dépôts attachés à la routine. Raphaël a tranché le 13 oct. (matin) : COUPER. Fait : les quatre routines sont
+en pause (rien supprimé) et le cockpit n'en recrée plus (migration 0078, `chefs.reveil_horaire`) : voir CLAUDE.md
+« Réveils récurrents coupés ». Reste le réveil immédiat du cockpit (jeton).
 
 **Petits défauts notés, non corrigés** (chantiers mis de côté)
 - Une demande de renfort dont le travail a été fait ailleurs finit en « Jamais ouvert » (`renforts_expirer`,

@@ -3243,6 +3243,45 @@ async function controle54_paquets_de_cinq() {
   const manuel = (await sql(`select unnest(ids) as id from paquets_attente(${q(PPQ)}, 5, false)`)).map((r) => r.id);
   verifie("pris par un renfort il y a moins de 30 min : exclu de l'ouverture automatique, pas du bouton manuel", !auto.includes(seul) && manuel.includes(seul), { auto, manuel });
 }
+// 55. Réveil horaire réglable (0078). Raphaël, 13 oct. : « coupe les réveils qui relisent 750 000 jetons, corrige le problème de relecture ».
+// La routine horaire relisait 514 000 jetons par heure ; chef.sh --prendre demandait à chaque nouvelle chef d'en recréer une.
+const PRH = randomUUID(), SLUG_RH = `test-verif-${rand}-rh`;
+async function controle55_reveil_horaire() {
+  section("55. Réveil horaire réglable (0078) : oui par défaut ; non = aucune consigne d'en créer un à la prise de poste, aucun « prochain passage » annoncé");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRH)}, ${q(SLUG_RH)}, 'Projet de test réveil horaire', 'rnab26/test-inexistant')`);
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const chef = (args, sid = "chef-rh-1") => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_RH, CLAUDE_CODE_SESSION_ID: sid }, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const flag = async () => (await une(`select reveil_horaire from chefs where projet_id = ${q(PRH)}`))?.reveil_horaire;
+  const prochain = async () => (await une(`select prochain_passage_chef(${q(PRH)}::uuid) as p`)).p;
+
+  // Par défaut (comportement d'avant) : la prise de poste demande de déplacer / créer le réveil horaire.
+  const premiere = chef(["--prendre"], "chef-rh-1");
+  verifie("par défaut : la prise de poste donne la consigne du réveil horaire (comportement d'avant)", premiere.code === 0 && /Déplace le réveil horaire/.test(premiere.sortie) && !/COUPÉ/.test(premiere.sortie) && (await flag()) === true, premiere);
+
+  // Un passage horaire annoncé seulement si la routine est notée ET le réglage est « oui ».
+  await sql(`update chefs set reveil_minute = 30, reveil_trigger = 'trig_test_rh', actif = true where projet_id = ${q(PRH)}`);
+  verifie("réglage oui + routine notée : un prochain passage est annoncé", (await prochain()) !== null, { prochain: await prochain() });
+
+  const coupe = chef(["--reveil-horaire", "non"]);
+  verifie("--reveil-horaire non : enregistré en base, et le script rappelle de mettre la routine en pause", coupe.code === 0 && (await flag()) === false && /update_trigger enabled=false/.test(coupe.sortie), coupe);
+  verifie("réglage non : plus aucun prochain passage annoncé (la routine notée ne compte plus)", (await prochain()) === null, { prochain: await prochain() });
+
+  const relais = chef(["--prendre"], "chef-rh-2");
+  verifie("réglage non : la nouvelle chef lit « COUPÉ » et n'a AUCUNE consigne de créer ou déplacer un réveil horaire",
+    relais.code === 0 && /COUPÉ/.test(relais.sortie) && /N'en crée AUCUN/.test(relais.sortie) && !/Déplace le réveil horaire/.test(relais.sortie) && !/crée-en un/.test(relais.sortie), relais);
+
+  const remis = chef(["--reveil-horaire", "oui"]);
+  verifie("--reveil-horaire oui : rétabli, le passage est de nouveau annoncé", remis.code === 0 && (await flag()) === true && (await prochain()) !== null, { remis, prochain: await prochain() });
+
+  const mauvais = chef(["--reveil-horaire", "peut-etre"]);
+  verifie("--reveil-horaire exige oui ou non (rien n'est écrit sinon)", mauvais.code === 2 && (await flag()) === true, mauvais);
+
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.regler_reveil_horaire(text, boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regler_reveil_horaire(text, boolean)', 'execute') as auth`);
+  verifie("regler_reveil_horaire : fermée au public (anon), ouverte aux comptes connectés (la garde admin est dans la fonction)", !droits.anon && droits.auth, droits);
+}
 async function controle51_reactivite() {
   section("51. Réactivité (0071) : chef muette relevée, filet, délai de réponse mesuré, réglages visibles");
   await sql(`insert into projets (id, slug, nom, filet_delai_min) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité', 1)`);
@@ -3620,6 +3659,7 @@ try {
     controle52_mesure_reaction,
     controle53_reveil_chantier,
     controle54_paquets_de_cinq,
+    controle55_reveil_horaire,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
@@ -3631,7 +3671,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
