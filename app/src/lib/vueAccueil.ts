@@ -1,19 +1,21 @@
 /**
  * L'accueil simple (13 oct. 2026, Raphaël : « il y a encore trop d'informations […] fais au plus simple possible,
- * pour que je puisse faire travailler des gens sur le cockpit »). Trois blocs au lieu de six tuiles, d'un tableau,
- * de pastilles et de quatre sections :
+ * pour que je puisse faire travailler des gens sur le cockpit »). Les six boxes (compactes), puis trois blocs au lieu du
+ * tableau, des pastilles et des quatre sections :
  *   À toi     — ce que Claude attend de toi (les DEMANDES : entonnoir.estDemande), cinq lignes au plus ;
  *               derrière, une ligne repliée « N livrés à tester » (jamais comptés « à répondre ») ;
- *   En cours  — ce sur quoi Claude travaille vraiment, et ce qui attend une session ;
+ *   En cours  — ce sur quoi Claude travaille vraiment (avec sa barre), et ce qui attend une session ;
  *   Livré     — les derniers chantiers certifiés.
- * C'est la vue PAR DÉFAUT. L'ancien accueil (« vue détaillée » : tuiles, tableau par section, renforts, réglages) reste à
- * un toucher, retenu par appareil. Règles pures, vérifiées par scripts/verifier-vue-accueil.ts.
+ * La vue PAR DÉFAUT est la vue détaillée : les boxes avec le nombre de chantiers, le tableau par section, les barres de
+ * progression (« Ça avance tout seul », « Prêt à lancer »), les renforts, les réglages. Le 13 oct. j'avais mis l'accueil simple par
+ * défaut sans qu'on me le demande et fait disparaître ces boxes et ces barres ; Raphaël : « j'en ai besoin ». L'accueil
+ * simple reste à un toucher (« Vue simple »), retenu par appareil. Règles pures, vérifiées par scripts/verifier-vue-accueil.ts.
  */
 
 export type VueAccueil = 'simple' | 'detaillee'
 
 export const CLE_VUE_ACCUEIL = 'cockpit_accueil'
-export const VUE_ACCUEIL_DEFAUT: VueAccueil = 'simple'
+export const VUE_ACCUEIL_DEFAUT: VueAccueil = 'detaillee'
 /** Événement qui prévient les écrans (l'accueil et le choix de vue) qu'elle a changé sur cet appareil. */
 export const EVENEMENT_VUE_ACCUEIL = 'cockpit-accueil'
 

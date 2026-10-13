@@ -8,16 +8,17 @@ import { dateLongue } from '../lib/dates.ts'
 import { libelleATester, libelleEnAttente, phraseSansChantier, VISIBLES_ACCUEIL } from '../lib/vueAccueil.ts'
 import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { Button } from '../ui/Button.tsx'
-import { EcrireAuProjet, LigneAToi, LigneAvance, ListeChantiers, ListeUl, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
+import { EcrireAuProjet, LigneAToi, LigneAvance, ListeChantiers, ListeUl, Tuiles, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { PointProjet } from './Icones.tsx'
 
 /**
  * L'accueil simple (13 oct. 2026, Raphaël : « il y a encore trop d'informations […] fais au plus simple possible »).
- * Trois blocs, dans l'ordre où on agit : À toi (ce que Claude attend), En cours (ce qui avance), Livré (ce qui est fini).
+ * Les six boxes avec le nombre de chantiers (« j'en ai besoin », 13 oct.), puis trois blocs, dans l'ordre où on agit :
+ * À toi (ce que Claude attend), En cours (ce qui avance, avec sa barre), Livré (ce qui est fini).
  * Les nombres viennent de lib/tableauDeBord.ts, comme la vue détaillée : une seule règle. Règles d'affichage : lib/vueAccueil.ts.
- * `seulementEntre` : un autre onglet du projet est ouvert (réglages, coûts) — on ne montre que la barre d'onglets.
+ * `seulementEntre` : un autre onglet du projet est ouvert (réglages, coûts) — on ne montre que les boxes et la barre d'onglets.
  */
 export function AccueilSimple({ projetId, entre, seulementEntre = false }: { projetId: string | null; entre?: ReactNode; seulementEntre?: boolean }) {
   const g = useGlobal()
@@ -33,9 +34,12 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
     const i = FENETRES.findIndex((f) => f.valeur === fenetre)
     void g.poser('fenetre_livre', FENETRES[(i + 1) % FENETRES.length].valeur)
   }
-  if (seulementEntre) return <div className="space-y-5">{entre}</div>
+  // Les boxes d'abord, comme dans la vue détaillée ; les icônes du projet (`entre`) juste dessous.
+  const boxes = <Tuiles t={t} projetId={projetId} fenetre={fenetre} compact />
+  if (seulementEntre) return <div className="space-y-5">{boxes}{entre}</div>
   return (
     <div className="space-y-5" data-testid="accueil-simple">
+      {boxes}
       {entre}
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
 

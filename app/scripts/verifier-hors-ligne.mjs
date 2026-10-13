@@ -66,7 +66,10 @@ try {
       if (reseau === 'refus' && ecriture) { await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'refus de test' }) }); return }
       const res = await fetch(r.url(), { method: r.method(), headers: r.headers(), body: r.postDataBuffer() ?? undefined })
       const corps = Buffer.from(await res.arrayBuffer())
-      if (reseau === 'perdue' && ecriture) { await route.abort('connectionreset'); return }
+      // « Réponse perdue » ne vise que l'ENVOI DU MESSAGE : la requête arrive, la réponse non. Les écritures internes de l'app
+      // (« lu jusqu'à » à chaque message qui change, au moment que l'appareil choisit) passent normalement : si l'une d'elles
+      // perdait sa réponse elle bloquerait le message derrière elle (file ordonnée, réessais espacés de ~15 s) et le banc dépendrait du hasard.
+      if (reseau === 'perdue' && ecriture && /\/rest\/v1\/messages(\?|$)/.test(r.url())) { await route.abort('connectionreset'); return }
       const headers = Object.fromEntries(res.headers); delete headers['content-encoding']; delete headers['content-length']
       await route.fulfill({ status: res.status, headers, body: corps })
     } catch { await route.abort('failed') }
@@ -192,16 +195,24 @@ try {
     }
     return await page.getByTestId('liste-file-attente').innerText().catch(() => '')
   }
+  // Le détail de la file se lit d'abord dans l'appareil, puis se complète (13 oct. 2026 : deux passages sur six ont lu un instantané sans le message
+  // alors que la file le portait) : on attend que l'envoi cherché y soit (12 s au plus) au lieu de juger sur une seule lecture.
+  const dansLaFile = async (texte, ms = 12000) => {
+    const fin = Date.now() + ms
+    let t = await texteFile()
+    while (!t.includes(texte) && Date.now() < fin) { await pause(500); t = await texteFile() }
+    return t
+  }
   verifie('écriture à l’instant : l’appareil le dit (voyant ou panneau), rien n’est perdu', (await bandeau.count()) + (await page.getByTestId('voyant-hors-ligne').count()) >= 1)
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('le bandeau dit « N éléments enregistrés sur cet appareil » (N ≥ 1) et le message écrit y est', await nAttente() >= 1 && (await texteFile()).includes(t1), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
+  verifie('le bandeau dit « N éléments enregistrés sur cet appareil » (N ≥ 1) et le message écrit y est', await nAttente() >= 1 && (await dansLaFile(t1)).includes(t1), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
   verifie('rien en base pour l’instant (honnête : pas de faux succès)', compte() === 0)
   await page.screenshot({ path: `${CAPTURES}/hors-ligne-attente.png` })
 
   // --- 4. fermer et rouvrir la page (réseau toujours coupé) : le message est toujours là
   await page.reload({ waitUntil: 'domcontentloaded' })
   await bandeau.waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('après rechargement hors ligne : toujours enregistré sur l’appareil (N ≥ 1), message compris', await nAttente() >= 1 && (await texteFile()).includes(t1), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
+  verifie('après rechargement hors ligne : toujours enregistré sur l’appareil (N ≥ 1), message compris', await nAttente() >= 1 && (await dansLaFile(t1)).includes(t1), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
 
   // --- 4 bis. le message écrit hors ligne se VOIT dans la bulle (même après rechargement), marqué « en attente d'envoi »
   await ouvrirBulle()
@@ -217,7 +228,7 @@ try {
   const t2 = 'Deuxième message hors ligne — ' + randomUUID().slice(0, 6)
   await envoyer(t2)
   await page.getByTestId('bandeau-texte').getByText('éléments', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('au moins deux éléments en attente, nos deux messages dans la file', await nAttente() >= 2 && (await texteFile()).includes(t1) && (await texteFile()).includes(t2), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
+  verifie('au moins deux éléments en attente, nos deux messages dans la file', await nAttente() >= 2 && (await dansLaFile(t1)).includes(t1) && (await dansLaFile(t2)).includes(t2), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
 
   // --- 6. le réseau revient : tout part, dans l'ordre, une seule fois chacun
   reseau = 'ok'

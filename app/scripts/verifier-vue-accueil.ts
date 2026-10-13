@@ -4,11 +4,13 @@ import { CLE_VUE_ACCUEIL, VISIBLES_ACCUEIL, VUE_ACCUEIL_DEFAUT, libelleATester, 
 
 console.log('verifier-vue-accueil')
 
-verifie('la vue simple est la vue par défaut', VUE_ACCUEIL_DEFAUT === 'simple' && lireVueAccueil(null) === 'simple' && lireVueAccueil(undefined) === 'simple')
+// 13 oct. 2026, Raphaël : « pourquoi tu as supprimé mes box avec le nombre de chantiers et les barres de progression, j'en ai besoin » :
+// l'écran avec les boxes, le tableau par section et les barres est la vue par défaut ; la vue simple se choisit, elle ne s'impose pas.
+verifie('la vue détaillée (boxes, barres de progression) est la vue par défaut', VUE_ACCUEIL_DEFAUT === 'detaillee' && lireVueAccueil(null) === 'detaillee' && lireVueAccueil(undefined) === 'detaillee')
 verifie('lecture défensive : « detaillee » et « simple » sont lues, tout le reste donne la vue par défaut',
   lireVueAccueil('detaillee') === 'detaillee' && lireVueAccueil('simple') === 'simple'
-  && ['', 'DETAILLEE', 'detaillée', 'ancienne', 42, {}, true].every((x) => lireVueAccueil(x) === 'simple'))
-verifie('la préférence vit sur l’appareil sous une clé stable (les bancs la posent pour garder l’ancien accueil)', CLE_VUE_ACCUEIL === 'cockpit_accueil')
+  && ['', 'DETAILLEE', 'detaillée', 'ancienne', 42, {}, true].every((x) => lireVueAccueil(x) === 'detaillee'))
+verifie('la préférence vit sur l’appareil sous une clé stable (les bancs de la vue simple la posent)', CLE_VUE_ACCUEIL === 'cockpit_accueil')
 verifie('chaque bloc limite ses lignes : cinq demandes, cinq en cours, trois livrés, cinq à tester',
   VISIBLES_ACCUEIL.demandes === 5 && VISIBLES_ACCUEIL.enCours === 5 && VISIBLES_ACCUEIL.livre === 3 && VISIBLES_ACCUEIL.aTester === 5)
 verifie('« livrés à tester » : singulier et pluriel', libelleATester(1) === '1 livré à tester' && libelleATester(56) === '56 livrés à tester')

@@ -68,10 +68,11 @@ session ouverte hors du dépôt n'a pas les hooks : elle se rend visible avec `s
 
 Demande de Raphaël : trop d'informations, 30 actions avant l'historique du chat, cartes sans sujet, rien de coordonné avec
 ses sessions Claude, « le projet Cockpit n'est pas branché ». **Tout est dans `docs/accueil-simple.md`** (mesures, règles,
-limites). En une phrase : « pour toi » ne compte plus que les demandes (69 → 13), l'accueil passe à 3 blocs, le chat se
+limites). En une phrase : « pour toi » ne compte plus que les demandes (69 → 13), une « Vue simple » à 3 blocs existe (au
+choix : la vue par défaut reste l'écran complet avec ses boxes et ses barres, rétabli le jour même quand Raphaël a dit « j'en ai besoin »), le chat se
 plie, les livrés non testés se classent d'un geste ou tout seuls (réglage, vide = jamais), et `scripts/connecter.sh`
 branche une session sans hooks (cause du « débranché » : session ouverte sur plusieurs dépôts, cwd = `/home/user`) ; l'icône « branché » exige une vraie session.
-**Vérifié** : verifier-web 477 (sur l'ancien écran), bulle 42, hors ligne 36, création 18, coûts 27, vitesse 6, accueil 47,
+**Vérifié** : verifier-web 477 (écran complet), bulle 42, hors ligne 36, création 18, coûts 27, vitesse 6, accueil 47,
 connecter 11, base 842 (dont §56 : 15), 48 suites pures ; app tsc + build. **À constater par Raphaël** : l'écran sur son téléphone, un classement réel.
 **Non fait** (voir le doc) : clôture des chantiers ouverts puis jamais terminés (piste : commits
 poussés comme preuve), hook utilisateur (non vérifié : copie de `dotfiles/.claude/settings.json` ?), auto-fusion, CLAUDE.md de 122 Ko.

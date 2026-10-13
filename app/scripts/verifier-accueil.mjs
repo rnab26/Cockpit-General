@@ -1,10 +1,13 @@
 // Accueil SIMPLE et chat plié, parcours complet sur écran de téléphone (13 oct. 2026, chantier « simplifier le cockpit »).
 // Raphaël : « j'ai 30 actions à faire avant de voir l'historique du chat », « il y a encore trop d'informations ».
+// Raphaël, ensuite : « pourquoi tu as supprimé mes box avec le nombre de chantiers et les barres de progression, j'en ai besoin ».
 // Prouve, sur un projet jetable `test-accueil-…` (et un second, vide) :
-//   - l'accueil simple est la vue par défaut : trois blocs (À toi, En cours, Livré), aucune tuile ;
+//   - SANS aucun réglage, la vue par défaut est l'écran complet : les six boxes, le tableau par section, « Ça avance tout seul »
+//     avec sa barre de progression, « Prêt à lancer » (jamais l'accueil simple imposé) ;
+//   - « Vue simple » (au toucher) : les six boxes compactes (ni pastilles ni tableau) puis trois blocs (À toi, En cours avec sa barre, Livré) ;
 //   - « À toi » ne compte que les DEMANDES (questions, décision) ; les 3 chantiers livrés sont « à tester », repliés ;
 //   - chaque ligne a un sujet, et deux questions d'un même chantier ne se ressemblent pas ;
-//   - « Vue détaillée » rend l'ancien accueil (tuile « à tester » comprise), le choix survit au rechargement ;
+//   - « Vue détaillée » rend l'écran complet (tuile « à tester » comprise), le choix survit au rechargement ;
 //   - vue « Tout » : le nombre de « À toi » = la pastille de l'onglet Accueil = les lignes + « Voir les N autres » ;
 //   - chat : l'historique d'abord, une ligne par demande, une carte dépliée à la fois, les tests repliés, la pastille
 //     de l'onglet Discussions ne compte pas les tests ;
@@ -88,14 +91,36 @@ try {
   const nombre = async (testId) => Number((await page.getByTestId(testId).first().innerText().catch(() => '')).replace(/\D/g, '')) || 0
   const typesVisibles = () => page.getByTestId('element-a-toi').evaluateAll((els) => els.map((e) => e.getAttribute('data-type')))
 
-  // --- 1. vue du projet : l'accueil simple, par défaut (aucun réglage posé)
+  const sixSurUneLigne = () => page.getByTestId('tuiles').locator('button').evaluateAll((els, w) => els.length === 6 && new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size === 1 && els.every((e) => e.getBoundingClientRect().right <= w), 390)
+
+  // --- 0. vue du projet SANS aucun réglage : l'écran complet, avec ses boxes et ses barres (jamais l'accueil simple imposé)
   await page.goto(BASE + `#projet=${SLUG}`, { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('tuiles').waitFor({ timeout: 30000 })
+  await page.waitForFunction(() => document.querySelector('[data-testid="tuile-pourToi"]')?.textContent?.startsWith('4'), null, { timeout: 30000 }).catch(() => {})
+  verifie('par défaut (aucun réglage posé) : l’écran complet, pas l’accueil simple', await page.getByTestId('accueil-simple').count() === 0 && await page.getByTestId('vue-simple').count() === 1)
+  const tuiles0 = await page.getByTestId('tuiles').innerText()
+  verifie('par défaut : les six boxes avec le nombre de chantiers — pour toi 4, à tester 3, ça avance 1, fini 1', await sixSurUneLigne()
+    && (await page.getByTestId('tuile-pourToi').innerText()).startsWith('4') && (await page.getByTestId('tuile-aTester').innerText()).startsWith('3')
+    && (await page.getByTestId('tuile-caAvance').innerText()).startsWith('1') && (await page.getByTestId('tuile-fini').innerText()).startsWith('1'), tuiles0)
+  verifie('par défaut : le tableau « Détail par section » et les pastilles de gestes sont là', await page.getByTestId('detail-par-ligne').count() === 1 && await page.getByTestId('filtre-a-toi').count() === 1)
+  const barre0 = page.getByTestId('en-ce-moment').getByTestId('progression')
+  verifie('par défaut : « Ça avance tout seul » montre la barre de progression du chantier (40 %)', await page.getByTestId('ligne-en-ce-moment').count() === 1 && await barre0.count() === 1 && await barre0.getAttribute('aria-valuenow') === '40' && (await page.getByTestId('en-ce-moment').innerText()).includes('40 %'))
+  verifie('par défaut : « À toi de jouer » et « Prêt à lancer » sont là', await page.getByTestId('a-toi').count() === 1 && await page.getByTestId('a-lancer').count() === 1)
+  await page.screenshot({ path: `${CAPTURES}/accueil-par-defaut.png` })
+  await page.getByTestId('vue-simple').click()
+  await page.getByTestId('accueil-simple').waitFor({ timeout: 10000 })
+
+  // --- 1. vue du projet : l'accueil simple, choisi à un toucher (retenu sur l'appareil)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByTestId('accueil-simple').waitFor({ timeout: 30000 })
   await page.getByTestId('accueil-a-toi-total').waitFor({ timeout: 20000 })
   await page.waitForFunction(() => document.querySelector('[data-testid="accueil-a-toi-total"]')?.textContent !== '0', null, { timeout: 30000 }).catch(() => {})
-  verifie('vue par défaut = accueil simple : trois blocs, aucune tuile', await page.getByTestId('accueil-a-toi').count() === 1 && await page.getByTestId('accueil-en-cours').count() === 1
-    && await page.getByTestId('accueil-livre').count() === 1 && await page.getByTestId('tuiles').count() === 0)
+  verifie('vue simple : les six boxes compactes, puis trois blocs — ni pastilles de gestes, ni tableau par section', await page.getByTestId('accueil-a-toi').count() === 1 && await page.getByTestId('accueil-en-cours').count() === 1
+    && await page.getByTestId('accueil-livre').count() === 1 && await sixSurUneLigne() && await page.getByTestId('filtre-a-toi').count() === 0 && await page.getByTestId('detail-par-ligne').count() === 0)
+  verifie('vue simple : les boxes disent la même chose que les blocs (pour toi = « À toi », ça avance = « En cours », fini = « Livré »)',
+    (await page.getByTestId('tuile-pourToi').innerText()).startsWith(String(await nombre('accueil-a-toi-total'))) && (await page.getByTestId('tuile-caAvance').innerText()).startsWith(String(await nombre('accueil-en-cours-total')))
+    && (await page.getByTestId('tuile-fini').innerText()).startsWith(String(await nombre('accueil-livre-total'))) && (await page.getByTestId('tuile-aTester').innerText()).startsWith('3'))
   verifie('« À toi » = 4 demandes (2 questions du même chantier + 1 question du projet + 1 décision), jamais les 3 livrés', await nombre('accueil-a-toi-total') === 4, await nombre('accueil-a-toi-total'))
   verifie('les 4 lignes sont des demandes : aucune « à tester » parmi elles', (await typesVisibles()).length === 4 && !(await typesVisibles()).includes('a_verifier'), await typesVisibles())
   const libelleTests = await page.getByTestId('accueil-a-tester-libelle').innerText().catch(() => '')
@@ -151,17 +176,17 @@ try {
 
   // --- 3. vue détaillée : l'ancien accueil, tuile « à tester » comprise ; le choix survit au rechargement
   await page.getByTestId('vue-detaillee').click()
-  await page.getByTestId('tuiles').waitFor({ timeout: 10000 })
-  verifie('« Vue détaillée » : les tuiles reviennent, « pour toi » = 4, « à tester » = 3', await page.getByTestId('accueil-simple').count() === 0 && (await page.getByTestId('tuile-pourToi').innerText()).startsWith('4') && (await page.getByTestId('tuile-aTester').innerText()).startsWith('3'), await page.getByTestId('tuiles').innerText())
-  verifie('vue détaillée : six tuiles sur une ligne, dans la largeur du téléphone', await page.getByTestId('tuiles').locator('button').evaluateAll((els, w) => els.length === 6 && new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size === 1 && els.every((e) => e.getBoundingClientRect().right <= w), 390))
+  await page.getByTestId('detail-par-ligne').waitFor({ timeout: 10000 })
+  verifie('« Vue détaillée » : le tableau et les pastilles reviennent, « pour toi » = 4, « à tester » = 3', await page.getByTestId('accueil-simple').count() === 0 && (await page.getByTestId('tuile-pourToi').innerText()).startsWith('4') && (await page.getByTestId('tuile-aTester').innerText()).startsWith('3'), await page.getByTestId('tuiles').innerText())
+  verifie('vue détaillée : six tuiles sur une ligne, dans la largeur du téléphone', await sixSurUneLigne())
   verifie('vue détaillée : « À toi de jouer » ne liste que les demandes ; la section « À tester » est là, repliée', await page.getByTestId('a-tester').count() === 1 && (await typesVisibles()).length === 4 && !(await typesVisibles()).includes('a_verifier'), await typesVisibles())
   await page.screenshot({ path: `${CAPTURES}/accueil-detaille.png` })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.getByTestId('tuiles').waitFor({ timeout: 30000 })
+  await page.getByTestId('vue-simple').waitFor({ timeout: 30000 })
   verifie('le choix « vue détaillée » survit au rechargement', await page.getByTestId('vue-simple').count() === 1 && await page.getByTestId('accueil-simple').count() === 0)
   await page.getByTestId('vue-simple').click()
   await page.getByTestId('accueil-simple').waitFor({ timeout: 10000 })
-  verifie('« Vue simple » ramène l’accueil à 3 blocs', await page.getByTestId('tuiles').count() === 0 && await page.getByTestId('accueil-a-toi').count() === 1)
+  verifie('« Vue simple » ramène les 3 blocs, les six boxes restent', await page.getByTestId('detail-par-ligne').count() === 0 && await page.getByTestId('accueil-a-toi').count() === 1 && await sixSurUneLigne())
 
   // --- 4. vue « Tout » : le nombre de « À toi » = la pastille de l'onglet Accueil = les lignes + « Voir les N autres »
   if (!(await page.getByTestId('liste-projets').count())) await page.getByTestId('choix-projet-bouton').click()
