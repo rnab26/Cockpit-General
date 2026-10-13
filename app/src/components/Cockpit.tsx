@@ -18,6 +18,8 @@ import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
 import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
+import { AccueilSimple } from './AccueilSimple.tsx'
+import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { lireLienFil } from '../lib/lienNotification.ts'
 import { chargerEtatEcran, etatCoherent, sauverEtatEcran } from '../lib/etatEcran.ts'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
@@ -71,6 +73,9 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   // Discussions de la barre du bas : la liste des chats par projet, puis le chat d'un projet.
   const [discussion, setDiscussion] = useState<{ liste: boolean; projetId: string | null }>({ liste: false, projetId: null })
   const barreBas = useNavMobile()
+  // Accueil simple (3 blocs) par défaut ; l'ancien accueil reste à un toucher (« Vue détaillée »).
+  const [vueAccueil] = useVueAccueil()
+  const accueilSimple = vueAccueil === 'simple'
   const dernierProjet = useRef<string | null>(null)
   const [now, setNow] = useState(() => new Date())
   const admin = moi.admin
@@ -298,13 +303,14 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger(false, true)} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-5" data-testid="vue-tout">
-              <TableauDeBord projetId={null} />
-              <ReglagesProjets />
+              {accueilSimple ? <AccueilSimple projetId={null} /> : <><TableauDeBord projetId={null} /><ReglagesProjets /></>}
             </div>
           ) : (
             <AvecProjet projetId={d.projet.id}>
               <div className="space-y-5" data-testid="vue-projet">
-                <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                {accueilSimple
+                  ? <AccueilSimple projetId={d.projet.id} seulementEntre={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                  : <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />}
                 {onglet === 'travail' ? (
                   <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
                     deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />

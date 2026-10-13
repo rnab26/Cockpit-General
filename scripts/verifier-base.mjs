@@ -3282,6 +3282,76 @@ async function controle55_reveil_horaire() {
   const droits = await une(`select has_function_privilege('anon', 'cockpit.regler_reveil_horaire(text, boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regler_reveil_horaire(text, boolean)', 'execute') as auth`);
   verifie("regler_reveil_horaire : fermée au public (anon), ouverte aux comptes connectés (la garde admin est dans la fonction)", !droits.anon && droits.auth, droits);
 }
+const PCL = randomUUID(), SLUG_CL = `test-verif-${rand}-cl`;
+async function controle56_classer_livres() {
+  section("56. Classer sans test (0079) : la règle « livré sans retour », le geste groupé, le classement automatique — jamais « certifié », jamais un projet réel sans réglage");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PCL)}, ${q(SLUG_CL)}, 'Projet de test classer les livrés', 'rnab26/test-inexistant')`);
+  const ch = async (titre, colonneEnPlus = "", valeurEnPlus = "", etat = "a_verifier", livre = "now() - interval '10 days'") => {
+    const id = randomUUID();
+    await sql(`insert into chantiers (id, projet_id, titre, demande, etat${etat === "a_verifier" ? ", livre_at" : ""}${colonneEnPlus}) values (${q(id)}, ${q(PCL)}, ${q(titre)}, 'Test.', ${q(etat)}${etat === "a_verifier" ? `, ${livre}` : ""}${valeurEnPlus})`);
+    return id;
+  };
+  const A = await ch("livré il y a 10 jours, sans un mot");
+  const B = await ch("livré il y a 10 jours, Raphaël a écrit depuis");
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PCL)}, ${q(B)}, 'Raphaël', 'proprietaire', 'info', 'je regarde ça demain')`);
+  const C = await ch("livré il y a 2 jours", "", "", "a_verifier", "now() - interval '2 days'");
+  const D = await ch("livré, une question reste ouverte");
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PCL)}, ${q(D)}, 'Claude', 'session', 'question', 'Quelle couleur ?')`);
+  const E = await ch("livré, « vérifie pour moi » en cours", ", verif_demandee_at", ", now()");
+  const F = await ch("pas livré (libre)", "", "", "libre");
+  const regle = async (id, j) => (await une(`select cockpit.livre_sans_retour(c, ${j}) as r from chantiers c where id = ${q(id)}`)).r;
+
+  verifie("règle : livré depuis 10 jours sans un mot = sans retour à 7 jours (et à 10), pas à 11", (await regle(A, 7)) === true && (await regle(A, 10)) === true && (await regle(A, 11)) === false);
+  verifie("règle : un mot de Raphaël depuis la livraison, une question ouverte, un « vérifie pour moi », un livré récent, un chantier pas livré : AUCUN n'est sans retour",
+    (await regle(B, 7)) === false && (await regle(D, 7)) === false && (await regle(E, 7)) === false && (await regle(C, 7)) === false && (await regle(F, 7)) === false,
+    { B: await regle(B, 7), D: await regle(D, 7), E: await regle(E, 7), C: await regle(C, 7), F: await regle(F, 7) });
+
+  // Le réglage : 1 à 90, ou vide ; hors bornes refusé ; défaut = jamais.
+  verifie("par défaut : jamais (livres_classes_apres_j vide)", (await une(`select livres_classes_apres_j as j from projets where id = ${q(PCL)}`)).j === null);
+  let refus = null; try { await sql(`select regler_classement_livres(${q(SLUG_CL)}, 0)`); } catch (e) { refus = e.message; }
+  let refus2 = null; try { await sql(`select regler_classement_livres(${q(SLUG_CL)}, 91)`); } catch (e) { refus2 = e.message; }
+  verifie("réglage hors de 1 à 90 jours : refusé, rien n'est écrit", !!refus && !!refus2 && (await une(`select livres_classes_apres_j as j from projets where id = ${q(PCL)}`)).j === null, { refus, refus2 });
+
+  // Sans réglage : le job ne touche à rien (même en mode test).
+  const sans = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, true) as n`)).n;
+  verifie("sans réglage : le classement automatique ne classe rien", sans === 0 && (await une(`select count(*)::int as n from chantiers where projet_id = ${q(PCL)} and archived_at is not null`)).n === 0, sans);
+
+  // Réglé à 7 jours : SEUL A est classé (le job ignore un projet de test sans le mode test).
+  await sql(`select regler_classement_livres(${q(SLUG_CL)}, 7)`);
+  const horsTest = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, false) as n`)).n;
+  verifie("un projet de test n'est JAMAIS classé par le job réel (sans le mode test)", horsTest === 0);
+  const n = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, true) as n`)).n;
+  const etat = await sql(`select id, etat, archived_at is not null as archive, valide_at is not null as certifie from chantiers where projet_id = ${q(PCL)}`);
+  const parId = Object.fromEntries(etat.map((r) => [r.id, r]));
+  verifie("réglé à 7 jours : SEUL le livré sans un mot est classé (1)", n === 1 && parId[A].archive && !parId[B].archive && !parId[C].archive && !parId[D].archive && !parId[E].archive && !parId[F].archive, { n, parId });
+  verifie("classé ≠ certifié : le chantier garde « à vérifier », sans date de validation (seul Raphaël pose « valide »)", parId[A].etat === "a_verifier" && parId[A].certifie === false, parId[A]);
+  const msg = await sql(`select auteur, auteur_type, kind, corps from messages where chantier_id = ${q(A)} and corps like 'Classé automatiquement%'`);
+  verifie("une ligne dans son fil dit pourquoi, et comment le rouvrir", msg.length === 1 && /livré depuis plus de 7 jours/.test(msg[0].corps) && /Désarchiver/.test(msg[0].corps) && msg[0].kind === "constat", msg);
+  const encore = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, true) as n`)).n;
+  verifie("le job est idempotent : un deuxième passage ne reclasse rien", encore === 0);
+
+  // Le geste groupé : admin ou session ; ne touche que « à vérifier » non archivé ; une ligne par chantier.
+  const g = (await une(`select archiver_livres(array[${q(B)}, ${q(C)}, ${q(F)}, ${q(A)}]::uuid[], 'test du geste groupé') as r`)).r;
+  const apres = Object.fromEntries((await sql(`select id, archived_at is not null as archive from chantiers where projet_id = ${q(PCL)}`)).map((r) => [r.id, r.archive]));
+  verifie("archiver_livres : classe B et C (à vérifier), ignore F (pas livré) et A (déjà classé) → 2", g.classes === 2 && apres[B] && apres[C] && !apres[F], { g, apres });
+  const lignes = await sql(`select chantier_id, auteur, corps from messages where chantier_id in (${q(B)}, ${q(C)}) and corps like 'Classé sans test%' order by chantier_id`);
+  verifie("… une ligne « Classé sans test : test du geste groupé » par chantier classé, avec le moyen de le rouvrir", lignes.length === 2 && lignes.every((l) => /Classé sans test : test du geste groupé\./.test(l.corps) && /Désarchiver/.test(l.corps)), lignes);
+
+  // Droits : ni le public, ni anon ; le job et la règle ne sont pas des portes ouvertes aux comptes connectés.
+  const d = await une(`select
+      has_function_privilege('anon', 'cockpit.archiver_livres(uuid[], text)', 'execute') as anon_archiver,
+      has_function_privilege('anon', 'cockpit.regler_classement_livres(text, int)', 'execute') as anon_regler,
+      has_function_privilege('authenticated', 'cockpit.archiver_livres(uuid[], text)', 'execute') as auth_archiver,
+      has_function_privilege('authenticated', 'cockpit.regler_classement_livres(text, int)', 'execute') as auth_regler,
+      has_function_privilege('authenticated', 'cockpit.classer_livres_anciens(text, boolean)', 'execute') as auth_job,
+      has_function_privilege('anon', 'cockpit.classer_livres_anciens(text, boolean)', 'execute') as anon_job,
+      has_function_privilege('authenticated', 'cockpit.livre_sans_retour(cockpit.chantiers, int)', 'execute') as auth_regle,
+      has_function_privilege('anon', 'cockpit.livre_sans_retour(cockpit.chantiers, int)', 'execute') as anon_regle`);
+  verifie("droits : les deux gestes sont fermés à anon et ouverts aux comptes connectés (la garde admin est dans la fonction) ; le job et la règle ne sont ouverts à personne d'autre que les sessions",
+    !d.anon_archiver && !d.anon_regler && d.auth_archiver && d.auth_regler && !d.auth_job && !d.anon_job && !d.auth_regle && !d.anon_regle, d);
+  const cron = await une(`select count(*)::int as n from cron.job where jobname = 'cockpit-livres-classes' and active`);
+  verifie("le job pg_cron horaire existe et est actif", cron.n === 1, cron);
+}
 async function controle51_reactivite() {
   section("51. Réactivité (0071) : chef muette relevée, filet, délai de réponse mesuré, réglages visibles");
   await sql(`insert into projets (id, slug, nom, filet_delai_min) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité', 1)`);
@@ -3660,6 +3730,7 @@ try {
     controle53_reveil_chantier,
     controle54_paquets_de_cinq,
     controle55_reveil_horaire,
+    controle56_classer_livres,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
@@ -3671,7 +3742,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH, PCL]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];

@@ -197,6 +197,9 @@ const compterVivants = (slug = null) => {
 const navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
 const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR', timezoneId: 'Asia/Jerusalem' })
 await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGINE })
+// Ce banc parcourt l'ancien accueil (« vue détaillée » : tuiles, tableau par section, sections repliables). L'accueil
+// SIMPLE, par défaut depuis le 13 oct. 2026, a son propre banc : app/scripts/verifier-accueil.mjs.
+await ctx.addInitScript(() => { try { localStorage.setItem('cockpit_accueil', 'detaillee') } catch {} })
 // Le Chromium de l'environnement cloud Claude ne fait pas confiance au proxy
 // TLS (ERR_CERT_AUTHORITY_INVALID, constaté le 29 sept.) : les appels HTTP à
 // Supabase (et au site d'un projet, lu pour sa version en ligne) passent par
@@ -284,7 +287,12 @@ const fermerConv = async () => { await conv().getByTestId('fermer-conversation')
 // Une ligne « À toi de jouer » d'un chantier, en dépliant « Voir les N autres » s'il le faut.
 const elementAToi = async (chantierId, type) => {
   const el = page.locator(`[data-testid="element-a-toi"][data-type="${type}"][data-element-chantier="${chantierId}"]`)
-  if (!(await el.count())) { const plus = page.getByTestId('voir-a-toi'); if (await plus.count()) await plus.click() }
+  // 13 oct. 2026 : un chantier livré n'est plus une demande de « À toi de jouer » : il est dans « À tester », repliée d'emblée.
+  if (type === 'a_verifier') {
+    const bascule = page.getByTestId('a-tester-total-repli')
+    if (await bascule.count() && (await bascule.getAttribute('aria-expanded')) !== 'true') await bascule.click()
+  }
+  if (!(await el.count())) { const plus = page.getByTestId(type === 'a_verifier' ? 'voir-a-tester' : 'voir-a-toi'); if (await plus.count()) await plus.click() }
   await el.waitFor({ timeout: 10000 })
   return el
 }
@@ -344,7 +352,7 @@ try {
   console.log('  — accueil « Tout » (tableau de bord)')
   verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
   const bTuiles = await page.getByTestId('tuiles').boundingBox()
-  verifie('les cinq tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 5, bTuiles)
+  verifie('les six tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 6, bTuiles)
   const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
   verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
@@ -923,8 +931,9 @@ try {
   else verifie('sans direct (conteneur), la question apparaît après « Actualiser », et l’écran le dit', await page.getByTestId('direct-coupe').count() === 1)
   const elQ = await elementAToi(Q1.id, 'question')
   verifie('« À toi de jouer » compte la question du projet (tuile « pour toi » comprise)', await page.locator('[data-testid="element-a-toi"][data-type="question"]').count() >= nAttenteAvant + 1 && Number(await page.getByTestId('tuile-pourToi').getByTestId('nombre-tuile').textContent()) === Number(await page.getByTestId('a-toi-total').textContent()))
-  verifie('la ligne : le titre du chantier d’abord, « Claude te pose une question », bouton « Répondre »',
-    (await elQ.getByTestId('titre-a-toi').textContent()).includes(Q1.titre) && /Claude te pose une question/.test(await elQ.getByTestId('attente-a-toi').textContent()) && (await elQ.getByTestId('verbe-a-toi').textContent()).trim() === 'Répondre')
+  // 13 oct. 2026 : la 2e ligne est la QUESTION elle-même (ce qui distingue deux cartes d'un même chantier), plus la phrase générique.
+  verifie('la ligne : le titre du chantier d’abord, la question en dessous, bouton « Répondre »',
+    (await elQ.getByTestId('titre-a-toi').textContent()).includes(Q1.titre) && (await elQ.getByTestId('attente-a-toi').textContent()).includes('Quelle option ?') && (await elQ.getByTestId('verbe-a-toi').textContent()).trim() === 'Répondre')
   // 0022 (Raphaël : « je ne sais pas quelles sont les plus récentes et les plus vieilles ») : âge visible, le plus récent en haut, tri réglable.
   {
     const premier = page.getByTestId('element-a-toi').first()
@@ -1000,8 +1009,8 @@ try {
     await actualiser()
     const elA = await elementAToi(AC1.id, 'action')
     // Depuis e069feb : plus de bouton « Faire » qui ouvre un fil, les trois réponses sont sur la ligne même.
-    verifie('action : la ligne dit « Claude attend un geste de toi », avec « Fait » directement dessus',
-      /Claude attend un geste de toi/.test(await elA.getByTestId('attente-a-toi').textContent()) && await elA.getByTestId('action-fait').count() === 1 && await elA.getByTestId('verbe-a-toi').count() === 0)
+    verifie('action : la ligne dit ce qu’il y a à faire (« Fusionne la PR de test »), avec « Fait » directement dessus',
+      /Fusionne la PR de test/.test(await elA.getByTestId('attente-a-toi').textContent()) && await elA.getByTestId('action-fait').count() === 1 && await elA.getByTestId('verbe-a-toi').count() === 0)
     const puceA = page.locator('[data-testid="filtre-a-toi-puce"][data-type="action"]')
     verifie('pastille « Actions » avec son compteur, à côté des autres', await puceA.count() === 1 && /^Actions\s*\d+$/.test((await puceA.textContent()).trim()), await puceA.count() ? await puceA.textContent() : null)
     await puceA.click()

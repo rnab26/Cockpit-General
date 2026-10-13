@@ -7,8 +7,9 @@
  *    le projet dont le fil libre a reçu le dernier message, sinon le premier.
  */
 import type { Message, Projet } from './types.ts'
-import type { ElementAToi } from './entonnoir.ts'
+import { aTesterDe, attenteAToi, demandesDe, type ElementAToi } from './entonnoir.ts'
 import { cleFil, type NonLus } from './lecture.ts'
+import { extrait } from './texte.ts'
 
 export const cleBulle = (projetId: string) => `bulle_flottante_aide_${projetId}`
 
@@ -94,27 +95,69 @@ export const VOIX_NON_SUPPORTEE = 'La dictée vocale n’est pas disponible dans
 /**
  * Les cartes « À faire ici » d'un chat : celles de « À toi de jouer » qu'on peut traiter dans la discussion.
  * UNE règle, lue par le chat (AFaireIci) ET par les pastilles de la liste / de la barre du bas : ce qui est
- * compté sur un chat est exactement ce qu'on y trouve en l'ouvrant.
+ * compté sur un chat est exactement ce qu'on y trouve en l'ouvrant. Les DEMANDES d'abord, les chantiers à
+ * tester ensuite (13 oct. 2026 : 30 cartes de test passaient avant l'historique de la discussion).
  */
 export function cartesAFaire(els: readonly ElementAToi[]): ElementAToi[] {
   // Une vérification montre déjà les questions de son chantier : pas de doublon.
   const verifies = new Set(els.filter((e) => e.type === 'a_verifier' && e.chantier).map((e) => e.chantier!.id))
-  return els.filter((e) => {
+  const gardees = els.filter((e) => {
     if (e.type === 'question' || e.type === 'action') return !!e.message && !(e.chantier && verifies.has(e.chantier.id))
     if (e.type === 'a_verifier' || e.type === 'a_cadrer') return !!e.chantier
     return e.type === 'fusion' && !!e.message
   })
+  return [...demandesDe(gardees), ...aTesterDe(gardees)]
 }
 
-export interface NotifsChat { reponses: number; aFaire: number; total: number }
+export interface NotifsChat { reponses: number; aFaire: number; aTester: number; total: number }
 
 /**
- * Ce qui attend sur le chat d'UN projet : réponses de Claude non lues dans sa discussion + cartes à traiter.
- * Le total de l'onglet « Discussions » est la somme des chats (jamais un autre compte : avant, il comptait
- * aussi les réponses des fils de chantiers, qu'aucun chat ne montre, et ne retombait pas à zéro).
+ * Ce qui attend sur le chat d'UN projet : réponses de Claude non lues dans sa discussion + DEMANDES à traiter.
+ * Les chantiers à tester sont comptés à part (`aTester`) et ne font PAS monter la pastille : un test n'est pas
+ * une question de Claude. Le total de l'onglet « Discussions » est la somme des chats (jamais un autre compte :
+ * avant, il comptait aussi les réponses des fils de chantiers, qu'aucun chat ne montre, et ne retombait pas à zéro).
  */
 export function notifsChat(nonLus: ReadonlyMap<string, NonLus>, projetId: string, cartes: readonly ElementAToi[]): NotifsChat {
   const reponses = nonLus.get(cleFil(projetId, null))?.n ?? 0
-  const aFaire = cartes.length
-  return { reponses, aFaire, total: reponses + aFaire }
+  const aFaire = demandesDe(cartes).length
+  return { reponses, aFaire, aTester: cartes.length - aFaire, total: reponses + aFaire }
+}
+
+/**
+ * Le SUJET d'une carte ou d'une ligne « À toi », ce qu'on lit en premier (Raphaël, 13 oct. 2026 : « il n'y a pas
+ * toujours les sujets, je suis obligé de lire les descriptifs sur les cartes »). Le titre du chantier ; sans
+ * chantier, le « Sujet : … » du message, sinon sa première phrase — jamais « Question sur le projet » tout seul
+ * quand le message dit de quoi il s'agit. `detail` = ce qui distingue la carte de ses voisines : pour une question ou
+ * une action, le texte de la question (quatre questions d'un même chantier ne se ressemblent plus) ; sans chantier,
+ * le reste du message (rien n'est perdu quand le sujet est coupé).
+ */
+export const SUJET_MAX = 80
+export const DETAIL_MAX = 160
+/** Deux textes qui disent la même chose (l'un est le début de l'autre, coupures « … » et blancs mis à part) : inutile de les afficher tous les deux. */
+const normaliser = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').replace(/[….\s]+$/, '')
+export const memeTexte = (a: string, b: string): boolean => { const x = normaliser(a), y = normaliser(b); return !!x && !!y && (x.startsWith(y) || y.startsWith(x)) }
+export function sujetEtDetail(e: Pick<ElementAToi, 'type' | 'chantier' | 'message'>): { sujet: string; detail: string | null } {
+  const brut = citationDe(e.message?.corps ?? null).reste.trim()
+  const titre = e.chantier?.titre?.replace(/\s+/g, ' ').trim()
+  if (titre) {
+    const question = (e.type === 'question' || e.type === 'action') && brut ? extrait(brut, DETAIL_MAX) : null
+    return { sujet: titre, detail: question && !memeTexte(titre, question) ? question : null }
+  }
+  if (!brut) return { sujet: 'Question sur le projet', detail: null }
+  const { sujet: balise, reste } = sujetDe(brut)
+  if (balise) return { sujet: extrait(balise, SUJET_MAX), detail: reste?.trim() ? extrait(reste, DETAIL_MAX) : null }
+  const m = /^([^\n]*?[.?!…])(?=\s|$)/.exec(brut)
+  const premiere = (m ? m[1] : brut.split('\n')[0]).trim()
+  const sujet = extrait(premiere, SUJET_MAX)
+  const coupe = sujet !== premiere.replace(/\s+/g, ' ')
+  const suite = brut.slice(premiere.length).trim()
+  return { sujet, detail: coupe ? extrait(brut, DETAIL_MAX) : suite ? extrait(suite, DETAIL_MAX) : null }
+}
+
+/**
+ * La deuxième ligne d'une carte : la question elle-même quand il y en a une, sinon ce qu'on attend de toi
+ * (« Claude te pose une question », « livré, à tester »…). Si Claude a travaillé dessus depuis, l'alerte passe d'abord.
+ */
+export function detailDeCarte(e: Pick<ElementAToi, 'type' | 'chantier' | 'message' | 'avanceDepuis'>, now: Date): string {
+  return e.avanceDepuis ? attenteAToi(e, now) : sujetEtDetail(e).detail ?? attenteAToi(e, now)
 }
