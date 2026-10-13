@@ -1,8 +1,8 @@
 // Règles de la recherche des fournisseurs de factures (src/lib/fournisseurs.ts, 0084, chantier 07258fe5).
 import { verifie, bilan } from './_assert.ts'
 import {
-  ATTENTE_LONGUE_H, ONGLETS, compterParStatut, dansOnglet, demandeOuverte, deviseProbable, etatRecherche, libelleMails, lireFournisseur, lireRecherche,
-  nomNormalise, prestatairePour, type Fournisseur, type Recherche,
+  ATTENTE_LONGUE_H, ONGLETS, STATUT_APRES_LOT, actionsDuLot, compterParStatut, cochesVisibles, dansOnglet, demandeOuverte, deviseProbable, etatRecherche, libelleLot, libelleMails,
+  lireFournisseur, lireRecherche, nomNormalise, phraseLot, phraseSuivreLot, prestatairePour, toutChoisi, type Fournisseur, type Recherche,
 } from '../src/lib/fournisseurs.ts'
 
 const NOW = new Date('2026-10-20T12:00:00Z')
@@ -42,4 +42,24 @@ verifie('Suivre ne crée jamais de doublon : même nom (sans accent ni casse)', 
 verifie('… ou alias connu : Anthropic est le prestataire « Claude »', prestatairePour({ nom: 'Anthropic', domaine: 'anthropic.com' }, services)?.id === 's1')
 verifie('… un prestataire archivé n’est pas relié, un inconnu non plus', prestatairePour({ nom: 'Vercel', domaine: 'vercel.com' }, services) === null && prestatairePour({ nom: 'Render', domaine: 'render.com' }, services) === null)
 verifie('devise probable : un domaine israélien facture en shekels, le reste en dollars', deviseProbable({ domaine: 'bezeq.co.il' }) === 'ILS' && deviseProbable({ domaine: 'vercel.com' }) === 'USD')
+
+console.log('actions groupées')
+verifie('actions de chaque onglet : Nouveaux = Suivre + Ignorer, Ignorés = Remettre, Suivis = aucune (déjà un prestataire)',
+  JSON.stringify(actionsDuLot('nouveau')) === '["suivre","ignorer"]' && JSON.stringify(actionsDuLot('ignore')) === '["remettre"]' && actionsDuLot('suivi').length === 0)
+verifie('statuts posés : Ignorer → ignoré, Remettre → nouveau', STATUT_APRES_LOT.ignorer === 'ignore' && STATUT_APRES_LOT.remettre === 'nouveau')
+verifie('libellés des boutons de la barre, avec le nombre', libelleLot('suivre', 3) === 'Suivre (3)' && libelleLot('ignorer', 1) === 'Ignorer (1)' && libelleLot('remettre', 2) === 'Remettre dans la liste (2)')
+verifie('phrase après Ignorer : singulier et pluriel', phraseLot('ignorer', 1) === '1 fournisseur ignoré : il ne reviendra pas dans « Nouveaux ».' && phraseLot('ignorer', 12) === '12 fournisseurs ignorés : ils ne reviendront pas dans « Nouveaux ».')
+verifie('phrase après Remettre : singulier et pluriel', phraseLot('remettre', 1) === '1 fournisseur remis dans « Nouveaux ».' && phraseLot('remettre', 3) === '3 fournisseurs remis dans « Nouveaux ».')
+verifie('phrase après Suivre en lot : créés + reliés, échecs dits avec la marche à suivre',
+  phraseSuivreLot(3, 1, 0) === '4 fournisseurs suivis (3 prestataires créés, 1 relié à un prestataire déjà là).'
+  && phraseSuivreLot(1, 0, 0) === '1 fournisseur suivi (1 prestataire créé).'
+  && phraseSuivreLot(0, 2, 0) === '2 fournisseurs suivis (2 reliés à des prestataires déjà là).'
+  && phraseSuivreLot(2, 0, 1) === '2 fournisseurs suivis (2 prestataires créés). 1 n’a pas pu être suivi : il reste coché, touche « Suivre » pour réessayer.'
+  && phraseSuivreLot(0, 0, 2) === '2 n’ont pas pu être suivis : ils restent cochés, touche « Suivre » pour réessayer.')
+const lot = [fou({ id: 'a' }), fou({ id: 'b' }), fou({ id: 'c' })]
+const coches = new Set(['a', 'x'])
+verifie('une ligne qui disparaît de la liste se décoche ; si rien ne change, c’est le MÊME ensemble (aucun rendu pour rien)',
+  [...cochesVisibles(coches, lot)].join() === 'a' && cochesVisibles(new Set(['a', 'b']), lot) instanceof Set && (() => { const s = new Set(['a', 'b']); return cochesVisibles(s, lot) === s })())
+verifie('« Tout choisir » : vrai seulement si toute la liste est cochée (et jamais sur une liste vide)',
+  toutChoisi(new Set(['a', 'b', 'c']), lot) && !toutChoisi(new Set(['a', 'b']), lot) && !toutChoisi(new Set(), []))
 bilan('verifier-fournisseurs')

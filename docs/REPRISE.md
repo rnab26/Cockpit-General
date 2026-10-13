@@ -143,7 +143,7 @@ Raphaël : « une recherche par mots-clés plutôt que de lire toute la boîte m
 factures, et comme ça on actualise ». Procédure : `docs/recus-par-email.md` › « Chercher les fournisseurs ». Bloc `RechercheFournisseurs.tsx` en tête de Coûts ; tables
 `recherches_fournisseurs` (UNE demande ouverte par projet) et `fournisseurs_detectes` ; `scripts/chercher-fournisseurs.py` ; les hooks préviennent une session qui a Gmail.
 **Fait pour de vrai** : première recherche par mots-clés sur la boîte de Raphaël (3 appels `search_threads`, aucun mail ouvert) → 94 mails, 24 fournisseurs « nouveaux » enregistrés dans Coûts du projet `cockpit` (à lui de « Suivre » ou « Ignorer » : beaucoup de bruit, banques, virements reçus, versements de plateformes).
-**Vérifié** : `verifier-fournisseurs.mjs` 50/50, `app/scripts/verifier-fournisseurs.mjs` 22/22 (téléphone), `verifier-fournisseurs.ts` 20/20 ; un vrai défaut trouvé par le banc écran et corrigé (la liste se
+**Vérifié** : `verifier-fournisseurs.mjs` 50/50, `app/scripts/verifier-fournisseurs.mjs` 37/37 (téléphone, avec « Choisir plusieurs »), `verifier-fournisseurs.ts` 28/28 ; un vrai défaut trouvé par le banc écran et corrigé (la liste se
 repliait toute seule quand on ignorait le dernier « nouveau »). **Limite** : l'écran n'ouvre pas de session ; sans session qui a Gmail la demande attend. **Piège** : la recherche ne lit JAMAIS un mail
 (`search_threads` seulement : expéditeur, date, objet) ; ne pas ajouter de `get_thread` « pour être plus précis ».
 

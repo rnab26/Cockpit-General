@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw, Search, TriangleAlert } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ListChecks, RefreshCw, Search, TriangleAlert } from 'lucide-react'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import {
-  ONGLETS, compterParStatut, dansOnglet, demandeOuverte, deviseProbable, etatRecherche, libelleMails, lireFournisseur, lireRecherche, prestatairePour,
+  ONGLETS, STATUT_APRES_LOT, actionsDuLot, cochesVisibles, compterParStatut, dansOnglet, demandeOuverte, deviseProbable, etatRecherche, libelleLot, libelleMails,
+  lireFournisseur, lireRecherche, phraseLot, phraseSuivreLot, prestatairePour, toutChoisi,
   type Fournisseur, type Onglet, type Recherche,
 } from '../lib/fournisseurs.ts'
 import type { Service } from '../lib/depenses.ts'
@@ -11,6 +12,8 @@ import { Badge } from '../ui/Badge.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { Chargement, Erreur } from '../ui/Etats.tsx'
 import { useToast } from '../ui/Toast.tsx'
+import { useConfirmer } from '../ui/Confirm.tsx'
+import { DUREE_ANNULATION_MS } from './BarreSelection.tsx'
 
 /** Tant qu'une demande est ouverte, l'écran la relit toutes les 10 s (le temps réel peut manquer : réseau, navigateur). */
 const SONDAGE_MS = 10_000
@@ -57,15 +60,27 @@ export function RechercheFournisseurs({ projetId, services, par, now, onServices
   projetId: string; services: Service[]; par: string; now: Date; onServicesChange: () => void
 }) {
   const toast = useToast()
+  const confirmer = useConfirmer()
   const { derniere, fournisseurs, charge, erreur, recharger } = useRecherche(projetId)
   const [envoi, setEnvoi] = useState(false)
   const [occupe, setOccupe] = useState<string | null>(null)
   const [onglet, setOnglet] = useState<Onglet>('nouveau')
   const [ouvert, setOuvert] = useState(false)
+  // « Choisir plusieurs » : cases à cocher + barre d'actions en bas (comme les chantiers) ; une action groupée à la fois, jamais mélangée aux boutons de chaque ligne
+  const [choisir, setChoisir] = useState(false)
+  const [coches, setCoches] = useState<ReadonlySet<string>>(new Set())
+  const [enLot, setEnLot] = useState(false)
   const etat = useMemo(() => etatRecherche(derniere, now), [derniere, now])
   const compte = useMemo(() => compterParStatut(fournisseurs), [fournisseurs])
   const nomService = useMemo(() => new Map(services.map((s) => [s.id, s.nom])), [services])
   const liste = useMemo(() => dansOnglet(fournisseurs, onglet), [fournisseurs, onglet])
+  const choisis = useMemo(() => liste.filter((f) => coches.has(f.id)), [liste, coches])
+  const actions = actionsDuLot(onglet)
+  const quitterChoix = () => { setChoisir(false); setCoches(new Set()) }
+  const changerOnglet = (o: Onglet) => { setOnglet(o); quitterChoix() }
+  // une ligne qui change d'onglet ou disparaît se décoche ; liste repliée ou vide : plus de mode « choisir »
+  useEffect(() => { setCoches((c) => cochesVisibles(c, liste)) }, [liste])
+  useEffect(() => { if (choisir && (!ouvert || !liste.length)) { setChoisir(false); setCoches(new Set()) } }, [choisir, ouvert, liste.length])
   // La liste s'ouvre au premier affichage s'il y a du nouveau, et QUAND de nouveaux fournisseurs arrivent ; elle ne se referme jamais
   // toute seule (ignorer le dernier « nouveau » ne doit pas fermer la liste sous le doigt).
   const nouveauxAvant = useRef<number | null>(null)
@@ -100,25 +115,84 @@ export function RechercheFournisseurs({ projetId, services, par, now, onServices
     if (error) { toast.erreur(messageErreur(error)); return }
     toast.succes(message); void recharger()
   }
+  /** Crée (ou relie) le prestataire d'UN fournisseur et le passe « suivi ». `connus` = les prestataires déjà là, plus ceux créés plus tôt dans le même lot. */
+  const suivreUn = async (f: Fournisseur, connus: readonly Pick<Service, 'id' | 'nom' | 'archived_at'>[]) => {
+    let existant = prestatairePour(f, connus)
+    let cree = false
+    if (!existant) {
+      // l'identifiant est choisi ICI : une écriture gardée hors ligne puis renvoyée ne crée jamais deux prestataires
+      const id = crypto.randomUUID()
+      const { error } = await supabase.from('services').insert({ id, projet_id: projetId, nom: f.nom, devise: deviseProbable(f) })
+      if (error) throw error
+      existant = { id, nom: f.nom }; cree = true
+    }
+    const { error } = await supabase.from('fournisseurs_detectes').update({ statut: 'suivi', service_id: existant.id }).eq('id', f.id)
+    if (error) throw error
+    return { id: existant.id, nom: existant.nom, cree }
+  }
   const suivre = async (f: Fournisseur) => {
     setOccupe(f.id)
     try {
-      let existant = prestatairePour(f, services)
-      let cree = false
-      if (!existant) {
-        // l'identifiant est choisi ICI : une écriture gardée hors ligne puis renvoyée ne crée jamais deux prestataires
-        const id = crypto.randomUUID()
-        const { error } = await supabase.from('services').insert({ id, projet_id: projetId, nom: f.nom, devise: deviseProbable(f) })
-        if (error) throw error
-        existant = { id, nom: f.nom }; cree = true
-      }
-      const { error } = await supabase.from('fournisseurs_detectes').update({ statut: 'suivi', service_id: existant.id }).eq('id', f.id)
-      if (error) throw error
-      toast.succes(cree ? `« ${f.nom} » ajouté à tes prestataires (devise ${deviseProbable(f)} : change-la avec son crayon).` : `« ${f.nom} » relié au prestataire « ${existant.nom} ».`)
+      const r = await suivreUn(f, services)
+      toast.succes(r.cree ? `« ${f.nom} » ajouté à tes prestataires (devise ${deviseProbable(f)} : change-la avec son crayon).` : `« ${f.nom} » relié au prestataire « ${r.nom} ».`)
       onServicesChange(); void recharger()
     } catch (e) {
       toast.erreur(messageErreur(e as Error))
     } finally { setOccupe(null) }
+  }
+
+  // ---- actions groupées
+  const basculer = (id: string) => setCoches((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const toutChoisir = () => setCoches(toutChoisi(coches, liste) ? new Set() : new Set(liste.map((f) => f.id)))
+  /** « Ignorer » / « Remettre » en une seule requête ; « Annuler » (8 s) rend à chacun son état d'avant. En cas de refus, la sélection reste : on peut réessayer. */
+  const changerEnLot = async (action: 'ignorer' | 'remettre') => {
+    const ids = choisis.map((f) => f.id)
+    if (!ids.length) return
+    const avant = onglet
+    setEnLot(true)
+    const { error } = await supabase.from('fournisseurs_detectes').update({ statut: STATUT_APRES_LOT[action] }).in('id', ids)
+    setEnLot(false)
+    if (error) { toast.erreur(messageErreur(error)); return }
+    setCoches(new Set()); void recharger()
+    toast.avecAction(phraseLot(action, ids.length), {
+      libelle: 'Annuler',
+      onClick: async () => {
+        // seulement ceux qui sont encore dans l'état posé par l'action : une ligne que tu as changée entre-temps n'est pas défaite
+        const { error: e2 } = await supabase.from('fournisseurs_detectes').update({ statut: avant }).in('id', ids).eq('statut', STATUT_APRES_LOT[action])
+        if (e2) { toast.erreur(messageErreur(e2)); return }
+        toast.succes('Annulé : ils sont revenus dans la liste d’avant.'); void recharger()
+      },
+    }, DUREE_ANNULATION_MS)
+  }
+  /** « Suivre » en lot : une confirmation (elle crée des prestataires), puis un par un ; ceux qui échouent restent cochés. */
+  const suivreEnLot = async () => {
+    const cibles = choisis
+    if (!cibles.length) return
+    const ok = await confirmer({
+      titre: `Suivre ${cibles.length} fournisseur${cibles.length > 1 ? 's' : ''} ?`, libelleOk: libelleLot('suivre', cibles.length),
+      texte: (
+        <>
+          <p>Chacun devient un prestataire de Coûts ; ceux qui existent déjà sont reliés, jamais en double. Tu pourras changer la devise avec le crayon de chaque prestataire.</p>
+          <ul className="mt-2 max-h-40 list-disc overflow-y-auto pl-5 text-sm" data-testid="confirmer-suivre-liste">{cibles.map((f) => <li key={f.id}>{f.nom}</li>)}</ul>
+        </>
+      ),
+    })
+    if (!ok) return
+    setEnLot(true)
+    const connus: Pick<Service, 'id' | 'nom' | 'archived_at'>[] = [...services]
+    const rates: string[] = []
+    let crees = 0, relies = 0, derniereErreur = ''
+    for (const f of cibles) {
+      try {
+        const r = await suivreUn(f, connus)
+        if (r.cree) { crees += 1; connus.push({ id: r.id, nom: r.nom, archived_at: null }) } else relies += 1
+      } catch (e) { rates.push(f.id); derniereErreur = messageErreur(e as Error) }
+    }
+    setEnLot(false)
+    setCoches(new Set(rates))
+    onServicesChange(); void recharger()
+    if (crees + relies) toast.succes(phraseSuivreLot(crees, relies, 0))
+    if (rates.length) toast.erreur(`${phraseSuivreLot(0, 0, rates.length)} (${derniereErreur})`)
   }
 
   const ouverte = etat.ouverte
@@ -155,9 +229,16 @@ export function RechercheFournisseurs({ projetId, services, par, now, onServices
               <div role="group" aria-label="Fournisseurs" className="mb-2 grid grid-cols-3 gap-1.5">
                 {ONGLETS.map((o) => (
                   <Button key={o.valeur} taille="sm" variante={onglet === o.valeur ? 'primaire' : 'secondaire'} aria-pressed={onglet === o.valeur}
-                    onClick={() => setOnglet(o.valeur)} data-testid={`onglet-fournisseur-${o.valeur}`}>{o.libelle} ({compte[o.valeur]})</Button>
+                    onClick={() => changerOnglet(o.valeur)} data-testid={`onglet-fournisseur-${o.valeur}`}>{o.libelle} ({compte[o.valeur]})</Button>
                 ))}
               </div>
+              {actions.length && liste.length ? (
+                <div className="mb-1 flex items-center gap-2">
+                  {choisir
+                    ? <span className="text-xs text-texte-2">Coche les fournisseurs, puis choisis l’action en bas.</span>
+                    : <Button taille="sm" variante="secondaire" onClick={() => setChoisir(true)} data-testid="choisir-plusieurs"><ListChecks size={15} aria-hidden />Choisir plusieurs</Button>}
+                </div>
+              ) : null}
               {!liste.length ? (
                 <p className="py-2 text-center text-sm text-texte-2" data-testid="onglet-vide">
                   {onglet === 'nouveau' ? 'Aucun nouveau fournisseur.' : onglet === 'suivi' ? 'Aucun fournisseur suivi pour l’instant : touche « Suivre » sur un nouveau.' : 'Aucun fournisseur ignoré.'}
@@ -166,31 +247,38 @@ export function RechercheFournisseurs({ projetId, services, par, now, onServices
                 <ul className="divide-y divide-bord">
                   {liste.map((f) => (
                     <li key={f.id} className="py-2" data-testid="fournisseur" data-cle={f.cle} data-statut={f.statut}>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <b className="break-words">{f.nom}</b>
-                        {f.lecteur ? <Badge teinte="ok" title="Le cockpit sait lire les montants et le PDF de ses reçus">Factures lues tout seul</Badge> : null}
-                      </div>
-                      <div className="text-xs text-texte-2">{f.expediteur ?? f.domaine} · {libelleMails(f)}</div>
-                      {f.exemple_objet ? <div className="truncate text-xs text-texte-2" title={f.exemple_objet}>« {f.exemple_objet} »</div> : null}
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {f.statut === 'nouveau' ? (
-                          <>
-                            <Button taille="sm" variante="primaire" chargement={occupe === f.id} onClick={() => void suivre(f)} data-testid="suivre-fournisseur">Suivre</Button>
-                            <Button taille="sm" variante="discret" disabled={occupe === f.id} onClick={() => void changer(f, 'ignore', `« ${f.nom} » ignoré : il ne reviendra pas dans « Nouveaux ».`)} data-testid="ignorer-fournisseur">Ignorer</Button>
-                          </>
-                        ) : f.statut === 'suivi' ? (
-                          f.service_id && nomService.get(f.service_id)
-                            ? <span className="text-xs text-texte-2" data-testid="prestataire-lie">Prestataire : {nomService.get(f.service_id)}</span>
-                            : (
-                              <>
-                                <span className="text-xs text-texte-2" data-testid="prestataire-lie">Prestataire supprimé.</span>
-                                <Button taille="sm" chargement={occupe === f.id} onClick={() => void suivre(f)} data-testid="suivre-fournisseur">Le recréer</Button>
-                              </>
-                            )
-                        ) : (
-                          <Button taille="sm" variante="secondaire" chargement={occupe === f.id} onClick={() => void changer(f, 'nouveau', `« ${f.nom} » remis dans « Nouveaux ».`)} data-testid="remettre-fournisseur">Remettre dans la liste</Button>
-                        )}
-                      </div>
+                      <Ligne choisir={choisir}>
+                        {choisir ? <input type="checkbox" aria-label={`Choisir ${f.nom}`} checked={coches.has(f.id)} onChange={() => basculer(f.id)} className="mt-1 h-5 w-5 shrink-0 accent-accent" data-testid="cocher-fournisseur" /> : null}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <b className="break-words">{f.nom}</b>
+                            {f.lecteur ? <Badge teinte="ok" title="Le cockpit sait lire les montants et le PDF de ses reçus">Factures lues tout seul</Badge> : null}
+                          </div>
+                          <div className="text-xs text-texte-2">{f.expediteur ?? f.domaine} · {libelleMails(f)}</div>
+                          {f.exemple_objet ? <div className="truncate text-xs text-texte-2" title={f.exemple_objet}>« {f.exemple_objet} »</div> : null}
+                          {!choisir ? (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {f.statut === 'nouveau' ? (
+                                <>
+                                  <Button taille="sm" variante="primaire" chargement={occupe === f.id} onClick={() => void suivre(f)} data-testid="suivre-fournisseur">Suivre</Button>
+                                  <Button taille="sm" variante="discret" disabled={occupe === f.id} onClick={() => void changer(f, 'ignore', `« ${f.nom} » ignoré : il ne reviendra pas dans « Nouveaux ».`)} data-testid="ignorer-fournisseur">Ignorer</Button>
+                                </>
+                              ) : f.statut === 'suivi' ? (
+                                f.service_id && nomService.get(f.service_id)
+                                  ? <span className="text-xs text-texte-2" data-testid="prestataire-lie">Prestataire : {nomService.get(f.service_id)}</span>
+                                  : (
+                                    <>
+                                      <span className="text-xs text-texte-2" data-testid="prestataire-lie">Prestataire supprimé.</span>
+                                      <Button taille="sm" chargement={occupe === f.id} onClick={() => void suivre(f)} data-testid="suivre-fournisseur">Le recréer</Button>
+                                    </>
+                                  )
+                              ) : (
+                                <Button taille="sm" variante="secondaire" chargement={occupe === f.id} onClick={() => void changer(f, 'nouveau', `« ${f.nom} » remis dans « Nouveaux ».`)} data-testid="remettre-fournisseur">Remettre dans la liste</Button>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      </Ligne>
                     </li>
                   ))}
                 </ul>
@@ -199,6 +287,33 @@ export function RechercheFournisseurs({ projetId, services, par, now, onServices
           )}
         </>
       )}
+      {choisir && ouvert && liste.length ? (
+        <div role="region" aria-label="Actions groupées" data-testid="barre-fournisseurs" style={{ bottom: 'var(--nav-h, 0px)' }}
+          className="fixed inset-x-0 z-40 border-t border-bord bg-carte px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 shadow-2xl">
+          <div className="mx-auto flex max-w-3xl flex-col gap-2 lg:max-w-5xl">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="font-semibold" data-testid="nb-choisis">{choisis.length} choisi{choisis.length > 1 ? 's' : ''}</span>
+              <div className="flex gap-1.5">
+                <Button taille="sm" onClick={toutChoisir} data-testid="tout-choisir">{toutChoisi(coches, liste) ? 'Aucun' : 'Tout choisir'}</Button>
+                <Button taille="sm" variante="discret" onClick={quitterChoix} data-testid="terminer-choix">Terminer</Button>
+              </div>
+            </div>
+            <div className={`grid gap-2 ${actions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {actions.map((a) => (
+                <Button key={a} taille="sm" variante={a === 'suivre' ? 'primaire' : 'secondaire'} disabled={!choisis.length || enLot} chargement={enLot}
+                  onClick={() => void (a === 'suivre' ? suivreEnLot() : changerEnLot(a))} data-testid={`lot-${a}`}>{libelleLot(a, choisis.length)}</Button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
+}
+
+/** Une ligne de la liste : en mode « choisir », toute la ligne se touche (case + texte), sinon un simple bloc. */
+function Ligne({ choisir, children }: { choisir: boolean; children: ReactNode }) {
+  return choisir
+    ? <label className="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-0.5 active:bg-carte-2">{children}</label>
+    : <div className="flex items-start gap-2">{children}</div>
 }
