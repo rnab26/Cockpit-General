@@ -2811,6 +2811,14 @@ async function controle38_filet_securite() {
   verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
   const reel = await une(`select count(*)::int as n from filet_reveils f join projets p on p.id = f.projet_id where f.simule and p.slug not like 'test-%'`);
   verifie("aucun réveil simulé sur un vrai projet", reel.n === 0, reel);
+  // 0082 : « aucune session chef » n'est PAS « jeton manquant » (constaté sur le moteur le 13 oct. : l'écran réclamait un jeton qui existait,
+  // le dernier réveil tiré avec lui avait reçu HTTP 200). Contrôle de COHÉRENCE en LECTURE SEULE sur le vrai projet « cockpit » : quel que soit
+  // l'état du moment (une chef vit ou non), le statut doit dire la vérité sur ses propres ingrédients (cible du réveil, jeton de la cible, jeton ailleurs).
+  const m = (await une(`select to_jsonb(x) as j from (select etat_filet('cockpit') as e, cible_reveil(p.id) is null as sans_cible, exists (select 1 from reveils_immediats where actif) as jeton_ailleurs, exists (select 1 from reveils_immediats ri where ri.projet_id = cible_reveil(p.id) and ri.actif) as jeton_cible from projets p where p.slug = 'cockpit') x`)).j;
+  const avant = !m.e.global_actif || !m.e.projet_actif || !m.e.cron?.actif; // statuts plus prioritaires (coupé pour tous, éteint, surveillance absente)
+  const attendu = m.sans_cible && m.jeton_ailleurs ? "sans_chef" : !m.jeton_cible ? "sans_jeton" : null;
+  verifie("etat_filet du moteur : sans cible de réveil mais avec un jeton configuré = « sans_chef », jamais « sans_jeton » ; avec une cible munie d'un jeton, ni l'un ni l'autre",
+    avant || (attendu ? m.e.statut === attendu : !["sans_chef", "sans_jeton"].includes(m.e.statut)), { statut: m.e.statut, attendu, sans_cible: m.sans_cible, jeton_ailleurs: m.jeton_ailleurs, jeton_cible: m.jeton_cible });
 }
 
 // 40. Libération automatique (0050) : le job pg_cron libère seul un chantier tenu par une session morte, jamais un vivant, jamais un projet de test au vrai cron.
