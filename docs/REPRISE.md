@@ -85,14 +85,15 @@ avancés dans la session sans passer par l'app : « les anciens et les nouveaux 
 un chantier ouvert que personne ne tient et dont le travail est PROUVÉ dans `main` passe « livré, à vérifier » tout seul (migration 0080,
 `rapprocher_depot` + `scripts/rapprocher.py` lancé en fond par les hooks), une session vivante reçoit le rappel précis de ce qu'elle tient sans
 trace depuis 4 h, et l'écran « Chantiers et GitHub » (Réglages du projet) montre l'état et l'interrupteur.
-**Vérifié** : base §57 (31) + banc complet 870/870 (avant l'ajout de l'échec noté), `verifier-rapprochement.mjs` 51 (sabotage du collecteur : 6 contrôles rougissent ; ancien guillemetage : le passage échoue), 49 suites pures
+**EN LIGNE** (PR #129, version `336c5977d016`, 13 oct. 16 h 07 UTC) : rejoué sur le SITE RÉEL, écran de téléphone, projet jetable branché sur le vrai dépôt GitHub : `verifier-rapprochement-ecran.mjs` 14/14, `verifier-accueil.mjs` 53/53.
+**Vérifié** : base 872/872 (complet, après tous les ajouts) dont §57 (31), web 486/486, `verifier-rapprochement.mjs` 51 (sabotage du collecteur : 6 contrôles rougissent ; ancien guillemetage : le passage échoue), 49 suites pures
 (dont `verifier-rapprochement.ts` 20), greffe 44, app tsc + build. **Passage d'essai FacePro (lecture seule)** : 5 clôtures sûres proposées.
 **Bloqué par la plateforme, pas fait** : l'application RÉELLE sur FacePro (classifieur « Modify Shared Resources », refusé deux fois, y compris après
 « j'ai donné mon accord sur tout ») ; elle se fera toute seule à l'ouverture de la prochaine session FacePro une fois la PR fusionnée (le hook
 lance le passage), ou par `python3 scripts/rapprocher.py --projet facepro` dès que Raphaël autorise cette commande précise. Aussi en attente de
 son autorisation précise : classer sans test à 7 jours (réglage de projet), 3 clôtures à la main (« 8,8 $ » PR #64, « lèvres » PR #58, « oreille »
 fusion e68212c), la carte « FacePro : aucune session ne s'ouvre seule ».
-**Non fait** : relayer les verdicts que Raphaël dit DANS une session (carte « tu confirmes ? » en un toucher) ; écran pour annuler un rapprochement.
+**Non fait, noté dans le cockpit (section « Rapprochement GitHub », prêts à lancer)** : relayer les verdicts que Raphaël dit DANS une session (carte « tu confirmes ? » en un toucher, chantier cff4fbb9) ; écran pour annuler un rapprochement (chantier 7070ce60). La carte « FacePro : aucune session ne s'ouvre seule » : sa recommandation (un réveil dédié) date d'AVANT la coupure des réveils récurrents : à re-décider par Raphaël, pas appliquée.
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
