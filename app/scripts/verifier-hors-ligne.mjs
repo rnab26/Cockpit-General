@@ -84,8 +84,11 @@ try {
     if (!(await page.getByTestId('discussions-liste').isVisible().catch(() => false))) await page.getByTestId('onglet-barre-discussions').click()
     await page.locator(`[data-testid="discussion-ligne"][data-projet="${SLUG}"]`).click()
   }
-  const envoyer = async (texte) => {
+  // `avantEnvoi` : ce qu'on fait APRÈS l'ouverture du chat et AVANT l'envoi. Ouvrir le chat écrit une préférence interne (« lu jusqu'à »)
+  // qui passe devant dans la file : un scénario qui dépend du tout premier envoi (réponse perdue) doit couper le réseau seulement après.
+  const envoyer = async (texte, avantEnvoi) => {
     await ouvrirBulle()
+    if (avantEnvoi) { await pause(1500); avantEnvoi() }
     await page.getByTestId('bulle-aide-saisie').fill(texte)
     await page.getByTestId('bulle-aide-envoyer').click()
     await page.waitForFunction(() => document.querySelector('[data-testid=bulle-aide-saisie]')?.value === '', null, { timeout: 20000 }).catch(() => {})
@@ -173,16 +176,32 @@ try {
   // --- 3. écrire hors ligne : gardé, dit, pas encore en base
   const t1 = 'Message écrit sans réseau — ' + randomUUID().slice(0, 6)
   await envoyer(t1)
-  verifie('écriture à l’instant : voyant seulement, panneau pas encore (délai)', await bandeau.count() === 0 && await page.getByTestId('voyant-hors-ligne').count() === 1)
+  // L'appareil garde aussi, en plus du message, des écritures internes (ex. « lu jusqu'à » du fil, préférence lu_fils, écrite à l'ouverture du chat) :
+  // le bandeau compte TOUT ce qui attend. On ne présume donc plus « 1 élément » : au moins N, et le message écrit est bien dans la file.
+  // (Le délai avant le panneau est couvert par les règles pures — verifier-file-attente.ts — et par les contrôles de lecture plus haut.)
+  const nAttente = async () => Number(/(\d+) éléments? enregistrés?/.exec(await page.getByTestId('bandeau-texte').innerText().catch(() => ''))?.[1] ?? 0)
+  // Ce que le bandeau détaille (résumé + aperçu de chaque écriture gardée) : ouvre le détail, lit, le referme (l'état de l'écran ne change pas).
+  const texteFile = async () => {
+    const ouvrir = bandeau.getByLabel('Voir le détail')
+    await ouvrir.waitFor({ timeout: 8000 }).catch(() => {})   // après un rechargement, le détail se lit d'abord dans l'appareil
+    if (await ouvrir.count()) {
+      await ouvrir.click()
+      const t = await page.getByTestId('liste-file-attente').innerText().catch(() => '')
+      await bandeau.getByLabel('Masquer le détail').click().catch(() => {})
+      return t
+    }
+    return await page.getByTestId('liste-file-attente').innerText().catch(() => '')
+  }
+  verifie('écriture à l’instant : l’appareil le dit (voyant ou panneau), rien n’est perdu', (await bandeau.count()) + (await page.getByTestId('voyant-hors-ligne').count()) >= 1)
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('le bandeau dit « 1 élément enregistré sur cet appareil »', /1 élément enregistré sur cet appareil/.test(await page.getByTestId('bandeau-texte').innerText().catch(() => '')))
+  verifie('le bandeau dit « N éléments enregistrés sur cet appareil » (N ≥ 1) et le message écrit y est', await nAttente() >= 1 && (await texteFile()).includes(t1), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
   verifie('rien en base pour l’instant (honnête : pas de faux succès)', compte() === 0)
   await page.screenshot({ path: `${CAPTURES}/hors-ligne-attente.png` })
 
   // --- 4. fermer et rouvrir la page (réseau toujours coupé) : le message est toujours là
   await page.reload({ waitUntil: 'domcontentloaded' })
   await bandeau.waitFor({ timeout: 15000 }).catch(() => {})
-  verifie('après rechargement hors ligne : toujours « 1 élément enregistré »', /1 élément enregistré/.test(await page.getByTestId('bandeau-texte').innerText().catch(() => '')))
+  verifie('après rechargement hors ligne : toujours enregistré sur l’appareil (N ≥ 1), message compris', await nAttente() >= 1 && (await texteFile()).includes(t1), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
 
   // --- 4 bis. le message écrit hors ligne se VOIT dans la bulle (même après rechargement), marqué « en attente d'envoi »
   await ouvrirBulle()
@@ -197,8 +216,8 @@ try {
   // --- 5. un deuxième message hors ligne s'ajoute derrière (ordre conservé)
   const t2 = 'Deuxième message hors ligne — ' + randomUUID().slice(0, 6)
   await envoyer(t2)
-  await page.getByTestId('bandeau-texte').getByText('2 éléments', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('deux éléments en attente', /2 éléments enregistrés/.test(await page.getByTestId('bandeau-texte').innerText().catch(() => '')))
+  await page.getByTestId('bandeau-texte').getByText('éléments', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('au moins deux éléments en attente, nos deux messages dans la file', await nAttente() >= 2 && (await texteFile()).includes(t1) && (await texteFile()).includes(t2), { n: await nAttente(), texte: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
 
   // --- 6. le réseau revient : tout part, dans l'ordre, une seule fois chacun
   reseau = 'ok'
@@ -217,13 +236,12 @@ try {
   verifie('le bandeau disparaît quand tout est parti', await bandeau.count() === 0)
 
   // --- 7. réponse perdue : la requête est arrivée mais l'appareil ne le sait pas → pas de doublon
-  reseau = 'perdue'
   const t3 = 'Réponse perdue — ' + randomUUID().slice(0, 6)
-  await envoyer(t3)
+  await envoyer(t3, () => { reseau = 'perdue' })
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
   const aLaLigne = () => sql(`select count(*)::int as n from messages where projet_id = '${projetId}' and corps = '${esc(t3)}'`)[0].n === 1
-  for (let i = 0; i < 16 && !aLaLigne(); i++) await pause(500)
-  verifie('réponse perdue : le serveur a déjà la ligne, l’appareil la croit en attente', aLaLigne())
+  for (let i = 0; i < 30 && !aLaLigne(); i++) await pause(500)
+  verifie('réponse perdue : le serveur a déjà la ligne, l’appareil la croit en attente', aLaLigne(), { ligne: aLaLigne(), bandeau: await page.getByTestId('bandeau-texte').innerText().catch(() => null) })
   reseau = 'ok'
   await page.getByTestId('renvoyer-maintenant').click()
   await bandeau.waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
@@ -243,21 +261,25 @@ try {
   verifie('le détail montre le contenu gardé et la raison', (await page.getByTestId('liste-file-attente').innerText()).includes('Refusé (400)'))
   await page.screenshot({ path: `${CAPTURES}/hors-ligne-refus.png` })
   reseau = 'ok'
-  await page.getByRole('button', { name: 'Réessayer' }).click()
+  // Chaque écriture refusée a son bouton (la file porte aussi des écritures internes) : celui de NOTRE message.
+  await page.getByTestId('liste-file-attente').locator('li').filter({ hasText: t4 }).getByRole('button', { name: 'Réessayer' }).click()
   for (let i = 0; i < 40 && sql(`select count(*)::int as n from messages where projet_id = '${projetId}' and corps = '${esc(t4)}'`)[0].n < 1; i++) await pause(500)
   verifie('Réessayer : le message arrive en base', sql(`select count(*)::int as n from messages where projet_id = '${projetId}' and corps = '${esc(t4)}'`)[0].n === 1)
 
   // --- 9. abandonner demande confirmation
   reseau = 'coupe'
-  await envoyer('À abandonner — ' + randomUUID().slice(0, 6))
+  const t5 = 'À abandonner — ' + randomUUID().slice(0, 6)
+  await envoyer(t5)
   await page.getByTestId('bandeau-texte').getByText('enregistré', { exact: false }).waitFor({ timeout: 10000 }).catch(() => {})
-  if (await bandeau.getByLabel('Voir le détail').count()) await bandeau.getByLabel('Voir le détail').click()
-  await page.getByTestId('liste-file-attente').getByRole('button', { name: 'Abandonner' }).click()
+  if (await bandeau.getByLabel('Voir le détail').count() && !(await page.getByTestId('liste-file-attente').count())) await bandeau.getByLabel('Voir le détail').click()
+  // La file peut porter d'autres écritures internes : on abandonne CELLE de notre message.
+  const ligneT5 = page.getByTestId('liste-file-attente').locator('li').filter({ hasText: t5 })
+  await ligneT5.getByRole('button', { name: 'Abandonner' }).click()
   verifie('abandonner : une confirmation est demandée avant d’effacer', await page.getByText('Abandonner cet envoi ?').isVisible())
   await page.getByRole('button', { name: 'Abandonner', exact: true }).last().click()
   await pause(1000)
   reseau = 'ok'
-  verifie('confirmé : l’envoi est retiré de la file (plus rien « enregistré sur cet appareil »)', !/enregistré/.test(await bandeau.innerText().catch(() => '')))
+  verifie('confirmé : l’envoi abandonné est retiré de la file (notre message n’y est plus)', !(await page.getByTestId('liste-file-attente').innerText().catch(() => '')).includes(t5))
 
   const sansDefilement = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   verifie('téléphone : aucun défilement horizontal', sansDefilement <= 0, sansDefilement)
