@@ -4,6 +4,16 @@ Raphaël : « Configure-le que ce soit constant, c'est mieux. » Une tâche plan
 e-mails « Your receipt from Anthropic » et ajoute chaque nouvelle facture dans **Coûts › Claude** (type « facture », PDF joint si
 le lien du mail est encore valable). La carte du prestataire dit quand la tâche est passée et ce qu'elle a fait.
 
+## État au 13 oct. 2026 (à relire avant d'agir)
+
+- **Fait et vérifié** : le lecteur et son banc (49 contrôles), le battement et l'écran Coûts (30 + 36 contrôles), la procédure ci-dessous.
+- **La tâche planifiée existe mais elle est EN PAUSE** : routine « Import des reçus Claude (Coûts) » (`trig_01HViAL4dDqkdXTKmjrRmHJ8`, le dimanche à 7 h 49, heure d'Israël). Créée par l'outil `create_trigger`, elle n'a **aucun connecteur** : le paramètre `connectors` est refusé pour cette organisation, et l'essai à blanc du 13 oct. l'a confirmé (aucun outil `mcp__` dans sa session). Sans Gmail, elle ne peut rien lire.
+- **Pour la brancher** (geste de Raphaël, aucun outil ne le fait) : <https://claude.ai/code/routines> › la routine › le menu à côté de son nom › **Edit** › section **Connectors** (en bas du formulaire) › ajouter **Gmail** › enregistrer. Les libellés exacts de ces boutons ne sont pas documentés : à lire à l'écran. Ensuite : `update_trigger` avec `enabled=true`, puis un passage de validation (`fire_trigger`). Doc : <https://code.claude.com/docs/en/routines> (« Routines can use your connected MCP connectors… »).
+- **Ce que l'essai à blanc a prouvé** (session de routine, 13 oct.) : le dépôt public se clone avec git, `SUPABASE_SERVICE_ROLE_KEY` est définie, python3 et pdftotext sont présents, `pay.stripe.com` est joignable ; la session tourne en mode de permission « auto » (la plateforme peut refuser une écriture dans les données réelles : garde-fou 5) ; un passage MINIMAL (clonage + quelques commandes, sans Gmail) coûte environ 0,15 à 0,18 $ au tarif public (7 à 9 tours, ~27 000 jetons créés, ~430 000 relus). Le coût d'un vrai passage avec Gmail n'est pas encore mesuré.
+- **Attention, sécurité** : un connecteur Gmail donne à la routine TOUS ses outils (envoyer, répondre, supprimer…) sans demande de permission pendant le passage, « en ton nom » (doc, page routines). Seul le texte de la routine l'en empêche : la plateforme ne l'impose pas. Les garde-fous 1 à 3 ci-dessous sont donc la seule barrière. La voie sans ce risque est celle de la fin de page.
+- **Limites de la plateforme** (doc routines) : intervalle minimal 1 heure, 100 passages planifiés par heure et par compte ; les passages comptent dans l'usage du forfait ; forfait épuisé = passage refusé jusqu'à la remise à zéro.
+- **L'historique** (les 7 reçus de juillet à octobre) n'est PAS dans Coûts : la plateforme a refusé qu'une session l'écrive sans l'accord précis de Raphaël (« Modify Shared Resources »). Il entre en reculant la date de départ dans le crayon du prestataire, ou avec son « oui ».
+
 ## Qui fait quoi
 
 | Pièce | Rôle |
@@ -43,7 +53,7 @@ Un essai sans aucune écriture : `--essai` à l'étape 5 (le script dit ce qu'il
 
 ## Coût et arrêt
 
-Un passage coûte de l'ordre de 300 000 jetons (mesure du cockpit sur ses réveils neufs ; le premier passage réel est noté dans `docs/REPRISE.md`), soit environ 1,3 million par mois en hebdomadaire. La tâche a un accès permanent à la boîte Gmail de Raphaël (connecteur) : pour le retirer, mettre la routine en pause et déconnecter Gmail dans les connecteurs de claude.ai.
+Un passage coûte de l'ordre de 300 000 jetons selon la mesure du cockpit sur ses réveils neufs ; le passage minimal mesuré le 13 oct. (sans Gmail) a coûté 0,15 à 0,18 $ au tarif public. Soit environ 1,3 million de jetons par mois en hebdomadaire (estimation : le premier vrai passage sera noté dans `docs/REPRISE.md`). La tâche a un accès permanent à la boîte Gmail de Raphaël (connecteur) : pour le retirer, mettre la routine en pause et déconnecter Gmail dans les connecteurs de claude.ai.
 
 ## Limites connues
 
