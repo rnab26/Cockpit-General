@@ -95,6 +95,7 @@ export async function purgerMarquesDansLesVraisProjets(sql, marque) {
  * par « [TEST » (chantiers, leurs traces de suppression, messages, étapes,
  * sessions, tâches). Doit valoir 0. Préfixe seulement : une demande de
  * Raphaël qui CITE « [TEST … » n'est pas un reste.
+ * Une session dont l'identifiant commence par `test-` dans un projet réel en est un aussi (13 oct. 2026 : 9 restes du 29 sept., sans « [TEST » dans leur sujet, jamais vus).
  */
 export async function restesDansLesVraisProjets(sql) {
   const reel = `projet_id in (select id from projets where not ${EST_TEST()})`
@@ -103,7 +104,7 @@ export async function restesDansLesVraisProjets(sql) {
       (select count(*) from supprimes where ligne->>'titre' like '[TEST%' and ${reel})::int as supprimes,
       (select count(*) from messages where corps like '[TEST%' and ${reel})::int as messages,
       (select count(*) from activite where etape like '[TEST%' and ${reel})::int as activite,
-      (select count(*) from sessions where sujet like '[TEST%' and ${reel})::int as sessions,
+      (select count(*) from sessions where (sujet like '[TEST%' or id like 'test-%') and ${reel})::int as sessions,
       (select count(*) from taches where description like '[TEST%' and ${reel})::int as taches,
       (select coalesce(jsonb_agg(p.slug || ' : ' || c.titre), '[]'::jsonb) from chantiers c join projets p on p.id = c.projet_id
          where c.titre like '[TEST%' and not ${EST_TEST('p.slug')}) as titres`))[0]
