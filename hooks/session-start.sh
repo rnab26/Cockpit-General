@@ -107,6 +107,13 @@ if [ "$voie" != invisible ] && [ "$branche_ok" = 1 ] && [ -n "${COCKPIT_CACHE:-}
     fi
   fi
 fi
+# RAPPROCHEMENT GITHUB (0080, 13 oct. 2026) : les chantiers ouverts que plus personne ne tient et dont le travail est PROUVÉ dans main
+# passent « livré, à vérifier » tout seuls (Raphaël : « mes chantiers ne sont pas à jour »). En tâche de fond, au plus une fois toutes
+# les 20 min par projet, jamais bloquant ; éteint par COCKPIT_RAPPROCHEMENT=0 ou par le réglage du projet (écran « Chantiers et GitHub »).
+rapprocher="${COCKPIT_RAPPROCHER:-$(dirname "$SQL")/rapprocher.py}"
+if [ "${COCKPIT_RAPPROCHEMENT:-1}" != 0 ] && [ -f "$rapprocher" ] && command -v python3 >/dev/null 2>&1; then
+  ( cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null; COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 170 python3 "$rapprocher" --projet "$PROJET" --si-ancien 20 --silencieux >/dev/null 2>&1 & ) >/dev/null 2>&1
+fi
 majsql="null"; [ -n "$maj" ] && majsql="'$(printf '%s' "$maj" | sed "s/'/''/g")'"
 un "update projets set branchement_vu_at = now(), branchement_maj = coalesce($majsql, branchement_maj), branchement_maj_at = case when $majsql is not null then now() else branchement_maj_at end where slug = $P" >/dev/null 2>&1 || true
 bloc_maj=""

@@ -30,6 +30,7 @@ import { useFlash } from './Vivant.tsx'
 import { Renforts, RenfortsTout } from './Renforts.tsx'
 import { ReveilImmediat } from './ReveilImmediat.tsx'
 import { FiletSecurite } from './FiletSecurite.tsx'
+import { RapprochementGithub } from './RapprochementGithub.tsx'
 import { quandDeCote } from '../lib/reporter.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
@@ -786,6 +787,7 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
       {/* L'interrupteur du mode autonome reste visible, hors du repli : un toucher (chantier 79ec70d6). */}
       {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
       {g.admin ? <FiletSecurite projet={p} onJeton={versJeton} /> : null}
+      {g.admin ? <RapprochementGithub projet={p} /> : null}
       <Repliable testId="reglages-projet" ouvert={reglagesOuverts} onToggle={setReglagesOuverts} titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
         <BarreProjet projet={p} nu sansAutonome />
         <div className="mt-3 space-y-2">

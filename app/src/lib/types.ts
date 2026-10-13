@@ -45,6 +45,9 @@ export interface Projet {
   compta_destinataire?: string | null
   /** Classer sans test les chantiers livrés restés sans un mot de Raphaël après N jours (0079, 1-90) ; null = jamais. */
   livres_classes_apres_j?: number | null
+  /** Rapprochement GitHub → chantiers (0080) : passage automatique des hooks allumé (défaut) ; date du dernier passage. */
+  rapprochement_auto?: boolean
+  rapproche_at?: string | null
 }
 
 export interface Section {

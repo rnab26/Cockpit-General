@@ -3654,6 +3654,154 @@ async function controle42_deja_livre_rien_repris() {
   verifie("la passe rend la réservation expirée (pris_par vidé) et garde la valide", e.exp === null && e.val === "agent/vivant", e);
 }
 
+const PRG = randomUUID(), SLUG_RG = `test-verif-${rand}-rg`;
+async function controle57_rapprochement_github() {
+  section("57. Rapprochement GitHub (0080) : un chantier ouvert que personne ne tient, dont l'ACHÈVEMENT est prouvé dans main, passe « livré, à vérifier » — jamais sur une simple mention, jamais « validé », jamais un chantier tenu ou qui attend Raphaël");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRG)}, ${q(SLUG_RG)}, 'Projet de test rapprochement GitHub', 'rnab26/test-inexistant')`);
+  const il = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+  // Un chantier « mort » : créé il y a 3 jours, dernière trace 2 jours 23 h avant maintenant ; rien ne l'a touché depuis (updated_at vieux).
+  const ch = async (titre, o = {}) => {
+    const id = randomUUID();
+    await sql(`insert into chantiers (id, projet_id, titre, demande, etat, pris_par, jalons, created_at, updated_at) values (${q(id)}, ${q(PRG)}, ${q(titre)}, 'Test.', ${q(o.etat ?? "en_cours")}, ${q(o.pris_par ?? null)}, ${q(JSON.stringify(o.jalons ?? {}))}::jsonb, ${q(il(72))}, ${q(il(71))})`);
+    await sql(`insert into activite (projet_id, chantier_id, session, etape, pourcentage, statut, updated_at) values (${q(PRG)}, ${q(id)}, ${q(o.pris_par ?? "session-test")}, 'je travaille dessus', 50, 'en_cours', ${q(il(71))})`);
+    return id;
+  };
+  const vieillir = () => sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '71 hours' where projet_id = ${q(PRG)}`);
+  const etat = async (id) => await une(`select etat, pris_par, livre_at, comment_verifier, jalons, archived_at from chantiers where id = ${q(id)}`);
+
+  const A = await ch("Jalon : le commit signalé est dans main", { pris_par: "claude/a", jalons: { pousse: { at: il(70), detail: "abc1234" } } });
+  const B = await ch("Branche dédiée dont le code est dans main", { pris_par: "claude/b" });
+  const B1 = await ch("Branche partagée, premier chantier", { pris_par: "claude/partagee" });
+  const B2 = await ch("Branche partagée, second chantier", { pris_par: "claude/partagee" });
+  const C = await ch("PR venue de sa branche", { pris_par: "claude/c" });
+  const D = await ch("Titre cité par une PR", { etat: "libre" });
+  const D2 = await ch("Mentionné seulement dans un commit", { pris_par: "claude/d2" });
+  const E = await ch("Alerte GPU facturés sans job (incident)", { etat: "libre" });
+  const E2 = await ch("Alerte GPU facturés sans job (suite)", { etat: "libre" });
+  const F = await ch("On en a parlé après la livraison", { pris_par: "claude/f", jalons: { pousse: { at: il(70), detail: "fff1234" } } });
+  const G = await ch("Tenu par une session vivante", { pris_par: "claude/g", jalons: { pousse: { at: il(70), detail: "ggg1234" } } });
+  const H = await ch("Attend une réponse de Raphaël", { pris_par: "claude/h", jalons: { pousse: { at: il(70), detail: "hhh1234" } } });
+  const I = await ch("Chantier libre avec un jalon", { etat: "libre", pris_par: "claude/i", jalons: { pousse: { at: il(70), detail: "iii1234" } } });
+  const J = await ch("Déjà livré", { etat: "a_verifier" });
+  const K = await ch("Poursuivi après le dernier envoi", { pris_par: "claude/k", jalons: { pousse: { at: il(70), detail: "kkk1234" } } });
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PRG)}, ${q(F)}, 'Raphaël', 'proprietaire', 'info', 'mon verdict était faux, on reprend', ${q(il(10))})`);
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PRG)}, ${q(H)}, 'Claude', 'session', 'question', 'Je lance le test payant ?')`);
+  await sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at) values (${q(randomUUID())}, ${q(PRG)}, 'claude/g', now(), now())`);
+  await sql(`update activite set updated_at = ${q(il(30))} where chantier_id = ${q(K)}`); // du travail signalé 40 h APRÈS le dernier envoi
+  await vieillir();
+
+  const dateFusion = il(48);
+  const url = (n) => `https://github.com/rnab26/test-inexistant/pull/${n}`;
+  const faits = {
+    depot: "rnab26/test-inexistant",
+    par_chantier: {
+      [A]: { regle: "jalon", n: 1, sha: "abc1234ffffffffffffffffffffffffffffffff", date: dateFusion, sujet: "Merge pull request #1", url: "https://github.com/rnab26/test-inexistant/commit/abc1234" },
+      [B]: { regle: "branche", n: 3, sha: "bbb1234", date: dateFusion, sujet: "Merge b", url: "https://github.com/rnab26/test-inexistant/commit/bbb1234" },
+      [B1]: { regle: "branche", n: 2, sha: "b11234", date: dateFusion, sujet: "Merge b1", url: "https://github.com/rnab26/test-inexistant/commit/b11234" },
+      [F]: { regle: "jalon", n: 1, sha: "fff1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/fff1234" },
+      [G]: { regle: "jalon", n: 1, sha: "ggg1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/ggg1234" },
+      [H]: { regle: "jalon", n: 1, sha: "hhh1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/hhh1234" },
+      [I]: { regle: "jalon", n: 1, sha: "iii1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/iii1234" },
+      [K]: { regle: "jalon", n: 1, sha: "kkk1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/kkk1234" },
+    },
+    fusions: [
+      { sha: "c121212", date: dateFusion, sujet: "Merge pull request #12 from rnab26/claude/c", corps: "Banc : cas ajouté", titre: "Banc : cas ajouté", numero: 12, branche: "claude/c", url: url(12) },
+      { sha: "d131313", date: dateFusion, sujet: "Merge pull request #13 from rnab26/claude/x", corps: `Le titre d'une PR qui cite le chantier ${D.slice(0, 8)}`, titre: `Une PR (chantier ${D.slice(0, 8)})`, numero: 13, branche: "claude/x", url: url(13) },
+      { sha: "d2d2d2d", date: dateFusion, sujet: `Étape du chantier ${D2.slice(0, 8)}`, corps: "", titre: null, numero: null, branche: null, url: "https://github.com/rnab26/test-inexistant/commit/d2d2d2d" },
+      { sha: "e141414", date: dateFusion, sujet: "Merge pull request #14 from rnab26/claude/y", corps: "Alerte GPU facturés sans job", titre: "Alerte GPU facturés sans job", numero: 14, branche: "claude/y", url: url(14) },
+    ],
+  };
+  const essai = (await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, false) as r`)).r;
+  const avant = await etat(A);
+  verifie("passage d'essai (p_appliquer = false) : dit ce qui serait fait et n'écrit RIEN", essai.a_livrer >= 3 && essai.livres === 0 && avant.etat === "en_cours" && avant.pris_par === "claude/a" && (await une(`select rapproche_at as r from projets where id = ${q(PRG)}`)).r === null, { a_livrer: essai.a_livrer, livres: essai.livres, avant });
+
+  const r = (await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`)).r;
+  const reg = Object.fromEntries(r.actions.map((a) => [a.chantier, a.regle]));
+  verifie("preuve 0 : le commit que la session avait signalé « envoyé » est dans main → livré (règle « jalon »)", reg[A] === "jalon" && (await etat(A)).etat === "a_verifier", reg[A]);
+  verifie("preuve 1 : le travail de code de sa branche est dans main → livré (règle « branche »)", reg[B] === "branche" && (await etat(B)).etat === "a_verifier", reg[B]);
+  verifie("preuve 1b : une PR venue de sa branche, fusionnée après sa dernière trace → livré", reg[C] === "branche" && (await etat(C)).etat === "a_verifier", reg[C]);
+  verifie("preuve 2 : le titre d'une PR fusionnée cite son identifiant → livré, même « libre »", reg[D] === "identifiant" && (await etat(D)).etat === "a_verifier", reg[D]);
+  verifie("une simple MENTION de l'identifiant dans un commit (pas une PR) n'est PAS un achèvement", (await etat(D2)).etat === "en_cours" && !reg[D2], reg[D2]);
+  verifie("preuve 3 : un titre de PR presque identique à UN SEUL chantier ouvert le livre ; s'il en ressemble à deux, aucun n'est touché",
+    (await etat(E)).etat === "libre" && (await etat(E2)).etat === "libre" && !reg[E] && !reg[E2], { E: reg[E], E2: reg[E2] });
+  verifie("une branche tenue par DEUX chantiers ouverts : preuve ambiguë, aucun des deux n'est livré", (await etat(B1)).etat === "en_cours" && (await etat(B2)).etat === "en_cours", { B1: reg[B1], B2: reg[B2] });
+  verifie("on en a parlé APRÈS la livraison (message de Raphaël plus récent) : jamais livré", (await etat(F)).etat === "en_cours" && !reg[F], reg[F]);
+  verifie("du travail signalé APRÈS le dernier envoi : le jalon n'est qu'une étape, jamais livré", (await etat(K)).etat === "en_cours" && !reg[K], reg[K]);
+  verifie("tenu par une session VIVANTE : jamais touché (sa session reçoit un rappel à la place)", (await etat(G)).etat === "en_cours" && !reg[G] && r.tenus_vivants >= 1, { reg: reg[G], tenus: r.tenus_vivants });
+  verifie("une question de Raphaël reste sans réponse : le chantier n'est jamais touché", (await etat(H)).etat === "en_cours" && !reg[H], reg[H]);
+  verifie("un chantier « libre » (rendu par le balayage) : un jalon ne suffit pas", (await etat(I)).etat === "libre" && !reg[I], reg[I]);
+  verifie("un chantier déjà « à vérifier » n'est pas retouché", (await etat(J)).etat === "a_verifier" && !reg[J]);
+
+  // Ce qui est écrit pour les livrés.
+  const a = await etat(A);
+  verifie("livré : plus de réservation, jamais « valide », « Comment vérifier » avec le lien, livré à la date de la FUSION (pas du rapprochement), jalon « pousse » posé",
+    a.pris_par === null && a.etat === "a_verifier" && /github\.com\/rnab26\/test-inexistant/.test(a.comment_verifier) && Math.abs(new Date(a.livre_at) - new Date(dateFusion)) < 2000 && a.jalons?.pousse?.detail, a);
+  const fil = await sql(`select kind, auteur_type, corps from messages where chantier_id = ${q(A)} and corps like 'Livré, d''après GitHub%'`);
+  verifie("une ligne « Livré, d'après GitHub : <preuve> » dans le fil (constat, jamais une réponse de Claude), avec le moyen de le contester", fil.length === 1 && fil[0].kind === "constat" && /Ça ne marche pas/.test(fil[0].corps) && /signalé comme envoyé/.test(fil[0].corps), fil);
+  const act = await sql(`select statut, pourcentage from activite where chantier_id = ${q(A)} and session = 'rapprochement'`);
+  verifie("la barre du chantier est fermée (activité « rapprochement » terminée à 100 %)", act.length === 1 && act[0].statut === "termine" && act[0].pourcentage === 100, act);
+  const journal = await sql(`select regle, annule_at from rapprochements where projet_id = ${q(PRG)}`);
+  verifie("chaque livraison est tracée dans le journal (4 : A, B, C, D)", journal.length === 4 && journal.every((j) => j.annule_at === null), journal.length);
+  verifie("le passage est daté (projets.rapproche_at) et compté par l'écran (etat_rapprochement)", (await une(`select rapproche_at is not null as ok from projets where id = ${q(PRG)}`)).ok === true && (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e.livres_24h === 4);
+
+  // Idempotent ; défaisable.
+  const encore = (await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`)).r;
+  verifie("idempotent : un deuxième passage ne livre plus rien", encore.a_livrer === 0 && encore.livres === 0, encore.a_livrer);
+  const rid = (await une(`select id from rapprochements where chantier_id = ${q(B)}`)).id;
+  const ann = (await une(`select cockpit.annuler_rapprochement(${q(rid)}) as r`)).r;
+  const apresAnn = await etat(B);
+  verifie("annuler_rapprochement : le chantier reprend son état d'avant (en cours), sans date de livraison ni jalon posé par le rapprochement", ann.ok === true && apresAnn.etat === "en_cours" && apresAnn.livre_at === null && !apresAnn.jalons?.pousse, { ann, apresAnn });
+  const ann2 = (await une(`select cockpit.annuler_rapprochement(${q(rid)}) as r`)).r;
+  verifie("… et on ne l'annule pas deux fois", ann2.ok === false && ann2.raison === "deja_annule", ann2);
+
+  // Le rappel précis pour une session VIVANTE.
+  const vieux = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/g', 4) as j`)).j;
+  const frais = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/g', 500) as j`)).j;
+  const autre = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/inconnue', 4) as j`)).j;
+  verifie("rappel : les chantiers qu'une session tient sans trace depuis plus de N h sont listés (id, titre, heures) ; sous le seuil ou pour une autre branche : rien",
+    vieux.length === 1 && vieux[0].id === G && vieux[0].heures > 60 && frais.length === 0 && autre.length === 0, { vieux, frais, autre });
+  const attend = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/h', 4) as j`)).j;
+  verifie("rappel : un chantier qui attend une réponse de Raphaël n'est jamais réclamé à la session", attend.length === 0, attend);
+
+  // Un passage qui ÉCHOUE se dit : la cause et l'heure sont montrées par etat_rapprochement, le passage réussi suivant les efface.
+  const noter = (await une(`select cockpit.noter_echec_rapprochement(${q(SLUG_RG)}, 'clone impossible : test du banc') as r`)).r;
+  const e1 = (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e;
+  await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`);
+  const e2 = (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e;
+  verifie("un passage qui ÉCHOUE est noté (cause + date) et montré par etat_rapprochement ; le passage réussi suivant l'efface",
+    noter.ok === true && e1.erreur === "clone impossible : test du banc" && !!e1.erreur_at && e2.erreur === null && e2.erreur_at === null, { noter, e1, e2 });
+  await une(`select cockpit.noter_echec_rapprochement(${q(SLUG_RG)}, '${"x".repeat(500)}') as r`);
+  verifie("… la cause notée est coupée à 300 signes ; un message vide devient « erreur inconnue » ; un projet inconnu n'écrit rien",
+    ((await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e.erreur ?? "").length === 300
+      && (await une(`select cockpit.noter_echec_rapprochement(${q(SLUG_RG)}, '   ') as r`)).r.ok === true
+      && (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e.erreur === "erreur inconnue"
+      && (await une(`select cockpit.noter_echec_rapprochement('test-projet-qui-nexiste-pas', 'x') as r`)).r.ok === false);
+  await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`);
+
+  // Réglage, validation d'adresse, droits.
+  const off = (await une(`select cockpit.regler_rapprochement(${q(SLUG_RG)}, false) as r`)).r;
+  const on = (await une(`select cockpit.regler_rapprochement(${q(SLUG_RG)}, true) as r`)).r;
+  verifie("réglage : éteindre / rallumer le passage automatique du projet (allumé par défaut)", off.auto === false && on.auto === true && (await une(`select rapprochement_auto as a from projets where id = ${q(PRG)}`)).a === true);
+  let inconnu = null; try { await sql(`select cockpit.regler_rapprochement('test-projet-qui-nexiste-pas', true)`); } catch (e) { inconnu = e.message; }
+  verifie("réglage d'un projet inconnu : refusé", /projet inconnu/.test(inconnu ?? ""), inconnu);
+  const u = await une(`select cockpit.url_github('https://github.com/rnab26/x/pull/3') as bon, cockpit.url_github('https://evil.example/x') as mauvais, cockpit.url_github('javascript:alert(1)') as js`);
+  verifie("seules les adresses GitHub sont montrées (jamais une adresse venue d'ailleurs)", u.bon === "https://github.com/rnab26/x/pull/3" && u.mauvais === null && u.js === null, u);
+  const d = await une(`select
+      has_function_privilege('anon', 'cockpit.rapprocher_depot(text, jsonb, boolean)', 'execute') as anon_rapprocher,
+      has_function_privilege('anon', 'cockpit.livrer_par_fusion(uuid, text, text, text, timestamptz)', 'execute') as anon_livrer,
+      has_function_privilege('authenticated', 'cockpit.rapprocher_depot(text, jsonb, boolean)', 'execute') as auth_rapprocher,
+      has_function_privilege('authenticated', 'cockpit.livrer_par_fusion(uuid, text, text, text, timestamptz)', 'execute') as auth_livrer,
+      has_function_privilege('anon', 'cockpit.etat_rapprochement(text)', 'execute') as anon_etat,
+      has_function_privilege('authenticated', 'cockpit.etat_rapprochement(text)', 'execute') as auth_etat,
+      has_function_privilege('anon', 'cockpit.regler_rapprochement(text, boolean)', 'execute') as anon_regler,
+      has_function_privilege('authenticated', 'cockpit.regler_rapprochement(text, boolean)', 'execute') as auth_regler,
+      has_function_privilege('anon', 'cockpit.noter_echec_rapprochement(text, text)', 'execute') as anon_noter,
+      has_function_privilege('authenticated', 'cockpit.noter_echec_rapprochement(text, text)', 'execute') as auth_noter,
+      (select relrowsecurity from pg_class where oid = 'cockpit.rapprochements'::regclass) as rls`);
+  verifie("droits : rapprocher et livrer = scripts et sessions seulement (ni anon ni comptes connectés) ; l'état et le réglage = comptes connectés (la garde admin est dans la fonction), jamais anon ; RLS sur le journal",
+    !d.anon_rapprocher && !d.anon_livrer && !d.auth_rapprocher && !d.auth_livrer && !d.anon_etat && d.auth_etat && !d.anon_regler && d.auth_regler && !d.anon_noter && !d.auth_noter && d.rls === true, d);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -3663,7 +3811,8 @@ try {
   const admin = await une(`select count(*)::int as n from admins where user_id = ${q(userId)}`);
   if (admin.n !== 0) throw new Error("le compte de test est admin : les contrôles RLS n'auraient aucun sens");
 
-  const etapes = [
+
+const etapes = [
   // UN contrôle par ligne : en ajouter un = UNE ligne, insérée à côté du contrôle de ton sujet (pas en fin de liste : deux ajouts au même endroit se marchent dessus).
     controle1_reservation,
     controle2_historique,
@@ -3731,6 +3880,7 @@ try {
     controle54_paquets_de_cinq,
     controle55_reveil_horaire,
     controle56_classer_livres,
+    controle57_rapprochement_github,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
@@ -3742,7 +3892,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH, PCL]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH, PCL, PRG]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
