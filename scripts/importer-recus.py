@@ -309,9 +309,9 @@ class Base:
             raise OSError('lecture %s refusée (HTTP %s) : %s' % (table, code, corps[:200].decode('utf-8', 'replace')))
         return json.loads(corps.decode('utf-8') or '[]')
 
-    def ecrire(self, methode, table, corps, filtres=None, retour=True):
+    def ecrire(self, methode, table, corps, filtres=None, retour=True, prefer=None):
         url = '%s/rest/v1/%s%s' % (URL, table, ('?' + '&'.join('%s=%s' % (k, quote(v, safe='.,*()')) for k, v in filtres)) if filtres else '')
-        code, rep = curl(methode, url, self.entetes({'Prefer': 'return=representation' if retour else 'return=minimal'}), json.dumps(corps))
+        code, rep = curl(methode, url, self.entetes({'Prefer': prefer or ('return=representation' if retour else 'return=minimal')}), json.dumps(corps))
         if code not in (200, 201, 204):
             raise OSError('écriture %s refusée (HTTP %s) : %s' % (table, code, rep[:300].decode('utf-8', 'replace')))
         return json.loads(rep.decode('utf-8')) if retour and rep.strip() else None

@@ -166,6 +166,17 @@ fusions=$(un "select coalesce(string_agg(format('- %s (suggérée le %s)', m.cor
 
 a_ranger=$(un "select coalesce(string_agg(format('- %s | %s', c.id, c.titre), chr(10) order by c.created_at), '(aucun)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.archived_at is null and c.section_id is null")
 
+# RECHERCHE DES FOURNISSEURS (0084, chantier 07258fe5) : le bouton « Chercher mes fournisseurs » de Coûts pose une DEMANDE ; seule une session qui a
+# Gmail peut la faire. Aucun texte libre dans cette ligne : des dates et le nom nettoyé d'une session, jamais ce qu'une personne a écrit.
+fourn=$(un "select coalesce(string_agg(format('- demandée le %s%s', to_char(r.demandee_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), case when r.statut = 'en_cours' then format(' (déjà prise par %s à %s : ne la refais pas, sauf si elle date de plus de 2 h)', coalesce(nullif(left(regexp_replace(coalesce(r.pris_par, ''), '[^A-Za-z0-9_-]', '', 'g'), 24), ''), 'une session'), to_char(coalesce(r.pris_at, r.demandee_at) at time zone 'Asia/Jerusalem', 'HH24:MI')) else '' end), chr(10) order by r.demandee_at), '') from recherches_fournisseurs r join projets p on p.id = r.projet_id where p.slug = $P and r.statut in ('en_attente', 'en_cours')")
+bloc_fourn=""
+if [ -n "$fourn" ]; then
+  bloc_fourn="## 🔎 RECHERCHE DES FOURNISSEURS demandée par Raphaël (bouton « Chercher mes fournisseurs » de l'onglet Coûts)
+$fourn
+Si TU as les outils Gmail (mcp__…Gmail…), fais-la maintenant : une recherche PAR MOTS-CLÉS (jamais toute la boîte, aucun mail ouvert), selon la section « Chercher les fournisseurs » de docs/recus-par-email.md du dépôt rnab26/Cockpit-General (texte : https://raw.githubusercontent.com/rnab26/Cockpit-General/main/docs/recus-par-email.md ; outil : scripts/chercher-fournisseurs.py avec scripts/importer-recus.py à côté, mêmes adresses). Sans outil Gmail : ne fais rien, une session qui en a la prendra.
+"
+fi
+
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 [ -n "$sid" ] && [ -n "$debut_lecture" ] && printf '%s\n' "$debut_lecture" > "${TMPDIR:-/tmp}/cockpit-rep-$sid" 2>/dev/null
 
@@ -185,7 +196,7 @@ terminant (--termine → le chantier passe « à vérifier », seul un humain ce
 une question avec \`$DEM_CMD\` (jamais dans un artefact), et écris où tu en es
 dans le fil du chantier avant de t'arrêter.
 
-$bloc_voie$bloc_maj
+$bloc_voie$bloc_maj$bloc_fourn
 ## Chantiers ouverts, par section
 $chantiers
 
