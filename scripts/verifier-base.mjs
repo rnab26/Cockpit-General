@@ -3778,6 +3778,32 @@ async function controle57_rapprochement_github() {
       && (await une(`select cockpit.noter_echec_rapprochement('test-projet-qui-nexiste-pas', 'x') as r`)).r.ok === false);
   await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`);
 
+  // Réglages généraux (0081) : deux délais par projet (aucune valeur arbitraire en dur), un interrupteur GÉNÉRAL, des seuils en constantes nommées.
+  const dflt = (await une(`select to_jsonb(x) as j from (select rapprochement_trace_h as t, rapprochement_passage_min as m from projets where id = ${q(PRG)}) x`)).j;   // exec_sql rend la 1re colonne seule pour un select de table à 2 colonnes : to_jsonb
+  verifie("délais par défaut : rappel après 4 h sans trace, recherche dans GitHub au plus toutes les 20 min", dflt.t === 4 && dflt.m === 20, dflt);
+  const tenus = async (...args) => (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/g'${args.length ? ", " + args.join(", ") : ""}) as j`)).j;
+  verifie("sans délai donné, le rappel suit le réglage du PROJET (4 h : le chantier tenu depuis 71 h est listé)", (await tenus()).length === 1);
+  await une(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 72, null) as r`);
+  verifie("… délai du projet 72 h : plus listé (71 h sans trace) ; un délai donné par l'appelant (1 h, hooks d'avant) l'emporte", (await tenus()).length === 0 && (await tenus(1)).length === 1);
+  const dl = (await une(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 4, 45) as r`)).r;
+  verifie("regler_rapprochement_delais : pose les deux délais ; un paramètre nul laisse l'autre inchangé", dl.trace_h === 4 && dl.passage_min === 45 && (await une(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, null, 20) as r`)).r.trace_h === 4, dl);
+  const refus = async (requete) => { try { await sql(requete); return null; } catch (e) { return e.message; } };
+  const r0 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 0, null)`), r73 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 73, null)`);
+  const m4 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, null, 4)`), m1441 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, null, 1441)`);
+  const inc = await refus(`select cockpit.regler_rapprochement_delais('test-projet-qui-nexiste-pas', 4, 20)`);
+  verifie("délais hors bornes refusés en clair (0 et 73 h ; 4 min et 1441 min) et projet inconnu refusé ; rien n'est écrit",
+    /entre 1 et 72 heures/.test(r0 ?? "") && /entre 1 et 72 heures/.test(r73 ?? "") && /entre 5 minutes et 24 heures/.test(m4 ?? "") && /entre 5 minutes et 24 heures/.test(m1441 ?? "") && /projet inconnu/.test(inc ?? "")
+      && (await une(`select to_jsonb(x) as j from (select rapprochement_trace_h as t, rapprochement_passage_min as m from projets where id = ${q(PRG)}) x`)).j.m === 20, { r0, r73, m4, m1441, inc });
+  const et = (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e;
+  verifie("etat_rapprochement donne les deux délais et l'interrupteur général (allumé par défaut)", et.trace_h === 4 && et.passage_min === 20 && et.global === true, et);
+  // L'interrupteur général est UN réglage partagé par tous les projets : on le teste dans une transaction ANNULÉE (le vrai n'est jamais touché, même une seconde).
+  let general = null; try { await sql(`do $$ begin perform cockpit.regler_rapprochement(null, false); raise exception 'RESULTAT:%', cockpit.etat_rapprochement('${SLUG_RG}')->>'global'; end $$`); } catch (e) { general = /RESULTAT:(\w+)/.exec(e.message)?.[1] ?? e.message; }
+  verifie("interrupteur GÉNÉRAL : éteint, etat_rapprochement le dit pour tout projet ; essai fait dans une transaction annulée (le vrai reste allumé)",
+    general === "false" && (await une(`select rapprochement_actif as g from filet_reglage where id = 1`)).g === true, general);
+  const def = (await une(`select pg_get_functiondef('cockpit.rapprocher_depot(text, jsonb, boolean)'::regprocedure) as d`)).d;
+  verifie("la règle garde ses seuils en constantes NOMMÉES et documentées (jamais « >= 0.6 » ou « interval '30 minutes' » en clair dans la requête)",
+    /c_seuil_titre/.test(def) && /c_apres_parole/.test(def) && !/>= 0\.6/.test(def) && !/interval '30 minutes'\s*(--|\n|union|and|\)|$)/.test(def.replace(/constant interval := interval '30 minutes'/g, "")), def.length);
+
   // Réglage, validation d'adresse, droits.
   const off = (await une(`select cockpit.regler_rapprochement(${q(SLUG_RG)}, false) as r`)).r;
   const on = (await une(`select cockpit.regler_rapprochement(${q(SLUG_RG)}, true) as r`)).r;
@@ -3795,11 +3821,13 @@ async function controle57_rapprochement_github() {
       has_function_privilege('authenticated', 'cockpit.etat_rapprochement(text)', 'execute') as auth_etat,
       has_function_privilege('anon', 'cockpit.regler_rapprochement(text, boolean)', 'execute') as anon_regler,
       has_function_privilege('authenticated', 'cockpit.regler_rapprochement(text, boolean)', 'execute') as auth_regler,
+      has_function_privilege('anon', 'cockpit.regler_rapprochement_delais(text, int, int)', 'execute') as anon_delais,
+      has_function_privilege('authenticated', 'cockpit.regler_rapprochement_delais(text, int, int)', 'execute') as auth_delais,
       has_function_privilege('anon', 'cockpit.noter_echec_rapprochement(text, text)', 'execute') as anon_noter,
       has_function_privilege('authenticated', 'cockpit.noter_echec_rapprochement(text, text)', 'execute') as auth_noter,
       (select relrowsecurity from pg_class where oid = 'cockpit.rapprochements'::regclass) as rls`);
   verifie("droits : rapprocher et livrer = scripts et sessions seulement (ni anon ni comptes connectés) ; l'état et le réglage = comptes connectés (la garde admin est dans la fonction), jamais anon ; RLS sur le journal",
-    !d.anon_rapprocher && !d.anon_livrer && !d.auth_rapprocher && !d.auth_livrer && !d.anon_etat && d.auth_etat && !d.anon_regler && d.auth_regler && !d.anon_noter && !d.auth_noter && d.rls === true, d);
+    !d.anon_rapprocher && !d.anon_livrer && !d.auth_rapprocher && !d.auth_livrer && !d.anon_etat && d.auth_etat && !d.anon_regler && d.auth_regler && !d.anon_delais && d.auth_delais && !d.anon_noter && !d.auth_noter && d.rls === true, d);
 }
 
 try {

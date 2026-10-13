@@ -6,7 +6,7 @@
 //      « envoyé » est dans main — et laisse en paix le chantier dont le commit n'existe pas ;
 //   3. l'écran le montre : « À jour », « 1 chantier passé « livré » tout seul », la tuile « à tester » compte 1, le fil dit
 //      « Livré, d'après GitHub » avec le lien exact, jamais « validé » ;
-//   4. un échec se dit à l'écran (rouge, la cause) ; Éteindre / Rallumer ; aucun défilement horizontal ; aucune erreur JavaScript.
+//   4. un échec se dit à l'écran (rouge, la cause) ; Éteindre / Rallumer ; les délais se règlent par projet ; aucun défilement horizontal ; aucune erreur JavaScript.
 // Usage : node app/scripts/verifier-rapprochement-ecran.mjs   (build d'abord : cd app && npm run build)
 //   BASE_URL=https://rnab26.github.io/Cockpit-General/ node app/scripts/verifier-rapprochement-ecran.mjs   (le même parcours sur le site en ligne)
 import { chromium } from 'playwright'
@@ -128,6 +128,14 @@ try {
   await page.waitForFunction(() => /a échoué/.test(document.querySelector('[data-testid="rapprochement-titre"]')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {})
   verifie('Rallumer : un passage qui a ÉCHOUÉ se dit en rouge, avec sa cause et « il réessaie »', (await bloc.getAttribute('data-ton')) === 'erreur' && /clone impossible : dépôt injoignable \(test\)/.test(await bloc.getByTestId('rapprochement-detail').textContent()) && /réessaie/.test(await bloc.getByTestId('rapprochement-detail').textContent()), await bloc.textContent())
   await page.screenshot({ path: `${CAPTURES}/rapprochement-echec.png` })
+  // --- 5. les délais se règlent par projet (aucune valeur en dur)
+  await bloc.getByTestId('rapprochement-regler').click()
+  verifie('« Régler… » : les deux délais du projet (rappel après 4 heures, recherche toutes les 20 minutes)', (await bloc.getByTestId('rapprochement-trace').inputValue()) === '4' && (await bloc.getByTestId('rapprochement-passage').inputValue()) === '20')
+  await bloc.getByTestId('rapprochement-trace').selectOption('2')
+  await page.waitForFunction(() => document.querySelector('[data-testid="rapprochement-trace"]')?.value === '2', null, { timeout: 10000 }).catch(() => {})
+  const delais = sql(`select to_jsonb(x) as j from (select rapprochement_trace_h as t, rapprochement_passage_min as m from projets where id = ${q(P)}) x`)[0].j
+  verifie('rappel après 2 heures : l’écran et la base suivent (l’autre délai ne bouge pas)', (await bloc.getByTestId('rapprochement-trace').inputValue()) === '2' && delais.t === 2 && delais.m === 20, delais)
+  await page.screenshot({ path: `${CAPTURES}/rapprochement-reglages.png` })
   verifie('aucune erreur JavaScript pendant tout le parcours', erreurs.length === 0, erreurs)
 } catch (e) {
   total++; echecs++

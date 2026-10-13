@@ -56,7 +56,7 @@ tenus=""
 if [ -n "$branche" ] && [ -x "$SQL" ]; then
   tenus=$("$SQL" "select coalesce(string_agg(format('« %s » (%s, %s)', c.titre, c.id, c.etat), ' ; '), '') as t from chantiers c join projets p on p.id = c.projet_id where p.slug = '$PROJET' and c.pris_par = '$branche' and c.pris_jusqu_a > now()" 2>/dev/null | jq -r '.rows[0].t // ""' 2>/dev/null || echo "")
 fi
-# RAPPEL PRÉCIS (0080) : les chantiers que CETTE session tient sans rien avoir signalé depuis plus de 4 h. Elle seule sait s'ils sont finis ;
+# RAPPEL PRÉCIS (0080, délai réglable par projet : 0081, 4 h par défaut) : les chantiers que CETTE session tient sans rien avoir signalé depuis longtemps. Elle seule sait s'ils sont finis ;
 # sans cela ils restent « en cours » pour toujours (constaté sur FacePro : 26 « en cours », 2 avec une trace du jour). Le nom des commandes
 # est celui du projet ($PROG_CMD, $CHANTIER_CMD).
 vieux=""
@@ -66,7 +66,7 @@ if [ -n "$branche" ] && [ -x "$SQL" ]; then
   marque_vieux="$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-sans-trace"
   pause_vieux="${COCKPIT_SANS_TRACE_MIN:-30}"
   if [ "$pause_vieux" = 0 ] || [ ! -e "$marque_vieux" ] || [ -n "$(find "$marque_vieux" -mmin +"$pause_vieux" 2>/dev/null)" ]; then
-    vieux=$("$SQL" "select j from (select cockpit.chantiers_tenus_sans_trace('$PROJET', '$branche', 4) as j) q" 2>/dev/null \
+    vieux=$("$SQL" "select j from (select cockpit.chantiers_tenus_sans_trace('$PROJET', '$branche') as j) q" 2>/dev/null \
       | jq -r '(.rows[0].j // []) | map("« \(.titre) » (\(.id), \(.heures) h sans trace)") | join(" ; ")' 2>/dev/null || echo "")
     [ -n "$vieux" ] && touch "$marque_vieux" 2>/dev/null
   fi
@@ -79,6 +79,6 @@ fi
 texte="Cockpit (projet $PROJET) — si ce message demande du TRAVAIL (fonctionnalité, correctif, reprise d'un sujet), enregistre-le AVANT de coder : $CHANTIER_CMD --ouvrir \"<titre court, lisible par Raphaël>\" --demande \"<ses mots>\" --section \"<rubrique>\" (il reprend ou rouvre le chantier existant au lieu d'en créer un doublon). Doublons et rangement, c'est TOI qui tranches, jamais Raphaël : sur « ambigu », lis les extraits et relance avec --id ou --nouveau ; deux chantiers existants identiques → --suggerer-fusion (il accepte d'un toucher). Puis $PROG_CMD à chaque étape, les jalons pousse / ci-ok / en-ligne, et --termine avec --verifier et --en-ligne. Chaque agent que tu lances : écris dans sa consigne d'appeler $PROG_CMD --agent \"<sa description exacte>\" --etape … --pct … --eta … à chaque étape. Une simple question ou discussion : rien à enregistrer."
 [ -n "$tour_txt" ] && texte="$texte$tour_txt"
 [ -n "$tenus" ] && texte="$texte Ta session tient déjà : $tenus."
-[ -n "$vieux" ] && texte="$texte ⚠️ SANS TRACE depuis plus de 4 h, sur des chantiers que ta session tient : $vieux. Toi seule sais s'ils sont finis, et Raphaël ne voit que ce que tu écris ici : pour CHACUN, soit c'est terminé → $PROG_CMD --chantier <id> --termine \"<ce qui est livré, une phrase>\" --verifier \"<étapes avec le lien exact>\" --en-ligne \"<adresse>\" (ou --pas-en-ligne \"<raison>\") ; soit tu continues → $PROG_CMD --chantier <id> --etape \"<où tu en es>\" ; soit tu n'y travailles plus → $CHANTIER_CMD --de-cote <id> (ou --abandonner <id>) --pourquoi \"…\"."
+[ -n "$vieux" ] && texte="$texte ⚠️ SANS TRACE depuis longtemps, sur des chantiers que ta session tient : $vieux. Toi seule sais s'ils sont finis, et Raphaël ne voit que ce que tu écris ici : pour CHACUN, soit c'est terminé → $PROG_CMD --chantier <id> --termine \"<ce qui est livré, une phrase>\" --verifier \"<étapes avec le lien exact>\" --en-ligne \"<adresse>\" (ou --pas-en-ligne \"<raison>\") ; soit tu continues → $PROG_CMD --chantier <id> --etape \"<où tu en es>\" ; soit tu n'y travailles plus → $CHANTIER_CMD --de-cote <id> (ou --abandonner <id>) --pourquoi \"…\"."
 [ -n "$chef_txt" ] && texte="$texte $chef_txt"
 jq -n --arg c "$texte" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'

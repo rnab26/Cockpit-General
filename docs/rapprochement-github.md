@@ -37,7 +37,7 @@ sessions DÉCLARENT. Il lit maintenant ce qu'elles ONT FAIT (git), et il fait co
    projet, 170 s maximum, jamais bloquant. Arrivé par le lanceur à TOUS les projets branchés dès que c'est sur `main`
    (`modeles/fichiers.txt`).
 4. **Le rappel précis** : une session VIVANTE n'est jamais court-circuitée. `prompt-rappel.sh` lui liste les chantiers qu'elle tient
-   sans aucune trace depuis plus de 4 h, et lui dit quoi faire pour CHACUN : `--termine`, `--etape`, ou `--de-cote` / `--abandonner`
+   sans aucune trace depuis longtemps (4 h par défaut, réglable par projet), et lui dit quoi faire pour CHACUN : `--termine`, `--etape`, ou `--de-cote` / `--abandonner`
    (`cockpit.chantiers_tenus_sans_trace`). Au plus un rappel toutes les 30 min par copie de travail (`COCKPIT_SANS_TRACE_MIN`, 0 = à
    chaque message) : le texte est long et part avec les messages, il ne doit pas gonfler le contexte.
 5. **L'écran** : Réglages du projet › « Chantiers et GitHub » (`RapprochementGithub.tsx`) : le rôle en une phrase, l'état (jamais
@@ -64,15 +64,45 @@ Ce que le rapprochement ne fait JAMAIS : poser « validé » ; toucher un chanti
 qui attend une réponse de Raphaël ; livrer sur une mention, sur un titre ambigu, sur une branche partagée par deux chantiers, sur
 une branche non fusionnée, sur du journal seul ; rien supprimer.
 
-## Réglages et défaire
+## Réglages et défaire (migration 0081 : aucune valeur arbitraire en dur)
 
 - **Éteindre** pour un projet : l'écran « Chantiers et GitHub », ou `select regler_rapprochement('<slug>', false)`. Ça arrête les
   passages des hooks ; un passage lancé à la main (`python3 scripts/rapprocher.py --projet <slug>`) écrit toujours.
+- **Éteindre pour TOUS les projets** (interrupteur général, comme la libération automatique) : `select regler_rapprochement(null, false)` ;
+  le rallumer : `regler_rapprochement(null, true)`. L'écran de chaque projet dit alors « Éteint pour tous les projets ». Pas d'écran pour ce
+  geste : demande-le à Claude.
+- **Deux délais par projet** (écran « Chantiers et GitHub » › « Régler… », ou `regler_rapprochement_delais(slug, trace_h, passage_min)`) :
+  rappeler une session qui tient un chantier sans trace depuis N heures (4 par défaut, 1 à 72) ; chercher dans GitHub au plus toutes les
+  N minutes (20 par défaut, 5 à 1440 : le passage le note dans son repère, les hooks le relisent sans appeler la base ; un nouveau délai
+  s'applique au passage suivant). Le délai entre deux rappels d'une même session (30 min) reste `COCKPIT_SANS_TRACE_MIN`.
+- Les seuils de la règle (tolérances, 0,6 / 0,5 de ressemblance, 21 jours) sont des constantes NOMMÉES et commentées au début de
+  `rapprocher_depot` : un cas de banc d'abord, puis le seuil.
 - Éteindre sur une machine : `COCKPIT_RAPPROCHEMENT=0`.
 - **Défaire** : un chantier passé « livré » à tort se renvoie en correction avec « Ça ne marche pas » (même geste que n'importe quelle
   livraison) ou se classe avec « Classer sans test » ; côté base, `annuler_rapprochement(<id du journal>)` rend l'état d'avant
   (en cours, réservation, jalon). Pas d'écran pour ce dernier geste.
 - Passage d'essai : `python3 scripts/rapprocher.py --projet <slug> --essai` (ou `--json`) dit ce qui SERAIT livré, sans rien écrire.
+
+## Tous les projets, actuels et futurs (Raphaël, 13 oct. : « pas seulement lié à un seul projet »)
+
+Rien dans la règle ni dans le collecteur n'est propre à FacePro : un projet se reconnaît à son dépôt (`projets.depot`, que `brancher.sh`
+remplit) et la règle ne lit que ses chantiers. Ce qui y arrive, et par où :
+
+| Quoi | Par où | Qui le reçoit |
+|---|---|---|
+| Le collecteur `scripts/rapprocher.py` et les deux hooks | le lanceur (`modeles/fichiers.txt`, 10 min) | tout projet déjà branché ; tout projet branché plus tard |
+| La règle SQL, le journal, les réglages | la base centrale (migrations 0080, 0081) | tous les projets de la base, dès la migration |
+| La consigne aux sessions « les chantiers se ferment d'après GitHub » | `docs/bloc-CLAUDE.md` (injecté au démarrage, ou écrit dans le CLAUDE.md du projet par `brancher.sh`) | idem |
+| Les règles de Raphaël (« le cockpit lit git », « un accord général ne vaut pas autorisation d'écrire dans des données réelles », « tout correctif est général ») | `dotfiles/.claude/CLAUDE.md` | toutes ses sessions, tous projets confondus |
+| Le branchement d'un futur projet | skill `cockpit` (dotfiles) + `brancher.sh` | tout futur projet |
+
+**Preuves** : FacePro a été fermé tout seul par le hook d'une vraie session, 3 minutes après la mise en ligne, avec les 5 chantiers du passage
+d'essai (journal `rapprochements`, 16 h 09 UTC) ; `verifier-greffe.mjs` branche des projets de zéro (voie 1 et voie 3) et vérifie que la
+règle arrive dans leur contexte et que leur démarrage lance le collecteur.
+
+**Projets du cockpit central** (13 oct.) : `cockpit`, `facepro`, `melissa-nabet` (0 chantier). **Pas branchés, donc hors rapprochement
+tant qu'on ne les branche pas** : Midrag, Trieur-Data, Pointeur-Robot-Campaign, Jarvis-assistant (ancien cockpit), melissa-nabet-site.
+Les brancher = le skill `cockpit` (il pose ses questions avant).
 
 ## Ce qu'il ne fait pas (limites dites)
 
@@ -92,16 +122,16 @@ une branche non fusionnée, sur du journal seul ; rien supprimer.
 
 ## Bancs
 
-- `node scripts/verifier-base.mjs` §57 (31 contrôles) : la règle sur des faits fabriqués (chaque preuve, chaque garde, écritures,
-  journal, annulation, échec noté puis effacé, droits).
-- `node scripts/verifier-rapprochement.mjs` (51) : le collecteur sur de VRAIS dépôts git temporaires (origine « comme GitHub »,
+- `node scripts/verifier-base.mjs` §57 (39 contrôles) : la règle sur des faits fabriqués (chaque preuve, chaque garde, écritures,
+  journal, annulation, échec noté puis effacé, délais et bornes, interrupteur général testé dans une transaction annulée, droits).
+- `node scripts/verifier-rapprochement.mjs` (55) : le collecteur sur de VRAIS dépôts git temporaires (origine « comme GitHub »,
   copie de travail de session, PR fusionnées, branche supprimée, squash, journal seul, branche non fusionnée, commit inconnu),
   essai sans écriture, copie de travail intacte, `--si-ancien`, réglage éteint, pannes (échec noté, secrets masqués, texte de PR piégé
   inerte), et les deux hooks (collecteur lancé en fond, rappel précis limité à un par 30 min). Testé par sabotage : un collecteur qui prend le journal pour du code ou ne vérifie pas `main` fait rougir 6 contrôles ; l'ancien guillemetage de la
   requête (un texte de PR piégé `$fa$faits$its$` en fabriquait la fin) fait échouer le passage entier, d'où un délimiteur aléatoire vérifié.
-- `node --experimental-strip-types app/scripts/verifier-rapprochement.ts` (20) : les mots de l'écran, échec compris.
+- `node --experimental-strip-types app/scripts/verifier-rapprochement.ts` (28) : les mots de l'écran, échec, interrupteur général et délais compris.
 - `node app/scripts/verifier-web.mjs` : « Chantiers et GitHub » dans les réglages du projet (rôle, état, échec, éteindre/rallumer, toasts).
-- `node app/scripts/verifier-rapprochement-ecran.mjs` (14) : de bout en bout sur écran de téléphone, projet jetable branché sur le VRAI dépôt
+- `node app/scripts/verifier-rapprochement-ecran.mjs` (16) : de bout en bout sur écran de téléphone, projet jetable branché sur le VRAI dépôt
   GitHub : le collecteur passe « à vérifier » le chantier dont le commit est dans `main`, laisse l'autre, l'écran dit « À jour » puis
   l'échec en rouge ; `BASE_URL=https://rnab26.github.io/Cockpit-General/` rejoue le même parcours sur le site en ligne.
 
