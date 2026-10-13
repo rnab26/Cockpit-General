@@ -208,6 +208,47 @@ try {
   verifie('un commit poussé après le premier passage est vu (mise à jour du clone) : le nouveau chantier est livré', neuf.code === 0 && etatDe(ids.P).etat === 'a_verifier' && journalDe(ids.P)[0]?.regle === 'jalon', { out: neuf.out, etat: etatDe(ids.P) })
   verifie('les chantiers qui n\'avaient pas de preuve restent intacts', JAMAIS.every((k) => ['en_cours', 'libre'].includes(etatDe(ids[k]).etat)))
 
+  // ---- 7 bis. Réglages généraux (0081) : l'interrupteur GÉNÉRAL et le délai du PROJET, lus par le collecteur (base simulée : on ne touche jamais au vrai interrupteur) ----
+  const testPy = path.join(dossier, 'test-reglages.py')
+  writeFileSync(testPy, `import importlib.util, json, os, sys, time
+spec = importlib.util.spec_from_file_location('r', sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+cache = sys.argv[2]; os.makedirs(cache, exist_ok=True); os.environ['COCKPIT_CACHE'] = cache
+repere = os.path.join(cache, 'rapproche-p.t')
+etat = {'global': True, 'passage': 45, 'auto': True}; appels = []
+def faux_sql(requete):
+    appels.append(requete[:50])
+    if 'from projets where slug' in requete:
+        return [{'slug': 'p', 'depot': 'a/b', 'rapprochement_auto': etat['auto'], 'rapprochement_passage_min': etat['passage'], 'global_actif': etat['global']}]
+    raise RuntimeError('stop : pas de dépôt dans ce test')
+m.sql = faux_sql
+def lancer(hook=True):
+    sys.argv = ['rapprocher.py', '--projet', 'p', '--silencieux'] + (['--si-ancien', '20'] if hook else [])
+    n = len(appels)
+    try: code = m.main()
+    except RuntimeError: code = 'stop'
+    return code, len(appels) - n
+def vieillir(minutes):
+    t = time.time() - minutes * 60; os.utime(repere, (t, t))
+sortie = {}
+etat['global'] = False
+sortie['general_eteint_hook'] = lancer()                      # sort après UNE lecture, rien d'autre
+sortie['general_eteint_main'] = lancer(hook=False)            # demandé à la main : passe
+etat['global'] = True
+sortie['repere_apres_passage'] = open(repere).read().strip()  # le délai du projet (45) est noté pour le prochain hook
+vieillir(30); sortie['trente_min_hook'] = lancer()            # 30 < 45 : sort sans appeler la base
+vieillir(50); sortie['cinquante_min_hook'] = lancer()         # 50 > 45 : passe
+open(repere, 'w').write('n importe quoi'); vieillir(25); sortie['repere_illisible_25_min'] = lancer()   # illisible : 20 par défaut, 25 > 20 : passe
+open(repere, 'w').write('45'); vieillir(5); sortie['cinq_min_main'] = lancer(hook=False)   # à la main : passe toujours
+etat['auto'] = False; vieillir(60); sortie['projet_eteint_hook'] = lancer()
+print(json.dumps(sortie))
+`)
+  const py = spawnSync('python3', ['-I', testPy, rapprocher, path.join(dossier, 'cache-reglages')], { encoding: 'utf8', timeout: 60000 })
+  let rg = null; try { rg = JSON.parse(py.stdout.trim().split('\n').pop()) } catch { /* vérifié ci-dessous */ }
+  verifie('interrupteur GÉNÉRAL éteint : le hook sort après UNE seule lecture (code 0) ; demandé à la main, le passage a lieu quand même', rg && rg.general_eteint_hook[0] === 0 && rg.general_eteint_hook[1] === 1 && rg.general_eteint_main[0] === 'stop' && rg.general_eteint_main[1] >= 2, { rg, err: py.stderr.slice(-300) })
+  verifie('le délai du PROJET est noté dans le repère après un passage (45 min), sans appel à la base pour le relire', rg && rg.repere_apres_passage === '45', rg)
+  verifie('… 30 min après : le hook sort sans toucher à la base ; 50 min après : il passe', rg && rg.trente_min_hook[0] === 0 && rg.trente_min_hook[1] === 0 && rg.cinquante_min_hook[0] === 'stop' && rg.cinquante_min_hook[1] >= 2, rg)
+  verifie('repère illisible : le délai des hooks (20 min) s\'applique ; un passage demandé à la main passe toujours ; projet éteint : le hook sort', rg && rg.repere_illisible_25_min[0] === 'stop' && rg.cinq_min_main[0] === 'stop' && rg.projet_eteint_hook[0] === 0 && rg.projet_eteint_hook[1] === 1, rg)
+
   // ---- 8. Pannes et cas limites : jamais de plantage ----
   mkdirSync(SANS_ORIGINE)
   const vide = collecteur(['--projet', SLUG2], { cwd: SANS_ORIGINE })
@@ -238,7 +279,7 @@ try {
   const lance = await attendreStub()
   verifie('prompt-rappel.sh lance le collecteur en fond : --projet <slug> --si-ancien 20 --silencieux, depuis le dossier de la session', lance && lance.projet === SLUG && lance.argv.join(' ') === `--projet ${SLUG} --si-ancien 20 --silencieux` && lance.cwd === HOOKDIR, lance)
   const ctx = o.additionalContext ?? ''
-  verifie('le rappel précis : le chantier tenu sans trace depuis plus de 4 h est nommé (titre, identifiant, heures)', /SANS TRACE depuis plus de 4 h/.test(ctx) && ctx.includes(ids.R) && /Rappel : tenu sans trace/.test(ctx) && /\d+ h sans trace/.test(ctx), ctx.slice(-600))
+  verifie('le rappel précis : le chantier tenu sans trace depuis longtemps (délai du PROJET, 4 h par défaut) est nommé (titre, identifiant, heures)', /SANS TRACE depuis longtemps/.test(ctx) && !/plus de 4 h/.test(ctx) && ctx.includes(ids.R) && /Rappel : tenu sans trace/.test(ctx) && /\d+ h sans trace/.test(ctx), ctx.slice(-600))
   verifie('… avec les trois issues et les vraies commandes du projet (terminé / étape / de côté)', /\/chemin\/progression\.sh --chantier <id> --termine/.test(ctx) && /\/chemin\/progression\.sh --chantier <id> --etape/.test(ctx) && /\/chemin\/chantier\.sh --de-cote <id>/.test(ctx), ctx.slice(-400))
   verifie('… et il ne réclame jamais un chantier qu\'une autre branche tient (E, B, L : pas dans ce rappel)', !ctx.includes(ids.E) && !ctx.includes(ids.L) && !ctx.includes(ids.B))
   o = hook('prompt-rappel.sh', { session_id: `test-rg1b-${rand}`, hook_event_name: 'UserPromptSubmit', prompt: NOTIF }, { COCKPIT_RAPPROCHEMENT: '0' })

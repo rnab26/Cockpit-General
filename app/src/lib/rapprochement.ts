@@ -11,6 +11,33 @@ export interface EtatRapprochement {
   /** Pourquoi le dernier passage a échoué (git injoignable…) ; null tant qu'il n'a pas échoué, effacé par le passage réussi suivant. */
   erreur?: string | null
   erreur_at?: string | null
+  /** Rappeler une session qui tient un chantier sans trace depuis N heures (0081 : 1 à 72, 4 par défaut). */
+  trace_h?: number
+  /** Chercher dans GitHub au plus toutes les N minutes (0081 : 5 à 1440, 20 par défaut). */
+  passage_min?: number
+  /** L'interrupteur GÉNÉRAL (0081) : faux = le rapprochement est éteint pour TOUS les projets. */
+  global?: boolean
+}
+
+/** Les choix proposés à l'écran (le serveur accepte tout entier dans ses bornes ; une valeur posée ailleurs s'affiche quand même : `avecCourant`). */
+export const CHOIX_TRACE_H: readonly number[] = [1, 2, 4, 8, 24]
+export const CHOIX_PASSAGE_MIN: readonly number[] = [10, 20, 60, 180, 720]
+
+export function libelleHeures(h: number): string {
+  if (h >= 24 && h % 24 === 0) return h === 24 ? '1 jour' : `${h / 24} jours`
+  return h === 1 ? '1 heure' : `${h} heures`
+}
+
+export function libelleMinutes(m: number): string {
+  if (m >= 60 && m % 60 === 0) return m === 60 ? '1 heure' : `${m / 60} heures`
+  return `${m} minutes`
+}
+
+/** La liste des choix, avec la valeur actuelle si elle n'y est pas (posée par un script) : un sélecteur ne doit jamais mentir. */
+export function avecCourant(choix: readonly number[], courant: number | undefined): number[] {
+  const l = [...choix]
+  if (typeof courant === 'number' && Number.isFinite(courant) && !l.includes(courant)) l.push(courant)
+  return l.sort((a, b) => a - b)
 }
 
 /** Le rôle en une phrase : ce que fait le rapprochement, et ce qu'il ne fait jamais. */
@@ -24,6 +51,9 @@ export function phraseRapprochement(e: EtatRapprochement, now: number = Date.now
   const livres = e.livres_24h > 0
     ? `${e.livres_24h} chantier${e.livres_24h > 1 ? 's' : ''} passé${e.livres_24h > 1 ? 's' : ''} « livré » tout seul ces dernières 24 h.`
     : e.livres_total > 0 ? `Rien à rattraper ces dernières 24 h (${e.livres_total} au total depuis le début).` : 'Rien à rattraper pour l’instant.'
+  if (e.global === false) {
+    return { titre: 'Éteint pour tous les projets', detail: 'L’interrupteur général est éteint : aucun projet ne se met à jour d’après GitHub. Demande à Claude de le rallumer.', ton: 'eteint' }
+  }
   if (!e.auto) {
     return { titre: 'Éteint sur ce projet', detail: 'Les chantiers ne se mettent plus à jour d’après GitHub à l’ouverture d’une session.', ton: 'eteint' }
   }

@@ -2,7 +2,7 @@
 // La règle elle-même (qui est livré, sur quelle preuve) est en base : verifier-base §57 et scripts/verifier-rapprochement.mjs.
 // node --experimental-strip-types app/scripts/verifier-rapprochement.ts
 import { verifie, bilan } from './_assert.ts'
-import { phraseRapprochement, ROLE_RAPPROCHEMENT, type EtatRapprochement } from '../src/lib/rapprochement.ts'
+import { avecCourant, CHOIX_PASSAGE_MIN, CHOIX_TRACE_H, libelleHeures, libelleMinutes, phraseRapprochement, ROLE_RAPPROCHEMENT, type EtatRapprochement } from '../src/lib/rapprochement.ts'
 
 const now = new Date('2026-10-13T12:00:00Z').getTime()
 const il = (heures: number) => new Date(now - heures * 3600_000).toISOString()
@@ -39,5 +39,15 @@ verifie('… même après un bon passage plus ancien', phraseRapprochement(etat(
 verifie('… mais un bon passage PLUS RÉCENT l\'emporte (l\'erreur est périmée)', phraseRapprochement(etat({ rapproche_at: il(1), erreur: 'x', erreur_at: il(5) }), now).ton === 'ok')
 verifie('éteint : l\'échec n\'est pas montré (le passage n\'a plus lieu)', phraseRapprochement(etat({ auto: false, erreur: 'x', erreur_at: il(1) }), now).ton === 'eteint')
 verifie('une cause très longue est coupée', phraseRapprochement(etat({ rapproche_at: null, erreur: 'y'.repeat(300), erreur_at: il(1) }), now).detail.length < 330)
+// Réglages généraux (0081) : l'interrupteur général et les deux délais.
+const general = phraseRapprochement(etat({ global: false }), now)
+verifie('interrupteur GÉNÉRAL éteint : « Éteint pour tous les projets », même si le projet est allumé', general.ton === 'eteint' && /tous les projets/.test(general.titre) && /Demande à Claude/.test(general.detail), general)
+verifie('… et il l\'emporte sur un échec ou un bon passage', phraseRapprochement(etat({ global: false, erreur: 'x', erreur_at: il(1), rapproche_at: null }), now).ton === 'eteint')
+verifie('allumé (ou inconnu) : rien ne change', phraseRapprochement(etat({ global: true }), now).ton === 'ok' && phraseRapprochement(etat({}), now).ton === 'ok')
+verifie('libellés des heures : 1 heure, 4 heures, 1 jour, 2 jours', [1, 4, 24, 48].map(libelleHeures).join(' | ') === '1 heure | 4 heures | 1 jour | 2 jours', [1, 4, 24, 48].map(libelleHeures))
+verifie('libellés des minutes : 20 minutes, 1 heure, 3 heures, 90 minutes', [20, 60, 180, 90].map(libelleMinutes).join(' | ') === '20 minutes | 1 heure | 3 heures | 90 minutes', [20, 60, 180, 90].map(libelleMinutes))
+verifie('les choix par défaut contiennent les valeurs par défaut du serveur (4 h, 20 min)', CHOIX_TRACE_H.includes(4) && CHOIX_PASSAGE_MIN.includes(20))
+verifie('une valeur posée ailleurs (6 h) reste choisissable : le sélecteur ne ment jamais', avecCourant(CHOIX_TRACE_H, 6).join(',') === '1,2,4,6,8,24', avecCourant(CHOIX_TRACE_H, 6))
+verifie('… sans doublon, et sans valeur quand elle est inconnue', avecCourant(CHOIX_TRACE_H, 4).join(',') === '1,2,4,8,24' && avecCourant(CHOIX_TRACE_H, undefined).join(',') === '1,2,4,8,24')
 verifie('date illisible : pas de plantage, ni « NaN »', !/NaN/.test(JSON.stringify(phraseRapprochement(etat({ rapproche_at: 'n\'importe quoi' }), now))))
 bilan('verifier-rapprochement')

@@ -8,7 +8,9 @@ travail est PROUVÉ dans main.
 
   rapprocher.py --projet facepro                 # dépôt = $CLAUDE_PROJECT_DIR (ou le dossier courant), écrit pour de bon
   rapprocher.py --projet facepro --essai         # ne touche à rien : dit ce qui serait fait
-  rapprocher.py --projet facepro --si-ancien 20  # sort sans rien faire si le dernier passage date de moins de 20 min (hooks)
+  rapprocher.py --projet facepro --si-ancien 20  # (hooks) sort sans rien faire si le dernier passage est trop récent : 20 min par défaut,
+                                                 # ou le délai du PROJET (`rapprochement_passage_min`, noté dans le repère après chaque passage) ;
+                                                 # sort aussi si le rapprochement est éteint pour ce projet ou pour TOUS (interrupteur général)
 
 Rien n'est lu ni modifié dans la copie de travail de la session : un petit clone SANS fichiers (commits et arbres seulement)
 est gardé à part dans ~/.cache/cockpit-general/depots/<projet>. Jamais « validé » (seul Raphaël). Ne fait jamais échouer un hook.
@@ -29,6 +31,15 @@ DUREE_MAX_S = 150       # budget total d'un passage : au-delà, on garde ce qu'o
 DEBUT = time.time()
 CONTEXTE = {'projet': None, 'ecrire': False}   # rempli quand le projet est connu : un échec réel est alors noté en base
 BRANCHE_REELLE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]*$')
+
+
+def delai_du_repere(repere, defaut):
+    """Le délai du projet (minutes) que le passage précédent a noté dans le repère ; à défaut ou illisible, celui des hooks (aucun appel à la base)."""
+    try:
+        n = int(open(repere, encoding='utf-8').read().strip())
+        return n if 5 <= n <= 1440 else defaut
+    except (OSError, ValueError):
+        return defaut
 
 
 def parse_iso(s):
@@ -281,19 +292,27 @@ def main():
     cache_racine = os.environ.get('COCKPIT_CACHE') or os.path.join(os.path.expanduser('~'), '.cache', 'cockpit-general')
     slug_sur = re.sub(r'[^A-Za-z0-9_.-]', '_', a.projet)
     repere = os.path.join(cache_racine, 'rapproche-%s.t' % slug_sur)
-    if a.si_ancien and os.path.exists(repere) and time.time() - os.path.getmtime(repere) < a.si_ancien * 60:
+    if a.si_ancien and os.path.exists(repere) and time.time() - os.path.getmtime(repere) < delai_du_repere(repere, a.si_ancien) * 60:
         return 0
     os.makedirs(cache_racine, exist_ok=True)
     open(repere, 'a').close()
     os.utime(repere, None)  # posé AVANT : deux sessions qui démarrent ensemble ne le font pas deux fois
 
-    ligne = sql('select slug, depot, rapprochement_auto from projets where slug = %s' % guillemets(a.projet))
+    ligne = sql('select slug, depot, rapprochement_auto, rapprochement_passage_min, (select rapprochement_actif from filet_reglage where id = 1) as global_actif '
+               'from projets where slug = %s' % guillemets(a.projet))
     if not ligne:
         print('Projet inconnu dans le cockpit : %s' % a.projet, file=sys.stderr)
         return 2
     CONTEXTE['projet'], CONTEXTE['ecrire'] = a.projet, not a.essai
-    if a.si_ancien and ligne[0].get('rapprochement_auto') is False:
-        return 0  # éteint sur ce projet (écran « Chantiers et GitHub ») : les hooks ne passent plus, un passage demandé à la main écrit toujours
+    if a.si_ancien and (ligne[0].get('rapprochement_auto') is False or ligne[0].get('global_actif') is False):
+        return 0  # éteint sur ce projet (écran « Chantiers et GitHub ») ou pour TOUS (interrupteur général) : les hooks ne passent plus, un passage demandé à la main écrit toujours
+    delai = ligne[0].get('rapprochement_passage_min')
+    if isinstance(delai, int):
+        try:
+            with open(repere, 'w', encoding='utf-8') as f:
+                f.write(str(delai))   # le prochain hook lit le délai de CE projet sans appeler la base
+        except OSError:
+            pass
     questions = sql('select j from (select cockpit.chantiers_a_rapprocher(%s) as j) q' % guillemets(a.projet))
     questions = (questions[0]['j'] if questions else None) or []
     depot = ligne[0].get('depot') or ''

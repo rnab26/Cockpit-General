@@ -4,7 +4,7 @@ import type { Projet } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
-import { phraseRapprochement, ROLE_RAPPROCHEMENT, type EtatRapprochement } from '../lib/rapprochement.ts'
+import { avecCourant, CHOIX_PASSAGE_MIN, CHOIX_TRACE_H, libelleHeures, libelleMinutes, phraseRapprochement, ROLE_RAPPROCHEMENT, type EtatRapprochement } from '../lib/rapprochement.ts'
 
 /**
  * « Chantiers et GitHub » (0080, 13 oct. 2026). Raphaël : « mes chantiers ne sont pas à jour » : des sessions s'arrêtaient sans dire
@@ -17,6 +17,8 @@ export function RapprochementGithub({ projet }: { projet: Projet }) {
   const [etat, setEtat] = useState<EtatRapprochement | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [envoi, setEnvoi] = useState(false)
+  const [reglage, setReglage] = useState(false)
+  const [envoiDelai, setEnvoiDelai] = useState(false)
 
   const charger = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_rapprochement', { p_projet: projet.slug })
@@ -31,6 +33,15 @@ export function RapprochementGithub({ projet }: { projet: Projet }) {
     setEnvoi(false)
     if (error) { toast.erreur(`Réglage non enregistré : ${messageErreur(error)}`); return }
     toast.succes(auto ? 'Rapprochement avec GitHub rallumé sur ce projet.' : 'Rapprochement avec GitHub éteint sur ce projet.')
+    await charger()
+  }
+
+  const reglerDelais = async (traceH: number | null, passageMin: number | null) => {
+    setEnvoiDelai(true)
+    const { error } = await supabase.rpc('regler_rapprochement_delais', { p_projet: projet.slug, p_trace_h: traceH, p_passage_min: passageMin })
+    setEnvoiDelai(false)
+    if (error) { toast.erreur(`Réglage non enregistré : ${messageErreur(error)}`); return }
+    toast.succes(traceH != null ? `Rappel d’une session après ${libelleHeures(traceH)} sans trace.` : `Recherche dans GitHub au plus toutes les ${libelleMinutes(passageMin ?? 0)}.`)
     await charger()
   }
 
@@ -58,6 +69,27 @@ export function RapprochementGithub({ projet }: { projet: Projet }) {
           {etat.auto ? 'Éteindre' : 'Rallumer'}
         </Button>
       </div>
+      <button type="button" className="mt-2 text-xs font-medium text-accent" aria-expanded={reglage} data-testid="rapprochement-regler" onClick={() => setReglage(!reglage)}>
+        {reglage ? 'Fermer les réglages' : 'Régler…'}
+      </button>
+      {reglage ? (
+        <div className="mt-2 space-y-2" data-testid="rapprochement-delais">
+          <label className="flex items-center gap-2 text-xs text-texte-2">
+            <span className="flex-1">Rappeler une session qui tient un chantier sans trace depuis</span>
+            <select value={etat.trace_h ?? 4} disabled={envoiDelai} onChange={(e) => void reglerDelais(Number(e.target.value), null)} aria-label="Rappel d’une session sans trace" data-testid="rapprochement-trace"
+              className="h-9 rounded-lg border border-bord bg-carte px-2 text-texte">
+              {avecCourant(CHOIX_TRACE_H, etat.trace_h ?? 4).map((h) => <option key={h} value={h}>{libelleHeures(h)}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-texte-2">
+            <span className="flex-1">Chercher dans GitHub au plus toutes les</span>
+            <select value={etat.passage_min ?? 20} disabled={envoiDelai} onChange={(e) => void reglerDelais(null, Number(e.target.value))} aria-label="Délai entre deux recherches dans GitHub" data-testid="rapprochement-passage"
+              className="h-9 rounded-lg border border-bord bg-carte px-2 text-texte">
+              {avecCourant(CHOIX_PASSAGE_MIN, etat.passage_min ?? 20).map((m) => <option key={m} value={m}>{libelleMinutes(m)}</option>)}
+            </select>
+          </label>
+        </div>
+      ) : null}
     </section>
   )
 }
