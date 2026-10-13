@@ -154,6 +154,7 @@ try {
   verifie('jamais livrés : branche de journal seul, branche non fusionnée, simple mention, commit inconnu, rappel, session vivante', JAMAIS.every((k) => !regle[ids[k]]), JAMAIS.filter((k) => regle[ids[k]]))
   verifie('compte : 12 examinés (sans session, sans question), 1 tenu par une session vivante laissé', r?.examines === 12 && r?.tenus_vivants === 1, { examines: r?.examines, vivants: r?.tenus_vivants })
   verifie('--essai n\'écrit RIEN en base (états, journal, date du passage)', intact() && rapprocheAt(P) === null && une(`select count(*)::int as n from rapprochements where projet_id = ${q(P)}`).n === 0)
+  verifie('--essai ne pose PAS le repère des hooks (sinon le vrai passage lancé juste après par un hook est sauté 20 min : constaté sur le moteur, 13 oct.)', !existsSync(repere()), existsSync(repere()))
   verifie('la copie de travail de la session est intacte (références, état, tête, réglages, fichiers)', photo(W) === avant)
   const clone = path.join(CACHE, 'depots', SLUG)
   verifie('le clone d\'appoint est ISOLÉ (dossier de cache) et sans fichiers extraits', existsSync(path.join(clone, '.git')) && readdirSync(clone).join() === '.git', readdirSync(clone))
@@ -240,6 +241,14 @@ vieillir(50); sortie['cinquante_min_hook'] = lancer()         # 50 > 45 : passe
 open(repere, 'w').write('n importe quoi'); vieillir(25); sortie['repere_illisible_25_min'] = lancer()   # illisible : 20 par défaut, 25 > 20 : passe
 open(repere, 'w').write('45'); vieillir(5); sortie['cinq_min_main'] = lancer(hook=False)   # à la main : passe toujours
 etat['auto'] = False; vieillir(60); sortie['projet_eteint_hook'] = lancer()
+# Un ESSAI ne consomme pas le repère des hooks (constaté sur le moteur, 13 oct. : mon essai avait fait sauter le vrai passage pendant 20 min).
+def essai():
+    sys.argv = ['rapprocher.py', '--projet', 'p', '--essai', '--silencieux']
+    try: m.main()
+    except RuntimeError: pass
+os.remove(repere); essai(); sortie['essai_sans_repere'] = not os.path.exists(repere)
+open(repere, 'w').write('45'); vieillir(5); avant = (os.path.getmtime(repere), open(repere).read()); essai()
+sortie['essai_repere_intact'] = (os.path.getmtime(repere), open(repere).read()) == avant
 print(json.dumps(sortie))
 `)
   const py = spawnSync('python3', ['-I', testPy, rapprocher, path.join(dossier, 'cache-reglages')], { encoding: 'utf8', timeout: 60000 })
@@ -248,6 +257,7 @@ print(json.dumps(sortie))
   verifie('le délai du PROJET est noté dans le repère après un passage (45 min), sans appel à la base pour le relire', rg && rg.repere_apres_passage === '45', rg)
   verifie('… 30 min après : le hook sort sans toucher à la base ; 50 min après : il passe', rg && rg.trente_min_hook[0] === 0 && rg.trente_min_hook[1] === 0 && rg.cinquante_min_hook[0] === 'stop' && rg.cinquante_min_hook[1] >= 2, rg)
   verifie('repère illisible : le délai des hooks (20 min) s\'applique ; un passage demandé à la main passe toujours ; projet éteint : le hook sort', rg && rg.repere_illisible_25_min[0] === 'stop' && rg.cinq_min_main[0] === 'stop' && rg.projet_eteint_hook[0] === 0 && rg.projet_eteint_hook[1] === 1, rg)
+  verifie('un ESSAI ne crée pas le repère des hooks, et ne rafraîchit ni ne réécrit un repère déjà là (même date, même délai noté)', rg && rg.essai_sans_repere === true && rg.essai_repere_intact === true, rg)
 
   // ---- 8. Pannes et cas limites : jamais de plantage ----
   mkdirSync(SANS_ORIGINE)
@@ -296,6 +306,15 @@ print(json.dumps(sortie))
   hook('session-start.sh', { session_id: `test-rg4-${rand}`, hook_event_name: 'SessionStart', source: 'startup' }, { COCKPIT_RAPPROCHEMENT: '0' })
   await attendre(1500)
   verifie('session-start.sh avec COCKPIT_RAPPROCHEMENT=0 : rien n\'est lancé', !existsSync(sortieStub))
+
+  // ---- 9. Le moteur est un projet comme les autres (13 oct.) : ses sessions n'ont pas le bloc de gestes que brancher.sh écrit chez les projets branchés, ----
+  // ---- donc son CLAUDE.md les porte. Garde contre un « alléger le CLAUDE.md » qui les retirerait, et contre une dérive d'avec le bloc (la source). ----
+  const compact = (t) => t.replace(/\s+/g, ' ')
+  const claudeMoteur = compact(readFileSync(path.join(racine, 'CLAUDE.md'), 'utf8'))
+  const blocSource = compact(readFileSync(path.join(racine, 'docs', 'bloc-CLAUDE.md'), 'utf8'))
+  const gestes = ['--jalon pousse --detail', '--de-cote', '--abandonner', 'SANS TRACE', '--point']
+  verifie('le bloc source porte les quatre gestes de session (jalon à chaque envoi, terminer/de côté, rappel SANS TRACE, verdict dans le fil)', gestes.every((g) => blocSource.includes(g)), gestes.filter((g) => !blocSource.includes(g)))
+  verifie('le CLAUDE.md du moteur les porte aussi, et renvoie au bloc comme source unique', gestes.every((g) => claudeMoteur.includes(g)) && claudeMoteur.includes('docs/bloc-CLAUDE.md'), gestes.filter((g) => !claudeMoteur.includes(g)))
 } catch (e) {
   total++; echecs++
   console.log(`  ✗ exception : ${e.stack ?? e.message}`)

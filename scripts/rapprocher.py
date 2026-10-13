@@ -295,8 +295,9 @@ def main():
     if a.si_ancien and os.path.exists(repere) and time.time() - os.path.getmtime(repere) < delai_du_repere(repere, a.si_ancien) * 60:
         return 0
     os.makedirs(cache_racine, exist_ok=True)
-    open(repere, 'a').close()
-    os.utime(repere, None)  # posé AVANT : deux sessions qui démarrent ensemble ne le font pas deux fois
+    if not a.essai:  # un essai ne consomme PAS le repère des hooks : sinon le vrai passage lancé juste après est sauté 20 min (constaté sur le moteur, 13 oct.)
+        open(repere, 'a').close()
+        os.utime(repere, None)  # posé AVANT : deux sessions qui démarrent ensemble ne le font pas deux fois
 
     ligne = sql('select slug, depot, rapprochement_auto, rapprochement_passage_min, (select rapprochement_actif from filet_reglage where id = 1) as global_actif '
                'from projets where slug = %s' % guillemets(a.projet))
@@ -307,7 +308,7 @@ def main():
     if a.si_ancien and (ligne[0].get('rapprochement_auto') is False or ligne[0].get('global_actif') is False):
         return 0  # éteint sur ce projet (écran « Chantiers et GitHub ») ou pour TOUS (interrupteur général) : les hooks ne passent plus, un passage demandé à la main écrit toujours
     delai = ligne[0].get('rapprochement_passage_min')
-    if isinstance(delai, int):
+    if isinstance(delai, int) and not a.essai:
         try:
             with open(repere, 'w', encoding='utf-8') as f:
                 f.write(str(delai))   # le prochain hook lit le délai de CE projet sans appeler la base

@@ -29,6 +29,17 @@ au démarrage. Réserve un chantier avant de coder, signale ta progression avec
 avec `scripts/demander.sh`. Un chantier terminé passe « à vérifier » ; c'est
 Raphaël qui certifie depuis l'app.
 
+**Le moteur est un projet comme les autres** (13 oct. 2026, Raphaël : « le projet Cockpit-General […]
+est lui-même un projet en soi, c'est lui le moteur qui va reproduire tout ce qu'on fait pour les
+projets branchés »). Il n'a pas le bloc de gestes que `brancher.sh` écrit chez eux (ses hooks sont ceux
+du dépôt) : les voici, pour tes sessions ici aussi (source unique : `docs/bloc-CLAUDE.md`,
+« LES CHANTIERS SE FERMENT D'APRÈS GITHUB »). (1) Chaque envoi : `scripts/progression.sh --jalon
+pousse --detail <commit>`. (2) Avant de t'arrêter : `--termine`, ou `scripts/chantier.sh --de-cote
+<id>` / `--abandonner <id>`, sur chaque chantier tenu. (3) Au rappel « SANS TRACE », réponds pour
+chacun. (4) Un verdict de Raphaël dit en session va dans le fil (`--point`) ; tu ne certifies jamais.
+Le rapprochement GitHub du moteur passe par les mêmes hooks ; une session ouverte sur plusieurs
+dépôts n'en a pas : `scripts/connecter.sh` les remplace (premier passage du moteur : 13 oct. 2026).
+
 ## Contrat de données : les migrations, rien d'autre
 
 `supabase/migrations/` est la seule source de vérité du schéma. Une

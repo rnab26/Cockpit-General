@@ -95,10 +95,13 @@ remplit) et la règle ne lit que ses chantiers. Ce qui y arrive, et par où :
 | La consigne aux sessions « les chantiers se ferment d'après GitHub » | `docs/bloc-CLAUDE.md` (injecté au démarrage, ou écrit dans le CLAUDE.md du projet par `brancher.sh`) | idem |
 | Les règles de Raphaël (« le cockpit lit git », « un accord général ne vaut pas autorisation d'écrire dans des données réelles », « tout correctif est général ») | `dotfiles/.claude/CLAUDE.md` | toutes ses sessions, tous projets confondus |
 | Le branchement d'un futur projet | skill `cockpit` (dotfiles) + `brancher.sh` | tout futur projet |
+| Les quatre gestes de session, pour LES SESSIONS DU MOTEUR lui-même (il n'a pas le bloc écrit par `brancher.sh` : ses hooks sont ceux du dépôt) | `CLAUDE.md` du moteur (§ « Le cockpit se pilote dans le cockpit »), gardé par `verifier-rapprochement` §9 contre une dérive d'avec le bloc | les sessions qui travaillent dans Cockpit-General |
 
 **Preuves** : FacePro a été fermé tout seul par le hook d'une vraie session, 3 minutes après la mise en ligne, avec les 5 chantiers du passage
 d'essai (journal `rapprochements`, 16 h 09 UTC) ; `verifier-greffe.mjs` branche des projets de zéro (voie 1 et voie 3) et vérifie que la
 règle arrive dans leur contexte et que leur démarrage lance le collecteur.
+
+**Le moteur est un projet comme les autres** (13 oct., Raphaël : « c'est lui le moteur qui va reproduire tout ce qu'on fait pour les projets branchés »). Son premier passage a eu lieu le 13 oct. à 17 h 46 UTC, par le chemin normal des hooks (`scripts/connecter.sh` pour une session ouverte sur plusieurs dépôts, qui n'a pas de hooks) : 2 chantiers ouverts sans session examinés, aucun à fermer (ce sont deux suites encore à faire). **Piège trouvé à cette occasion** : mon essai à blanc (`--essai`) posait le repère qui limite les hooks à un passage par 20 min ; le vrai passage lancé juste après par le hook était donc sauté, et l'écran restait sur « Pas encore passé ». Corrigé : un essai ne crée ni ne rafraîchit le repère (`verifier-rapprochement`, harnais Python ; le test échoue sur l'ancien code).
 
 **Projets du cockpit central** (13 oct.) : `cockpit`, `facepro`, `melissa-nabet` (0 chantier). **Pas branchés, donc hors rapprochement
 tant qu'on ne les branche pas** : Midrag, Trieur-Data, Pointeur-Robot-Campaign, Jarvis-assistant (ancien cockpit), melissa-nabet-site.
