@@ -5,6 +5,24 @@ avant de voir l'historique du chat […] il n'y a pas toujours les sujets, je su
 je ne traite pas sur le cockpit donc ce n'est pas traité, alors que j'ai avancé sur la session Claude […] simplifie les
 choses, allège ton process, fais au plus simple possible, pour que je puisse faire travailler des gens sur le cockpit. »
 
+## Correction du jour (13 oct., après la mise en ligne) : les boxes et les barres reviennent par défaut
+
+Raphaël : « Pourquoi tu as supprimé mes box avec le nombre de chantiers et pourquoi tu as supprimé les barres de
+progression ? J'en ai besoin. » **Il avait raison, et c'était ma décision, pas la sienne** : en rendant l'accueil simple
+la vue par défaut, j'avais fait disparaître d'un coup les six boxes, le tableau « Détail par section », la section
+« Prêt à lancer » (ses barres grises) et le reste de l'écran qu'il utilise. Il ne m'avait demandé ni de les retirer ni de
+changer la vue par défaut, seulement de réduire le bruit (le compte « pour toi », les cartes du chat, les sujets).
+Désormais :
+- **La vue par défaut est l'écran complet** (`VUE_ACCUEIL_DEFAUT = 'detaillee'`) : les six boxes avec le nombre de
+  chantiers, le tableau par section, « Ça avance tout seul » avec ses barres de progression, « À toi de jouer », « À
+  tester », les renforts, « Prêt à lancer » avec ses barres grises. Tout ce qui allège (les demandes seules dans « pour toi »,
+  le sujet de chaque carte, le chat plié, « Classer sans test ») s'applique à CET écran.
+- **L'accueil simple se choisit** (« Vue simple », en haut de l'écran complet) et garde lui aussi les six boxes (compactes :
+  ni pastilles ni tableau) et la barre de chaque chantier en cours. Un appareil qui avait déjà choisi une vue la garde.
+- Règle pour la suite : **on ne retire jamais un élément de l'écran par défaut sans qu'il l'ait demandé** ; une
+  simplification s'ajoute à côté (une vue, un réglage) ou remplace un élément sur sa demande explicite.
+- Pour retrouver l'écran complet sur un appareil qui a gardé la vue simple : « Vue détaillée » (bas de l'accueil simple).
+
 ## Ce qui a été mesuré (base et captures réelles, téléphone 390 px, 13 oct. 09 h UTC)
 
 - « Pour toi » = **69** (Tout), dont **56 chantiers livrés** qui attendent seulement un test (35 FacePro, 21 cockpit) :
@@ -23,7 +41,10 @@ choses, allège ton process, fais au plus simple possible, pour que je puisse fa
    Un chantier livré « à tester » n'en est pas une. `tableauDeBord().aToi` = les demandes, `.aTester` à part ; la tuile
    « pour toi » du tableau, le rouge des onglets (`pastillesProjet`), « pour toi » par section (`ouJenSuis`) et la pastille
    des chats (`notifsChat`) ne comptent que les demandes ; une sixième tuile « à tester » existe dans la vue détaillée.
-2. **L'accueil simple est la vue par défaut** (`AccueilSimple.tsx`, règles `lib/vueAccueil.ts`) : trois blocs.
+2. **L'accueil simple se choisit** (`AccueilSimple.tsx`, règles `lib/vueAccueil.ts`) : les six boxes (compactes), puis
+   trois blocs. (Il avait été mis par défaut le matin du 13 oct. ; corrigé le jour même, voir plus haut.)
+   - **Boxes** : pour toi · à tester · ça avance · à lancer · de côté · fini, chacune ouvre sa liste (`Tuiles compact`,
+     le MÊME composant que l'écran complet, sans pastilles ni tableau).
    - **À toi** : cinq demandes au plus (le plus récent en haut), puis « Voir les N autres » ; dessous une ligne repliée
      « N livrés à tester · sans urgence » qui s'ouvre sur la liste ; vide : « Rien ne t'attend ».
    - **En cours** : ce qui avance vraiment (barre, étape) ; « N chantiers attendent une session · Voir » ouvre la liste
@@ -31,9 +52,10 @@ choses, allège ton process, fais au plus simple possible, pour que je puisse fa
      « Personne ne travaille » ne ment pas : si des conversations travaillent sans chantier précis, la phrase le dit
      (`phraseSansChantier`).
    - **Livré** : les trois derniers certifiés (« Certifié par toi à 12:17 »), « changer » la période.
-   « Vue détaillée » (bas de page) rend l'ancien accueil (tuiles, tableau par section, renforts, réglages) ; « Vue simple »
-   (haut) y ramène. Retenu par appareil (`localStorage` `cockpit_accueil`, `simple` | `detaillee`). Les bancs qui parcourent
-   l'ancien écran posent `cockpit_accueil = detaillee`.
+   « Vue détaillée » (bas de page) rend l'écran complet (boxes + pastilles, tableau par section, barres de « Prêt à
+   lancer », renforts, réglages), qui est la vue PAR DÉFAUT ; « Vue simple » (haut de l'écran complet) bascule vers
+   l'accueil simple. Retenu par appareil (`localStorage` `cockpit_accueil`, `simple` | `detaillee`, vide = écran complet).
+   `verifier-web.mjs` ne pose plus rien : il parcourt le défaut.
 3. **Chaque carte dit son sujet** (`sujetEtDetail`, `detailDeCarte` dans `lib/bulleAide.ts`) : titre du chantier ; sans
    chantier, le « Sujet : … » du message, sinon sa première phrase ; la 2e ligne d'une question ou d'une action est la
    QUESTION elle-même (jamais « Claude te pose une question » quand le texte existe ; l'alerte « Claude a avancé depuis »
@@ -86,5 +108,5 @@ hooks : pas de réponses en direct tant qu'il n'est pas relancé. `scripts/verif
 
 `node --experimental-strip-types app/scripts/verifier-vue-accueil.ts` · `verifier-classer-livres.ts` ·
 `verifier-bulle-aide.ts` (sujet, détail) · `verifier-entonnoir.ts`, `verifier-tableau-de-bord.ts`, `verifier-ou-jen-suis.ts`
-(demandes / à tester) · `node app/scripts/verifier-accueil.mjs` (accueil simple, vue détaillée, chat plié, classer sans
-test, téléphone, projets jetables) · `node scripts/verifier-connecter.mjs` · `verifier-base` §56 (`SEUL=56`).
+(demandes / à tester) · `node app/scripts/verifier-accueil.mjs` (vue par défaut = boxes + barres, accueil simple, vue détaillée,
+chat plié, classer sans test, téléphone, projets jetables) · `node scripts/verifier-connecter.mjs` · `verifier-base` §56 (`SEUL=56`).

@@ -181,7 +181,11 @@ function PastillesAToi({ elements }: { elements: ElementAToi[] }) {
   )
 }
 
-function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
+/**
+ * Les six boxes avec le nombre de chantiers (pour toi · à tester · ça avance · à lancer · de côté · fini), chacune ouvre sa liste.
+ * `compact` : seulement les boxes (l'accueil simple) — ni pastilles, ni « fini = période », ni tableau par section.
+ */
+export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; projetId: string | null; fenetre: Fenetre; compact?: boolean }) {
   const g = useGlobal()
   const [liste, setListe] = useState<Liste | null>(null)
   // Détail par projet/section : ouvert d'emblée (Raphaël, 30 sept. : « pas replié automatiquement »).
@@ -206,14 +210,16 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           )
         })}
       </div>
-      <PastillesAToi elements={t.aToi} />
-      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-texte-2">
-        <button type="button" onClick={changerFenetre} data-testid="fenetre-ou-jen-suis" className="underline-offset-2 hover:underline">fini = {libelleFenetre} · changer</button>
-        <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-ou-jen-suis" className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline">
-          Détail par {projetId ? 'section' : 'projet'}<ChevronDown size={14} className={`transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
-        </button>
-      </div>
-      {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
+      {compact ? null : <>
+        <PastillesAToi elements={t.aToi} />
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-texte-2">
+          <button type="button" onClick={changerFenetre} data-testid="fenetre-ou-jen-suis" className="underline-offset-2 hover:underline">fini = {libelleFenetre} · changer</button>
+          <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-ou-jen-suis" className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline">
+            Détail par {projetId ? 'section' : 'projet'}<ChevronDown size={14} className={`transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
+          </button>
+        </div>
+        {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
+      </>}
       <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} />
     </section>
   )

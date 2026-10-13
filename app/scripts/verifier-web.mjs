@@ -197,9 +197,9 @@ const compterVivants = (slug = null) => {
 const navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
 const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR', timezoneId: 'Asia/Jerusalem' })
 await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGINE })
-// Ce banc parcourt l'ancien accueil (« vue détaillée » : tuiles, tableau par section, sections repliables). L'accueil
-// SIMPLE, par défaut depuis le 13 oct. 2026, a son propre banc : app/scripts/verifier-accueil.mjs.
-await ctx.addInitScript(() => { try { localStorage.setItem('cockpit_accueil', 'detaillee') } catch {} })
+// Ce banc parcourt l'accueil complet (« vue détaillée » : tuiles, tableau par section, sections repliables), qui est la
+// vue PAR DÉFAUT : aucun réglage n'est posé ici, c'est exprès (le banc prouve aussi que le défaut n'a pas changé).
+// L'accueil SIMPLE, choisi à un toucher, a son propre banc : app/scripts/verifier-accueil.mjs.
 // Le Chromium de l'environnement cloud Claude ne fait pas confiance au proxy
 // TLS (ERR_CERT_AUTHORITY_INVALID, constaté le 29 sept.) : les appels HTTP à
 // Supabase (et au site d'un projet, lu pour sa version en ligne) passent par
