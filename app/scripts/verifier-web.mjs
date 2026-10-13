@@ -1192,9 +1192,12 @@ try {
   verifie('les trois étapes écrites sur UNE ligne s’affichent sur trois lignes distinctes', nEtapes === 3 && ys.every((y, i) => i === 0 || y > ys[i - 1] + 8), { nEtapes, ys })
   const textesEtapes = await etapesV.allTextContents()
   verifie('chaque ligne porte son numéro et son texte, sans le suivant', /^1\.\s*Ouvre la page/.test(textesEtapes[0] ?? '') && /^3\.\s*Tu dois voir/.test(textesEtapes[2] ?? '') && !(textesEtapes[0] ?? '').includes('Touche'), textesEtapes)
-  const lienCv = encadre.getByRole('link')
-  verifie('le lien du texte est cliquable, nouvel onglet, rel noopener',
-    await lienCv.count() === 1 && await lienCv.getAttribute('href') === 'https://rnab26.github.io/Cockpit-General/' && await lienCv.getAttribute('target') === '_blank' && /noopener/.test(await lienCv.getAttribute('rel') ?? ''))
+  // Depuis #116 l'adresse du texte est aussi proposée en gros bouton nommé (LiensAOuvrir) : plusieurs liens vers la même page,
+  // il suffit qu'il y en ait au moins un et que TOUS s'ouvrent dans un nouvel onglet avec rel noopener.
+  const lienCv = encadre.locator('a[href="https://rnab26.github.io/Cockpit-General/"]')
+  const attrsCv = await lienCv.evaluateAll((els) => els.map((e) => ({ cible: e.getAttribute('target'), rel: e.getAttribute('rel') ?? '' })))
+  verifie('les liens vers l’adresse du texte sont cliquables : nouvel onglet, rel noopener (au moins un, tous conformes)',
+    attrsCv.length >= 1 && attrsCv.every((a) => a.cible === '_blank' && /noopener/.test(a.rel)), attrsCv)
   const [bEnc, bCert] = [await encadre.boundingBox(), await blocV1.getByTestId('btn-certifier').boundingBox()]
   verifie('l’encadré est AVANT les boutons « Ça marche / Corriger »', bEnc && bCert && bEnc.y + bEnc.height <= bCert.y, { bEnc, bCert })
   const friseV1 = blocV1.getByTestId('frise-en-ligne')
@@ -1623,7 +1626,7 @@ try {
   // 7 bis. Mise en ligne (GitHub simulé) et mode autonome, dans « Réglages du projet » (replié)
   console.log('  — mise en ligne et mode autonome')
   // Vue du projet (9cc71872) : on arrive sur « travail » ; les réglages sont derrière la 2e icône.
-  verifie('vue projet : barre du bas, on arrive sur « travail »', await page.getByTestId('barre-onglets').getByRole('tab').count() === 5 && (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('autonome-projet').count() === 0)
+  verifie('vue projet : barre du bas (6 onglets depuis « Discussions »), on arrive sur « travail »', await page.getByTestId('barre-onglets').getByRole('tab').count() === 6 && (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('autonome-projet').count() === 0)
   await page.getByTestId('onglet-vue-reglages').click()
   const reglagesP = page.getByTestId('reglages-projet')
   await reglagesP.locator('> button').click()
@@ -1738,8 +1741,9 @@ try {
   const [ra] = sql(`select renforts_auto, renforts_auto_seuil from chefs where projet_id = '${projet.id}'`)
   verifie('réglages : ouverture automatique allumée, seuil 4 enregistré (la même règle que la chef lit)', ra?.renforts_auto === true && ra?.renforts_auto_seuil === 4, ra)
   await renf().getByTestId('renforts-auto').waitFor({ timeout: 10000 })
-  await page.waitForFunction((slug) => /dès 4 chantiers/.test(document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renforts-auto"]`)?.textContent ?? ''), SLUG, { timeout: 10000 }).catch(() => {})
-  verifie('réglages : la ligne d’état dit le seuil enregistré', /dès 4 chantiers/.test(await renf().getByTestId('renforts-auto').textContent()), await renf().getByTestId('renforts-auto').textContent())
+  // 0076 : un chantier en attente suffit à ouvrir une session (par paquets) ; le seuil enregistré (4) ne sert plus qu'à l'alerte « bientôt saturée ».
+  await page.waitForFunction((slug) => /dès 1 chantier en attente, par paquets/.test(document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renforts-auto"]`)?.textContent ?? ''), SLUG, { timeout: 10000 }).catch(() => {})
+  verifie('réglages : la ligne d’état dit la règle en vigueur (un chantier suffit, par paquets)', /dès 1 chantier en attente, par paquets/.test(await renf().getByTestId('renforts-auto').textContent()), await renf().getByTestId('renforts-auto').textContent())
   await renf().getByTestId('lancer-renforts').click()
   verifie('clic : toast « 1 renfort demandé : <section> »', await toastAuPremierPlan(/1 renfort demandé : /), { auPremierPlan: dernierDessus })
   const rdem = sql(`select r.id, r.statut, r.max_agents, coalesce(s.nom, 'Sans section') as section from renforts r left join sections s on s.id = r.section_id where r.projet_id = '${projet.id}'`)
@@ -1898,7 +1902,8 @@ try {
   await page.getByTestId('titre').fill(titreTest)
   await page.getByTestId('demande').fill('Créé par verifier-web, supprimé juste après.')
   await page.getByTestId('creer-chantier').click()
-  await page.getByText(/créé\.$/).first().waitFor({ timeout: 10000 })
+  // Le message dit maintenant où le chantier apparaît (« Chantier « … » créé. Il est dans … ») : il ne se termine plus par « créé. ».
+  await page.getByText(/Chantier « .* » créé/).first().waitFor({ timeout: 10000 })
   await deplierTout()
   const ligneTest = ligneDe(titreTest)
   await ligneTest.waitFor({ timeout: 15000 })
