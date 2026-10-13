@@ -2055,7 +2055,9 @@ async function controle44_pr_conflit_visible() {
   const fermee = lancer(["302", "--fermee"]);
   verifie("PR fermée ou fusionnée : la carte d'état se retire aussi", fermee.code === 0 && ouverts(await conflits(302)) === 0, fermee);
   // CI en cours : une carte « Fusionne » déjà posée est gardée, pas retirée.
-  lancer(["303", "--etat", "open", "--merge-state", "clean", "--titre", "PR avec CI"]);
+  // (Titre en mots simples : « CI » est refusé par la règle de vocabulaire depuis 5084dfb, la carte n'était alors jamais posée.)
+  const posee = lancer(["303", "--etat", "open", "--merge-state", "clean", "--titre", "PR aux contrôles en cours"]);
+  verifie("PR propre : la carte « Fusionne » est posée (témoin du contrôle qui suit)", posee.code === 0 && ouverts(await fusionne(303)) === 1, posee);
   const cours = lancer(["303", "--etat", "open", "--merge-state", "unstable", "--ci", "cours"]);
   verifie("CI en cours : la carte « Fusionne » déjà posée est GARDÉE, aucune carte d'état", cours.code === 0 && ouverts(await fusionne(303)) === 1 && (await conflits(303)).length === 0, cours);
 
