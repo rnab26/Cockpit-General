@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 13 oct. 2026 (sections 0 et 0 bis ci-dessous). Les sections 1 et
+Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis et 0 ter ci-dessous). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
@@ -76,6 +76,23 @@ branche une session sans hooks (cause du « débranché » : session ouverte sur
 connecter 11, base 842 (dont §56 : 15), 48 suites pures ; app tsc + build. **À constater par Raphaël** : l'écran sur son téléphone, un classement réel.
 **Non fait** (voir le doc) : clôture des chantiers ouverts puis jamais terminés (piste : commits
 poussés comme preuve), hook utilisateur (non vérifié : copie de `dotfiles/.claude/settings.json` ?), auto-fusion, CLAUDE.md de 122 Ko.
+
+## 0 ter. Suite du 13 oct. 2026 (après-midi) : « mes chantiers ne sont pas à jour » — le cockpit lit git
+
+Demande de Raphaël : un projet branché (FacePro), une session Claude qui travaille sur plusieurs sujets, des correctifs à tester qu'il a
+avancés dans la session sans passer par l'app : « les anciens et les nouveaux chantiers ne sont pas actualisés ni coordonnés ».
+**Tout est dans `docs/rapprochement-github.md`** (mesures, preuves, gardes, limites) et la section de même nom du CLAUDE.md. En une phrase :
+un chantier ouvert que personne ne tient et dont le travail est PROUVÉ dans `main` passe « livré, à vérifier » tout seul (migration 0080,
+`rapprocher_depot` + `scripts/rapprocher.py` lancé en fond par les hooks), une session vivante reçoit le rappel précis de ce qu'elle tient sans
+trace depuis 4 h, et l'écran « Chantiers et GitHub » (Réglages du projet) montre l'état et l'interrupteur.
+**Vérifié** : base §57 (31) + banc complet 870/870 (avant l'ajout de l'échec noté), `verifier-rapprochement.mjs` 51 (sabotage du collecteur : 6 contrôles rougissent ; ancien guillemetage : le passage échoue), 49 suites pures
+(dont `verifier-rapprochement.ts` 20), greffe 44, app tsc + build. **Passage d'essai FacePro (lecture seule)** : 5 clôtures sûres proposées.
+**Bloqué par la plateforme, pas fait** : l'application RÉELLE sur FacePro (classifieur « Modify Shared Resources », refusé deux fois, y compris après
+« j'ai donné mon accord sur tout ») ; elle se fera toute seule à l'ouverture de la prochaine session FacePro une fois la PR fusionnée (le hook
+lance le passage), ou par `python3 scripts/rapprocher.py --projet facepro` dès que Raphaël autorise cette commande précise. Aussi en attente de
+son autorisation précise : classer sans test à 7 jours (réglage de projet), 3 clôtures à la main (« 8,8 $ » PR #64, « lèvres » PR #58, « oreille »
+fusion e68212c), la carte « FacePro : aucune session ne s'ouvre seule ».
+**Non fait** : relayer les verdicts que Raphaël dit DANS une session (carte « tu confirmes ? » en un toucher) ; écran pour annuler un rapprochement.
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
