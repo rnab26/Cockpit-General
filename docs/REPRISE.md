@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis, 0 ter et 0 quinquies ci-dessous). Les sections 1 et
+Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis, 0 ter, 0 quinquies et 0 sexies ci-dessous). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
@@ -132,10 +132,20 @@ téléchargeable (les liens Stripe expirent : valable à 11 jours, expiré à 33
 **Pas fait, et pourquoi** : (1) la routine hebdomadaire existe (`trig_01HViAL4dDqkdXTKmjrRmHJ8`) mais est **EN PAUSE** : elle n'a aucun connecteur Gmail (`create_trigger` refuse `connectors`
 pour cette organisation ; l'essai à blanc a montré une session sans outil `mcp__`, avec dépôt clonable, clé de base présente, python3 et pdftotext) ; il faut le geste de Raphaël dans
 claude.ai/code/routines › Edit › Connectors, **et sa décision** : un connecteur Gmail donne à la routine tous ses outils (envoi compris) sans permission, seul son texte l'en empêche. Alternative sans
-ce risque ni jetons : un petit programme dans son compte Google (Apps Script), à construire. (2) L'historique des 7 reçus n'est PAS dans Coûts : la plateforme a refusé qu'une session écrive les
-lignes (« Modify Shared Resources ») ; il entre avec son « oui » précis, ou quand il recule la date de départ dans Coûts.
+ce risque ni jetons : un petit programme dans son compte Google (Apps Script), à construire. (2) L'historique des 7 reçus est dans Coûts (673,33 ₪ et 15,60 $, PDF du plus récent seulement) depuis le soir du 13 oct. : la plateforme avait refusé l'écriture (« Modify Shared Resources »)
+jusqu'à ce que Raphaël envoie sa phrase PRÉCISE (commande et cible) ; mon premier SQL (un `with … insert`) était en plus refusé par la base : un `insert … select … ;` simple a passé.
 **Piège** : un passage réussi de la routine écrasera le battement « échec » que j'ai posé volontairement (la carte du prestataire Claude dit aujourd'hui, vrai, que la tâche n'a pas accès à Gmail).
 **Effet de bord de l'essai** : la session d'essai a envoyé une notification sur le téléphone de Raphaël (« Import impossible… »), parce que le dépôt n'était pas encore fusionné.
+
+## 0 sexies. Le bouton « Chercher mes fournisseurs » (13 oct. 2026, soir) — chantier `07258fe5`, migration 0084
+
+Raphaël : « une recherche par mots-clés plutôt que de lire toute la boîte mail » et « un bouton où j'appuie et ça va chercher tous les noms des fournisseurs où je suis susceptible d'avoir des
+factures, et comme ça on actualise ». Procédure : `docs/recus-par-email.md` › « Chercher les fournisseurs ». Bloc `RechercheFournisseurs.tsx` en tête de Coûts ; tables
+`recherches_fournisseurs` (UNE demande ouverte par projet) et `fournisseurs_detectes` ; `scripts/chercher-fournisseurs.py` ; les hooks préviennent une session qui a Gmail.
+**Fait pour de vrai** : première recherche par mots-clés sur la boîte de Raphaël (3 appels `search_threads`, aucun mail ouvert) → 94 mails, 24 fournisseurs « nouveaux » enregistrés dans Coûts du projet `cockpit` (à lui de « Suivre » ou « Ignorer » : beaucoup de bruit, banques, virements reçus, versements de plateformes).
+**Vérifié** : `verifier-fournisseurs.mjs` 50/50, `app/scripts/verifier-fournisseurs.mjs` 22/22 (téléphone), `verifier-fournisseurs.ts` 20/20 ; un vrai défaut trouvé par le banc écran et corrigé (la liste se
+repliait toute seule quand on ignorait le dernier « nouveau »). **Limite** : l'écran n'ouvre pas de session ; sans session qui a Gmail la demande attend. **Piège** : la recherche ne lit JAMAIS un mail
+(`search_threads` seulement : expéditeur, date, objet) ; ne pas ajouter de `get_thread` « pour être plus précis ».
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 

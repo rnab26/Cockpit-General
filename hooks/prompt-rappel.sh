@@ -71,6 +71,16 @@ if [ -n "$branche" ] && [ -x "$SQL" ]; then
     [ -n "$vieux" ] && touch "$marque_vieux" 2>/dev/null
   fi
 fi
+# RECHERCHE DES FOURNISSEURS (0084) : le bouton de Coûts pose une demande qui attend une session avec Gmail. UNE ligne, au plus toutes les 30 min par copie de
+# travail (ce hook part avec chaque message : il ne doit pas gonfler le contexte) ; seulement une demande « en attente » (une demande déjà prise n'est pas rappelée).
+fourn=""
+if [ -x "$SQL" ]; then
+  marque_fourn="$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-fournisseurs"
+  if [ ! -e "$marque_fourn" ] || [ -n "$(find "$marque_fourn" -mmin +30 2>/dev/null)" ]; then
+    n_fourn=$("$SQL" "select count(*)::int as n from recherches_fournisseurs r join projets p on p.id = r.projet_id where p.slug = '$PROJET' and r.statut = 'en_attente'" 2>/dev/null | jq -r '.rows[0].n // 0' 2>/dev/null || echo 0)
+    if [ "${n_fourn:-0}" -gt 0 ] 2>/dev/null; then fourn=1; touch "$marque_fourn" 2>/dev/null; fi
+  fi
+fi
 # RAPPROCHEMENT GITHUB (0080) : en tâche de fond, au plus une fois toutes les 20 min par projet (voir hooks/session-start.sh).
 rapprocher="${COCKPIT_RAPPROCHER:-$(dirname "$SQL")/rapprocher.py}"
 if [ -n "$sid" ] && [ "${COCKPIT_RAPPROCHEMENT:-1}" != 0 ] && [ -f "$rapprocher" ] && command -v python3 >/dev/null 2>&1; then
@@ -80,5 +90,6 @@ texte="Cockpit (projet $PROJET) — si ce message demande du TRAVAIL (fonctionna
 [ -n "$tour_txt" ] && texte="$texte$tour_txt"
 [ -n "$tenus" ] && texte="$texte Ta session tient déjà : $tenus."
 [ -n "$vieux" ] && texte="$texte ⚠️ SANS TRACE depuis longtemps, sur des chantiers que ta session tient : $vieux. Toi seule sais s'ils sont finis, et Raphaël ne voit que ce que tu écris ici : pour CHACUN, soit c'est terminé → $PROG_CMD --chantier <id> --termine \"<ce qui est livré, une phrase>\" --verifier \"<étapes avec le lien exact>\" --en-ligne \"<adresse>\" (ou --pas-en-ligne \"<raison>\") ; soit tu continues → $PROG_CMD --chantier <id> --etape \"<où tu en es>\" ; soit tu n'y travailles plus → $CHANTIER_CMD --de-cote <id> (ou --abandonner <id>) --pourquoi \"…\"."
+[ -n "$fourn" ] && texte="$texte 🔎 Raphaël a demandé la RECHERCHE DE SES FOURNISSEURS (bouton de Coûts) : si tu as les outils Gmail, fais-la (section « Chercher les fournisseurs » de docs/recus-par-email.md, dépôt rnab26/Cockpit-General) ; sinon ignore ce rappel."
 [ -n "$chef_txt" ] && texte="$texte $chef_txt"
 jq -n --arg c "$texte" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'

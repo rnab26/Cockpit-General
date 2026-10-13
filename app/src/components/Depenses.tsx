@@ -9,6 +9,7 @@ import {
   PERIODES, PERIODE_DEFAUT, STATUTS_COMPTA, TYPES, destinataireValide, envoyable, estPeriode, etatImportAuto, formaterMontant, formaterTotaux, grouper, lienDeRepli,
   lireDepense, lireService, parService, resumeCompta, soldeBas, sommer, type Canal, type Depense, type FichierDepense, type Periode, type Service, type TypeDepense,
 } from '../lib/depenses.ts'
+import { RechercheFournisseurs } from './RechercheFournisseurs.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Badge } from '../ui/Badge.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -111,6 +112,9 @@ export function CoutsProjet() {
   return (
     <section aria-label="Coûts du projet" data-testid="couts-projet" className="space-y-4">
       {erreur ? <Erreur texte={erreur} onReessayer={() => void recharger()} /> : null}
+
+      {/* Fournisseurs de factures : le bouton qui cherche (0084) */}
+      <RechercheFournisseurs projetId={projet.id} services={actifs} par={par} now={now} onServicesChange={() => void recharger()} />
 
       {/* Prestataires : accès direct, solde, alerte */}
       <div className="space-y-2" data-testid="services">
