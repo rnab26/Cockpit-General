@@ -91,3 +91,48 @@ export function prestatairePour(f: Pick<Fournisseur, 'nom' | 'domaine'>, service
 }
 /** La devise la plus probable d'un nouveau prestataire (réglable ensuite avec son crayon) : un domaine israélien facture en shekels. */
 export const deviseProbable = (f: Pick<Fournisseur, 'domaine'>): string => (/\.il$/.test(f.domaine) ? 'ILS' : 'USD')
+
+// ---------------------------------------------------------------------------------------------------------- actions groupées
+// Une liste de fournisseurs se trie à plusieurs : « Choisir plusieurs » coche des lignes, une barre en bas propose l'action de l'onglet.
+
+export type ActionLot = 'suivre' | 'ignorer' | 'remettre'
+
+/** Les actions groupées d'un onglet. « Suivis » n'en a pas : un fournisseur suivi est déjà un prestataire (on le gère dans Prestataires). */
+export function actionsDuLot(onglet: Onglet): ActionLot[] {
+  return onglet === 'nouveau' ? ['suivre', 'ignorer'] : onglet === 'ignore' ? ['remettre'] : []
+}
+/** Le statut que posent « Ignorer » et « Remettre » (« Suivre » crée ou relie un prestataire : il passe par sa propre règle). */
+export const STATUT_APRES_LOT: Record<'ignorer' | 'remettre', StatutFournisseur> = { ignorer: 'ignore', remettre: 'nouveau' }
+
+const pluriel = (n: number, un: string, plusieurs: string) => `${n} ${n > 1 ? plusieurs : un}`
+/** Le texte d'un bouton de la barre : « Ignorer (3) ». */
+export function libelleLot(action: ActionLot, n: number): string {
+  return `${action === 'suivre' ? 'Suivre' : action === 'ignorer' ? 'Ignorer' : 'Remettre dans la liste'} (${n})`
+}
+/** Ce que dit le message après une action groupée réussie. */
+export function phraseLot(action: 'ignorer' | 'remettre', n: number): string {
+  return action === 'ignorer'
+    ? `${pluriel(n, 'fournisseur ignoré', 'fournisseurs ignorés')} : ${n > 1 ? 'ils ne reviendront' : 'il ne reviendra'} pas dans « Nouveaux ».`
+    : `${pluriel(n, 'fournisseur remis', 'fournisseurs remis')} dans « Nouveaux ».`
+}
+/** Après « Suivre » en lot : combien de prestataires créés, combien reliés à un prestataire déjà là, combien ont échoué. */
+export function phraseSuivreLot(crees: number, relies: number, echecs: number): string {
+  const faits = crees + relies
+  const dit: string[] = []
+  if (faits) {
+    const detail = [crees ? pluriel(crees, 'prestataire créé', 'prestataires créés') : '', relies ? pluriel(relies, 'relié à un prestataire déjà là', 'reliés à des prestataires déjà là') : ''].filter(Boolean).join(', ')
+    dit.push(`${pluriel(faits, 'fournisseur suivi', 'fournisseurs suivis')} (${detail}).`)
+  }
+  if (echecs) dit.push(`${pluriel(echecs, 'n’a pas pu être suivi', 'n’ont pas pu être suivis')} : ${echecs > 1 ? 'ils restent cochés' : 'il reste coché'}, touche « Suivre » pour réessayer.`)
+  return dit.join(' ')
+}
+/** Ne garder cochés que les fournisseurs encore visibles (une ligne qui change d'onglet, ou disparaît, se décoche). Rend le MÊME ensemble si rien ne change. */
+export function cochesVisibles(coches: ReadonlySet<string>, visibles: readonly Pick<Fournisseur, 'id'>[]): ReadonlySet<string> {
+  const ids = new Set(visibles.map((f) => f.id))
+  const gardes = [...coches].filter((id) => ids.has(id))
+  return gardes.length === coches.size ? coches : new Set(gardes)
+}
+/** « Tout choisir » coche toute la liste ; quand tout est déjà coché, le bouton devient « Aucun ». */
+export function toutChoisi(coches: ReadonlySet<string>, visibles: readonly Pick<Fournisseur, 'id'>[]): boolean {
+  return visibles.length > 0 && visibles.every((f) => coches.has(f.id))
+}

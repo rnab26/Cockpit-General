@@ -1,7 +1,8 @@
 // Le bouton « Chercher mes fournisseurs » de Coûts (0084, chantier 07258fe5), parcours COMPLET sur écran de téléphone :
 // état vide, demande (un seul toucher compte), annulation, état en attente, la « session » qui cherche (le vrai script
 // scripts/chercher-fournisseurs.py) et la liste qui arrive toute seule, Suivre (prestataire créé, devise probable, jamais de doublon :
-// relié à « Claude » pour Anthropic), Ignorer et Remettre, onglets avec leurs comptes, échec visible avec « Réessayer ».
+// relié à « Claude » pour Anthropic), Ignorer et Remettre, onglets avec leurs comptes, échec visible avec « Réessayer », puis « Choisir plusieurs » (Suivre, Ignorer, Remettre en groupe, Annuler,
+// confirmation, refus visible).
 // Projet jetable `test-fournisseurs-…`, supprimé à la fin.
 // Usage : node app/scripts/verifier-fournisseurs.mjs   (build d'abord : cd app && npm run build)
 import { chromium } from 'playwright'
@@ -188,6 +189,106 @@ try {
   await attendreEtat('attente')
   verifie('« Réessayer » repose une demande (en attente)', derniere()?.statut === 'en_attente')
   await page.screenshot({ path: `${CAPTURES}/fournisseurs-ecran.png`, fullPage: false })
+
+  // --- 9. « Choisir plusieurs » : ignorer / suivre / remettre EN GROUPE (24 lignes une par une, ce n'est pas utilisable sur un téléphone)
+  sql(`insert into fournisseurs_detectes (projet_id, cle, nom, domaine, expediteur, mails) values
+    ('${projetId}', 'banque-test.fr', 'Banque Test', 'banque-test.fr', 'noreply@banque-test.fr', 6),
+    ('${projetId}', 'virements-test.com', 'Virements Test', 'virements-test.com', 'noreply@virements-test.com', 5),
+    ('${projetId}', 'plateforme-test.com', 'Plateforme Test', 'plateforme-test.com', 'billing@plateforme-test.com', 4),
+    ('${projetId}', 'cabinet-test.co.il', 'Cabinet Test', 'cabinet-test.co.il', 'compta@cabinet-test.co.il', 3)`)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('vue-projet').waitFor({ timeout: 20000 })
+  await page.getByTestId('onglet-vue-couts').click()
+  await page.getByTestId('fournisseurs-liste').waitFor({ timeout: 15000 })
+  await page.getByTestId('onglet-fournisseur-nouveau').waitFor({ timeout: 15000 })
+  const lot = (nom) => page.getByTestId(`lot-${nom}`)
+  const nbChoisis = async () => (await page.getByTestId('nb-choisis').textContent()).trim()
+  const attendreCompte = (o, texte) => page.getByTestId(`onglet-fournisseur-${o}`).filter({ hasText: texte }).waitFor({ timeout: 10000 })
+  const nbOnglet = async (o) => (await page.getByTestId(`onglet-fournisseur-${o}`).textContent()).replace(/\s+/g, ' ').trim()
+  const statutsDe = (cles) => Object.fromEntries(sql(`select cle, statut from fournisseurs_detectes where projet_id = '${projetId}' and cle in (${cles.map((c) => `'${c}'`).join(',')})`).map((r) => [r.cle, r.statut]))
+  const services = () => sql(`select nom, devise from services where projet_id = '${projetId}' order by nom`)
+  await page.getByTestId('onglet-fournisseur-suivi').click()
+  const sansLotDansSuivis = await page.getByTestId('choisir-plusieurs').count() === 0
+  await page.getByTestId('onglet-fournisseur-nouveau').click()
+  verifie('« Choisir plusieurs » est proposé dans « Nouveaux (6) » mais pas dans « Suivis » (un fournisseur suivi est déjà un prestataire)', sansLotDansSuivis && /Nouveaux \(6\)/.test(await nbOnglet('nouveau')) && await page.getByTestId('choisir-plusieurs').isVisible(), await nbOnglet('nouveau'))
+  await page.getByTestId('choisir-plusieurs').click()
+  verifie('mode choisir : une case par ligne (6), les boutons Suivre / Ignorer de chaque ligne disparaissent (une étape à la fois), la barre apparaît avec « 0 choisi » et des boutons éteints',
+    await page.getByTestId('cocher-fournisseur').count() === 6 && await page.getByTestId('suivre-fournisseur').count() === 0 && await page.getByTestId('ignorer-fournisseur').count() === 0
+    && await page.getByTestId('barre-fournisseurs').isVisible() && (await nbChoisis()) === '0 choisi' && await lot('suivre').isDisabled() && await lot('ignorer').isDisabled())
+  await ligne('banque-test.fr').getByTestId('cocher-fournisseur').check()
+  await ligne('virements-test.com').getByTestId('cocher-fournisseur').check()
+  verifie('2 lignes cochées : « 2 choisis », les boutons disent le nombre (« Suivre (2) », « Ignorer (2) »)',
+    (await nbChoisis()) === '2 choisis' && /Suivre \(2\)/.test(await lot('suivre').textContent()) && /Ignorer \(2\)/.test(await lot('ignorer').textContent()) && !(await lot('ignorer').isDisabled()))
+  await page.screenshot({ path: `${CAPTURES}/fournisseurs-choisir.png` })
+  await lot('ignorer').click()
+  await page.getByText(/2 fournisseurs ignorés : ils ne reviendront pas dans « Nouveaux »/).first().waitFor({ timeout: 8000 })
+  await attendreCompte('nouveau', 'Nouveaux (4)')
+  verifie('« Ignorer (2) » : les deux passent « ignoré » EN UNE FOIS, quittent « Nouveaux (4) », la sélection est vidée et le mode choisir reste',
+    JSON.stringify(statutsDe(['banque-test.fr', 'virements-test.com'])) === '{"banque-test.fr":"ignore","virements-test.com":"ignore"}' && /Nouveaux \(4\)/.test(await nbOnglet('nouveau'))
+    && (await nbChoisis()) === '0 choisi' && await page.getByTestId('cocher-fournisseur').count() === 4, await nbOnglet('nouveau'))
+  await page.locator('[role="status"]').getByRole('button', { name: 'Annuler', exact: true }).click()
+  await page.getByText(/Annulé : ils sont revenus dans la liste d’avant/).first().waitFor({ timeout: 8000 })
+  await attendreCompte('nouveau', 'Nouveaux (6)')
+  verifie('« Annuler » (le message dure 8 s) : les deux sont revenus « nouveau », « Nouveaux (6) »',
+    JSON.stringify(statutsDe(['banque-test.fr', 'virements-test.com'])) === '{"banque-test.fr":"nouveau","virements-test.com":"nouveau"}' && /Nouveaux \(6\)/.test(await nbOnglet('nouveau')), await nbOnglet('nouveau'))
+
+  // un refus du serveur : message visible, la sélection reste, rien n'est changé ; puis ça repasse quand le refus cesse
+  await ligne('banque-test.fr').getByTestId('cocher-fournisseur').check()
+  await ligne('virements-test.com').getByTestId('cocher-fournisseur').check()
+  await page.route(/\/rest\/v1\/fournisseurs_detectes/, async (route) => {
+    if (route.request().method() === 'PATCH') await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'XX000', message: 'refus de test' }) })
+    else await route.fallback()
+  })
+  await lot('ignorer').click()
+  await page.getByText(/refus de test/).first().waitFor({ timeout: 8000 })
+  verifie('un refus du serveur : le message est visible, rien n’est changé en base, les 2 lignes restent cochées (on peut réessayer)',
+    JSON.stringify(statutsDe(['banque-test.fr', 'virements-test.com'])) === '{"banque-test.fr":"nouveau","virements-test.com":"nouveau"}' && (await nbChoisis()) === '2 choisis' && !(await lot('ignorer').isDisabled()))
+  await page.unroute(/\/rest\/v1\/fournisseurs_detectes/)
+  await lot('ignorer').click()
+  await page.getByText(/2 fournisseurs ignorés/).first().waitFor({ timeout: 8000 })
+  await attendreCompte('nouveau', 'Nouveaux (4)')
+  verifie('le refus levé, « Ignorer (2) » passe : « Nouveaux (4) » (Render, Notion, Plateforme, Cabinet)', /Nouveaux \(4\)/.test(await nbOnglet('nouveau')) && JSON.stringify(statutsDe(['banque-test.fr'])) === '{"banque-test.fr":"ignore"}')
+
+  // « Tout choisir » + « Suivre (4) » : une confirmation qui nomme les fournisseurs, annulable ; puis les prestataires sont créés (devise probable) sans doublon
+  await lot('suivre').waitFor({ timeout: 5000 })
+  await page.getByTestId('tout-choisir').click()
+  verifie('« Tout choisir » coche toute la liste (« 4 choisis »), le bouton devient « Aucun »', (await nbChoisis()) === '4 choisis' && /Aucun/.test(await page.getByTestId('tout-choisir').textContent()) && /Suivre \(4\)/.test(await lot('suivre').textContent()))
+  const avantLot = services().length
+  await lot('suivre').click()
+  const dialogue = page.getByRole('dialog')
+  await dialogue.waitFor({ timeout: 8000 })
+  const texteDialogue = await dialogue.textContent()
+  verifie('« Suivre (4) » demande confirmation : titre « Suivre 4 fournisseurs ? », elle nomme les 4 fournisseurs et dit que ça crée des prestataires',
+    /Suivre 4 fournisseurs \?/.test(texteDialogue) && /Render/.test(texteDialogue) && /Notion/.test(texteDialogue) && /Plateforme Test/.test(texteDialogue) && /Cabinet Test/.test(texteDialogue) && /prestataire de Coûts/.test(texteDialogue), texteDialogue)
+  await dialogue.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await page.waitForTimeout(600)
+  verifie('« Annuler » dans la confirmation : aucun prestataire créé, la sélection reste (4 choisis)', services().length === avantLot && (await nbChoisis()) === '4 choisis' && JSON.stringify(statutsDe(['render.com'])) === '{"render.com":"nouveau"}')
+  await lot('suivre').click()
+  await dialogue.waitFor({ timeout: 8000 })
+  await dialogue.getByRole('button', { name: /Suivre \(4\)/ }).click()
+  await page.getByText(/4 fournisseurs suivis \(4 prestataires créés\)/).first().waitFor({ timeout: 20000 })
+  const crees = Object.fromEntries(services().map((x) => [x.nom, x.devise]))
+  verifie('« Suivre (4) » confirmé : 4 prestataires créés (Render et Notion en USD, Plateforme Test en USD, Cabinet Test en ILS : domaine israélien), les 4 fournisseurs passent « suivi » et reliés',
+    services().length === avantLot + 4 && crees['Render'] === 'USD' && crees['Notion'] === 'USD' && crees['Plateforme Test'] === 'USD' && crees['Cabinet Test'] === 'ILS'
+    && sql(`select count(*)::int n from fournisseurs_detectes where projet_id = '${projetId}' and cle in ('render.com','notion.so','plateforme-test.com','cabinet-test.co.il') and statut = 'suivi' and service_id is not null`)[0].n === 4, crees)
+  await page.getByTestId('onglet-vide').waitFor({ timeout: 8000 })
+  verifie('liste « Nouveaux » vide : son message, la barre d’actions disparaît toute seule, les nouveaux prestataires sont dans la page',
+    /Aucun nouveau fournisseur\./.test(await page.getByTestId('onglet-vide').textContent()) && await page.getByTestId('barre-fournisseurs').count() === 0 && await carte('Cabinet Test').count() === 1)
+
+  // « Ignorés » : « Remettre dans la liste » en groupe
+  await page.getByTestId('onglet-fournisseur-ignore').click()
+  await page.getByTestId('choisir-plusieurs').click()
+  await page.getByTestId('tout-choisir').click()
+  verifie('onglet « Ignorés » : une seule action groupée, « Remettre dans la liste (2) »', await lot('remettre').count() === 1 && await lot('suivre').count() === 0 && /Remettre dans la liste \(2\)/.test(await lot('remettre').textContent()), await page.getByTestId('barre-fournisseurs').textContent())
+  await lot('remettre').click()
+  await page.getByText(/2 fournisseurs remis dans « Nouveaux »/).first().waitFor({ timeout: 8000 })
+  await attendreCompte('ignore', 'Ignorés (0)')
+  verifie('« Remettre dans la liste (2) » : les deux reviennent « nouveau » en une fois, l’onglet « Ignorés » est vide et la barre disparaît',
+    JSON.stringify(statutsDe(['banque-test.fr', 'virements-test.com'])) === '{"banque-test.fr":"nouveau","virements-test.com":"nouveau"}' && /Ignorés \(0\)/.test(await nbOnglet('ignore')) && await page.getByTestId('barre-fournisseurs').count() === 0)
+  await page.getByTestId('onglet-fournisseur-nouveau').click()
+  await page.getByTestId('choisir-plusieurs').click()
+  await page.getByTestId('terminer-choix').click()
+  verifie('« Terminer » quitte le mode choisir : plus de cases, plus de barre, les boutons de chaque ligne reviennent', await page.getByTestId('cocher-fournisseur').count() === 0 && await page.getByTestId('barre-fournisseurs').count() === 0 && await page.getByTestId('suivre-fournisseur').count() === 2)
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++
