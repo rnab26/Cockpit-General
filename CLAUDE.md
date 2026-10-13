@@ -105,7 +105,7 @@ démarrage les restes de SES passes interrompues — seulement ceux de plus de
 jamais un projet `test-…` (ni onglet, ni « Tout », ni ses lignes arrivées en
 direct) sauf à un compte `test-…@cockpit.local` (`lib/projetsDeTest.ts`,
 filtré dans `useDonnees`). `verifier-base` §21 rougit s'il reste une ligne
-« [TEST… » dans un projet réel. Nouveau banc : mêmes règles.
+« [TEST… » dans un projet réel. Nouveau banc : mêmes règles. **13 oct. 2026** : `verifier-base` laissait deux projets `test-verif-…-ke` et `-af` à chaque passe complète (créés par les sections 38 et 47, absents de la liste de purge et du contrôle « tout est supprimé », ramassés seulement par la passe suivante) : corrigé ; une section qui crée un projet l'ajoute à la liste de purge ET au compte de « tout est supprimé ».
 
 **Deux pièges payés le 28 sept. 2026.**
 - Une fonction `security definer` contourne la RLS : elle doit vérifier
