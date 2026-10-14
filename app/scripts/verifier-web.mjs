@@ -33,6 +33,7 @@
 // travail). Les projets réels ne sont que LUS (premier écran, FacePro). Captures dans $CAPTURES (défaut : le scratchpad de la session).
 // Prérequis : Chromium Playwright (CHROMIUM ou /opt/pw-browsers/chromium),
 // SUPABASE_SERVICE_ROLE_KEY pour scripts/sql.sh.
+// GitHub (exécutions du dépôt) et la lecture des réglages de sa branche principale sont SIMULÉS : ni le dépôt de test ni GitHub ne sont touchés.
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -223,6 +224,10 @@ await ctx.route('https://api.github.com/**', (route) => {
     : [runGitHub('Déployer sur GitHub Pages', 'completed', 'success', 30)]
   return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ total_count: workflow_runs.length, workflow_runs }) })
 })
+// Réglages des hooks lus sur la branche PRINCIPALE du dépôt (« le cockpit est-il sur main ? », 14 oct. 2026, Melissa Nabet) :
+// simulé comme GitHub. Le dépôt de test n'a aucun cockpit sur main ; une lecture réelle y ferait un 404 dans la console.
+const REGLAGES_MAIN_SANS_COCKPIT = '{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" } ] } ] } }'
+await ctx.route('https://raw.githubusercontent.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: REGLAGES_MAIN_SANS_COCKPIT }))
 const page = await ctx.newPage()
 const erreursConsole = []
 page.on('pageerror', (e) => erreursConsole.push(String(e)))
@@ -1651,6 +1656,12 @@ try {
   verifie('GitHub en limite (403) : l’écran le dit, et garde le dernier état lu', /GitHub limite les consultations/.test(await dep.textContent()) && /Mise en ligne en cours/.test(await dep.textContent()))
   githubMode = 'ok'
   await dep.getByTestId('deploiement-relire').click()
+  // Pourquoi la prise est éteinte : la cause LUE sur la branche principale du dépôt (14 oct. 2026, Melissa Nabet : le branchement était
+  // resté sur une branche de travail, l'écran disait seulement « plus aucune session depuis 15 j »).
+  const lignesBranchement = reglagesP.getByTestId('branchement')
+  await lignesBranchement.getByText(/pas installé sur la branche principale/).waitFor({ timeout: 10000 }).catch(() => {})
+  const texteBranchement = await lignesBranchement.textContent()
+  verifie('réglages du projet : sans le cockpit sur main, la ligne dit POURQUOI et la phrase à dire', /pas installé sur la branche principale/.test(texteBranchement) && /« branche le cockpit »/.test(texteBranchement), texteBranchement)
   await capture(page, 'deploiement')
   // Mode autonome (0031, chantier 79ec70d6) : un interrupteur visible HORS du repli, un toucher allume ou éteint.
   const zoneAuto = () => page.getByTestId('autonome-projet')

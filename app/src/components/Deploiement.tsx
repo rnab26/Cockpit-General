@@ -134,7 +134,7 @@ function EtatDepot({ depot, projet, now }: { depot: string; projet: Projet; now:
           {synthese.lignes.map((l) => (
             <li key={l.nom} className="text-xs">
               <a href={l.lien} target="_blank" rel="noopener noreferrer" className="font-medium text-accent underline underline-offset-2">{l.nom}</a>
-              <span className="text-texte-2"> — {l.phrase} · {l.commit}</span>
+              <span className="text-texte-2"> — {l.phrase} · {l.commit}{l.note ? ` · ${l.note}` : ''}</span>
             </li>
           ))}
         </ul>
