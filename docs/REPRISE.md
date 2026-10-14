@@ -6,7 +6,7 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis, 0 ter, 0 quinquies et 0 sexies ci-dessous). Les sections 1 et
+Dernière mise à jour : 14 oct. 2026 (sections 0 septies, 0 octies et 0 nonies ci-dessous ; avant : 0 à 0 sexies, 13 oct.). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
@@ -191,6 +191,26 @@ le bouton ne doit exister que pour les comptes de l'équipe (modèle : `CockpitC
 **déduit, non lu** : la source Pages est redevenue « une branche », l'API des réglages Pages étant refusée à la session). Elles se disputent la même adresse : la dernière arrivée gagne (constaté ci-dessous). Après la fusion du 14 oct., c'est la tâche interne qui a fini en dernier (09:52:44 contre 09:52:21) : `site-vitrine/index.html` répond 200 sur l'adresse du CRM (404 avant), le CRM lui-même est intact (`index.html` identique octet pour octet).
 Les pages du studio sont publiques par ailleurs (aucun secret), mais ce n'est pas voulu (commentaire de `pages.yml`). Remède permanent : Réglages du dépôt › Pages › Source = « GitHub Actions » (`PUT /repos/…/pages` est refusé par le proxy de la session : action de Raphaël) ; ou, sans aucun clic, un `_config.yml` avec `exclude: [site-vitrine]` dans le dépôt (la tâche interne publierait alors la même chose).
 **Banc** : `verifier-web.mjs` simule maintenant la lecture des réglages de `main` (sans ça, le dépôt de test fait un 404 dans la console : 491/492 à la première passe, c'était MON code) et vérifie la ligne « pas installé sur la branche principale ».
+
+## 0 nonies. Les reçus Claude arrivent seuls par un programme du compte Google (14 oct. 2026) — chantier `72a8d0f4`, migration 0087
+
+Raphaël a choisi, au point du 14 oct. (08:24 UTC), « Programme dans ton compte Google » pour des reçus Claude en continu (gratuit, aucune IA sur sa boîte, le PDF de chaque facture). **Détail complet : `docs/recus-par-email.md`, section « Voie retenue » ; règles et pièges : `CLAUDE.md`, section « Reçus Claude par un programme du compte Google ».**
+
+**Fait et vérifié (preuves : les bancs, tous rejoués)**
+- Migration 0087 (`cockpit.cles_import`) appliquée ; fonction `cockpit-recus` DÉPLOYÉE (version 3 du déploiement) ; `verifier-base` §58 (12), `verifier-recus-parite.mjs` (66, aussi dans la CI), `verifier-recus-regle.ts` (96), `verifier-recus-google.ts` (29), `scripts/verifier-recus-google.mjs` (86 en local ; sur la fonction déployée 86 sur 87 : le seul contrôle rouge est un corps de plus de 8 Mo, la plateforme reste suspendue au lieu de rendre 413 ; il ne tourne plus qu'avec `--local`), `app/scripts/verifier-recus-google.mjs` (46, écran de téléphone), `verifier-file-attente.ts` (142), tsc + build verts, `deno check` propre.
+- Le programme (`Code.gs`) est exécuté tel que Raphaël le collera contre un faux Gmail (mails à parties emboîtées, deux PDF joints à récupérer à part, faux expéditeur au nom d'affichage trompeur, mail HTML seul, PDF trop gros, 403, clé révoquée) ET contre la vraie fonction et la vraie base : ce qu'il envoie arrive dans Coûts.
+- Mesuré sur un vrai mail Anthropic (une seule lecture de ses métadonnées et de son texte, rien gardé) : il porte DEUX PDF joints, `Invoice-<n° de facture>.pdf` et `Receipt-<n° de reçu>.pdf` : « le PDF de toutes les factures » est donc possible, contrairement au lien Stripe qui expire.
+
+**Pas fait / inconnu (à dire à Raphaël)**
+- **L'installation chez Google est SON geste** (7 étapes, 10 à 15 min, assistant dans Coûts › Claude › « Brancher mon compte Google ») : l'exécution réelle chez Google n'a jamais été vue d'ici (autorisations, déclencheur du dimanche, écran d'avertissement « Google n'a pas validé cette appli », éditeur sur téléphone). Au premier échec, la note de la carte et le journal de Google disent la cause ; ajouter le cas aux fixtures ou corriger `Code.gs` (et augmenter `VERSION`).
+- Les anciennes factures (juillet à octobre) n'auront leur PDF qu'après « Récupérer les PDF des anciennes factures » (recule le jour de départ à la plus ancienne facture de Coûts) puis un passage ; ne s'ajoute AUCUNE ligne à Coûts sans ce geste de Raphaël.
+- La routine « Import des reçus Claude (Coûts) » (`trig_01HViAL4dDqkdXTKmjrRmHJ8`) reste EN PAUSE ; une fois le programme installé et vu au vert, elle est inutile (suppression : accord de Raphaël).
+- Le contenu du PDF n'est pas relu côté serveur (la voie « session » le recoupait avec pdftotext).
+
+**Pièges payés dans ce lot**
+- La plateforme Supabase laisse suspendue (160 s puis 503) une requête de plus de 8 Mo que la fonction refuse d'avance sans lire le corps : la limite de la fonction est à 8 Mo, mesurée à 8,5 Mo accepté en 1 à 4 s.
+- Un SQL `insert … returning` passé à `scripts/sql.sh` ne rend aucune ligne : générer l'identifiant avant l'insertion.
+- Deno s'installe avec `npm install deno` (jsr.io et npm passent par le proxy) : `deno check` et le lancement local de la fonction contre la vraie base évitent un déploiement de plus.
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
