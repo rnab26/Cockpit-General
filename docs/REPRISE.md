@@ -10,6 +10,19 @@ Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis, 0 ter, 0 quinquies et 
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
+## 0 undecies. Lot du 14 oct. 2026 (après-midi) : sessions et cockpit branchés EN DIRECT (migration 0087, chantier d5a2d13f)
+
+Demande de Raphaël : coordination instantanée cockpit ↔ sessions, sur tous les projets (chantiers créés tout seuls, barres visibles, réponses
+reçues tout de suite, plus de doublons). **Tout est dans `CLAUDE.md` § « Sessions et cockpit branchés EN DIRECT »** (causes mesurées, règles, limites).
+En une phrase : les hooks (`hooks/suivi.sh`) ouvrent le chantier, montrent l'action en cours, remettent à la session ouverte ce que personne ne
+tient et ne comptent plus sur `PreToolUse` ; `demander.sh --repondu` ferme une carte répondue en session. Banc : `scripts/verifier-direct.mjs` (19).
+**Vérifié** : direct 19, réponses 64, base 896/897 (le dernier = écart d'horloge conteneur/base de 0,6 s dans un test, tolérance ajoutée), présence 38,
+renouvellement 19, file sessions 12, greffe 48, connecter 11, app tsc + build + suites pures. **À constater par Raphaël** : un message de travail
+dans une vraie session FacePro → chantier + barre « au travail » dans le cockpit ; un message écrit dans le cockpit → réponse de la session.
+**Non fait / à lui de décider** : projets dont `main` n'a aucun cockpit (Jarvis, Midrag, Pointeur-Robot-Campaign, melissa-nabet-site, dotfiles) = aucun
+hook, « branche le cockpit » y est nécessaire (écrit dans de vrais dépôts + base : sa phrase précise) ; `.claude/settings.json` de FacePro `main` en
+retard (corrigé côté code par le battement du tour, mais ses autres événements restent à aligner par `brancher.sh --maj` fusionné dans main).
+
 ## 0. Lot du 13 oct. 2026 (00 h 30 – 01 h 40, heure d'Israël) — traité en lot, jetons économisés
 
 Demande de Raphaël (depuis son téléphone) : traiter les chantiers qui attendent, vérifier que tout

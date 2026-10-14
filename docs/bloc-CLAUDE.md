@@ -87,6 +87,7 @@ demandes des utilisateurs, progression des autres sessions.
   développeur (endpoint, hook, migration, commit, branche, script, déployer…)
   dans les questions, étapes, « comment vérifier », résumés et réponses ; le nom
   exact d'un bouton va entre « », le détail technique dans le fil.
+- **LE COCKPIT OUVRE LE CHANTIER TOUT SEUL** (14 oct. : « des sessions où les chantiers ne se créent pas, pas de barre »). Tout message de travail de Raphaël ouvre (ou reprend) un chantier réservé à ta session, avec sa barre et ce que tu fais en direct ; le hook te le dit : ne le recrée pas, PRÉCISE-le avec `--ouvrir` (même chantier), `--nouveau` pour un autre sujet. Ce que Raphaël écrit ou répond dans le cockpit et que personne ne tient t'est remis à ton prochain pas : réponds-lui tout de suite dans le fil. S'il répond DANS la session à une de tes cartes ouvertes : `scripts/cockpit-demander.sh --repondu <id> "ses mots"` (la carte se ferme, pas de doublon).
 - **Chaque demande de travail de Raphaël → un chantier, AVANT de coder** :
   `scripts/cockpit-chantier.sh --ouvrir "<titre court>" --demande "<ses mots>" --section "<rubrique>"`.
   Il reprend (ou rouvre) le chantier existant au lieu d'en créer un doublon.

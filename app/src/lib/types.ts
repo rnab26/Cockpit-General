@@ -173,6 +173,10 @@ export interface Activite {
   eta_secondes: number | null
   statut: StatutActivite
   detail: string | null
+  /** Ce que la session fait à l'instant, relevé par le hook (0087) ; pct_estime faux = aucun pourcentage donné par la session. */
+  action_live?: string | null
+  action_live_at?: string | null
+  pct_estime?: boolean
   demarre_at: string
   updated_at: string
 }

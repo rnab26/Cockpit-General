@@ -2311,7 +2311,7 @@ async function controle39_delai_sans_signe() {
   await sql(`update sessions set vu_at = now() - interval '1 minute' where id = ${q(sid)}`);
   await sql(`select liberer_silencieux(${q(SLUG_I)})`);
   const fin = async (id) => new Date((await chantier(id)).pris_jusqu_a).getTime();
-  verifie("liberer_silencieux (délai 3 min) : le mort est libéré, l'agent vivant garde sa réservation", (await fin(mort)) <= Date.now() && (await fin(vivant)) > Date.now());
+  verifie("liberer_silencieux (délai 3 min) : le mort est libéré, l'agent vivant garde sa réservation", (await fin(mort)) <= Date.now() + 5000 &&  (await fin(vivant)) > Date.now());
 
   // Un renfort vu il y a 5 min : muet à 3 min de délai, vivant à 10 (même règle que le chantier).
   const S = randomUUID();
