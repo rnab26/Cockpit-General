@@ -215,6 +215,28 @@ try {
   await page.getByRole('button', { name: 'Modifier Sans import' }).click()
   verifie('un prestataire sans import automatique ne propose pas de date de départ', await page.getByTestId('import-depuis').count() === 0)
   await page.getByRole('button', { name: 'Annuler' }).click()
+  // brancher la lecture des reçus par le programme du compte Google (0085) : seulement pour Claude, la clé n'apparaît qu'à la demande
+  await rouvrir()
+  verifie('« Brancher la lecture des reçus » sur Claude seulement', await carte('Claude').getByTestId('brancher-recus').count() === 1 && await carte('Sans import').getByTestId('brancher-recus').count() === 0)
+  await carte('Claude').getByTestId('brancher-recus').click()
+  verifie('le dialogue dit « seulement lire » et ne montre encore aucune étape ni clé', /seulement lire/.test(await page.getByTestId('brancher-recus-dialogue').textContent()) && await page.getByTestId('recus-etapes').count() === 0)
+  await page.getByTestId('preparer-recus').click()
+  await page.getByTestId('recus-etapes').waitFor({ timeout: 10000 })
+  const lignesEtapes = await page.getByTestId('recus-etapes').locator('li').count()
+  const enBase = sql(`select import_cle_hash ~ '^[0-9a-f]{64}$' h, import_cle_at is not null a, import_cadence_jours c from services where id = '${idClaude}'`)[0]
+  verifie('7 étapes numérotées avec le lien exact script.google.com/create ; clé créée en base (hash seulement)', lignesEtapes === 7 && await page.locator('a[href="https://script.google.com/create"]').count() === 1 && enBase.h === true && enBase.a === true && enBase.c === 7, JSON.stringify(enBase))
+  const aucuneCleVisible = !/rc_[0-9a-f]{64}/.test(await page.getByTestId('brancher-recus-dialogue').textContent())
+  verifie('la clé n’est jamais écrite à l’écran (elle n’existe que dans le texte copié)', aucuneCleVisible)
+  await page.getByTestId('copier-programme').click()
+  await page.getByText('Programme copié.').or(page.getByText(/Copie impossible/)).first().waitFor({ timeout: 5000 })
+  await page.getByRole('button', { name: 'Fermer', exact: true }).last().click()
+  await carte('Claude').getByTestId('brancher-recus').click()
+  verifie('rouvert : « branché », sans étapes ni clé (elle ne se redonne pas)', await page.getByTestId('recus-branche').count() === 1 && await page.getByTestId('recus-etapes').count() === 0)
+  await page.getByRole('button', { name: 'Débrancher' }).click()
+  await page.getByRole('button', { name: 'Débrancher' }).last().click()
+  await page.getByText('Lecture automatique débranchée.').waitFor({ timeout: 8000 })
+  const apresDeb = sql(`select import_cle_hash is null h, import_cle_at is null a from services where id = '${idClaude}'`)[0]
+  verifie('débranché : la clé est retirée en base', apresDeb.h === true && apresDeb.a === true, JSON.stringify(apresDeb))
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++
