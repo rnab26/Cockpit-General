@@ -3,16 +3,24 @@ import { useGlobal } from '../contexte.ts'
 import { EtatDeploiement } from './Deploiement.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
 import { PastilleProjet } from './AvecProjet.tsx'
-import { etatBranchement } from '../lib/branchement.ts'
+import { etatBranchement, memeProprietaire } from '../lib/branchement.ts'
+import { useCockpitSurMain } from '../hooks/useCockpitSurMain.ts'
 
-/** « Branché ? » : preuves lues en base (sessions, mise à jour automatique, module du site). */
+/**
+ * « Branché ? » : preuves lues en base (sessions, mise à jour automatique, module du site) — et la cause lue sur le dépôt : le
+ * cockpit est-il installé sur sa branche principale ? (admin, dépôts du même propriétaire que le moteur ; une lecture par dépôt
+ * toutes les 10 minutes.)
+ */
 function Branchement({ projet }: { projet: Projet }) {
-  const { now, chantiers } = useGlobal()
+  const { now, chantiers, sessions, admin, projets } = useGlobal()
   const n = chantiers.filter((c) => c.projet_id === projet.id && c.origine === 'session').length
+  const sessionsDuProjet = admin ? sessions.filter((s) => s.projet_id === projet.id) : undefined
+  const moteur = projets.find((p) => p.slug === 'cockpit')?.depot
+  const surMain = useCockpitSurMain(admin && memeProprietaire(projet.depot, moteur) ? projet.depot : null)
   const couleur = { ok: 'text-ok', attention: 'text-attention', neutre: 'text-texte-2' } as const
   return (
     <ul data-testid="branchement" className="space-y-0.5 text-xs">
-      {etatBranchement(projet, n, now).map((l) => <li key={l.texte} className={couleur[l.teinte]}>{l.texte}</li>)}
+      {etatBranchement(projet, n, now, { sessions: sessionsDuProjet, surMain }).map((l) => <li key={l.texte} className={couleur[l.teinte]}>{l.texte}</li>)}
     </ul>
   )
 }
