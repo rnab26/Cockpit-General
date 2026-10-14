@@ -9,8 +9,9 @@ import {
   PERIODES, PERIODE_DEFAUT, STATUTS_COMPTA, TYPES, destinataireValide, envoyable, estPeriode, etatImportAuto, formaterMontant, formaterTotaux, grouper, lienDeRepli,
   lireDepense, lireService, parService, resumeCompta, soldeBas, sommer, type Canal, type Depense, type FichierDepense, type Periode, type Service, type TypeDepense,
 } from '../lib/depenses.ts'
+import { cleActive, lireCle, plusAncienneFacture, type CleImport } from '../lib/recusGoogle.ts'
 import { RechercheFournisseurs } from './RechercheFournisseurs.tsx'
-import { BrancherRecus, lisiblePar } from './BrancherRecus.tsx'
+import { AssistantGoogle, LigneGoogle } from './ImportGoogle.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Badge } from '../ui/Badge.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -33,13 +34,19 @@ const lienHttps = (u: string) => !u.trim() || /^https:\/\/\S+$/.test(u.trim())
 function useDonneesDepenses(projetId: string) {
   const [services, setServices] = useState<Service[]>([])
   const [depenses, setDepenses] = useState<Depense[]>([])
+  const [cles, setCles] = useState<CleImport[]>([])
+  const [erreurCles, setErreurCles] = useState<string | null>(null)
   const [charge, setCharge] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const recharger = useCallback(async () => {
-    const [s, d] = await Promise.all([
+    const [s, d, c] = await Promise.all([
       supabase.from('services').select('*').eq('projet_id', projetId).order('nom'),
       supabase.from('depenses').select('*').eq('projet_id', projetId).order('date', { ascending: false }).limit(5000),
+      supabase.from('cles_import').select('id, projet_id, service_id, fin, created_at, revoquee_at, derniere_utilisation_at, utilisations, programme_version').eq('projet_id', projetId).order('created_at', { ascending: false }),
     ])
+    // Les clés d'import (0088) ne bloquent jamais l'écran : une panne de leur lecture est dite sur leur propre ligne.
+    if (c.error) setErreurCles(`Impossible de lire l’état du programme Google : ${messageErreur(c.error)}`)
+    else { setCles((c.data ?? []).map((r) => lireCle(r as Record<string, unknown>))); setErreurCles(null) }
     const err = s.error ?? d.error
     if (err) { setErreur(messageErreur(err)); setCharge(true); return }
     setServices((s.data ?? []).map((r) => lireService(r as Record<string, unknown>)))
@@ -49,11 +56,11 @@ function useDonneesDepenses(projetId: string) {
   useEffect(() => {
     void recharger()
     const ch = supabase.channel(`depenses-${projetId}`)
-    for (const table of ['services', 'depenses']) ch.on('postgres_changes', { event: '*', schema: 'cockpit', table }, () => { void recharger() })
+    for (const table of ['services', 'depenses', 'cles_import']) ch.on('postgres_changes', { event: '*', schema: 'cockpit', table }, () => { void recharger() })
     ch.subscribe()
     return () => { void supabase.removeChannel(ch) }
   }, [projetId, recharger])
-  return { services, depenses, charge, erreur, recharger }
+  return { services, depenses, cles, erreurCles, charge, erreur, recharger }
 }
 
 /** Coûts du projet (0052) : prestataires et liens directs, soldes, dépenses par période, factures et envoi à la compta. */
@@ -61,7 +68,9 @@ export function CoutsProjet() {
   const { projet, admin, par, now, prefs, poser } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
-  const { services, depenses, charge, erreur, recharger } = useDonneesDepenses(projet.id)
+  const { services, depenses, cles, erreurCles, charge, erreur, recharger } = useDonneesDepenses(projet.id)
+  const rafraichir = useCallback(() => { void recharger() }, [recharger])
+  const [google, setGoogle] = useState<string | null>(null)   // l'id du prestataire dont l'assistant « programme Google » est ouvert
   const periode: Periode = estPeriode(prefs[PREF_PERIODE]) ? (prefs[PREF_PERIODE] as Periode) : PERIODE_DEFAUT
   const [filtreService, setFiltreService] = useState<string>('')
   const [serviceEdit, setServiceEdit] = useState<Partial<Service> | null>(null)
@@ -150,7 +159,7 @@ export function CoutsProjet() {
               ) : null}
               {s.note ? <p className="mt-1.5 text-xs text-texte-2">{s.note}</p> : null}
               <LigneImportAuto service={s} now={now} />
-              {lisiblePar(s.nom) ? <div className="mt-2"><BrancherRecus service={s} now={now} onChange={() => void recharger()} /></div> : null}
+              <LigneGoogle service={s} cle={cleActive(cles, s.id)} now={now} erreur={erreurCles} onGerer={() => setGoogle(s.id)} />
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {s.url_tableau ? <a className="inline-flex h-8 items-center gap-1 rounded-xl border border-bord px-2.5 text-sm hover:bg-carte-2" href={s.url_tableau} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Tableau de bord</a> : null}
                 {s.url_factures ? <a className="inline-flex h-8 items-center gap-1 rounded-xl border border-bord px-2.5 text-sm hover:bg-carte-2" href={s.url_factures} target="_blank" rel="noopener noreferrer"><FileText size={14} />Factures</a> : null}
@@ -242,6 +251,7 @@ export function CoutsProjet() {
         {!aEnvoyer.length ? <p className="mt-2 text-xs text-texte-2">Aucune facture en attente d’envoi.</p> : null}
       </div>
 
+      {google && services.find((x) => x.id === google) ? <AssistantGoogle service={services.find((x) => x.id === google)!} cle={cleActive(cles, google)} now={now} plusAncienneFacture={plusAncienneFacture(depenses, google)} onFermer={() => setGoogle(null)} onChange={rafraichir} /> : null}
       {serviceEdit ? <FormService init={serviceEdit} projetId={projet.id} onFermer={() => setServiceEdit(null)} onFait={() => { setServiceEdit(null); void recharger() }} /> : null}
       {depenseEdit ? <FormDepense init={depenseEdit} projetId={projet.id} services={actifs} onFermer={() => setDepenseEdit(null)} onFait={() => { setDepenseEdit(null); void recharger() }} /> : null}
       {reglageCompta ? <FormCompta projetId={projet.id} canal={(projet.compta_canal ?? 'email') as Canal} destinataire={projet.compta_destinataire ?? ''} onFermer={() => setReglageCompta(false)} /> : null}

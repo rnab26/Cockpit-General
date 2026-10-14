@@ -3902,6 +3902,48 @@ async function controle57_rapprochement_github() {
     !d.anon_rapprocher && !d.anon_livrer && !d.auth_rapprocher && !d.auth_livrer && !d.anon_etat && d.auth_etat && !d.anon_regler && d.auth_regler && !d.anon_delais && d.auth_delais && !d.anon_noter && !d.auth_noter && d.rls === true, d);
 }
 
+async function controle58_cles_import() {
+  section("58. Clés d'import des reçus Google (0088) : table réservée aux admins, la clé n'est jamais gardée, UNE seule active, fonctions gardées");
+  const d = await une(`select (select relrowsecurity and relreplident = 'f' from pg_class where oid = 'cockpit.cles_import'::regclass) as rls,
+      (select count(*)::int from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'cockpit' and tablename = 'cles_import') as temps_reel,
+      (select count(*)::int from pg_policies where schemaname = 'cockpit' and tablename = 'cles_import' and policyname = 'admin_tout') as politique,
+      has_table_privilege('anon', 'cockpit.cles_import', 'select') as anon_lit,
+      has_table_privilege('authenticated', 'cockpit.cles_import', 'select') as auth_lit,
+      has_table_privilege('authenticated', 'cockpit.cles_import', 'insert') as auth_ecrit,
+      has_table_privilege('authenticated', 'cockpit.cles_import', 'update') as auth_modifie,
+      has_table_privilege('authenticated', 'cockpit.cles_import', 'delete') as auth_supprime,
+      has_function_privilege('anon', 'cockpit.creer_cle_import(uuid)', 'execute') as anon_cree,
+      has_function_privilege('anon', 'cockpit.revoquer_cle_import(uuid)', 'execute') as anon_revoque,
+      has_function_privilege('authenticated', 'cockpit.creer_cle_import(uuid)', 'execute') as auth_cree,
+      (select prosecdef from pg_proc where oid = 'cockpit.creer_cle_import(uuid)'::regprocedure) as definer_cree,
+      (select prosecdef from pg_proc where oid = 'cockpit.revoquer_cle_import(uuid)'::regprocedure) as definer_revoque`);
+  verifie("la table : RLS + replica identity full + temps réel + politique « admin_tout »", d.rls === true && d.temps_reel === 1 && d.politique === 1, d);
+  verifie("droits de la table : lecture pour les comptes connectés (la RLS la réserve aux admins), jamais d'écriture en direct, rien pour anon", d.auth_lit && !d.anon_lit && !d.auth_ecrit && !d.auth_modifie && !d.auth_supprime, d);
+  verifie("créer / révoquer : « security definer », ni anon ni public (la garde admin est dans la fonction)", d.definer_cree === true && d.definer_revoque === true && !d.anon_cree && !d.anon_revoque && d.auth_cree, d);
+  verifie("l'empreinte d'une clé est le sha256 en hexadécimal (même calcul que la fonction serveur : « abc » donne le vecteur connu)", (await une(`select cockpit.hacher_jeton('abc') as h`)).h === "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  const service = { id: randomUUID() };
+  await sql(`insert into services (id, projet_id, nom) values (${q(service.id)}, ${q(P1)}, 'Claude')`);
+  const refuse = await rpcUtilisateur("creer_cle_import", { p_service: service.id }, jwt);
+  verifie("un membre (non admin) ne peut pas créer de clé : refusé en clair", refuse.status >= 400 && contient(refuse.json?.message, "réservé aux admins"), refuse);
+  await sql(`insert into cles_import (projet_id, service_id, empreinte, fin) values (${q(P1)}, ${q(service.id)}, cockpit.hacher_jeton('cle-de-test-1'), 'st-1')`);
+  const cle = await une(`select id from cles_import where service_id = ${q(service.id)}`);
+  const revoque = await rpcUtilisateur("revoquer_cle_import", { p_cle: cle.id }, jwt);
+  verifie("un membre (non admin) ne peut pas révoquer une clé : refusé, la clé reste active", revoque.status >= 400 && (await une(`select revoquee_at from cles_import where id = ${q(cle.id)}`)).revoquee_at === null, revoque);
+  const lue = await rest("cles_import?select=id", { jwt });
+  verifie("un membre (non admin) ne lit aucune clé", Array.isArray(lue.json) && lue.json.length === 0, lue);
+  let deux = null;
+  try { await sql(`insert into cles_import (projet_id, service_id, empreinte, fin) values (${q(P1)}, ${q(service.id)}, cockpit.hacher_jeton('cle-de-test-2'), 'st-2')`); } catch (e) { deux = String(e.message); }
+  verifie("une SECONDE clé active pour le même prestataire est refusée par la base (une seule active)", deux !== null && /cles_import_une_active|unique/i.test(deux), deux);
+  await sql(`update cles_import set revoquee_at = now() where id = ${q(cle.id)}`);
+  await sql(`insert into cles_import (projet_id, service_id, empreinte, fin) values (${q(P1)}, ${q(service.id)}, cockpit.hacher_jeton('cle-de-test-2'), 'st-2')`);
+  verifie("une fois la première révoquée, une nouvelle clé active est possible (l'historique reste)", (await une(`select count(*)::int as n from cles_import where service_id = ${q(service.id)}`)).n === 2 && (await une(`select count(*)::int as n from cles_import where service_id = ${q(service.id)} and revoquee_at is null`)).n === 1);
+  let faux = null;
+  try { await sql(`insert into cles_import (projet_id, service_id, empreinte, fin) values (${q(P1)}, ${q(service.id)}, 'pas-une-empreinte', 'xxxx')`); } catch (e) { faux = String(e.message); }
+  verifie("une « empreinte » qui n'est pas un sha256 est refusée (la clé en clair ne peut pas être rangée par erreur)", faux !== null && /check|empreinte/i.test(faux), faux);
+  await sql(`delete from services where id = ${q(service.id)}`);
+  verifie("supprimer le prestataire supprime ses clés (rien ne reste)", (await une(`select count(*)::int as n from cles_import where projet_id = ${q(P1)}`)).n === 0);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -3982,6 +4024,7 @@ const etapes = [
     controle55_reveil_horaire,
     controle56_classer_livres,
     controle57_rapprochement_github,
+    controle58_cles_import,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
