@@ -159,7 +159,11 @@ donnée qu'après réponse : `emplacement.sh --balise [--gabarit "#lien-du-menu"
 `data-mode="bouton"` (panneau masqué, ouvert par `data-declencheur` ou un bouton flottant, Échap
 referme) / `"page"`. Limite : le site, pas le cockpit, décide qui voit la balise (le cockpit ne
 gère pas les comptes du site) ; l'écran de l'app ne montre pas encore l'emplacement choisi.
-`verifier-emplacement.mjs`.
+**Le texte d'un choix ne cite jamais un chemin de fichier** (14 oct. 2026, branchement du Trieur : « un menu
+repéré (frontend/src/App.tsx) » faisait refuser la carte par `clarte.py` à cause du mot « frontend » ; aucun
+questionnaire n'était posé, pour tout dépôt dont le menu est dans un dossier front, frontend, backend ou
+runtime). Le chemin reste dans `gabarit_conseille`.
+`verifier-emplacement.mjs` (il contrôle ces textes avec `clarte.py`, sur ces quatre dossiers).
 
 ## Serveur MCP pour les outils IA hors Claude (30 sept. 2026, chantier 12c22ec6)
 

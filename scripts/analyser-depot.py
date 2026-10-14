@@ -123,7 +123,9 @@ def analyser(dossier, site=None):
     options, raisons = [], {}
     if r["type"] == "site":
         options.append("menu")
-        raisons["menu"] = ("un menu repéré (%s)" % r["gabarits_menu"][0]) if r["gabarits_menu"] else (
+        # Ces textes sont LUS par Raphaël et contrôlés par scripts/clarte.py : jamais le chemin d'un fichier
+        # (14 oct. 2026 : « frontend/src/App.tsx » a fait refuser la carte). Le chemin reste dans gabarit_conseille.
+        raisons["menu"] = "un menu repéré dans le site" if r["gabarits_menu"] else (
             "menu du site repéré" if r.get("site_a_menu") else "aucun menu repéré : un bouton flottant sera posé à la place")
         options.append("page")
         raisons["page"] = "marche sur tout site : une page à part, avec un lien"

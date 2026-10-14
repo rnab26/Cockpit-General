@@ -147,6 +147,17 @@ factures, et comme ça on actualise ». Procédure : `docs/recus-par-email.md` �
 repliait toute seule quand on ignorait le dernier « nouveau »). **Limite** : l'écran n'ouvre pas de session ; sans session qui a Gmail la demande attend. **Piège** : la recherche ne lit JAMAIS un mail
 (`search_threads` seulement : expéditeur, date, objet) ; ne pas ajouter de `get_thread` « pour être plus précis ».
 
+## 0 septies. Le Trieur de Data est branché (14 oct. 2026, matin) — chantier `8c1e730f` pour le défaut trouvé en route
+
+Raphaël : « brancher un projet à moi sur le cockpit, étape par étape » → le Trieur (`rnab26/Trieur-Data`, projet `trieur-data`, « Trieur de Data »). Skill `cockpit` : quatre choix posés d'un coup (nom, reprise des chantiers,
+mise en ligne, mode autonome : non), puis tout fait. **Fait et vérifié** : `brancher.sh` (settings.json valide, l'ancien hook de démarrage du Trieur est gardé à côté du nôtre), hook lancé pour de vrai, 3 chantiers
+ouverts côté Trieur = 3 repris en base (rangés par `cockpit-chantier.sh --ranger`, commandes du Trieur testées), branche `claude/cockpit-trieur-data` fusionnée sur `main` avec `[skip render]` dans le message : Render a
+enregistré « commit ignoré » pour ses deux services `main` (`list_events`), aucun déploiement. **Défaut trouvé et corrigé** : l'étape 5 de `brancher.sh` (questionnaire d'emplacement) a été refusée par le filtre de
+clarté parce que le texte du choix « menu » citait `frontend/src/App.tsx` ; `analyser-depot.py` ne cite plus de chemin, `verifier-emplacement.mjs` couvre front / frontend / backend / runtime (rouge 4 KO → vert 25/25).
+**Pièges** : (1) des appels d'outil lancés en parallèle partagent le dossier courant : un `cd` dans l'un change l'autre (une vérification du Trieur a lu le dépôt du cockpit) ; chemins absolus et `git -C`.
+(2) Le dépôt du Trieur a été renommé (`Trieur-Data` avec majuscules) : GitHub redirige l'ancienne adresse, la base garde `rnab26/Trieur-Data`. (3) `[skip render]` : la doc Render ne dit pas s'il doit être dans la
+première ligne ; il y est, et l'événement `commit_ignored` l'a confirmé. **Reste** : l'ancien hook du Trieur liste les mêmes 3 chantiers que le cockpit (décision de Raphaël : le garder ou le couper).
+
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
 - App https://rnab26.github.io/Cockpit-General/ (Pages depuis `gh-pages`,
