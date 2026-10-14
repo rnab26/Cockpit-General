@@ -149,6 +149,19 @@ demandes des utilisateurs, progression des autres sessions.
   ce que Raphaël doit voir, sans jargon, avec le LIEN EXACT https://… à ouvrir
   dans l'étape 1 ; rien à ouvrir : `--sans-lien "pourquoi"`) ou `--echec "…"`.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
+- **LES CHANTIERS SE FERMENT D'APRÈS GITHUB, DANS TOUS LES PROJETS** (13 oct. : « mes
+  chantiers ne sont pas à jour […] ça doit être général, tous les projets actifs et
+  futurs »). Un chantier que plus personne ne tient et dont le travail est fusionné dans
+  `main` passe « à vérifier » tout seul (« Livré, d'après GitHub », preuve dans son fil ;
+  lu à l'ouverture d'une session et aux messages, 20 min au plus). Donc : (1) signale
+  chaque envoi, `scripts/cockpit-progression.sh --jalon pousse --detail <commit>` est la
+  preuve la plus sûre ; (2) avant de t'arrêter, `--termine`, ou `scripts/cockpit-chantier.sh
+  --de-cote <id>` / `--abandonner <id>`, sur chaque chantier que tu tiens ; (3) au rappel
+  « SANS TRACE depuis longtemps », réponds pour CHACUN (terminé / étape / de côté) ; (4) ce
+  que Raphaël te dit EN SESSION d'un chantier livré (« ça marche », « ça ne marche pas »),
+  écris-le dans son fil (`--point`) : tu ne certifies jamais. Un chantier passé « livré » à
+  tort : « Ça ne marche pas » le renvoie en correction. Réglages (par projet et général) :
+  écran « Chantiers et GitHub ».
 - **« Où ça en est ? »** (Raphaël le demande d'un bouton ; le hook te le met
   sous les yeux) : réponds TOUT DE SUITE dans le fil, 3 lignes au plus (fait /
   reste / ce qui bloque) : `scripts/cockpit-progression.sh --chantier <id> --point "…"`.

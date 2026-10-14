@@ -1,7 +1,7 @@
 // L'état des déploiements d'un projet (src/lib/deploiement.ts), sur des
 // exécutions au format réel de l'API GitHub (relevé le 29 sept. 2026).
 import { verifie, bilan } from './_assert.ts'
-import { etatDuProjet, etatExecution, estUnDeploiement, phraseSite, siteASonder, type ExecutionGitHub } from '../src/lib/deploiement.ts'
+import { etatDuProjet, etatExecution, estPagesInterne, estUnDeploiement, phraseSite, siteASonder, type ExecutionGitHub } from '../src/lib/deploiement.ts'
 
 const now = new Date('2026-09-29T01:00:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
@@ -46,6 +46,42 @@ verifie('« Vérifications » n’en est pas un', !estUnDeploiement('Vérificati
 {
   const e = etatDuProjet([run('Vérifications', 'completed', 'success', 1), run('Deploy to GitHub Pages', 'completed', 'success', 10)], 'main', now)
   verifie('le déploiement passe en tête de liste, avant les simples vérifications', e.lignes[0].nom === 'Deploy to GitHub Pages', e.lignes.map((l) => l.nom))
+}
+// 14 oct. 2026 (Melissa Nabet) : la tâche interne « pages build and deployment » de GitHub avait échoué sur le même commit que
+// le workflow du projet, qui avait réussi : le bandeau criait « mise en ligne échouée » alors que le site était à jour.
+{
+  const interne = (conclusion: string | null, minAgo: number, sha = 'aaaaaaa1111', status = 'completed'): ExecutionGitHub =>
+    ({ ...run('pages build and deployment', status, conclusion, minAgo), head_sha: sha, path: 'dynamic/pages/pages-build-deployment' })
+  const projet = (conclusion: string | null, minAgo: number, sha = 'aaaaaaa1111', nom = 'Deploy to GitHub Pages'): ExecutionGitHub =>
+    ({ ...run(nom, 'completed', conclusion, minAgo), head_sha: sha, path: '.github/workflows/pages.yml' })
+
+  const e = etatDuProjet([projet('success', 20), interne('failure', 10)], 'main', now)
+  verifie('tâche interne de GitHub en échec + workflow du projet réussi sur le même commit → « En ligne »', e.etat === 'reussi' && /^En ligne/.test(e.titre), e)
+  const l = e.lignes.find((x) => x.nom === 'pages build and deployment')
+  verifie('…la ligne reste visible (rien n’est caché), avec sa note', !!l && l.etat === 'echoue' && /sans effet sur le site : « Deploy to GitHub Pages » a réussi/.test(l.note ?? ''), l)
+  verifie('…et la phrase de tête dit depuis quand le site est en ligne (pas depuis l’échec interne)', /20 min/.test(e.titre), e.titre)
+
+  const annule = etatDuProjet([projet('success', 20), interne('cancelled', 10)], 'main', now)
+  verifie('tâche interne annulée + workflow du projet réussi → « En ligne »', annule.etat === 'reussi', annule)
+
+  const seul = etatDuProjet([interne('failure', 10)], 'main', now)
+  verifie('tâche interne en échec SANS autre mise en ligne → reste un vrai échec', seul.etat === 'echoue' && !seul.lignes[0].note, seul)
+
+  const autreCommit = etatDuProjet([interne('failure', 10, 'bbbbbbb2222'), projet('success', 30, 'aaaaaaa1111')], 'main', now)
+  verifie('workflow réussi sur un commit PLUS ANCIEN que l’échec interne → l’échec compte (le dernier commit n’est pas en ligne)', autreCommit.etat === 'echoue', autreCommit)
+
+  const plusRecent = etatDuProjet([projet('success', 5, 'ccccccc3333'), interne('failure', 30, 'bbbbbbb2222')], 'main', now)
+  verifie('workflow réussi sur un commit PLUS RÉCENT que l’échec interne (tâche interne éteinte depuis) → plus de bandeau rouge', plusRecent.etat === 'reussi', plusRecent)
+
+  const enCours = etatDuProjet([projet('success', 20), interne(null, 1, 'aaaaaaa1111', 'in_progress')], 'main', now)
+  verifie('tâche interne ENCORE EN COURS → « en cours » (elle remplacerait la version en ligne), jamais masquée', enCours.etat === 'en_cours' && enCours.enCours, enCours)
+
+  const echecProjet = etatDuProjet([projet('failure', 10), interne('failure', 10), projet('success', 60, 'zzzzzzz9999', 'Deploy to GitHub Pages')], 'main', now)
+  verifie('l’échec du workflow du projet lui-même reste un échec', echecProjet.etat === 'echoue', echecProjet)
+
+  const vitrine = etatDuProjet([projet('success', 20), interne('failure', 10), projet('failure', 15, 'aaaaaaa1111', 'Publier le site vitrine')], 'main', now)
+  verifie('la recopie du site vitrine en échec reste signalée même si la mise en ligne du CRM a réussi (deux destinations différentes)', vitrine.etat === 'echoue' && /version d’avant/.test(vitrine.titre), vitrine)
+  verifie('estPagesInterne : reconnu par son chemin ou son nom', estPagesInterne({ name: 'x', path: 'dynamic/pages/pages-build-deployment' }) && estPagesInterne({ name: 'pages build and deployment' }) && !estPagesInterne({ name: 'Deploy to GitHub Pages', path: '.github/workflows/pages.yml' }))
 }
 {
   const p = phraseSite({ commit: '80d6782b401a8cc422ed375a884cf1765e6f88cf', lu: now.getTime() - 10_000, erreur: null }, now)

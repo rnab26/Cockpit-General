@@ -6,13 +6,14 @@ import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { attenteAToi, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
+import { estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
 import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { DELAI_ABANDON_MIN } from '../lib/silence.ts'
 import { useProchainPassage } from '../hooks/useProchainPassage.ts'
+import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { etaLisible, dateRelative, dateLongue, heureLisible } from '../lib/dates.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
@@ -29,10 +30,12 @@ import { useFlash } from './Vivant.tsx'
 import { Renforts, RenfortsTout } from './Renforts.tsx'
 import { ReveilImmediat } from './ReveilImmediat.tsx'
 import { FiletSecurite } from './FiletSecurite.tsx'
+import { RapprochementGithub } from './RapprochementGithub.tsx'
 import { quandDeCote } from '../lib/reporter.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
+import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
-import { bulleActive, cleBulle } from '../lib/bulleAide.ts'
+import { apercuDe, bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
 import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
 
 /**
@@ -40,14 +43,16 @@ import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerA
  * fais A + D », « des modèles plus compacts, plus ergonomiques, moins casse-tête
  * visuellement, des logiques plus ordonnées »), pour l'onglet « Tout » ET la
  * vue d'un projet :
- *   cinq tuiles (pour toi · ça avance · à lancer · de côté · fini) — chacune ouvre sa liste ;
+ *   six tuiles (pour toi · à tester · ça avance · à lancer · de côté · fini) — chacune ouvre sa liste
+ *   (« pour toi » = les DEMANDES seulement ; les chantiers livrés ont « à tester », 13 oct. 2026) ;
  *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée (en premier) ;
  *   « À toi de jouer »       — une ligne par chose à faire, UN verbe (en second) ;
  *   « Prêt à lancer »        — ce que personne ne tient, « Lancer ».
  * Toucher une ligne ouvre la conversation du chantier (modèle D). Les nombres
  * viennent de lib/tableauDeBord.ts : une seule règle, testée.
  */
-export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { projetId: string | null; entre?: ReactNode; seulementTuiles?: boolean }) {
+/** Le tableau de bord d'un projet (ou de tous) : UNE seule façon de le calculer, lue par la vue détaillée ET l'accueil simple. */
+export function useTableauDeBord(projetId: string | null): { t: Tableau; fenetre: Fenetre } {
   const g = useGlobal()
   const fenetre: Fenetre = estFenetre(g.prefs.fenetre_livre) ? g.prefs.fenetre_livre : FENETRE_DEFAUT
   const ordre = useMemo(() => g.projets.map((p) => p.id), [g.projets])
@@ -55,6 +60,13 @@ export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { pr
     { chantiers: g.chantiers, messages: g.messages, activites: g.activites, sessions: g.sessions, taches: g.taches },
     g.now, g.silenceMs, fenetre, ordre, projetId,
   ), [g.chantiers, g.messages, g.activites, g.sessions, g.taches, g.now, g.silenceMs, fenetre, ordre, projetId])
+  return { t, fenetre }
+}
+
+export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { projetId: string | null; entre?: ReactNode; seulementTuiles?: boolean }) {
+  const g = useGlobal()
+  const { t, fenetre } = useTableauDeBord(projetId)
+  const [, poserVue] = useVueAccueil()
   const toast = useToast()
   // Sections repliées : retenu par personne (préférences), un seul geste « Tout replier / Tout déplier ».
   const repliees = useMemo(() => lireRepliees(g.prefs[PREF_REPLIEES]), [g.prefs])
@@ -71,13 +83,15 @@ export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { pr
       {entre}
       {seulementTuiles ? null : <>
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
-      <div className="-mb-3 flex justify-end">
+      <div className="-mb-3 flex items-center justify-between">
+        <Button taille="sm" variante="discret" onClick={() => poserVue('simple')} data-testid="vue-simple">Vue simple</Button>
         <Button taille="sm" variante="discret" onClick={() => void retenir(toutBasculer(repliees))} data-testid="tout-replier-accueil" data-replie={tout ? '1' : ''}>
           {tout ? <ChevronsUpDown size={15} aria-hidden /> : <ChevronsDownUp size={15} aria-hidden />}{tout ? 'Tout déplier' : 'Tout replier'}
         </Button>
       </div>
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} {...repli('ca-avance')} />
       <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} {...repli('a-toi')} />
+      <SectionATester elements={t.aTester} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
       {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
       {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} {...repli('a-lancer')} />
@@ -94,7 +108,7 @@ export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { pr
  * sur plusieurs sujets ; Claude en fait un chantier par sujet et répond dans
  * chaque fil. Ouvre la discussion du projet (fil sans chantier).
  */
-function EcrireAuProjet({ projetId }: { projetId: string }) {
+export function EcrireAuProjet({ projetId }: { projetId: string }) {
   const g = useGlobal()
   const fil = g.messages.filter((m) => m.projet_id === projetId && !m.chantier_id)
   const dernier = fil.reduce<typeof fil[number] | null>((a, m) => (!a || m.created_at > a.created_at ? m : a), null)
@@ -105,7 +119,7 @@ function EcrireAuProjet({ projetId }: { projetId: string }) {
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] text-texte-2">Écrire à Claude sur ce projet…</span>
         <span className="block truncate text-xs text-texte-2" data-testid="ecrire-projet-aide">
-          {dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${dernier.corps}` : 'Plusieurs sujets ? Claude ouvre un fil par sujet et répond dans chacun.'}
+          {dernier ? `${dernier.auteur_type === 'session' ? 'Claude' : 'Toi'} : ${apercuDe(dernier.corps)}` : 'Plusieurs sujets ? Claude ouvre un fil par sujet et répond dans chacun.'}
         </span>
       </span>
       <PastilleReponse cle={cleFil(projetId, null)} />
@@ -115,18 +129,20 @@ function EcrireAuProjet({ projetId }: { projetId: string }) {
 
 // ---------------------------------------------------------------- tuiles
 
-type CleTuile = 'pourToi' | 'caAvance' | 'enPause' | 'deCote' | 'fini'
+type CleTuile = 'pourToi' | 'aTester' | 'caAvance' | 'enPause' | 'deCote' | 'fini'
 const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: number) => string }[] = [
-  { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une décision ou un test t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
+  { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une action, une décision ou un blocage t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
+  { cle: 'aTester', libelle: 'à tester', aide: 'livrés par Claude : à tester quand tu veux, rien ne presse', couleur: (n) => (n ? 'text-attention' : 'text-texte-2') },
   { cle: 'caAvance', libelle: 'ça avance', aide: 'une session ou un assistant y travaille vraiment (barre de progression)', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'enPause', libelle: 'à lancer', aide: 'prêts à démarrer (nouveaux compris) ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'deCote', libelle: 'de côté', aide: 'mis de côté ou reportés exprès : ils ne bougent pas tant que tu ne les relances pas', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string }
+export interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
+  if (cle === 'aTester') return [...new Set(t.aTester.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
   if (cle === 'caAvance') return t.caAvance.map((l) => l.c.id)
   if (cle === 'enPause') return [...t.pretALancer, ...t.sansSession].map((l) => l.c.id)
   if (cle === 'deCote') return t.deCote.map((c) => c.id)
@@ -166,7 +182,11 @@ function PastillesAToi({ elements }: { elements: ElementAToi[] }) {
   )
 }
 
-function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null; fenetre: Fenetre }) {
+/**
+ * Les six boxes avec le nombre de chantiers (pour toi · à tester · ça avance · à lancer · de côté · fini), chacune ouvre sa liste.
+ * `compact` : seulement les boxes (l'accueil simple) — ni pastilles, ni « fini = période », ni tableau par section.
+ */
+export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; projetId: string | null; fenetre: Fenetre; compact?: boolean }) {
   const g = useGlobal()
   const [liste, setListe] = useState<Liste | null>(null)
   // Détail par projet/section : ouvert d'emblée (Raphaël, 30 sept. : « pas replié automatiquement »).
@@ -178,7 +198,7 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
   }
   return (
     <section aria-label="Où j’en suis" data-testid="ou-jen-suis">
-      <div className="grid grid-cols-5 gap-1.5" data-testid="tuiles">
+      <div className="grid grid-cols-6 gap-1" data-testid="tuiles">
         {TUILES.map((x) => {
           const n = t.tuiles[x.cle]
           return (
@@ -191,14 +211,16 @@ function Tuiles({ t, projetId, fenetre }: { t: Tableau; projetId: string | null;
           )
         })}
       </div>
-      <PastillesAToi elements={t.aToi} />
-      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-texte-2">
-        <button type="button" onClick={changerFenetre} data-testid="fenetre-ou-jen-suis" className="underline-offset-2 hover:underline">fini = {libelleFenetre} · changer</button>
-        <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-ou-jen-suis" className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline">
-          Détail par {projetId ? 'section' : 'projet'}<ChevronDown size={14} className={`transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
-        </button>
-      </div>
-      {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
+      {compact ? null : <>
+        <PastillesAToi elements={t.aToi} />
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-texte-2">
+          <button type="button" onClick={changerFenetre} data-testid="fenetre-ou-jen-suis" className="underline-offset-2 hover:underline">fini = {libelleFenetre} · changer</button>
+          <button type="button" onClick={() => setDetail(!detail)} aria-expanded={detail} data-testid="detail-ou-jen-suis" className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline">
+            Détail par {projetId ? 'section' : 'projet'}<ChevronDown size={14} className={`transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
+          </button>
+        </div>
+        {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
+      </>}
       <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} />
     </section>
   )
@@ -286,7 +308,7 @@ function LigneEnAttente({ c, onOuvrir }: { c: Chantier; onOuvrir: () => void }) 
 }
 
 /** La liste des chantiers derrière un nombre ; chacun ouvre sa conversation. */
-function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[]; aToi: readonly ElementAToi[] }) {
+export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[]; aToi: readonly ElementAToi[] }) {
   const g = useGlobal()
   // Le nombre « pour toi » compte les CHOSES à faire ; une ligne = un chantier : on dit combien il en porte.
   const nbParChantier = useMemo(() => {
@@ -356,11 +378,11 @@ function TitreSection({ numero, titre, n, testId, replie, onToggle }: { numero: 
   )
 }
 
-function Liste({ children }: { children: ReactNode }) {
+export function ListeUl({ children }: { children: ReactNode }) {
   return <ul className="divide-y divide-bord/70 overflow-hidden rounded-2xl border border-bord bg-carte">{children}</ul>
 }
 
-function VoirPlus({ reste, onClick, testId }: { reste: number; onClick: () => void; testId: string }) {
+export function VoirPlus({ reste, onClick, testId }: { reste: number; onClick: () => void; testId: string }) {
   if (reste <= 0) return null
   return (
     <li>
@@ -414,12 +436,37 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
               </button>
             </div>
           ) : null}
-          <Liste>
+          <ListeUl>
             {visibles.map((e) => <LigneAToi key={e.cle} e={e} avecProjet={avecProjet} />)}
             <VoirPlus reste={tries.length - visibles.length} onClick={() => setTout(true)} testId="voir-a-toi" />
-          </Liste>
+          </ListeUl>
         </>
       )}
+    </section>
+  )
+}
+
+/**
+ * « À tester » (13 oct. 2026) : les chantiers que Claude a livrés et qui attendent ton « Ça marche ». Repliée d'emblée
+ * (rien ne presse, ce n'est pas une demande) ; le compteur reste visible. Même ligne que « À toi de jouer ».
+ */
+export const A_TESTER_VISIBLES = 5
+
+function SectionATester({ elements, avecProjet, projetId }: { elements: ElementAToi[]; avecProjet: boolean; projetId: string | null }) {
+  const [ouvert, setOuvert] = useState(false)
+  const [tout, setTout] = useState(false)
+  if (!elements.length) return null
+  const visibles = tout ? elements : elements.slice(0, A_TESTER_VISIBLES)
+  return (
+    <section aria-label="À tester" data-testid="a-tester">
+      <TitreSection numero={3} titre="À tester" n={elements.length} testId="a-tester-total" replie={!ouvert} onToggle={() => setOuvert(!ouvert)} />
+      {ouvert ? (
+        <ListeUl>
+          {visibles.map((e) => <LigneAToi key={e.cle} e={e} avecProjet={avecProjet} />)}
+          <VoirPlus reste={elements.length - visibles.length} onClick={() => setTout(true)} testId="voir-a-tester" />
+        </ListeUl>
+      ) : null}
+      {ouvert ? <div className="mt-1.5"><ClasserLivres elements={elements} projetId={projetId} /></div> : null}
     </section>
   )
 }
@@ -454,9 +501,12 @@ function ActionDirecte({ message, onOuvrir }: { message: Message; onOuvrir: () =
   )
 }
 
-function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
+export function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
   const g = useGlobal()
   const ouvrir = () => g.ouvrirChantier(e.projetId, e.chantier?.id ?? null)
+  // Le SUJET d'abord (13 oct. 2026) : le titre du chantier, sinon la première phrase de la question — jamais « Question sur le projet » seul.
+  const { sujet } = sujetEtDetail(e)
+  const detail = detailDeCarte(e, g.now)
   return (
     <li data-testid="element-a-toi" data-type={e.type} data-element-chantier={e.chantier?.id ?? ''} data-depuis={e.depuis} data-depasse={e.avanceDepuis ? '1' : ''}>
       <div className="flex items-center gap-3 px-3 py-2.5">
@@ -467,11 +517,11 @@ function LigneAToi({ e, avecProjet }: { e: ElementAToi; avecProjet: boolean }) {
               <span data-testid="age-a-toi" title={dateLongue(e.depuis)}>{dateRelative(e.depuis, g.now)}</span>
               <span className="font-normal text-texte-2" data-testid="heure-a-toi"> · {heureLisible(e.depuis, g.now)}</span>
             </span>
-            <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{e.chantier?.titre ?? 'Question sur le projet'}</span>
+            <span className={`line-clamp-2 text-[15px] font-medium leading-snug ${e.avanceDepuis ? 'text-texte-2' : ''}`} data-testid="titre-a-toi">{sujet}</span>
             <PastilleReponse cle={cleFil(e.projetId, e.chantier?.id ?? null)} className="mt-0.5" />
             <span className="mt-0.5 block text-xs leading-snug text-texte-2">
-              {avecProjet ? <><Projet projetId={e.projetId} /><span aria-hidden> · </span></> : null}
-              <span data-testid="attente-a-toi" className={e.avanceDepuis ? 'text-attention' : ''}>{(e.type === 'question' || e.type === 'action') && !e.chantier && e.message ? e.message.corps : attenteAToi(e, g.now)}</span>
+              {avecProjet ? <span className="block" data-testid="projet-a-toi"><Projet projetId={e.projetId} /></span> : null}
+              <span data-testid="attente-a-toi" className={`line-clamp-2 text-[13px] ${e.avanceDepuis ? 'text-attention' : ''}`}>{detail}</span>
             </span>
           </span>
         </button>
@@ -505,7 +555,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
           <p className="mt-0.5 text-xs text-texte-2">Pour faire avancer un chantier : « Lancer », dans « Prêt à lancer ».</p>
         </div>
       ) : (
-        <Liste>
+        <ListeUl>
           {visibles.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}
           <VoirPlus reste={lignes.length - visibles.length} onClick={() => setTout(true)} testId="voir-ca-avance" />
           {t.horsChantier.map((h) => (
@@ -515,7 +565,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
               {avecProjet ? <Projet projetId={h.projetId} /> : null}
             </li>
           ))}
-        </Liste>
+        </ListeUl>
       )}
       {!replie && sans.length ? (
         <div className="mt-1.5 px-1" data-testid="sans-session">
@@ -523,7 +573,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
             className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
             {sans.length} en cours sans session dessus (comptés « à lancer »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
           </button>
-          {voirSans ? <div className="mt-1.5"><Liste>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</Liste></div> : null}
+          {voirSans ? <div className="mt-1.5"><ListeUl>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</ListeUl></div> : null}
         </div>
       ) : null}
       {!replie && nSessions ? (
@@ -572,7 +622,7 @@ function BarreDeLigne({ l }: { l: LigneCaAvance }) {
   )
 }
 
-function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean }) {
+export function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: boolean }) {
   const g = useGlobal()
   const [relance, setRelance] = useState(false)
   const a = l.activite
@@ -652,15 +702,15 @@ function SectionPretALancer({ lignes, avecProjet, replie, onToggle }: { lignes: 
   const visibles = tout ? lignes : lignes.slice(0, Math.max(A_LANCER_VISIBLES, nouveaux))
   return (
     <section aria-label="Prêt à lancer" data-testid="a-lancer">
-      <TitreSection numero={3} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
+      <TitreSection numero={4} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
       {replie || !nouveaux ? null : <p className="-mt-1 mb-1.5 text-xs text-texte-2" data-testid="a-lancer-nouveaux">Dont {nouveaux} nouveau{nouveaux > 1 ? 'x' : ''} (créé{nouveaux > 1 ? 's' : ''} depuis moins de 24 h), en haut de la liste.</p>}
       {replie ? null : lignes.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien à lancer : tout ce qui est prêt est déjà en route.</p>
       ) : (
-        <Liste>
+        <ListeUl>
           {visibles.map((l) => <LigneLancer key={l.c.id} l={l} avecProjet={avecProjet} />)}
           <VoirPlus reste={lignes.length - visibles.length} onClick={() => setTout(true)} testId="voir-a-lancer" />
-        </Liste>
+        </ListeUl>
       )}
     </section>
   )
@@ -737,6 +787,7 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
       {/* L'interrupteur du mode autonome reste visible, hors du repli : un toucher (chantier 79ec70d6). */}
       {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
       {g.admin ? <FiletSecurite projet={p} onJeton={versJeton} /> : null}
+      {g.admin ? <RapprochementGithub projet={p} /> : null}
       <Repliable testId="reglages-projet" ouvert={reglagesOuverts} onToggle={setReglagesOuverts} titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
         <BarreProjet projet={p} nu sansAutonome />
         <div className="mt-3 space-y-2">

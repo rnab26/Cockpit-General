@@ -6,11 +6,193 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 29 sept. 2026, ~02 h 35 (heure d'Israël), fin de la
-session `session_01B94XRweeYVuqGoJXTyjimP` (trop longue, Raphaël a demandé
-de reprendre dans une session fraîche).
+Dernière mise à jour : 13 oct. 2026 (sections 0, 0 bis, 0 ter, 0 quinquies et 0 sexies ci-dessous). Les sections 1 et
+suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
+dépôt font foi.
 
-## 1. Ce qui est EN LIGNE et vérifié
+## 0. Lot du 13 oct. 2026 (00 h 30 – 01 h 40, heure d'Israël) — traité en lot, jetons économisés
+
+Demande de Raphaël (depuis son téléphone) : traiter les chantiers qui attendent, vérifier que tout
+fonctionne et que tout est branché, ne pas brûler ses jetons. Session chef : celle de sa demande.
+
+**Vérifié (preuves : journaux de ce lot, fils des chantiers)**
+- Site en ligne = `main` (`version.json` c6500bb35093), déploiement et CI verts, aucune PR ouverte.
+- Base : 3 tâches pg_cron actives, 0 échec sur 1 h ; fonctions cockpit-embed v12, cockpit-mcp v2,
+  cockpit-push v2 actives. Réveil immédiat vivant : un renfort demandé à 00:29:11 a ouvert une session
+  de routine (pg_net 200, `routine_fire`).
+- Bancs : app (tsc + build) et 46 suites pures ; clarté 12, correctifs 32, fusion 17 ; MCP 36 ; push 10 ;
+  embed 147 ; emplacement 19 ; greffe 44 ; sessions hors ligne 12 ; réponses 64 ; renouvellement 19 ;
+  base 820 (819 + 1 témoin ajouté, rejouée en entier après correction) ; web 477 ; bulle 42 ; vitesse 6 ; création 18 ; coûts 27 ; hors ligne 36.
+- Trois bancs étaient rouges pour des raisons de TEST seulement (aucune régression du produit) et ont été
+  remis d'équerre : `verifier-base` §44 (le titre « PR avec CI » est refusé par la règle de vocabulaire
+  depuis 5084dfb : la carte n'était jamais posée), `verifier-web` (6 onglets, règle 0076, liens en boutons,
+  message de création : le parcours s'arrêtait sur une exception et ~400 lignes de contrôles ne tournaient
+  plus), `verifier-hors-ligne` (la file porte aussi des écritures internes, ex. `lu_fils` : le bandeau dit
+  « 2 éléments » pour un message ; les contrôles ciblent maintenant NOS messages).
+
+**Défaut réel trouvé (cause prouvée par le journal de la session de réveil)**
+La session ouverte par le réveil immédiat (routine « ⚡ Cockpit — réveil immédiat ») n'a pas l'outil
+`create_session` : elle ne peut pas ouvrir de renforts pour un AUTRE projet. Elle a mis en erreur les 4 renforts
+FacePro (« outil create_session absent de la session relais »). `cible_reveil` envoie vers la chef relais (cockpit)
+tant que la chef du projet n'est pas vivante, donc FacePro (sans réveil propre) ne démarre jamais seul ; la
+protection anti-boucle a pausé ses ouvertures automatiques jusqu'à 06 h 29. Une session ouverte par Raphaël
+(comme celle de ce lot) a `create_session`. Décision posée à Raphaël (carte « FacePro : aucune session ne
+s'ouvre seule »), dans le fil du chantier « Chantiers qui ne se lancent pas seuls ».
+
+**Consommation (mesurée avec `get_session`, coût théorique API, pas la facture de Raphaël)**
+Les réveils récurrents relisent un énorme contexte à chaque fois, contre ~140 000 jetons par agent du lot :
+passage horaire du chef cockpit (contexte 514 000, 155 réveils depuis le 6 oct., 91 M de jetons relus, ~48 $),
+Trieur toutes les heures (741 000, 499 réveils), Jarvis sur Opus toutes les 6 h (399 000, dernier passage
+« rien à prendre »), relance du quota toutes les 4 h (719 000, 79 réveils). Les cumuls en dollars (Trieur ~899 $,
+Jarvis ~4 562 $, relance ~89 $) incluent le travail passé de ces sessions : ne pas les lire comme le coût des
+seuls réveils. Un réveil neuf charge ~287 000 jetons dès son premier appel (mesuré) ; déduit : les CLAUDE.md
+des 7 dépôts attachés à la routine. Raphaël a tranché le 13 oct. (matin) : COUPER. Fait : les quatre routines sont
+en pause (rien supprimé) et le cockpit n'en recrée plus (migration 0078, `chefs.reveil_horaire`) : voir CLAUDE.md
+« Réveils récurrents coupés ». Reste le réveil immédiat du cockpit (jeton).
+
+**Petits défauts notés, non corrigés** (chantiers mis de côté)
+- Une demande de renfort dont le travail a été fait ailleurs finit en « Jamais ouvert » (`renforts_expirer`,
+  0062 ne traite que `actif`) ; la passe de la chef peut réserver pour ses agents les chantiers qu'elle vient
+  de mettre dans un renfort automatique (`renforts_a_ouvrir` avant la réservation dans `chef.sh`). Fermé à la
+  main par `renfort.sh --archive`.
+- Le bandeau hors ligne compte les écritures internes (« lu jusqu'à ») comme des éléments à envoyer.
+- 126 branches `agent/*`, 20 `renfort/*`, 18 `claude/*` jamais supprimées sur le dépôt distant.
+- Le CLAUDE.md du dépôt pèse 122 Ko (~33 000 jetons) : chargé par chaque agent et chaque réveil.
+
+**Pièges de méthode** : `list_triggers` rend ~11 000 jetons (préférer `get_trigger`) ; un agent « Vérifier » peut
+rendre « bon » sur la lettre d'une étape alors que le problème de fond demeure (relire son verdict) ; une
+session ouverte hors du dépôt n'a pas les hooks : elle se rend visible avec `suivre('cockpit', {"session_id":…,
+"hook_event_name":"Vie"})`.
+
+## 0 bis. Suite du 13 oct. 2026 (matin) : « simplifie, fais au plus simple » — accueil simple, demandes ≠ à tester, classer sans test
+
+Demande de Raphaël : trop d'informations, 30 actions avant l'historique du chat, cartes sans sujet, rien de coordonné avec
+ses sessions Claude, « le projet Cockpit n'est pas branché ». **Tout est dans `docs/accueil-simple.md`** (mesures, règles,
+limites). En une phrase : « pour toi » ne compte plus que les demandes (69 → 13), une « Vue simple » à 3 blocs existe (au
+choix : la vue par défaut reste l'écran complet avec ses boxes et ses barres, rétabli le jour même quand Raphaël a dit « j'en ai besoin »), le chat se
+plie, les livrés non testés se classent d'un geste ou tout seuls (réglage, vide = jamais), et `scripts/connecter.sh`
+branche une session sans hooks (cause du « débranché » : session ouverte sur plusieurs dépôts, cwd = `/home/user`) ; l'icône « branché » exige une vraie session.
+**Vérifié** : verifier-web 477 (écran complet), bulle 42, hors ligne 36, création 18, coûts 27, vitesse 6, accueil 47,
+connecter 11, base 842 (dont §56 : 15), 48 suites pures ; app tsc + build. **À constater par Raphaël** : l'écran sur son téléphone, un classement réel.
+**Non fait** (voir le doc) : clôture des chantiers ouverts puis jamais terminés (piste : commits
+poussés comme preuve), hook utilisateur (non vérifié : copie de `dotfiles/.claude/settings.json` ?), auto-fusion, CLAUDE.md de 122 Ko.
+
+## 0 ter. Suite du 13 oct. 2026 (après-midi) : « mes chantiers ne sont pas à jour » — le cockpit lit git
+
+Demande de Raphaël : un projet branché (FacePro), une session Claude qui travaille sur plusieurs sujets, des correctifs à tester qu'il a
+avancés dans la session sans passer par l'app : « les anciens et les nouveaux chantiers ne sont pas actualisés ni coordonnés ».
+**Tout est dans `docs/rapprochement-github.md`** (mesures, preuves, gardes, limites) et la section de même nom du CLAUDE.md. En une phrase :
+un chantier ouvert que personne ne tient et dont le travail est PROUVÉ dans `main` passe « livré, à vérifier » tout seul (migration 0080,
+`rapprocher_depot` + `scripts/rapprocher.py` lancé en fond par les hooks), une session vivante reçoit le rappel précis de ce qu'elle tient sans
+trace depuis 4 h, et l'écran « Chantiers et GitHub » (Réglages du projet) montre l'état et l'interrupteur.
+**EN LIGNE** (PR #129, version `336c5977d016`, 13 oct. 16 h 07 UTC) : rejoué sur le SITE RÉEL, écran de téléphone, projet jetable branché sur le vrai dépôt GitHub : `verifier-rapprochement-ecran.mjs` 14/14, `verifier-accueil.mjs` 53/53.
+**Vérifié** : base 872/872 (complet, après tous les ajouts) dont §57 (31), web 486/486, `verifier-rapprochement.mjs` 51 (sabotage du collecteur : 6 contrôles rougissent ; ancien guillemetage : le passage échoue), 49 suites pures
+(dont `verifier-rapprochement.ts` 20), greffe 44, app tsc + build. **Passage d'essai FacePro (lecture seule)** : 5 clôtures sûres proposées.
+**Bloqué par la plateforme, pas fait** : l'application RÉELLE sur FacePro (classifieur « Modify Shared Resources », refusé deux fois, y compris après
+« j'ai donné mon accord sur tout ») ; elle se fera toute seule à l'ouverture de la prochaine session FacePro une fois la PR fusionnée (le hook
+lance le passage), ou par `python3 scripts/rapprocher.py --projet facepro` dès que Raphaël autorise cette commande précise. Aussi en attente de
+son autorisation précise : classer sans test à 7 jours (réglage de projet), 3 clôtures à la main (« 8,8 $ » PR #64, « lèvres » PR #58, « oreille »
+fusion e68212c), la carte « FacePro : aucune session ne s'ouvre seule ».
+**EN LIGNE aussi** (PR #131 + dotfiles #4, version `51b79dd886bf`, 17 h UTC) : rejoué sur le site réel, écran 16/16, accueil 53/53 ; en local base 880/880, web 492/492, greffe 48/48, collecteur 55/55. **Généralisé le même jour (13 oct., « pas seulement lié à un seul projet », migration 0081)** : délais réglables par projet (écran « Chantiers et GitHub » › « Régler… »), interrupteur GÉNÉRAL (`regler_rapprochement(null, faux)`), seuils en constantes nommées, consigne ajoutée au bloc que reçoit chaque session (`docs/bloc-CLAUDE.md`), aux règles globales et au skill `cockpit` (dotfiles) ; `verifier-greffe` prouve qu'un projet branché de zéro reçoit la règle et lance le collecteur. **FacePro a été fermé tout seul** par le hook d'une vraie session à 16 h 09 UTC (les 5 chantiers du passage d'essai). Projets du cockpit central : cockpit, facepro, melissa-nabet ; non branchés : Midrag, Trieur-Data, Pointeur-Robot-Campaign, Jarvis-assistant, melissa-nabet-site.
+**Non fait, noté dans le cockpit (section « Rapprochement GitHub », prêts à lancer)** : relayer les verdicts que Raphaël dit DANS une session (carte « tu confirmes ? » en un toucher, chantier cff4fbb9) ; écran pour annuler un rapprochement (chantier 7070ce60). La carte « FacePro : aucune session ne s'ouvre seule » : sa recommandation (un réveil dédié) date d'AVANT la coupure des réveils récurrents : à re-décider par Raphaël, pas appliquée.
+**Le moteur est un projet comme les autres** (13 oct., soir ; Raphaël : « c'est lui le moteur qui va reproduire tout ce qu'on fait pour les projets branchés »). Vérifié en base : `cockpit` a un dépôt, le rapprochement allumé et ses propres hooks, mais `rapproche_at` était VIDE (déduit : aucune session à hooks ne s'est ouverte dans le dépôt depuis la mise en ligne, le dernier branchement vu datait de 09 h 00 UTC ; ma session, ouverte sur deux dépôts, n'a pas de hooks) ; son premier passage a eu lieu à 17 h 46 UTC via `scripts/connecter.sh` (2 chantiers examinés, aucun à fermer). Trouvé en le faisant : un `--essai` posait le repère de 20 min des hooks et faisait sauter le vrai passage suivant ; corrigé avec son test (échoue sur l'ancien code). Et ses sessions n'avaient pas les quatre gestes du bloc (le moteur n'a pas le bloc écrit par `brancher.sh`) : ils sont dans son CLAUDE.md, gardés contre une dérive par `verifier-rapprochement` §9.
+**Aussi trouvé sur le moteur (13 oct., soir) : l'écran « Réveil automatique » mentait.** Il disait « Il manque le jeton du réveil / Coller le jeton » alors que le jeton existe (dernier réveil : HTTP 200). Vraie cause : aucune session chef n'est vivante nulle part, donc `cible_reveil()` est nulle et rien n'est tiré (`aucune_chef`). Corrigé par la migration 0082 (statut `sans_chef`, texte, bouton « Lancer une session autonome ») : voir la section « Filet de sécurité » du CLAUDE.md. **Pas décidé** : rouvrir une session tout seul quand aucune chef n'est ouverte (≈ 290 000 jetons à chaque fois) : à Raphaël, carte « FacePro : aucune session ne s'ouvre seule ». **EN LIGNE** (PR #134 puis #135, site en version `ddd8b89cef9c` à 18 h 14 UTC ; migration 0082 appliquée à la base à 18 h 15 UTC) : rejoué sur le VRAI projet « cockpit » du site, écran de téléphone, lecture seule : « Réveil automatique » dit « Bloqué : aucune session chef n'est ouverte » + « Lancer une session autonome », « Chantiers et GitHub » dit « À jour : dernier passage il y a 28 min » ; FacePro et melissa-nabet sont aussi en `sans_chef` (même cause). Vérifié : collecteur 59/59, filet 29/29, écran du filet 13/13, web 492/492, base §38 24/24, 49 suites pures. Le collecteur corrigé est servi par `raw.githubusercontent.com` (donc par le lanceur de tous les projets branchés, 10 min). Chantier du moteur : 721648a9 (« à vérifier »). Constaté aussi : une demande de renfort dont le chantier est déjà livré reste « demandée » puis tombera en « Jamais ouvert » au bout de 3 h (renfort 99e50148 du moteur, créé à 15 h 27 pour mon propre chantier) : chantier 4b0ea892 (reporté).
+
+## 0 quater. Nettoyage du 13 oct. 2026 (soir), demandé par Raphaël avant ses tests
+
+**Retiré (rien d'autre n'a été touché)** : 9 sessions de test du 29 sept. restées dans le VRAI projet « cockpit » (identifiants `test-…`, aucune
+dépendance ; `restesDansLesVraisProjets` les compte désormais, banc §21) ; la demande de renfort 99e50148, périmée (son chantier était déjà livré,
+`renfort_travail_restant` = 0 : elle aurait fait ouvrir une session pour rien ; geste documenté `renfort.sh --archive`) ; un `.pyc` suivi par erreur
+(commit bab28a6) et `__pycache__/` désormais ignoré ; deux chemins faux de la doc ; une affirmation périmée (« le filet du moteur reste éteint » : il est
+allumé sur les trois projets) ; mes 4 branches locales vides et 2 repères de cache de projets de test disparus.
+
+**Vérifié, tout vert** (rejoué un banc à la fois, base 881/881 en 537 s) : syntaxe des scripts, `tsc`, 49 suites pures, clarté 12, sessions hors ligne 12,
+réponses 64, greffe 48, rapprochement 59, connecter 11, renouvellement 19, correctifs 32, fusion 17, emplacement 19, embed 147, MCP 36, push 8 (des appareils
+réels sont abonnés : le banc n'envoie rien), accueil 53, bulle 42, création 18, coûts 27, hors ligne 36, vitesse 6 ; sur le SITE EN LIGNE : réveil 13/13 et
+rapprochement 16/16 ; `verifier-web` 492/492 plus tôt dans la journée (même code d'app). Après la série : 0 projet, ligne, session, fichier de test ; file
+d'attente locale vide ; les 4 tâches planifiées de la base actives, 0 échec sur 3 h.
+
+**Constaté, PAS touché** : 47 lignes de progression « en cours » abandonnées (35 FacePro, 12 moteur, depuis le 29 sept.), invisibles dans l'app (elle exige un
+signe de vie récent) : chantier 4267e6a8 (mis de côté ; ne JAMAIS les passer en « termine », `livre_sans_suite` lit ce statut) ; 174 branches distantes de
+Cockpit-General dont 131 déjà dans `main` (hors sessions, sauvegarde, déploiement) : suppression = accord de Raphaël, carte posée, les 37 non fusionnées ne se
+touchent pas sans lui ; 6 numéros de migration en double (0033, 0038, 0046, 0052, 0059, 0060), aucune fonction redéfinie par les deux fichiers d'un même numéro,
+donc sans risque pour un rejeu ; 16 chantiers FacePro « en cours » que personne ne tient (du travail à relancer, pas de la saleté) ; 11 cartes FacePro à lui.
+**Déduit, non vérifié** : le CLAUDE.md global du compte (`/root/.claude/CLAUDE.md`) est pris des dotfiles au démarrage d'une session ; les trois règles ajoutées
+aux dotfiles aujourd'hui n'arrivent donc qu'aux NOUVELLES sessions.
+
+## 0 quinquies. Les reçus Claude dans Coûts (13 oct. 2026, soir) : « Configure-le que ce soit constant »
+
+Chantier `72a8d0f4`. Procédure complète, garde-fous, coûts mesurés, voie gratuite : **`docs/recus-par-email.md`** (à lire avant d'y toucher).
+
+**Fait et vérifié** : migration 0083 appliquée (colonnes `services.import_*`) ; `scripts/importer-recus.py` + `scripts/verifier-recus.mjs` 49/49 (projet jetable, aucun reste) ;
+carte du prestataire (ligne « Import automatique des reçus », date de départ dans le crayon) : `verifier-depenses.ts` 30/30, `verifier-depenses.mjs` 36/36 sur écran de téléphone ;
+les 7 reçus de Raphaël (juillet à octobre, lus dans sa boîte avec son accord) se lisent avec le lecteur sur leurs vrais textes ; seul le PDF du plus récent était encore
+téléchargeable (les liens Stripe expirent : valable à 11 jours, expiré à 33 ; liens jamais modifiés pour contourner).
+
+**Pas fait, et pourquoi** : (1) la routine hebdomadaire existe (`trig_01HViAL4dDqkdXTKmjrRmHJ8`) mais est **EN PAUSE** : elle n'a aucun connecteur Gmail (`create_trigger` refuse `connectors`
+pour cette organisation ; l'essai à blanc a montré une session sans outil `mcp__`, avec dépôt clonable, clé de base présente, python3 et pdftotext) ; il faut le geste de Raphaël dans
+claude.ai/code/routines › Edit › Connectors, **et sa décision** : un connecteur Gmail donne à la routine tous ses outils (envoi compris) sans permission, seul son texte l'en empêche. Alternative sans
+ce risque ni jetons : un petit programme dans son compte Google (Apps Script), à construire. (2) L'historique des 7 reçus est dans Coûts (673,33 ₪ et 15,60 $, PDF du plus récent seulement) depuis le soir du 13 oct. : la plateforme avait refusé l'écriture (« Modify Shared Resources »)
+jusqu'à ce que Raphaël envoie sa phrase PRÉCISE (commande et cible) ; mon premier SQL (un `with … insert`) était en plus refusé par la base : un `insert … select … ;` simple a passé.
+**Piège** : un passage réussi de la routine écrasera le battement « échec » que j'ai posé volontairement (la carte du prestataire Claude dit aujourd'hui, vrai, que la tâche n'a pas accès à Gmail).
+**Effet de bord de l'essai** : la session d'essai a envoyé une notification sur le téléphone de Raphaël (« Import impossible… »), parce que le dépôt n'était pas encore fusionné.
+
+## 0 sexies. Le bouton « Chercher mes fournisseurs » (13 oct. 2026, soir) — chantier `07258fe5`, migration 0084
+
+Raphaël : « une recherche par mots-clés plutôt que de lire toute la boîte mail » et « un bouton où j'appuie et ça va chercher tous les noms des fournisseurs où je suis susceptible d'avoir des
+factures, et comme ça on actualise ». Procédure : `docs/recus-par-email.md` › « Chercher les fournisseurs ». Bloc `RechercheFournisseurs.tsx` en tête de Coûts ; tables
+`recherches_fournisseurs` (UNE demande ouverte par projet) et `fournisseurs_detectes` ; `scripts/chercher-fournisseurs.py` ; les hooks préviennent une session qui a Gmail.
+**Fait pour de vrai** : première recherche par mots-clés sur la boîte de Raphaël (3 appels `search_threads`, aucun mail ouvert) → 94 mails, 24 fournisseurs « nouveaux » enregistrés dans Coûts du projet `cockpit` (à lui de « Suivre » ou « Ignorer » : beaucoup de bruit, banques, virements reçus, versements de plateformes).
+**Vérifié** : `verifier-fournisseurs.mjs` 50/50, `app/scripts/verifier-fournisseurs.mjs` 37/37 (téléphone, avec « Choisir plusieurs »), `verifier-fournisseurs.ts` 28/28 ; un vrai défaut trouvé par le banc écran et corrigé (la liste se
+repliait toute seule quand on ignorait le dernier « nouveau »). **Limite** : l'écran n'ouvre pas de session ; sans session qui a Gmail la demande attend. **Piège** : la recherche ne lit JAMAIS un mail
+(`search_threads` seulement : expéditeur, date, objet) ; ne pas ajouter de `get_thread` « pour être plus précis ».
+
+## 0 septies. Le Trieur de Data est branché, avec son bouton « Demandes » (14 oct. 2026) — chantiers `8c1e730f` (défaut du moteur) et `04e4bcdc` (bouton)
+
+Raphaël : « brancher un projet à moi sur le cockpit, étape par étape » → le Trieur (`rnab26/Trieur-Data`, projet `trieur-data`, « Trieur de Data »). Skill `cockpit` : quatre choix posés d'un coup (nom, reprise des chantiers,
+mise en ligne, mode autonome : non), puis tout fait. **Fait et vérifié** : `brancher.sh` (settings.json valide, l'ancien hook de démarrage du Trieur est gardé à côté du nôtre), hook lancé pour de vrai, 3 chantiers
+ouverts côté Trieur = 3 repris en base (rangés par `cockpit-chantier.sh --ranger`, commandes du Trieur testées), branche `claude/cockpit-trieur-data` fusionnée sur `main` avec `[skip render]` dans le message : Render a
+enregistré « commit ignoré » pour ses deux services `main` (`list_events`), aucun déploiement. **Défaut trouvé et corrigé** : l'étape 5 de `brancher.sh` (questionnaire d'emplacement) a été refusée par le filtre de
+clarté parce que le texte du choix « menu » citait `frontend/src/App.tsx` ; `analyser-depot.py` ne cite plus de chemin, `verifier-emplacement.mjs` couvre front / frontend / backend / runtime (rouge 4 KO → vert 25/25).
+**Pièges** : (1) des appels d'outil lancés en parallèle partagent le dossier courant : un `cd` dans l'un change l'autre (une vérification du Trieur a lu le dépôt du cockpit) ; chemins absolus et `git -C`.
+(2) Le dépôt du Trieur a été renommé (`Trieur-Data` avec majuscules) : GitHub redirige l'ancienne adresse ; `brancher.sh` met le dépôt en minuscules en base (`rnab26/trieur-data`), sans conséquence. (3) `[skip render]` : Render
+la cherche n'importe où dans le MESSAGE, pas seulement sur la première ligne : un envoi qui devait déployer a été ignoré parce que je l'avais écrite dans une explication (« pas de [skip render] ») ; mise en ligne lancée à la main
+(`trigger_deploy`, site seul, l'API n'avait pas changé), puis site en ligne vérifié. (4) Le mode autonome du Trieur est « tout le temps » parce que Raphaël l'a allumé lui-même dans l'app (journaux de la base : deux appels
+à `regler_autonome` depuis son compte, 08:19) après avoir répondu « non » au bilan : son geste prime, on ne l'éteint pas à sa place.
+**La suite, après sa remarque** (« on n'est pas censé pouvoir le mettre directement en copier-coller quand on ajoute un projet ? » ; décision D-16 dans dotfiles) : le bouton n'était pas à cadrer, il fallait le poser. Fait : composant
+`CockpitCentral` du Trieur (comptes administrateurs seulement, la règle de son onglet Cockpit ; bouton « Demandes » dans le menu à partir de 640 px, bouton flottant du module en dessous), menu du Trieur qui ne déborde plus sur
+téléphone (494 px sur 390, défaut qui existait avant : rangée d'onglets qui défile), `tests/test_cockpit_central.py`, 33 contrôles dans Chromium sur le build puis sur le VRAI site (comptes simulés, API et base interceptées).
+Skill `cockpit` étape 5 réécrite (dotfiles, PR 5). **Reste** : (a) « Copier le code » de l'app donne encore une balise « page » sans tenir compte de l'emplacement choisi (chantier `949ed6d7`, prêt à lancer) ; (b) garder ou remplacer l'écran Cockpit
+intégré du Trieur (décision de Raphaël) ; (c) l'ancien hook de démarrage du Trieur liste les mêmes 3 chantiers que le cockpit ; (d) **non vérifié** : un vrai compte administrateur du Trieur (aucun identifiant côté session).
+
+## 0 octies. « Les réglages de Melissa ne sont pas bons, les projets ne sont pas branchés » (14 oct. 2026) — chantier `a225351a`
+
+Raphaël (captures de Melissa Nabet, réglages + liste des projets) : « pourquoi les réglages du projet de Melissa sont pas bons ? et pourquoi les projets ne sont pas branchés ». **Causes PROUVÉES.**
+(1) *Melissa* : le branchement du 29 sept. (un seul commit `0c24ea2`, 14 fichiers, branche `claude/cockpit-setup-oyrkl9`) n'a jamais été fusionné sur `main` (`git merge-base --is-ancestor` faux ; base = un vieux `main`, `ebca66f`). Sa `main` n'a que son propre
+hook `session-start.sh` : aucun `cockpit-*.sh`, aucun bloc cockpit dans son CLAUDE.md. Toute session ouverte sur `main` démarre donc sans cockpit (dernier démarrage du hook : 29 sept., une seule ligne de session de 0 min). Le module n'a jamais été installé
+(`embed_vu_at` nul : le questionnaire d'emplacement n'existait pas à ce branchement, 0 carte posée) ; le collecteur GitHub n'a jamais tourné (`rapproche_at` nul : il part des hooks) ; 0 chantier repris (son ancien tableau en a 105 : 87 livrés, 17 à faire, 1 en partie livré).
+(2) *Bandeau rouge « mise en ligne échouée »* : FAUX. Le site sert exactement `main` (`index.html` identique octet pour octet, 839 787 octets ; `site-vitrine/` en 404 sur le domaine du CRM = l'artefact du workflow du projet). L'« échec » est la tâche INTERNE de GitHub
+« pages build and deployment » (exécution 14 du 5 oct. : build Jekyll réussi, job `deploy` annulé après 15 min), qui vise la même destination que le workflow du projet « Deploy to GitHub Pages » (réussi sur le même commit, après 10 min 30 ce soir-là) ; les deux se sont annulées l'une l'autre le 5 oct. (exécutions 12 et 13 « annulées » ; groupe de
+concurrence `pages` commun : déduit, non lu pour la tâche interne). Plus aucun envoi sur `main` depuis le 5 oct. : ce dernier passage restait « le dernier » depuis 8 jours.
+(3) *Trieur* : branché et prouvé (hook lancé à la main depuis son dépôt à 08:20 ; module chargé par le vrai navigateur de Raphaël à 09:15) mais AUCUNE ligne dans `sessions` : depuis le 13 oct. l'icône exige une vraie session ; elle s'allume à la première vraie session ouverte sur le Trieur.
+**Corrigé, général (aucun réglage par projet)** : `lib/deploiement.ts::pagesInterneSansEffet` (UNE règle : l'échec ou l'annulation de la tâche interne de GitHub est sans effet quand une autre mise en ligne du projet a réussi sur le même commit ou après ; jamais masqué : tâche
+interne encore en cours, échec d'un workflow du projet, recopie du site vitrine) ; `lib/branchement.ts::lireCockpitSurMain` + `hooks/useCockpitSurMain.ts` (lecture anonyme de `.claude/settings.json` sur `main` : `COCKPIT_PROJET` = installé ; le 404 d'un dépôt privé = « inconnu », jamais
+deviné ; seulement admin et même propriétaire que le moteur, car les voies « invisible » et « branches » n'ont, par choix, rien sur `main` ; dit aussi « pas sur main » quand une session vient de se brancher sur une branche de travail) ; `etatBranchement` applique la MÊME règle que l'icône (vraie session) et dit la cause avec la phrase « branche le cockpit » ;
+le texte de « Réveil immédiat » ne parle plus d'un passage horaire qui n'existe plus. Preuves : `verifier-deploiement.ts` 37/37 (13 cas neufs), `verifier-branchement.ts` 40/40, les 51 bancs purs verts, rejeu sur les 30 exécutions RÉELLES de Melissa (avant : le message de la capture ; après : « En ligne —
+dernière mise en ligne réussie il y a 8 j »), sur les quatre vrais dépôts (Melissa absent, Trieur présent, cockpit présent, FacePro inconnu = privé) et sur l'écran réel d'un téléphone (390 px). **Limites** : lecture anonyme = dépôts publics seulement ; la branche principale est supposée `main` (comme l'écran de mise en ligne) ;
+« pas installé » n'est dit que pour un dépôt public dont le fichier est lisible sans le cockpit, ou absent ; GitHub garde `raw.githubusercontent.com` en cache 5 min (`cache-control: max-age=300`) et l'écran relit au plus toutes les 10 min :
+après une fusion sur `main`, la ligne peut mettre jusqu'à ~15 min à passer de « pas installé » à « bien installé » (constaté : lue « absente » 10 s après la fusion de Melissa, « présente » 1 min plus tard).
+**Melissa, rebranchée le jour même (réponses de Raphaël : reprise des 18 = oui, sur `main` = oui, autonome « tout le temps »)** : `brancher.sh` sur `claude/cockpit-melissa-nabet` depuis `main` (répété d'abord sur une COPIE avec `--maj`, sans base :
+settings.json valide avec SON hook gardé à côté du nôtre, `scripts/sql.sh` intact), commit `0957a5c`, fusion `7158b96` sur `main` (preuve : `git ls-remote origin refs/heads/main` = le HEAD local), 18 chantiers repris (2 libres, 9 à cadrer, 7 bloqués : une action de Raphaël, du contenu de Mélissa
+ou une dépendance), 18/18 rangés par rubrique + un 19e chantier « Poser le bouton du cockpit dans le CRM (après tes 2 réponses) », bloqué sur ses réponses, pour que la pose de la balise ne se perde pas ; mode autonome allumé (`regler_autonome`, plafond 20, s'éteint seul après 3 h sans rien à prendre). Son `CLAUDE.md`, son hook de démarrage et `docs/journal.md` ne désignent plus l'ancien tableau comme source de vérité (UNE seule source).
+Questionnaire d'emplacement posé (carte « Où le cockpit de Melissa Nabet doit-il apparaître ? », recommandé : bouton dans le menu, pour l'équipe) ; **la balise n'est pas posée** : elle attend ses deux réponses (`scripts/cockpit-emplacement.sh --projet melissa-nabet --balise`). Le CRM est une page unique de 840 Ko (`index.html`) avec connexion :
+le bouton ne doit exister que pour les comptes de l'équipe (modèle : `CockpitCentral.tsx` du Trieur). La prise verte reste éteinte jusqu'à la première VRAIE session sur le dépôt (hook lancé à la main deux fois : preuve du branchement, pas une session).
+**Trouvé en route, NON corrigé (réglage du dépôt de Melissa, décision de Raphaël)** : GitHub lance DEUX mises en ligne à chaque envoi sur `main` : le workflow du projet (« Deploy to GitHub Pages », qui retire `site-vitrine/` avant de publier) et sa tâche interne « pages build and deployment » (vu : elle revient dans les exécutions depuis le 5 oct., après deux mois sans ;
+**déduit, non lu** : la source Pages est redevenue « une branche », l'API des réglages Pages étant refusée à la session). Elles se disputent la même adresse : la dernière arrivée gagne (constaté ci-dessous). Après la fusion du 14 oct., c'est la tâche interne qui a fini en dernier (09:52:44 contre 09:52:21) : `site-vitrine/index.html` répond 200 sur l'adresse du CRM (404 avant), le CRM lui-même est intact (`index.html` identique octet pour octet).
+Les pages du studio sont publiques par ailleurs (aucun secret), mais ce n'est pas voulu (commentaire de `pages.yml`). Remède permanent : Réglages du dépôt › Pages › Source = « GitHub Actions » (`PUT /repos/…/pages` est refusé par le proxy de la session : action de Raphaël) ; ou, sans aucun clic, un `_config.yml` avec `exclude: [site-vitrine]` dans le dépôt (la tâche interne publierait alors la même chose).
+**Banc** : `verifier-web.mjs` simule maintenant la lecture des réglages de `main` (sans ça, le dépôt de test fait un 404 dans la console : 491/492 à la première passe, c'était MON code) et vérifie la ligne « pas installé sur la branche principale ».
+
+## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
 - App https://rnab26.github.io/Cockpit-General/ (Pages depuis `gh-pages`,
   poussé par `deploy.yml` à chaque push sur `main`). Version en ligne = l'écran
@@ -61,7 +243,7 @@ git fetch origin sauvegarde/comment-verifier
 git checkout origin/sauvegarde/comment-verifier -- app/   # récupère l'écran en cours
 cd app && npm ci && npx tsc -b && npm run build
 node --experimental-strip-types scripts/verifier-*.ts
-node scripts/verifier-web.mjs          # parcours réel, écran de téléphone
+node app/scripts/verifier-web.mjs      # parcours réel, écran de téléphone
 ```
 
 Ce que cette refonte doit livrer (demandes de Raphaël des 28-29 sept.) :

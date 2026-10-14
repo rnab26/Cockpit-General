@@ -51,7 +51,7 @@ const RPC_LECTURE = /^(etat_|prochain_|membres_|moi$|est_|peut_|chef_|file_|ress
  * réponse fabriquée `null` vidait l'écran : « Aucun projet ».) `inviter` (rend un jeton) et
  * `reveiller_reportes` n'y sont pas : il leur faut leur réponse réelle.
  */
-const RPC_ECRITURE = /^(abandonner|accepter|certifier|changer|corriger|demander|deplacer|desarchiver|archiver|effacer|freiner|fusionner|liberer|marquer|mettre|ranger|regler|relancer|renommer|reporter|repondre|restaurer|retirer|revoquer|signaler|trancher)_/
+const RPC_ECRITURE = /^(abandonner|accepter|annuler|certifier|changer|corriger|demander|deplacer|desarchiver|archiver|effacer|freiner|fusionner|liberer|marquer|mettre|ranger|regler|relancer|renommer|reporter|repondre|restaurer|retirer|revoquer|signaler|trancher)_/
 /** RPC dont les arguments sont un secret : jamais écrits sur l'appareil. */
 const RPC_SECRETES = new Set(['regler_reveil_immediat'])
 /** Tables sans valeur à rejouer (appareil, préférence jetable). */

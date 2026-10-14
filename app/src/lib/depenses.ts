@@ -4,8 +4,11 @@
  * Aucune conversion de devise : les totaux sont toujours PAR devise (un taux
  * inventé serait un faux chiffre).
  */
+import { dateRelative } from './dates.ts'
+
 export type TypeDepense = 'facture' | 'consommation' | 'recharge'
 export type StatutCompta = 'a_envoyer' | 'envoye' | 'sans_objet'
+export type StatutImport = 'ok' | 'echec'
 export type Periode = 'jour' | 'semaine' | 'mois' | 'annee'
 export interface FichierDepense { chemin: string; nom: string; type: string; taille: number }
 
@@ -13,6 +16,8 @@ export interface Service {
   id: string; projet_id: string; nom: string; url_tableau: string | null; url_factures: string | null
   devise: string; solde: number | null; solde_at: string | null; seuil_alerte: number | null
   note: string | null; archived_at: string | null; created_at: string
+  /** Import automatique des reçus par e-mail (0083) : battement écrit par scripts/importer-recus.py. */
+  import_depuis?: string; import_cadence_jours?: number | null; import_at?: string | null; import_statut?: StatutImport | null; import_note?: string | null
 }
 export interface Depense {
   id: string; projet_id: string; service_id: string | null; date: string; montant: number; devise: string
@@ -106,6 +111,45 @@ export function formaterTotaux(t: Totaux): string {
 /** Solde sous le seuil réglé : l'alerte de l'écran. Sans solde ou sans seuil : jamais d'alerte inventée. */
 export function soldeBas(s: Pick<Service, 'solde' | 'seuil_alerte'>): boolean {
   return s.solde !== null && s.seuil_alerte !== null && s.solde <= s.seuil_alerte
+}
+
+/**
+ * Import automatique des reçus par e-mail (0083, chantier 72a8d0f4) : ce que la carte du prestataire dit de la tâche qui relit les
+ * e-mails de Raphaël. Une tâche qui tourne seule doit se laisser VOIR : sans cela, un échec ou une tâche arrêtée ressemble à
+ * « rien de nouveau ». UNE règle, lue par l'écran ; aucun délai n'est codé ici : « en retard » = plus de FACTEUR_RETARD cadences,
+ * la cadence vient du prestataire (`import_cadence_jours`, écrite par la tâche elle-même).
+ */
+export type NiveauImport = 'ok' | 'attente' | 'retard' | 'echec'
+export interface EtatImport { niveau: NiveauImport; titre: string; detail: string | null; depuis: string | null }
+export const FACTEUR_RETARD = 2
+export function rythmeEnMots(jours: number): string {
+  if (jours === 1) return 'chaque jour'
+  if (jours === 7) return 'chaque semaine'
+  if (jours === 14) return 'toutes les 2 semaines'
+  if (jours === 30) return 'chaque mois'
+  return `tous les ${jours} jours`
+}
+/** « 2026-10-13 » -> « 13 oct. 2026 » (null quand ce n'est pas une date). */
+export function jourLisible(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '')
+  return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? `${Number(m[3])} ${MOIS[Number(m[2]) - 1]} ${m[1]}` : null
+}
+export function etatImportAuto(
+  s: Pick<Service, 'import_depuis' | 'import_cadence_jours' | 'import_at' | 'import_statut' | 'import_note'>, now: Date,
+): EtatImport | null {
+  const cadence = s.import_cadence_jours ?? null
+  const t = s.import_at ? Date.parse(s.import_at) : Number.NaN
+  if (cadence === null && Number.isNaN(t)) return null            // pas d'import automatique pour ce prestataire
+  const rythme = cadence ? rythmeEnMots(cadence) : ''
+  const depuis = jourLisible(s.import_depuis)
+  const note = s.import_note?.trim() || null
+  if (Number.isNaN(t)) return { niveau: 'attente', titre: `Import automatique des reçus${rythme ? ` (${rythme})` : ''} : pas encore passé.`, detail: null, depuis }
+  if (s.import_statut === 'echec') return { niveau: 'echec', titre: `L’import automatique des reçus a échoué ${dateRelative(s.import_at, now)}.`, detail: note, depuis }
+  const jours = (now.getTime() - t) / 86_400_000
+  if (cadence && jours > FACTEUR_RETARD * cadence) {
+    return { niveau: 'retard', titre: `L’import automatique des reçus n’est pas passé depuis ${Math.floor(jours)} jours (prévu ${rythme}).`, detail: note, depuis }
+  }
+  return { niveau: 'ok', titre: `Import automatique des reçus${rythme ? ` (${rythme})` : ''} : passé ${dateRelative(s.import_at, now)}.`, detail: note, depuis }
 }
 
 export const STATUTS_COMPTA: Record<StatutCompta, string> = { a_envoyer: 'À envoyer', envoye: 'Envoyée à la compta', sans_objet: 'Sans objet' }
