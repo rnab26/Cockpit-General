@@ -54,6 +54,12 @@ const RPC_LECTURE = /^(etat_|prochain_|membres_|moi$|est_|peut_|chef_|file_|ress
 const RPC_ECRITURE = /^(abandonner|accepter|certifier|changer|corriger|demander|deplacer|desarchiver|archiver|effacer|freiner|fusionner|liberer|marquer|mettre|ranger|regler|relancer|renommer|reporter|repondre|restaurer|retirer|revoquer|signaler|trancher)_/
 /** RPC dont les arguments sont un secret : jamais écrits sur l'appareil. */
 const RPC_SECRETES = new Set(['regler_reveil_immediat'])
+/**
+ * RPC d'écriture qui doivent ÉCHOUER VISIBLEMENT hors ligne plutôt que d'attendre le retour du réseau : révoquer une clé d'import
+ * (0087) qu'on croirait coupée alors qu'elle marche encore serait un faux sentiment de sécurité. (`creer_cle_import` rend la clé en
+ * clair : comme `inviter`, elle n'a aucun préfixe d'écriture, donc jamais gardée.)
+ */
+const RPC_EN_DIRECT = new Set(['revoquer_cle_import'])
 /** Tables sans valeur à rejouer (appareil, préférence jetable). */
 const TABLES_IGNOREES = new Set(['push_abonnements'])
 
@@ -74,7 +80,7 @@ export function aGarder(methode: string, url: string): boolean {
   const m = methode.toUpperCase()
   if (m !== 'POST' && m !== 'PATCH' && m !== 'PUT' && m !== 'DELETE') return false
   const c = cibleDe(url)
-  if (c.genre === 'rpc') return RPC_ECRITURE.test(c.nom) && !RPC_LECTURE.test(c.nom) && !RPC_SECRETES.has(c.nom)
+  if (c.genre === 'rpc') return RPC_ECRITURE.test(c.nom) && !RPC_LECTURE.test(c.nom) && !RPC_SECRETES.has(c.nom) && !RPC_EN_DIRECT.has(c.nom)
   if (c.genre === 'table') return !TABLES_IGNOREES.has(c.nom)
   if (c.genre === 'stockage') return m === 'POST' || m === 'PUT'
   return false
