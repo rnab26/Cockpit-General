@@ -129,6 +129,15 @@ export function presenceChantier(
     libelle: 'Claude y travaille',
     detail: `${activite!.session} · ${dateRelative(activite!.updated_at, now) || 'à l’instant'}` }
 
+  // 0087 : le tour de la session est fini (hook Stop), elle attend SON message : ce n'est ni « silencieuse » ni morte.
+  if (reserve && activite?.statut === 'attente' && !questionEnAttente) {
+    const t = ms(activite.updated_at)
+    if (t !== null && now.getTime() - t < 3 * 3_600_000) {
+      return { ...base, code: 'travaille', teinte: 'info', libelle: 'Claude attend ton message dans la session',
+        detail: `${activite.session} · tour terminé ${dateRelative(activite.updated_at, now) || 'à l’instant'}`,
+        tonAction: 'Claude a fini son tour : écris-lui dans la session ou ici, dans le fil.' }
+    }
+  }
   if (reserve) {
     const derniere = activite ? dateRelative(activite.updated_at, now) : null
     return { ...base, code: 'silencieux', teinte: 'attention', aRelancer: true,

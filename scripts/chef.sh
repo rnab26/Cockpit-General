@@ -20,6 +20,9 @@
 #   scripts/chef.sh --etat          qui est chef du projet, combien d'agents tournent
 #   scripts/chef.sh --reveil <trig_…> [--distante <session_…>] [--minute <0-59>]   note le réveil horaire
 #                                   du projet (--minute : minute de son cron → « prochain passage vers … » dans l'app)
+#   scripts/chef.sh --reveil-horaire <oui|non>   le projet a-t-il un passage HORAIRE de la chef (routine) ? non = plus aucune
+#                                   consigne d'en créer un à la prise de poste, plus de « prochain passage » annoncé (0078 ;
+#                                   cockpit : non, 13 oct. 2026 — la routine horaire relisait 514 000 jetons par heure)
 #   scripts/chef.sh --modeles <code> <léger> <effort> [agents]  modèles des agents (haiku|sonnet|opus) et effort (bas|moyen|eleve), 0035
 #   scripts/chef.sh --fermeture <oui|non> [min]   fermer (ou non) les sessions finies ouvertes par le cockpit, minutes de grâce (0038)
 #   scripts/chef.sh --filet <oui|non> [plafond/jour] [délai min]   filet de sécurité du projet (0044) : réveil auto si du travail attend
@@ -84,6 +87,7 @@ while [ $# -gt 0 ]; do
     --fermeture) mode="fermeture"; cible="${2:-}"; max="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --filet) mode="filet"; cible="${2:-}"; max="${3:-}"; ouv_session="${4:-}"; shift $(( $# < 4 ? $# : 4 )) ;;
     --filet-global) mode="filet_global"; cible="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
+    --reveil-horaire) mode="reveil_horaire"; cible="${2:-}"; shift $(( $# < 2 ? $# : 2 )) ;;
     --session) sid="${2:-}"; shift 2 ;;
     --projet)  projet="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
@@ -210,6 +214,13 @@ case "$mode" in
     r=$("$SQL" "$req" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r != null' >/dev/null \
       && echo "Filet de sécurité ($mode) : $(printf '%s' "$r" | jq -c '.rows[0].r')" || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .' 2>/dev/null | head -c 200)" >&2; exit 1; }
     exit 0 ;;
+  reveil_horaire)
+    [[ "$cible" =~ ^(oui|non)$ ]] || { echo "--reveil-horaire <oui|non> : le projet a-t-il un passage horaire de la chef (0078) ?" >&2; exit 2; }
+    bool=$([ "$cible" = oui ] && echo true || echo false)
+    r=$("$SQL" "select regler_reveil_horaire($P, $bool) as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r != null' >/dev/null \
+      && echo "Réveil horaire de $projet : $cible ($(printf '%s' "$r" | jq -c '.rows[0].r'))." || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .' 2>/dev/null | head -c 200)" >&2; exit 1; }
+    [ "$cible" = non ] && echo "N'oublie pas la routine elle-même (claude.ai/code/routines) : la mettre en pause (update_trigger enabled=false) ; ce réglage ne dit que « n'en recrée pas »."
+    exit 0 ;;
   ouverture)
     [ -n "$cible" ] && { [ -n "$ouv_session" ] || [ -n "$ouv_erreur" ]; } || { echo "--ouverture <slug> <session_…>   ou   --ouverture <slug> --erreur \"<raison>\"" >&2; exit 2; }
     r=$(un "select noter_ouverture('$(q "$cible")', '$(q "$ouv_session")', '$(q "$ouv_erreur")', $P) as id" | jq -r '.id // empty')
@@ -221,7 +232,12 @@ case "$mode" in
     if [ "$(printf '%s' "$r" | jq -r '.change')" = "true" ]; then
       trig=$(printf '%s' "$r" | jq -r '.reveil_trigger // empty')
       echo "Cette session devient la SESSION CHEF du projet $projet, et de lui seul (avant : $(printf '%s' "$r" | jq -r '.ancienne // "aucune"')). Chaque autre projet a son chef dans sa propre session : n'y touche pas d'ici."
+      if [ "$(printf '%s' "$r" | jq -r '.reveil_horaire')" = "false" ]; then
+        # Décision de Raphaël (13 oct. 2026, 0078) : le passage horaire relisait un énorme contexte à chaque heure. Ne JAMAIS en recréer un.
+        echo "Le réveil HORAIRE de $projet est COUPÉ (décision de Raphaël : une routine horaire relit tout son contexte, plus de 500 000 jetons, à chaque heure). N'en crée AUCUN (ni create_trigger, ni routine à la main). Le réveil immédiat (jeton) reste et suffit. Pour le rétablir, seulement sur sa demande : $CHEF_CMD --reveil-horaire oui."
+      else
       echo "Déplace le réveil horaire de $projet sur toi : ${trig:+s’il ne porte PAS de jeton de réveil immédiat, supprime le réveil $trig (delete_trigger), puis }crée-en un (create_trigger, toutes les heures, sur CETTE session, message : le texte de $CHEF_CMD --texte-routine), puis note-le : $CHEF_CMD --reveil <trig_…> --distante <ton id session_…> --minute <minute de son cron>. Une routine qui porte le jeton de réveil immédiat ne se supprime jamais (le jeton mourrait avec) : garde-la, --releve la rend utile quelle que soit la session."
+      fi
     fi
     exit 0 ;;
   reveil)

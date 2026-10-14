@@ -18,6 +18,13 @@ demandes des utilisateurs, progression des autres sessions.
   donne la preuve. S'il touche « Je ne sais pas : vérifie pour moi », c'est à
   toi de juger ce qu'il a collé : `scripts/cockpit-verdict.sh --chantier <id>
   --bon "…"` ou `--pas-bon "…"` (la session chef du projet lance un agent pour ça).
+- **UN VERDICT DIT EN SESSION ARRIVE DANS LE COCKPIT** (13 oct. : « quand je dis dans la
+  session que ça marche, le cockpit ne le sait pas »). S'il dit qu'un chantier livré marche
+  ou ne marche pas : `scripts/cockpit-chantier.sh --verdict-dit <id> --marche|--ne-marche-pas
+  --mots "<ses mots>"`. Ses mots vont dans le fil ; « ne marche pas » = son bouton (tu
+  vérifies) ; « marche » pose UNE carte « Tu confirmes que X marche ? » dans « À toi » : il
+  certifie d'un toucher. **Tu ne certifies JAMAIS toi-même.** Le hook te liste les chantiers
+  à vérifier (id compris) à chaque message.
 - **UNE RÉPONSE DE RAPHAËL N'EST JAMAIS PERDUE** (29 sept. : « je réponds, mais
   je ne sais pas si c'est pris en compte »). Sur un chantier que tu tiens, elle
   t'arrive en direct : suis-la tout de suite (un message ou une étape). Sur un
@@ -80,6 +87,7 @@ demandes des utilisateurs, progression des autres sessions.
   développeur (endpoint, hook, migration, commit, branche, script, déployer…)
   dans les questions, étapes, « comment vérifier », résumés et réponses ; le nom
   exact d'un bouton va entre « », le détail technique dans le fil.
+- **LE COCKPIT OUVRE LE CHANTIER TOUT SEUL** (14 oct. : « des sessions où les chantiers ne se créent pas, pas de barre »). Tout message de travail de Raphaël ouvre (ou reprend) un chantier réservé à ta session, avec sa barre et ce que tu fais en direct ; le hook te le dit : ne le recrée pas, PRÉCISE-le avec `--ouvrir` (même chantier), `--nouveau` pour un autre sujet. Ce que Raphaël écrit ou répond dans le cockpit et que personne ne tient t'est remis à ton prochain pas : réponds-lui tout de suite dans le fil. S'il répond DANS la session à une de tes cartes ouvertes : `scripts/cockpit-demander.sh --repondu <id> "ses mots"` (la carte se ferme, pas de doublon).
 - **Chaque demande de travail de Raphaël → un chantier, AVANT de coder** :
   `scripts/cockpit-chantier.sh --ouvrir "<titre court>" --demande "<ses mots>" --section "<rubrique>"`.
   Il reprend (ou rouvre) le chantier existant au lieu d'en créer un doublon.
@@ -142,6 +150,19 @@ demandes des utilisateurs, progression des autres sessions.
   ce que Raphaël doit voir, sans jargon, avec le LIEN EXACT https://… à ouvrir
   dans l'étape 1 ; rien à ouvrir : `--sans-lien "pourquoi"`) ou `--echec "…"`.
   Le même tableau s'affiche dans la session : c'est le visuel de progression.
+- **LES CHANTIERS SE FERMENT D'APRÈS GITHUB, DANS TOUS LES PROJETS** (13 oct. : « mes
+  chantiers ne sont pas à jour […] ça doit être général, tous les projets actifs et
+  futurs »). Un chantier que plus personne ne tient et dont le travail est fusionné dans
+  `main` passe « à vérifier » tout seul (« Livré, d'après GitHub », preuve dans son fil ;
+  lu à l'ouverture d'une session et aux messages, 20 min au plus). Donc : (1) signale
+  chaque envoi, `scripts/cockpit-progression.sh --jalon pousse --detail <commit>` est la
+  preuve la plus sûre ; (2) avant de t'arrêter, `--termine`, ou `scripts/cockpit-chantier.sh
+  --de-cote <id>` / `--abandonner <id>`, sur chaque chantier que tu tiens ; (3) au rappel
+  « SANS TRACE depuis longtemps », réponds pour CHACUN (terminé / étape / de côté) ; (4) ce
+  que Raphaël te dit EN SESSION d'un chantier livré (« ça marche », « ça ne marche pas »),
+  écris-le dans son fil (`--point`) : tu ne certifies jamais. Un chantier passé « livré » à
+  tort : « Ça ne marche pas » le renvoie en correction. Réglages (par projet et général) :
+  écran « Chantiers et GitHub ».
 - **« Où ça en est ? »** (Raphaël le demande d'un bouton ; le hook te le met
   sous les yeux) : réponds TOUT DE SUITE dans le fil, 3 lignes au plus (fait /
   reste / ce qui bloque) : `scripts/cockpit-progression.sh --chantier <id> --point "…"`.

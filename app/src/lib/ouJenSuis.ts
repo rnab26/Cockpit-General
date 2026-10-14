@@ -1,7 +1,8 @@
 // « Où j'en suis » : quatre nombres par section, pas cinq (leçon Jarvis :
 // une cinquième colonne oblige à relire un tableau au lieu de lire une
-// réponse). « Pour toi » est EXACTEMENT la liste « À toi » de l'entonnoir
-// (questions, fusions, à vérifier, à cadrer, bloqués) : le nombre du tableau,
+// réponse). « Pour toi » est EXACTEMENT la liste des DEMANDES de l'entonnoir
+// (questions, actions, fusions, à cadrer, bloqués — pas les chantiers livrés à
+// tester, 13 oct. 2026 : entonnoir.estDemande) : le nombre du tableau,
 // la pastille de l'onglet et le bloc « À toi » ne peuvent pas diverger
 // (29 sept. : 12 dans le tableau contre 14 sur l'onglet, pour le même projet).
 // Reporté ne compte nulle part, et une réservation expirée non plus — elle
@@ -9,10 +10,10 @@
 import type { Chantier, Message, Section } from './types.ts'
 import { heureLisible, reservationValide } from './dates.ts'
 import { dansFenetre, type Fenetre } from './fenetre.ts'
-import { aToi } from './entonnoir.ts'
+import { aToi, demandesDe } from './entonnoir.ts'
 
 export interface QuatreNombres {
-  pourToi: number   // les éléments de « À toi » (entonnoir.aToi)
+  pourToi: number   // les DEMANDES de « À toi » (entonnoir.aToi sans les chantiers à tester)
   bouge: number     // en cours, réservation valide
   dort: number      // libre / à trier, personne dessus
   livre: number     // certifié dans la fenêtre
@@ -120,8 +121,8 @@ export function ouJenSuis(
     }
     // à cadrer / bloqué : dans « pour toi » (ci-dessous) ; reporté : nulle part, volontairement.
   }
-  // « Pour toi » : un par élément de « À toi » ; la liste derrière le nombre donne ses chantiers.
-  for (const e of aToi(chantiers, messages)) {
+  // « Pour toi » : un par DEMANDE de « À toi » (pas les chantiers à tester) ; la liste derrière le nombre donne ses chantiers.
+  for (const e of demandesDe(aToi(chantiers, messages))) {
     const sid = e.chantier?.section_id && sectionsConnues.has(e.chantier.section_id) ? e.chantier.section_id : null
     const l = ligne(sid, sid ? ordre.find((s) => s.id === sid)! : null)
     l.nombres.pourToi++; total.pourToi++

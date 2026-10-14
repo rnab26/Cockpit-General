@@ -15,6 +15,8 @@
 //      branche de Raphaël OK, vers leur main REFUSÉ, branche propre poussable,
 //      clé service_role refusée partout, démarrage sur leur branche sans commit
 //   4. voie 3 (normale) : un dépôt de Raphaël se branche comme avant, sans garde
+// Et, pour TOUT projet branché de zéro (futurs projets) : la règle « les chantiers se ferment d'après GitHub » arrive dans le contexte de la session,
+// le lanceur apporte le collecteur et le démarrage le lance en fond (faux collecteur qui note son appel).
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, cpSync, readdirSync, statSync } from "node:fs";
@@ -77,6 +79,14 @@ const demarrage = (cwd, cmd, args, env = {}) => {
   try { return JSON.parse(r.out)?.hookSpecificOutput?.additionalContext ?? ""; } catch { return r.out; }
 };
 const BRANCHER = join(RACINE, "scripts/brancher.sh");
+// Le rapprochement GitHub (0080) doit arriver à TOUT projet branché, futurs compris : le lanceur apporte le collecteur, le hook de démarrage
+// le lance en fond. Un faux collecteur note comment il a été appelé (le vrai, lui, est testé par verifier-rapprochement.mjs).
+const STUB = join(T, "stub-rapprocher.py"), SORTIE_STUB = join(T, "stub-sortie.json");
+writeFileSync(STUB, "import json, os, sys\nopen(os.environ['STUB_SORTIE'], 'w').write(json.dumps({'argv': sys.argv[1:], 'projet': os.environ.get('COCKPIT_PROJET')}))\n");
+const appelDuCollecteur = async () => {
+  for (let i = 0; i < 40 && !existsSync(SORTIE_STUB); i++) await new Promise((res) => setTimeout(res, 250));
+  return existsSync(SORTIE_STUB) ? JSON.parse(readFileSync(SORTIE_STUB, "utf8")) : null;
+};
 const ORIGINE = ".claude/settings.json,CLAUDE.md,README.md"; // ce que contient un dépôt neuf de depot()
 
 try {
@@ -112,6 +122,12 @@ try {
   verifie("le démarrage charge le cockpit du projet", ctx.includes(`projet « Test greffe » (${S1})`), ctx.slice(0, 300));
   verifie("… avec la consigne « greffe invisible » et les commandes hors du dépôt", ctx.includes("GREFFE INVISIBLE") && ctx.includes(join(HOME, ".cockpit/bin/cockpit-progression.sh")), ctx.slice(0, 1500));
   verifie("… et le bloc de règles du cockpit (réponses courtes)", /RÉPONSES À RAPHAËL/.test(ctx));
+  verifie("… dont la règle « les chantiers se ferment d'après GitHub » (tous les projets, actuels et futurs)", /LES CHANTIERS SE FERMENT D'APRÈS GITHUB, DANS TOUS LES PROJETS/.test(ctx), ctx.length);
+  verifie("le lanceur a apporté le collecteur (scripts/rapprocher.py) à ce projet", existsSync(join(CACHE, "scripts/rapprocher.py")));
+  rmSync(SORTIE_STUB, { force: true });
+  demarrage(A, "bash", [crochet, "session-start"], { COCKPIT_RAPPROCHER: STUB, STUB_SORTIE: SORTIE_STUB });
+  let appel = await appelDuCollecteur();
+  verifie("… et le démarrage lance le collecteur en fond pour CE projet (--si-ancien 20 --silencieux), sans rien écrire dans leur dépôt", appel?.projet === S1 && appel.argv.join(" ") === `--projet ${S1} --si-ancien 20 --silencieux` && git(A, "status", "--porcelain", "--ignored").out === "", appel);
   verifie("… sans rien écrire ni commiter dans le dépôt", git(A, "status", "--porcelain", "--ignored").out === "" && git(A, "rev-parse", "HEAD").out === headA);
   r = run("bash", ["-c", 'source "$1" && echo "$COCKPIT_PROJET|$COCKPIT_SANS_TRACE|$COCKPIT_PROG_CMD"', "_", join(HOME, ".cockpit/bin/cockpit-lanceur.sh")], { cwd: A });
   verifie("une commande tapée dans le dépôt trouve son projet", r.out === `${S1}|1|${join(HOME, ".cockpit/bin/cockpit-progression.sh")}`, r);
@@ -180,6 +196,10 @@ try {
   verifie("branché sans --voie (code 0)", r.code === 0, r);
   verifie("fichiers du cockpit dans le dépôt", existsSync(join(D, "scripts/cockpit-sql.sh")) && readFileSync(join(D, "CLAUDE.md"), "utf8").includes("## Cockpit (rnab26/Cockpit-General)"));
   verifie("aucune garde, aucune voie dans les réglages", !existsSync(join(D, ".git/hooks/pre-push")) && !JSON.parse(readFileSync(join(D, ".claude/settings.json"), "utf8")).env.COCKPIT_VOIE);
+  rmSync(SORTIE_STUB, { force: true });
+  ctx = demarrage(D, "bash", [join(D, ".claude/hooks/cockpit-session-start.sh")], { COCKPIT_PROJET: S3, COCKPIT_RAPPROCHER: STUB, STUB_SORTIE: SORTIE_STUB });
+  appel = await appelDuCollecteur();
+  verifie("un projet branché de zéro (voie 3) : son CLAUDE.md porte la règle « chantiers fermés d'après GitHub » ET son démarrage lance le collecteur", /LES CHANTIERS SE FERMENT D'APRÈS GITHUB/.test(readFileSync(join(D, "CLAUDE.md"), "utf8")) && appel?.projet === S3 && appel.argv.join(" ") === `--projet ${S3} --si-ancien 20 --silencieux`, { ctx: ctx.length, appel });
 } catch (e) {
   echecs++; console.log(`  ✗ exception : ${e.stack ?? e}`);
 } finally {

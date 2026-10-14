@@ -107,6 +107,13 @@ if [ "$voie" != invisible ] && [ "$branche_ok" = 1 ] && [ -n "${COCKPIT_CACHE:-}
     fi
   fi
 fi
+# RAPPROCHEMENT GITHUB (0080, 13 oct. 2026) : les chantiers ouverts que plus personne ne tient et dont le travail est PROUVÉ dans main
+# passent « livré, à vérifier » tout seuls (Raphaël : « mes chantiers ne sont pas à jour »). En tâche de fond, au plus une fois toutes
+# les 20 min par projet, jamais bloquant ; éteint par COCKPIT_RAPPROCHEMENT=0 ou par le réglage du projet (écran « Chantiers et GitHub »).
+rapprocher="${COCKPIT_RAPPROCHER:-$(dirname "$SQL")/rapprocher.py}"
+if [ "${COCKPIT_RAPPROCHEMENT:-1}" != 0 ] && [ -f "$rapprocher" ] && command -v python3 >/dev/null 2>&1; then
+  ( cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null; COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 170 python3 "$rapprocher" --projet "$PROJET" --si-ancien 20 --silencieux >/dev/null 2>&1 & ) >/dev/null 2>&1
+fi
 majsql="null"; [ -n "$maj" ] && majsql="'$(printf '%s' "$maj" | sed "s/'/''/g")'"
 un "update projets set branchement_vu_at = now(), branchement_maj = coalesce($majsql, branchement_maj), branchement_maj_at = case when $majsql is not null then now() else branchement_maj_at end where slug = $P" >/dev/null 2>&1 || true
 bloc_maj=""
@@ -145,6 +152,9 @@ constats=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(m.cre
 # messages_sans_reponse(projet, sa branche). Ne pas la réécrire ici.
 sans_suite=$(un "select coalesce(string_agg(format('- [%s] %s | %s : %s%s%s', to_char(m.created_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), coalesce(c.titre || ' (' || c.id || ')', 'fil du projet'), m.auteur, left(replace(m.corps, chr(10), ' '), 240), case when r.nombre > 1 then format(' (+%s autre(s) message(s) dans ce fil)', r.nombre - 1) else '' end, case when jsonb_array_length(coalesce(m.medias, '[]'::jsonb)) > 0 then format(' [📎 %s pièce(s) jointe(s) — REGARDE-LES : $MEDIA_CMD --message %s]', jsonb_array_length(m.medias), m.id) else '' end), chr(10) order by m.created_at), '(rien)') from messages_sans_reponse((select id from projets where slug = $P), $brsql) r join messages m on m.id = r.message_id left join chantiers c on c.id = r.chantier_id")
 
+# Ce que ces deux listes viennent de montrer est RÉCLAMÉ pour cette session (0087) : le premier pas ne
+# le redonne pas, et la chef n'en fait pas un doublon. Sortie ignorée, jamais bloquant.
+[ -n "$branche" ] && COCKPIT_FILE_ATTENTE=/proc/cockpit-sans-file "$SQL" "select remettre_orphelins($P, '${CLAUDE_CODE_SESSION_ID:-${sid:-demarrage}}', $brsql)" >/dev/null 2>&1
 utilisateurs=$(un "select coalesce(string_agg(format('- %s | %s | %s%s', c.id, c.titre, c.etat, case when coalesce(c.demande,'') <> '' then chr(10) || '    ' || left(replace(c.demande, chr(10), ' '), 240) else '' end), chr(10) order by c.created_at), '(aucune)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.origine = 'utilisateur' and c.archived_at is null and c.etat in ('a_trier','a_cadrer','libre')")
 
 livres=$(un "select coalesce(string_agg(format('- %s | %s | %s', to_char(coalesce(c.valide_at, c.livre_at), 'DD/MM'), c.titre, case when c.etat = 'valide' then 'certifié' else 'à vérifier' end), chr(10) order by coalesce(c.valide_at, c.livre_at) desc), '(aucun)') from (select * from chantiers where etat in ('valide','a_verifier') order by coalesce(valide_at, livre_at) desc nulls last limit 8) c join projets p on p.id = c.projet_id where p.slug = $P")
@@ -158,6 +168,17 @@ taches=$(un "select coalesce(string_agg(format('- %s | %s « %s »%s | depuis %s
 fusions=$(un "select coalesce(string_agg(format('- %s (suggérée le %s)', m.corps, to_char(m.created_at, 'DD/MM HH24:MI')), chr(10) order by m.created_at), '(aucune)') from messages m join projets p on p.id = m.projet_id where p.slug = $P and m.kind = 'fusion' and m.answered_at is null")
 
 a_ranger=$(un "select coalesce(string_agg(format('- %s | %s', c.id, c.titre), chr(10) order by c.created_at), '(aucun)') from chantiers c join projets p on p.id = c.projet_id where p.slug = $P and c.archived_at is null and c.section_id is null")
+
+# RECHERCHE DES FOURNISSEURS (0084, chantier 07258fe5) : le bouton « Chercher mes fournisseurs » de Coûts pose une DEMANDE ; seule une session qui a
+# Gmail peut la faire. Aucun texte libre dans cette ligne : des dates et le nom nettoyé d'une session, jamais ce qu'une personne a écrit.
+fourn=$(un "select coalesce(string_agg(format('- demandée le %s%s', to_char(r.demandee_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), case when r.statut = 'en_cours' then format(' (déjà prise par %s à %s : ne la refais pas, sauf si elle date de plus de 2 h)', coalesce(nullif(left(regexp_replace(coalesce(r.pris_par, ''), '[^A-Za-z0-9_-]', '', 'g'), 24), ''), 'une session'), to_char(coalesce(r.pris_at, r.demandee_at) at time zone 'Asia/Jerusalem', 'HH24:MI')) else '' end), chr(10) order by r.demandee_at), '') from recherches_fournisseurs r join projets p on p.id = r.projet_id where p.slug = $P and r.statut in ('en_attente', 'en_cours')")
+bloc_fourn=""
+if [ -n "$fourn" ]; then
+  bloc_fourn="## 🔎 RECHERCHE DES FOURNISSEURS demandée par Raphaël (bouton « Chercher mes fournisseurs » de l'onglet Coûts)
+$fourn
+Si TU as les outils Gmail (mcp__…Gmail…), fais-la maintenant : une recherche PAR MOTS-CLÉS (jamais toute la boîte, aucun mail ouvert), selon la section « Chercher les fournisseurs » de docs/recus-par-email.md du dépôt rnab26/Cockpit-General (texte : https://raw.githubusercontent.com/rnab26/Cockpit-General/main/docs/recus-par-email.md ; outil : scripts/chercher-fournisseurs.py avec scripts/importer-recus.py à côté, mêmes adresses). Sans outil Gmail : ne fais rien, une session qui en a la prendra.
+"
+fi
 
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 [ -n "$sid" ] && [ -n "$debut_lecture" ] && printf '%s\n' "$debut_lecture" > "${TMPDIR:-/tmp}/cockpit-rep-$sid" 2>/dev/null
@@ -178,7 +199,7 @@ terminant (--termine → le chantier passe « à vérifier », seul un humain ce
 une question avec \`$DEM_CMD\` (jamais dans un artefact), et écris où tu en es
 dans le fil du chantier avant de t'arrêter.
 
-$bloc_voie$bloc_maj
+$bloc_voie$bloc_maj$bloc_fourn
 ## Chantiers ouverts, par section
 $chantiers
 

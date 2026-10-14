@@ -1,6 +1,7 @@
 // Filet de sécurité (src/lib/filet.ts, 0044) : les mots de l'écran pour chaque état.
 import { verifie, bilan } from './_assert.ts'
 import { phraseFilet, detailsFilet, phraseChef, phraseReaction, dureeLisible, ROLE_FILET, type EtatFiletBase } from '../src/lib/filet.ts'
+import { LIBELLE_LANCER } from '../src/lib/traiter.ts'
 
 console.log('verifier-filet')
 const base: EtatFiletBase = { statut: 'actif', projet_actif: true, plafond: 6, delai_min: 10, aujourdhui: 1, dernier_at: '2026-09-30T10:05:00Z',
@@ -15,6 +16,13 @@ verifie('travail en attente, personne dessus : « En attente » et le délai', w
 verifie('travail en attente, session vivante : le dit', /session s’en occupe/.test(phraseFilet({ ...base, vivant: true, attente: att }).titre))
 const s = phraseFilet({ ...base, statut: 'sans_jeton' })
 verifie('sans jeton : bloqué + bouton « Coller le jeton »', s.ton === 'alerte' && /^Bloqué/.test(s.titre) && s.action?.code === 'jeton' && /Coller le jeton/.test(s.action.libelle), s)
+// 0082 : « aucune session chef » n'est pas « jeton manquant » (constaté sur le moteur : le jeton existait, le dernier réveil avait reçu HTTP 200).
+const sc = phraseFilet({ ...base, statut: 'sans_chef', attente: att })
+verifie('aucune session chef + du travail qui attend : bloqué, dit la vraie raison, jamais « jeton »', sc.ton === 'alerte' && /^Bloqué : aucune session chef/.test(sc.titre) && /^En attente : 2 chantier\(s\) prenable\(s\)\. Rien ne se lance tout seul/.test(sc.detail) && !/jeton/i.test(sc.titre + sc.detail), sc)
+verifie('… et le geste est d\'ouvrir une session (jamais « Coller le jeton »)', sc.action?.code === 'session' && sc.action.libelle === LIBELLE_LANCER && !/jeton/i.test(sc.action.libelle), sc.action)
+const sc0 = phraseFilet({ ...base, statut: 'sans_chef' })
+verifie('aucune session chef mais rien n\'attend : pas d\'alarme, pas de bouton, le dit', sc0.ton === 'ok' && sc0.titre === 'Tout est en ordre' && /aucune session chef/.test(sc0.detail) && !sc0.action, sc0)
+verifie('« sans jeton » reste inchangé (cible sans jeton, ou aucun jeton configuré)', /Il manque le jeton du réveil/.test(s.detail) && s.action?.code === 'jeton')
 const p = phraseFilet({ ...base, statut: 'plafond', aujourdhui: 6 })
 verifie('plafond : « Bloqué : 6 réveils » + bouton limite', /^Bloqué : 6 réveils/.test(p.titre) && p.action?.code === 'plafond', p)
 const e = phraseFilet({ ...base, statut: 'eteint' })
@@ -22,7 +30,7 @@ verifie('éteint : alerte + bouton Rallumer', e.ton === 'alerte' && e.action?.co
 verifie('cron absent : bloqué, sans bouton', /^Bloqué/.test(phraseFilet({ ...base, statut: 'cron_absent' }).titre) && !phraseFilet({ ...base, statut: 'cron_absent' }).action)
 verifie('coupé pour tous : bloqué, dit la commande', /filet-global oui/.test(phraseFilet({ ...base, statut: 'global_eteint' }).detail))
 verifie('projet de test : neutre', phraseFilet({ ...base, statut: 'test' }).ton === 'neutre')
-for (const st of ['actif', 'eteint', 'global_eteint', 'cron_absent', 'sans_jeton', 'plafond'] as const) {
+for (const st of ['actif', 'eteint', 'global_eteint', 'cron_absent', 'sans_chef', 'sans_jeton', 'plafond'] as const) {
   const ph = phraseFilet({ ...base, statut: st, attente: att })
   verifie(`premier niveau sans jargon (${st})`, !/pg_cron|plafond atteint|délai/i.test(ph.titre), ph.titre)
 }
