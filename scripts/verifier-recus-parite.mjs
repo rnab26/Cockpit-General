@@ -88,6 +88,20 @@ try {
   const rg = python(`print(json.dumps([m.requete_gmail(__import__('datetime').date.fromisoformat(a)) for a in data]))`, requetes);
   verifie("recherche Gmail (expéditeur exact, objet, un jour de marge)", egal(rg, requetes.map((a) => regle.requeteGmail(a))), JSON.stringify(rg));
 
+  // le lien « Download invoice » qu'on a le droit d'ouvrir : la même règle des deux côtés (sinon une session et la fonction ne téléchargeraient pas les mêmes adresses)
+  const liens = [
+    "https://pay.stripe.com/invoice/acct_1/live_2/pdf?s=em", "https://pay.stripe.com:443/invoice/acct_1/live_2/pdf",
+    "http://pay.stripe.com/invoice/acct_1/live_2/pdf", "https://pay.stripe.com.exemple.test/invoice/acct_1/live_2/pdf",
+    "https://pay.stripe.com@exemple.test/invoice/acct_1/live_2/pdf", "https://user:mdp@pay.stripe.com/invoice/acct_1/live_2/pdf",
+    "https://user@pay.stripe.com/invoice/acct_1/live_2/pdf", "https://pay.stripe.com:8443/invoice/acct_1/live_2/pdf",
+    "https://pay.stripe.com:abc/invoice/acct_1/live_2/pdf", "https://pay.stripe.com/receipt/acct_1", "https://pay.stripe.com/",
+    "https://dashboard.stripe.com/receipts/invoices/TEST/pdf?s=em", "https://169.254.169.254/invoice/", "ftp://pay.stripe.com/invoice/x",
+    "", "pas une adresse", "//pay.stripe.com/invoice/x", "https:///invoice/x",
+  ];
+  const lp = python(`print(json.dumps([m.lien_pdf_accepte(x) for x in data]))`, liens);
+  verifie("lien du PDF acceptable : mêmes réponses (hôte exact, https, /invoice/, sans identifiant, sans port étranger)", egal(lp, liens.map((x) => regle.lienPdfAccepte(x))), JSON.stringify({ py: lp, ts: liens.map((x) => regle.lienPdfAccepte(x)) }));
+  verifie(`…et la table est sensée (2 adresses acceptées sur ${liens.length} : l'adresse normale, et la même avec le port 443)`, liens.filter((x) => regle.lienPdfAccepte(x)).length === 2, liens.filter((x) => regle.lienPdfAccepte(x)).join(" "));
+
   // la phrase du passage : mêmes données des deux côtés
   const A = (montant, devise, date, facture, pdf) => ({ montant, devise, date, facture, pdf });
   const scenarios = [

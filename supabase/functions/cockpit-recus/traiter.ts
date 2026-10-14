@@ -10,8 +10,8 @@
  * ligne déjà là SANS PDF reçoit le PDF quand le mail en porte un (c'est ainsi que les anciennes factures retrouvent leur PDF).
  */
 import {
-  CADENCE_PAR_DEFAUT, ETATS_PDF, RE_FACTURE_SEULE, Refus, STATUTS_RECU, analyser, lirePdf, noteDuPassage, nomPdfDeLaFacture, nomSur,
-  type EtatPdf, type Recu, type ResultatRecu, type StatutRecu,
+  CADENCE_PAR_DEFAUT, ETATS_PDF, RE_FACTURE_SEULE, Refus, STATUTS_RECU, analyser, lienPdfAccepte, lirePdf, noteDuPassage, nomPdfDeLaFacture, nomSur, pdfValide,
+  type EtatPdf, type Recu, type ResultatRecu, type StatutRecu, type VerdictPdf,
 } from './regle.ts'
 
 /** Une donnée de la requête qui n'a pas la bonne forme (HTTP 400) : le message est écrit pour la personne qui lit le journal du programme. */
@@ -31,7 +31,11 @@ export interface NouvelleDepense {
 export interface Battement { import_at: string; import_statut: 'ok' | 'echec'; import_note: string; import_cadence_jours: number }
 
 /** Toute l'écriture de la fonction. `joindre` rend faux si la ligne avait déjà un fichier (rien n'est écrasé). */
+export type LienPdf = { octets: Uint8Array } | { raison: string }
+
 export interface Magasin {
+  /** Le PDF du lien « Download invoice » du mail (facultatif : sans lui, seule la pièce jointe sert). Ne lève jamais : la raison est rendue. */
+  pdfDuLien?(lien: string): Promise<LienPdf>
   depenseParReference(projetId: string, reference: string): Promise<DepenseExistante | null>
   deposer(chemin: string, octets: Uint8Array): Promise<void>
   retirer(chemin: string): Promise<void>
@@ -72,14 +76,14 @@ export async function traiterRecu(ctx: Contexte, entree: EntreeRecu, mag: Magasi
   const base = { facture: r.facture, recu: r.recu, montant: r.montant, devise: r.devise, date: r.date, description: r.description }
   if (r.date < ctx.depuis) return { statut: 'hors_periode', ...base, message: `avant le ${ctx.depuis} (historique : à part)` }
 
-  const pdf = lirePdf(entree.pdfs, r.facture)
-  const messagePdf = pdf.genre === 'refuse' ? { message: pdf.raison } : {}
   try {
     const existante = await mag.depenseParReference(ctx.projetId, r.facture)
+    // Une ligne qui a déjà son PDF n'en veut pas un deuxième : aucun travail de PDF, aucun téléchargement.
+    if (existante?.fichier) return { statut: 'deja_la', ...base, pdf: 'deja' }
+    const pdf = await verdictPdf(entree.pdfs, r, mag)
+    const messagePdf = pdf.genre === 'refuse' ? { message: pdf.raison } : {}
     if (existante) {
-      if (existante.fichier || pdf.genre !== 'ok') {
-        return { statut: 'deja_la', ...base, pdf: existante.fichier ? 'deja' : pdf.genre === 'refuse' ? 'refuse' : 'absent', ...(existante.fichier ? {} : messagePdf) }
-      }
+      if (pdf.genre !== 'ok') return { statut: 'deja_la', ...base, pdf: pdf.genre === 'refuse' ? 'refuse' : 'absent', ...messagePdf }
       if (existante.type !== 'facture') return { statut: 'deja_la', ...base, pdf: 'absent' }
       if (entree.essai) return { statut: 'pdf_joint', ...base, pdf: 'serait_joint' }
       const f = fichierDe(ctx, r.facture, pdf.octets.length)
@@ -110,6 +114,30 @@ export async function traiterRecu(ctx: Contexte, entree: EntreeRecu, mag: Magasi
     ctx.erreurInterne?.(e)
     return { statut: 'erreur', ...base, message: "l'enregistrement a échoué : le prochain passage réessaiera" }
   }
+}
+
+/**
+ * Le PDF d'un reçu : la pièce jointe du MÊME mail d'abord (elle ne périme jamais) ; à défaut le lien « Download invoice » du mail, tant qu'il
+ * est valable (il expire : valable à 11 jours, expiré à 33, constaté le 13 oct. 2026). Les deux passent par la même règle (pdfValide).
+ * Le lien est un secours : son échec (expiré, refusé, pas un PDF) ne rend JAMAIS la situation pire — le verdict reste celui de la pièce jointe
+ * (« absent » = « PDF à joindre à la main », normal pour une vieille facture ; « refusé » seulement si une pièce jointe était là et fausse).
+ * Sans cela, chaque vieille facture au lien expiré rougirait la carte du prestataire à chaque passage, pour toujours.
+ */
+async function verdictPdf(pdfs: { nom: string; base64: string }[], r: Recu, mag: Magasin): Promise<VerdictPdf> {
+  const piece = lirePdf(pdfs, r.facture)
+  if (piece.genre === 'ok') return piece
+  if (!mag.pdfDuLien || !lienPdfAccepte(r.lien_facture)) return piece
+  let l: LienPdf
+  try {
+    l = await mag.pdfDuLien(r.lien_facture!)
+  } catch {
+    return piece
+  }
+  if ('octets' in l) {
+    const v = pdfValide(l.octets, r.facture)
+    if (v.genre === 'ok') return v
+  }
+  return piece
 }
 
 function fichierDe(ctx: Contexte, facture: string, taille: number): Fichier {

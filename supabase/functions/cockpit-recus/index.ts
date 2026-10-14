@@ -4,6 +4,7 @@ import {
   ErreurDonnees, traiterPassage, traiterRecu, validerCadence, validerResultats, texteBorne,
   type Contexte, type Magasin,
 } from "./traiter.ts"
+import { pdfDuLienStripe } from "./lien.ts"
 
 /**
  * cockpit-recus — la porte d'entrée des reçus Claude envoyés par le programme du compte Google de Raphaël.
@@ -93,6 +94,7 @@ async function ouvrir(sb: Client, cle: string): Promise<Ouverture> {
 function magasinDe(sb: Client): Magasin {
   const echec = (quoi: string, e: { message: string } | null) => { if (e) throw new Error(`${quoi} : ${e.message}`) }
   return {
+    pdfDuLien: (lien) => pdfDuLienStripe(lien),
     async depenseParReference(projetId, reference) {
       const { data, error } = await sb.from("depenses").select("id, fichier, type").eq("projet_id", projetId).eq("reference", reference).limit(1)
       echec("lecture des dépenses", error)

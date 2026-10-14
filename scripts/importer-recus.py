@@ -327,10 +327,20 @@ class Base:
         curl('DELETE', '%s/storage/v1/object/%s/%s' % (URL, BUCKET, quote(chemin)), h)
 
 
+def lien_pdf_accepte(lien):
+    """Seul https://pay.stripe.com/invoice/… se télécharge : pas d'identifiant dans l'adresse, pas de port étranger.
+    Même règle que lienPdfAccepte de supabase/functions/cockpit-recus/regle.ts (scripts/verifier-recus-parite.mjs les compare)."""
+    try:
+        p = urlparse(lien or '')
+        return (p.scheme == 'https' and p.hostname == PDF_HOTE and p.path.startswith('/invoice/')
+                and p.username is None and p.password is None and p.port in (None, 443))
+    except ValueError:
+        return False
+
+
 def telecharger_pdf(lien):
     """(octets, '') ou (None, raison). Seulement https://pay.stripe.com/invoice/… ; jamais autre chose."""
-    p = urlparse(lien or '')
-    if p.scheme != 'https' or p.hostname != PDF_HOTE or not p.path.startswith('/invoice/'):
+    if not lien_pdf_accepte(lien):
         return None, 'lien du PDF inattendu (seul pay.stripe.com est accepté)'
     code, corps = curl('GET', lien, timeout=60, extra=['--proto', '=https', '--proto-redir', '=https', '-L', '--max-redirs', '3',
                                                       '--max-filesize', str(PDF_TAILLE_MAX)])

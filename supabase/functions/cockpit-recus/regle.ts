@@ -285,19 +285,63 @@ export type VerdictPdf =
   | { genre: 'absent' }
   | { genre: 'refuse'; raison: string }
 
-/** Parmi les pièces jointes reçues, celle de CETTE facture : bon nom, vrai PDF, taille raisonnable. Jamais une autre. */
-export function lirePdf(pdfs: readonly { nom: string; base64: string }[], facture: string): VerdictPdf {
-  if (!pdfs.length) return { genre: 'absent' }
-  const attendu = nomPdfDeLaFacture(facture).toLowerCase()
-  const p = pdfs.find((x) => x.nom.trim().toLowerCase() === attendu)
-  if (!p) return { genre: 'refuse', raison: `aucune pièce jointe ne s'appelle « ${nomPdfDeLaFacture(facture)} »` }
-  if (p.base64.length > Math.ceil(PDF_TAILLE_MAX * 4 / 3) + 16) return { genre: 'refuse', raison: 'le PDF est trop gros (5 Mo au plus)' }
-  const octets = decoderBase64(p.base64)
+/** Un nom de pièce jointe sûr à écrire dans la note de la carte : lettres, chiffres, point, tiret, espace ; 40 caractères au plus. */
+export function nomAffichable(nom: string): string {
+  return nom.replace(/[^\p{L}\p{N}._ -]+/gu, '').trim().slice(0, 40)
+}
+
+/**
+ * La pièce jointe de CETTE facture : un PDF dont le nom porte le n° de facture lu dans le texte (« Invoice-XXXX-0001.pdf »), « Invoice »
+ * ou « facture » avant le reste (le PDF du reçu, « Receipt-… », ne porte pas ce n°). Rend sa position, ou -1. Jamais une pièce au hasard :
+ * Vérifié sur de vrais mails Anthropic (13 oct. 2026, lus par le lecteur Gmail des sessions) : chaque reçu porte DEUX PDF, `Invoice-<n° de facture>.pdf`
+ * et `Receipt-<n° de reçu>.pdf`. On accepte aussi tout autre nom qui porte le n° (un autre modèle de mail ne doit pas faire perdre le PDF) — et rien d'autre.
+ */
+export function choisirPdf(pdfs: readonly { nom: string }[], facture: string): number {
+  const num = facture.toLowerCase()
+  const porte = pdfs.map((p, i) => ({ i, nom: p.nom.trim().toLowerCase() })).filter((x) => x.nom.endsWith('.pdf') && x.nom.includes(num))
+  if (!porte.length) return -1
+  return (porte.find((x) => /invoice|facture/.test(x.nom)) ?? porte[0]).i
+}
+
+/** Seul `https://pay.stripe.com/invoice/…` se télécharge (le lien « Download invoice » du mail) : pas d'identifiant dans l'adresse, pas de port étranger. */
+export function lienPdfAccepte(lien: string | null | undefined): boolean {
+  try {
+    const u = new URL(lien ?? '')
+    return u.protocol === 'https:' && u.hostname === 'pay.stripe.com' && u.pathname.startsWith('/invoice/') && !u.username && !u.password && (u.port === '' || u.port === '443')
+  } catch {
+    return false
+  }
+}
+/** Une redirection ne sort jamais de Stripe : https et `stripe.com` ou un sous-domaine, sans identifiant ni port étranger. */
+export function hoteStripe(adresse: string): boolean {
+  try {
+    const u = new URL(adresse)
+    return u.protocol === 'https:' && (u.hostname === 'stripe.com' || u.hostname.endsWith('.stripe.com')) && !u.username && !u.password && (u.port === '' || u.port === '443')
+  } catch {
+    return false
+  }
+}
+
+/** Octets reçus (pièce jointe ou lien) -> un PDF qui peut être rangé, ou la raison du refus. Une seule règle pour les deux chemins. */
+export function pdfValide(octets: Uint8Array | null, facture: string): VerdictPdf {
   if (!octets) return { genre: 'refuse', raison: "le PDF n'est pas lisible (base64 invalide)" }
   if (octets.length > PDF_TAILLE_MAX) return { genre: 'refuse', raison: 'le PDF est trop gros (5 Mo au plus)' }
   const entete = String.fromCharCode(...octets.slice(0, 5))
   if (entete !== '%PDF-') return { genre: 'refuse', raison: "le fichier reçu n'est pas un PDF" }
   return { genre: 'ok', octets, nom: nomPdfDeLaFacture(facture) }
+}
+
+/** Parmi les pièces jointes reçues, celle de CETTE facture : son nom porte le n° (voir choisirPdf), vrai PDF, taille raisonnable. Jamais une autre. */
+export function lirePdf(pdfs: readonly { nom: string; base64: string }[], facture: string): VerdictPdf {
+  if (!pdfs.length) return { genre: 'absent' }
+  const k = choisirPdf(pdfs, facture)
+  if (k < 0) {
+    const vues = pdfs.slice(0, 3).map((x) => nomAffichable(x.nom)).filter(Boolean).join(', ')
+    return { genre: 'refuse', raison: `aucune pièce jointe ne porte le n° ${facture}${vues ? ` (vues : ${vues})` : ''}` }
+  }
+  const p = pdfs[k]
+  if (p.base64.length > Math.ceil(PDF_TAILLE_MAX * 4 / 3) + 16) return { genre: 'refuse', raison: 'le PDF est trop gros (5 Mo au plus)' }
+  return pdfValide(decoderBase64(p.base64), facture)
 }
 
 // ------------------------------------------------------------------------------------------------------------ le passage

@@ -23,6 +23,8 @@ const MAX5 = [["Max plan - 5x", "289.00"]];
 export const CAS_VALIDES = [
   { nom: "abonnement Max 5x avec période", texte: recu({ montant: "289.00", periode: "Oct 2–Nov 2, 2026", lignes: MAX5, numFact: "TESTAAAA-0006" }),
     attendu: { montant: "289.00", devise: "ILS", date: "2026-10-02", facture: "TESTAAAA-0006", recu: "1111-2222-3333", description: "Abonnement Claude Max 5x, 2 oct. au 2 nov. 2026 · reçu 1111-2222-3333" } },
+  { nom: "n° de facture qui commence par un chiffre (deuxième série vue sur de vrais reçus)", texte: recu({ montant: "289.00", periode: "Oct 2–Nov 2, 2026", lignes: MAX5, numFact: "7TESTAAA-0001" }),
+    attendu: { facture: "7TESTAAA-0001", montant: "289.00" } },
   { nom: "avec un crédit de temps non utilisé", texte: recu({ montant: "266.33", date: "September 2, 2026", periode: "Sep 2–Oct 2, 2026", lignes: [["Max plan - 5x", "289.00"], ["Unused time on Claude Pro after 02 Sep 2026", "-22.67"]] }),
     attendu: { montant: "266.33", devise: "ILS", date: "2026-09-02", description: "Abonnement Claude Max 5x, 2 sept. au 2 oct. 2026 (moins 22,67 ₪ : temps non utilisé sur Claude Pro) · reçu 1111-2222-3333" } },
   { nom: "achat de crédit (USD)", texte: recu({ sym: "$", montant: "5.60", date: "September 10, 2026", lignes: [["One-time credit purchase", "5.60"]] }),
