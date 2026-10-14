@@ -23,6 +23,10 @@
 #   scripts/chantier.sh --de-cote <id> [--jusqu-au 2026-10-15] [--pourquoi "…"]   mettre de côté / reporter (0028)
 #   scripts/chantier.sh --abandonner <id> [--pourquoi "…"]                          abandonner (archivé, Désarchiver le rend)
 #   (quand Raphaël le demande dans la session : mêmes gestes que les boutons du fil)
+#   scripts/chantier.sh --verdict-dit <id> --marche|--ne-marche-pas --mots "<ses mots>"   (0085)
+#     Raphaël a dit DANS LA SESSION qu'un chantier livré (« à vérifier ») marche ou non : ses mots vont dans
+#     le fil. « Ne marche pas » = son bouton (Claude vérifie). « Marche » = une carte « Tu confirmes que X
+#     marche ? » dans « À toi » ; SEUL LUI certifie, d'un toucher. Jamais de certification par la session.
 #
 # C'EST TOI QUI TRANCHES (Raphaël, 29 sept. 2026) : « personne mieux que
 # Claude sait si c'est un chantier doublon […] ce n'est pas à moi de trier,
@@ -52,7 +56,7 @@
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
-decote=""; jusqua=""; abandon=""; depuis=""; reponse=""
+decote=""; jusqua=""; abandon=""; depuis=""; reponse=""; verdict=""; verdict_ok=""; mots=""
 projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; regrouper=""; avec=""; dans=""; pourquoi=""
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 while [ $# -gt 0 ]; do
@@ -70,6 +74,10 @@ while [ $# -gt 0 ]; do
     --avec)     avec="${2:-}"; shift 2 ;;
     --dans)     dans="${2:-}"; shift 2 ;;
     --pourquoi) pourquoi="${2:-}"; shift 2 ;;
+    --verdict-dit) verdict="${2:-}"; shift 2 ;;
+    --marche)   verdict_ok=true; shift ;;
+    --ne-marche-pas) verdict_ok=false; shift ;;
+    --mots)     mots="${2:-}"; shift 2 ;;
     --de-cote)  decote="${2:-}"; shift 2 ;;
     --jusqu-au) jusqua="${2:-}"; shift 2 ;;
     --abandonner) abandon="${2:-}"; shift 2 ;;
@@ -93,6 +101,19 @@ ranger_dans() { # id, section
   "$SQL" "select ranger_chantier('$(q "$1")'::uuid, '$(q "$2")', '$(q "$session")') as s" | jq -e '.rows[0].s' >/dev/null \
     && echo "Rangé dans la section « $2 »." || { echo "Échec du rangement dans « $2 »." >&2; return 1; }
 }
+
+if [ -n "$verdict" ]; then
+  [[ "$verdict" =~ ^[0-9a-f-]{36}$ ]] || { echo "--verdict-dit <id du chantier> (36 caractères)." >&2; exit 2; }
+  [ -n "$verdict_ok" ] || { echo "Dis lequel : --marche ou --ne-marche-pas." >&2; exit 2; }
+  [ -n "${mots// /}" ] || { echo "Recopie ses mots : --mots \"<ce qu'il a dit>\"." >&2; exit 2; }
+  r=$("$SQL" "select relayer_verdict('$(q "$verdict")'::uuid, '$(q "$session")', $verdict_ok, '$(q "$mots")') as r" | jq -r '.rows[0].r // empty') || r=""
+  [ -n "$r" ] || { echo "La base a refusé (le chantier doit être « à vérifier »)." >&2; exit 1; }
+  case "$r" in
+    "carte posée"|"carte déjà posée") echo "Fait ($r) : « Tu confirmes que… marche ? » attend son toucher dans « À toi ». Tu ne certifies pas à sa place." ;;
+    *) echo "Fait ($r) : sa phrase est dans le fil et la vérification est demandée." ;;
+  esac
+  exit 0
+fi
 
 if [ -n "$chercher" ]; then
   "$SQL" "select id, titre, etat, archive, round(score::numeric, 2) as score, extrait from chantiers_proches_detail('$(q "$projet")', '$(q "$chercher")', 6)" \

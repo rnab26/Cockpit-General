@@ -75,3 +75,53 @@ export function phraseRapprochement(e: EtatRapprochement, now: number = Date.now
   }
   return { titre: `À jour : dernier passage ${quand}`, detail: livres, ton: 'ok' }
 }
+
+// --- Derniers passages automatiques, avec « Annuler » (chantier 7070ce60, 14 oct. 2026) ---
+// La règle d'annulation est en base (`annuler_rapprochement`) : elle rend le chantier à l'état d'AVANT. Ici seulement les mots et
+// « peut-on encore annuler ? » : un chantier déjà certifié, archivé ou parti ailleurs n'a plus rien à retrouver.
+
+export interface PassageAuto {
+  id: string
+  chantier_id: string
+  regle: string
+  preuve: string
+  url: string | null
+  at: string
+  annule_at: string | null
+  etat_avant: string
+  chantier: { titre: string; etat: string; archived_at: string | null } | null
+}
+
+/** Combien de passages la liste montre (les plus récents). */
+export const PASSAGES_AFFICHES = 8
+
+const REGLES: Record<string, string> = {
+  jalon: 'commit signalé « envoyé »',
+  branche: 'branche du chantier fusionnée',
+  identifiant: 'PR qui cite le chantier',
+  titre: 'titre de PR identique',
+  manuel: 'passage à la main',
+}
+export function libelleRegle(regle: string): string { return REGLES[regle] ?? regle }
+
+const ETATS_AVANT: Record<string, string> = { en_cours: 'en cours', libre: 'prêt à lancer', a_trier: 'à trier', bloque: 'bloqué' }
+export function libelleEtatAvant(etat: string): string { return ETATS_AVANT[etat] ?? etat }
+
+export type StatutPassage = 'annulable' | 'annule' | 'traite'
+
+/** annulé = déjà défait ; traité = le chantier n'est plus « à vérifier » (certifié, corrigé, archivé…) : rien à défaire ; sinon annulable. */
+export function statutPassage(p: PassageAuto): StatutPassage {
+  if (p.annule_at) return 'annule'
+  if (!p.chantier || p.chantier.etat !== 'a_verifier' || p.chantier.archived_at) return 'traite'
+  return 'annulable'
+}
+
+/** La phrase de confirmation : dit ce qui va se passer, sans jargon. */
+export function phraseConfirmationAnnulation(p: PassageAuto): string {
+  return `« ${p.chantier?.titre ?? 'Ce chantier'} » redeviendra « ${libelleEtatAvant(p.etat_avant)} », comme avant le passage. Une ligne le dira dans son fil.`
+}
+
+/** Les derniers passages à montrer : les plus récents d'abord, bornés. */
+export function derniersPassages(l: readonly PassageAuto[], max: number = PASSAGES_AFFICHES): PassageAuto[] {
+  return [...l].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, max)
+}
