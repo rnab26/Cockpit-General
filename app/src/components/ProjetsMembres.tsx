@@ -8,10 +8,10 @@ import { Dialog } from '../ui/Dialog.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Champ, Input, Interrupteur, Textarea } from '../ui/Champs.tsx'
 
-export const URL_EMBED = 'https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js'
-export function extraitEmbed(cle: string, utilisateur = 'Prénom'): string {
-  return `<script src="${URL_EMBED}" data-cle="${cle}" data-utilisateur="${utilisateur}"></script>`
-}
+import { balise, LIBELLES_ACCES, LIBELLES_EMPLACEMENT, URL_APP, URL_EMBED } from '../../../scripts/balise.mjs'
+export { URL_EMBED }
+/** Balise à coller selon l'emplacement et l'accès choisis (UNE règle : scripts/balise.mjs, aussi lue par emplacement.sh --balise). */
+export function baliseDu(p: Pick<Projet, 'cle_embed' | 'emplacement'>) { return balise({ cle: p.cle_embed, emplacement: p.emplacement }) }
 
 type Formulaire = { slug: string; nom: string; description: string; couleur: string; depot: string; url_site: string; actif: boolean }
 const vide = (): Formulaire => ({ slug: '', nom: '', description: '', couleur: '#0F766E', depot: '', url_site: '', actif: true })
@@ -26,6 +26,7 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
   const [cleVisible, setCleVisible] = useState(false)
   const [enCours, setEnCours] = useState(false)
   const projet = projets.find((p) => p.id === selection) ?? null
+  const bal = projet ? baliseDu(projet) : balise({ cle: '' })
 
   useEffect(() => {
     setCleVisible(false)
@@ -87,14 +88,28 @@ export function ProjetsMembres({ ouvert, onFermer, projets, chargerProjets }: { 
               <section className="rounded-xl bg-carte-2 p-3">
                 <h3 className="text-sm font-semibold">Boîte de demandes pour les utilisateurs du site</h3>
                 <p className="mt-1 text-xs text-texte-2">Ajoute une petite fenêtre dans le site de ce projet : tes utilisateurs y écrivent une demande ou un bug, ça arrive ici comme chantier, et ils voient où ça en est. Optionnel : sans ça, le projet marche très bien.</p>
-                <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-texte-2">
-                  <li>Touche « Copier le code ».</li>
-                  <li>Colle-le dans le code du site, juste avant la fin de la page (avant <code>&lt;/body&gt;</code>). Ou envoie-le à la personne qui s’en occupe.</li>
-                </ol>
-                <div className="mt-2 flex justify-end"><Button variante="primaire" taille="sm" onClick={() => copier(extraitEmbed(projet.cle_embed), 'Code')}>Copier le code</Button></div>
+                <p className="mt-2 text-xs" data-testid="embed-emplacement">
+                  {bal.etat === 'vide'
+                    ? <><b>Emplacement : pas encore choisi.</b> <span className="text-texte-2">Réponds aux deux cartes « À toi » (où le cockpit apparaît, qui s’en sert) ; le code à coller arrive ensuite ici. Pas de carte ? Dis « branche le cockpit » dans une session de ce projet.</span></>
+                    : <><b>Emplacement :</b> {LIBELLES_EMPLACEMENT[bal.emplacement] ?? bal.emplacement} · <b>Accès :</b> {LIBELLES_ACCES[bal.acces] ?? bal.acces}</>}
+                </p>
+                {bal.etat === 'balise' ? (
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-texte-2">
+                    <li>Touche « Copier le code ».</li>
+                    <li>{bal.emplacement === 'page' ? <>Crée une page « /cockpit » (hors du menu) dans le site et colle-le dedans.</> : <>Colle-le dans le gabarit commun du site, juste avant la fin de la page (avant <code>&lt;/body&gt;</code>). Ou envoie-le à la personne qui s’en occupe.</>}</li>
+                    {bal.emplacement === 'menu' && !bal.complete ? <li>Pour ouvrir le cockpit depuis un lien précis du menu, remplace <code>data-libelle="Cockpit"</code> par <code>data-declencheur="#id-du-lien"</code>. Sans ça, un bouton flottant « Cockpit » est posé.</li> : null}
+                  </ol>
+                ) : null}
+                {bal.etat === 'appli' ? <p className="mt-2 text-xs text-texte-2" data-testid="embed-appli">Rien à coller dans le site : ouvre l’app puis « Installer l’appli » (menu ⋮ de Chrome).</p> : null}
+                {bal.acces_consigne ? <p className="mt-1 text-xs text-texte-2">{bal.acces_consigne}</p> : null}
+                <div className="mt-2 flex justify-end">
+                  {bal.etat === 'appli'
+                    ? <Button variante="primaire" taille="sm" onClick={() => copier(URL_APP, 'Lien de l’app')}>Copier le lien de l’app</Button>
+                    : <Button variante="primaire" taille="sm" disabled={bal.etat === 'vide'} onClick={() => copier(bal.code ?? '', 'Code')}>Copier le code</Button>}
+                </div>
                 <details className="mt-2 text-xs text-texte-2" data-testid="embed-confidentialite">
                   <summary className="cursor-pointer font-medium">Détails (code, clé, confidentialité)</summary>
-                  <pre className="mt-2 overflow-x-auto rounded-lg bg-carte px-2 py-1.5 text-[11px] leading-relaxed"><code>{extraitEmbed(cleVisible ? projet.cle_embed : '…')}</code></pre>
+                  <pre className="mt-2 overflow-x-auto rounded-lg bg-carte px-2 py-1.5 text-[11px] leading-relaxed"><code>{baliseDu({ cle_embed: cleVisible ? projet.cle_embed : '…', emplacement: projet.emplacement }).code ?? 'Pas de code à coller pour ce choix.'}</code></pre>
                   <div className="mt-2 flex items-center gap-2">
                     <code className="min-w-0 flex-1 truncate rounded-lg bg-carte px-2 py-1.5 text-xs">{cleVisible ? projet.cle_embed : '•'.repeat(24)}</code>
                     <Button taille="sm" onClick={() => setCleVisible(!cleVisible)}>{cleVisible ? 'Masquer' : 'Voir'}</Button>

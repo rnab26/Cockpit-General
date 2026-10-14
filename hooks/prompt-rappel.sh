@@ -56,8 +56,48 @@ tenus=""
 if [ -n "$branche" ] && [ -x "$SQL" ]; then
   tenus=$("$SQL" "select coalesce(string_agg(format('« %s » (%s, %s)', c.titre, c.id, c.etat), ' ; '), '') as t from chantiers c join projets p on p.id = c.projet_id where p.slug = '$PROJET' and c.pris_par = '$branche' and c.pris_jusqu_a > now()" 2>/dev/null | jq -r '.rows[0].t // ""' 2>/dev/null || echo "")
 fi
+# VERDICT DIT EN SESSION (0085) : les chantiers livrés qui attendent son verdict (5 au plus, les plus
+# récents), pour que « ça marche » / « ça ne marche pas » dit ici arrive dans le cockpit.
+verif_txt=""
+if [ -x "$SQL" ]; then
+  av=$("$SQL" "select coalesce(string_agg(format('« %s » (%s)', t.titre, t.id), ' ; '), '') as t from (select c.titre, c.id from chantiers c join projets p on p.id = c.projet_id where p.slug = '$PROJET' and c.etat = 'a_verifier' and c.archived_at is null order by c.updated_at desc limit 5) t" 2>/dev/null | jq -r '.rows[0].t // ""' 2>/dev/null || echo "")
+  [ -n "$av" ] && verif_txt=" VERDICT : si ce message dit qu'un de ces chantiers livrés marche ou ne marche pas ($av), relaie-le : $CHANTIER_CMD --verdict-dit <id> --marche|--ne-marche-pas --mots \"<ses mots>\" (« marche » pose UNE carte de confirmation dans « À toi » : seul Raphaël certifie, jamais toi)."
+fi
+# RAPPEL PRÉCIS (0080, délai réglable par projet : 0081, 4 h par défaut) : les chantiers que CETTE session tient sans rien avoir signalé depuis longtemps. Elle seule sait s'ils sont finis ;
+# sans cela ils restent « en cours » pour toujours (constaté sur FacePro : 26 « en cours », 2 avec une trace du jour). Le nom des commandes
+# est celui du projet ($PROG_CMD, $CHANTIER_CMD).
+vieux=""
+if [ -n "$branche" ] && [ -x "$SQL" ]; then
+  # Au plus UN rappel par 30 min et par copie de travail (COCKPIT_SANS_TRACE_MIN : autre délai, 0 = à chaque message) : ce texte est long
+  # et ce hook part avec chaque message, il ne doit pas gonfler le contexte (ni les jetons) de Raphaël.
+  marque_vieux="$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-sans-trace"
+  pause_vieux="${COCKPIT_SANS_TRACE_MIN:-30}"
+  if [ "$pause_vieux" = 0 ] || [ ! -e "$marque_vieux" ] || [ -n "$(find "$marque_vieux" -mmin +"$pause_vieux" 2>/dev/null)" ]; then
+    vieux=$("$SQL" "select j from (select cockpit.chantiers_tenus_sans_trace('$PROJET', '$branche') as j) q" 2>/dev/null \
+      | jq -r '(.rows[0].j // []) | map("« \(.titre) » (\(.id), \(.heures) h sans trace)") | join(" ; ")' 2>/dev/null || echo "")
+    [ -n "$vieux" ] && touch "$marque_vieux" 2>/dev/null
+  fi
+fi
+# RECHERCHE DES FOURNISSEURS (0084) : le bouton de Coûts pose une demande qui attend une session avec Gmail. UNE ligne, au plus toutes les 30 min par copie de
+# travail (ce hook part avec chaque message : il ne doit pas gonfler le contexte) ; seulement une demande « en attente » (une demande déjà prise n'est pas rappelée).
+fourn=""
+if [ -x "$SQL" ]; then
+  marque_fourn="$(git -C "$RACINE" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-fournisseurs"
+  if [ ! -e "$marque_fourn" ] || [ -n "$(find "$marque_fourn" -mmin +30 2>/dev/null)" ]; then
+    n_fourn=$("$SQL" "select count(*)::int as n from recherches_fournisseurs r join projets p on p.id = r.projet_id where p.slug = '$PROJET' and r.statut = 'en_attente'" 2>/dev/null | jq -r '.rows[0].n // 0' 2>/dev/null || echo 0)
+    if [ "${n_fourn:-0}" -gt 0 ] 2>/dev/null; then fourn=1; touch "$marque_fourn" 2>/dev/null; fi
+  fi
+fi
+# RAPPROCHEMENT GITHUB (0080) : en tâche de fond, au plus une fois toutes les 20 min par projet (voir hooks/session-start.sh).
+rapprocher="${COCKPIT_RAPPROCHER:-$(dirname "$SQL")/rapprocher.py}"
+if [ -n "$sid" ] && [ "${COCKPIT_RAPPROCHEMENT:-1}" != 0 ] && [ -f "$rapprocher" ] && command -v python3 >/dev/null 2>&1; then
+  ( cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null; COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 170 python3 "$rapprocher" --projet "$PROJET" --si-ancien 20 --silencieux >/dev/null 2>&1 & ) >/dev/null 2>&1
+fi
 texte="Cockpit (projet $PROJET) — si ce message demande du TRAVAIL (fonctionnalité, correctif, reprise d'un sujet), enregistre-le AVANT de coder : $CHANTIER_CMD --ouvrir \"<titre court, lisible par Raphaël>\" --demande \"<ses mots>\" --section \"<rubrique>\" (il reprend ou rouvre le chantier existant au lieu d'en créer un doublon). Doublons et rangement, c'est TOI qui tranches, jamais Raphaël : sur « ambigu », lis les extraits et relance avec --id ou --nouveau ; deux chantiers existants identiques → --suggerer-fusion (il accepte d'un toucher). Puis $PROG_CMD à chaque étape, les jalons pousse / ci-ok / en-ligne, et --termine avec --verifier et --en-ligne. Chaque agent que tu lances : écris dans sa consigne d'appeler $PROG_CMD --agent \"<sa description exacte>\" --etape … --pct … --eta … à chaque étape. Une simple question ou discussion : rien à enregistrer."
 [ -n "$tour_txt" ] && texte="$texte$tour_txt"
+[ -n "$verif_txt" ] && texte="$texte$verif_txt"
 [ -n "$tenus" ] && texte="$texte Ta session tient déjà : $tenus."
+[ -n "$vieux" ] && texte="$texte ⚠️ SANS TRACE depuis longtemps, sur des chantiers que ta session tient : $vieux. Toi seule sais s'ils sont finis, et Raphaël ne voit que ce que tu écris ici : pour CHACUN, soit c'est terminé → $PROG_CMD --chantier <id> --termine \"<ce qui est livré, une phrase>\" --verifier \"<étapes avec le lien exact>\" --en-ligne \"<adresse>\" (ou --pas-en-ligne \"<raison>\") ; soit tu continues → $PROG_CMD --chantier <id> --etape \"<où tu en es>\" ; soit tu n'y travailles plus → $CHANTIER_CMD --de-cote <id> (ou --abandonner <id>) --pourquoi \"…\"."
+[ -n "$fourn" ] && texte="$texte 🔎 Raphaël a demandé la RECHERCHE DE SES FOURNISSEURS (bouton de Coûts) : si tu as les outils Gmail, fais-la (section « Chercher les fournisseurs » de docs/recus-par-email.md, dépôt rnab26/Cockpit-General) ; sinon ignore ce rappel."
 [ -n "$chef_txt" ] && texte="$texte $chef_txt"
 jq -n --arg c "$texte" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'

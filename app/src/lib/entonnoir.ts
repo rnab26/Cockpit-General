@@ -206,6 +206,16 @@ export function grouperAToi(elements: readonly ElementAToi[]): { type: TypeAToi;
   return ORDRE_A_TOI.map((type) => ({ type, elements: elements.filter((e) => e.type === type) })).filter((g) => g.elements.length > 0)
 }
 
+// ---- Demandes et « à tester » (13 oct. 2026)
+// Raphaël : « j'ai 30 actions à faire avant de voir l'historique du chat ». Mesuré le jour même : 69 « pour toi », dont
+// 56 chantiers livrés qui attendent seulement un test. Un chantier livré n'est pas une DEMANDE de Claude (une question,
+// une action, une décision, un blocage, une fusion) : c'est un contrôle qu'on fait quand on veut. UNE règle, lue par la
+// tuile « pour toi », les pastilles des onglets et du chat, et le tableau par section : « pour toi » ne compte que les
+// demandes ; les chantiers à tester ont leur propre liste (jamais perdus, jamais comptés « à répondre »).
+export const estDemande = (e: Pick<ElementAToi, 'type'>): boolean => e.type !== 'a_verifier'
+export const demandesDe = <T extends Pick<ElementAToi, 'type'>>(els: readonly T[]): T[] => els.filter(estDemande)
+export const aTesterDe = <T extends Pick<ElementAToi, 'type'>>(els: readonly T[]): T[] => els.filter((e) => !estDemande(e))
+
 // ---------------------------------------------------------------- 3. À lancer
 
 export interface LigneALancer {
@@ -317,7 +327,8 @@ export function pastillesProjet(
   return {
     travaillent: caAvanceToutSeul(chantiers, activites, messages, sessions, taches, now, silenceMs, projetId).filter((l) => l.vivant).length,
     sessions: resumeTravail(quiTravaille(sessions, taches, activites, chantiers, now, silenceMs, [], projetId)).sessions,
-    aToi: aToi(chantiers, messages, projetId).length,
+    // Le rouge d'un onglet = ce qui demande une réponse ; les chantiers à tester n'y sont plus (estDemande).
+    aToi: demandesDe(aToi(chantiers, messages, projetId)).length,
   }
 }
 

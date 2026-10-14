@@ -146,10 +146,13 @@ export function estSessionAutonome(s: Pick<SessionClaude, 'sujet'>): boolean {
  * « autonome », sinon le début de son premier message, sinon sa branche sans
  * « claude/ », sinon « sans nom (abcd1234) ».
  */
+/** Un « nom » qui n'en est pas un (13 oct. 2026) : « Chantier cockpit 9dcc2c9a-ec45-… » (la consigne d'un agent) ou un identifiant nu. */
+export const nomIllisible = (t: string): boolean => /^Chantier\s+\S+\s+[0-9a-f]{6,}/i.test(t) || /^[0-9a-f-]{12,}$/i.test(t)
+
 export function nomSession(s: Pick<SessionClaude, 'sujet' | 'branche' | 'id'>): string {
   if (estSessionAutonome(s)) return 'autonome'
   const sujet = s.sujet?.replace(/\s+/g, ' ').trim()
-  if (sujet) return sujet.length > 32 ? `${sujet.slice(0, 31).trimEnd()}…` : sujet
+  if (sujet && !nomIllisible(sujet)) return sujet.length > 32 ? `${sujet.slice(0, 31).trimEnd()}…` : sujet
   const b = s.branche?.trim().replace(/^claude\//, '').replace(/-[a-z0-9]{6}$/, '')
   return b || `sans nom (${s.id.replace(/^[^a-z0-9]+/i, '').slice(0, 8)})`
 }
@@ -158,7 +161,8 @@ export function nomSession(s: Pick<SessionClaude, 'sujet' | 'branche' | 'id'>): 
 export function titreSession(s: Pick<SessionClaude, 'sujet' | 'branche' | 'id'>): string {
   // Les sessions lancées par le mode autonome commencent toutes par la même consigne : on les nomme.
   if (estSessionAutonome(s)) return `Session autonome${s.branche ? ` (${s.branche})` : ''}`
-  return `Session ${s.sujet?.trim() || s.branche?.trim() || `sans nom (${s.id.replace(/^[^a-z0-9]+/i, '').slice(0, 8)})`}`
+  const sujet = s.sujet?.trim()
+  return `Session ${(sujet && !nomIllisible(sujet) ? sujet : '') || s.branche?.trim() || `sans nom (${s.id.replace(/^[^a-z0-9]+/i, '').slice(0, 8)})`}`
 }
 
 export interface QuiTravaille {

@@ -21,6 +21,8 @@ export interface Projet {
   couleur: string | null
   actif: boolean
   cle_embed: string
+  /** Réponses du questionnaire « où / qui » (0049) : mode menu|page|appli, acces moi|equipe|utilisateurs, menu = lien du menu. Admin seulement. */
+  emplacement?: { mode?: string; acces?: string; menu?: string; libelle?: string; page?: string } | null
   created_at: string
   /** Mode autonome (0010) : null = éteint ; sinon la session enchaîne les chantiers libres jusqu'à cette heure. */
   autonome_jusqu_a: string | null
@@ -43,6 +45,11 @@ export interface Projet {
   /** Où partent les factures (0052) : moyen et destinataire (e-mail, numéro WhatsApp, nom). */
   compta_canal?: 'email' | 'whatsapp' | 'autre' | null
   compta_destinataire?: string | null
+  /** Classer sans test les chantiers livrés restés sans un mot de Raphaël après N jours (0079, 1-90) ; null = jamais. */
+  livres_classes_apres_j?: number | null
+  /** Rapprochement GitHub → chantiers (0080) : passage automatique des hooks allumé (défaut) ; date du dernier passage. */
+  rapprochement_auto?: boolean
+  rapproche_at?: string | null
 }
 
 export interface Section {

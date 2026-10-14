@@ -1,7 +1,8 @@
 // Coûts du projet (0052, chantier 41127de1), parcours COMPLET sur écran de téléphone : état vide,
 // prestataire (ajout, lien, solde bas), dépense avec facture jointe, périodes, sélection multiple,
 // envoi à la compta (pas de partage de fichiers dans ce navigateur : marche manuelle, marquage explicite),
-// suppression avec confirmation. Projet jetable `test-depenses-…`, supprimé à la fin.
+// suppression avec confirmation, et la ligne « Import automatique des reçus » de la carte du prestataire (0083 : passé / pas encore /
+// échec / en retard, date de départ réglable sans effacer le battement). Projet jetable `test-depenses-…`, supprimé à la fin.
 // Usage : node app/scripts/verifier-depenses.mjs   (build d'abord : cd app && npm run build)
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
@@ -166,6 +167,76 @@ try {
   await page.getByRole('button', { name: 'Supprimer', exact: true }).click()
   await page.getByText(/« RunPod » supprimé/).waitFor({ timeout: 8000 })
   verifie('prestataire supprimé, dépenses gardées « sans prestataire »', sql(`select count(*)::int n from services where projet_id = '${projetId}'`)[0].n === 0 && sql(`select count(*)::int n from depenses where projet_id = '${projetId}' and service_id is null`)[0].n === 3)
+  // --- 9. l'import automatique des reçus se VOIT sur la carte du prestataire (0083, chantier 72a8d0f4)
+  const idClaude = randomUUID()
+  sql(`insert into services (id, projet_id, nom, devise, import_depuis, import_cadence_jours, import_at, import_statut, import_note) values ('${idClaude}', '${projetId}', 'Claude', 'ILS', '2026-10-13', 7, now() - interval '2 days', 'ok', '1 facture ajoutée : 289,00 ₪ (2 oct.)')`)
+  sql(`insert into services (projet_id, nom, devise) values ('${projetId}', 'Sans import', 'USD')`)
+  const rouvrir = async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByTestId('vue-projet').waitFor({ timeout: 20000 })
+    await page.getByTestId('onglet-vue-couts').click()
+    await page.getByTestId('couts-projet').waitFor({ timeout: 15000 })
+    await page.locator('[data-testid="service"][data-nom="Claude"]').waitFor({ timeout: 10000 })
+  }
+  await rouvrir()
+  const carte = (nom) => page.locator(`[data-testid="service"][data-nom="${nom}"]`)
+  const ligneImport = () => carte('Claude').getByTestId('import-auto')
+  verifie('import auto passé : « chaque semaine, passé il y a 2 j », la note du passage et la date de départ sont lisibles',
+    await ligneImport().getAttribute('data-niveau') === 'ok' && /Import automatique des reçus \(chaque semaine\) : passé il y a 2 j\./.test(await ligneImport().textContent())
+    && /1 facture ajoutée : 289,00 ₪ \(2 oct\.\)/.test(await ligneImport().textContent()) && /Reçus lus à partir du 13 oct\. 2026/.test(await ligneImport().textContent()), await ligneImport().textContent())
+  verifie('un prestataire sans import automatique n’affiche aucune ligne d’import', await carte('Sans import').getByTestId('import-auto').count() === 0)
+  await carte('Claude').screenshot({ path: `${CAPTURES}/couts-import-auto.png` })
+
+  sql(`update services set import_statut = 'echec', import_note = 'Le passage n’a pas pu avoir lieu : Gmail inaccessible', import_at = now() - interval '1 hour' where id = '${idClaude}'`)
+  await rouvrir()
+  verifie('import auto en échec : alerte visible (rôle « alert »), avec la raison',
+    await ligneImport().getAttribute('data-niveau') === 'echec' && await ligneImport().getAttribute('role') === 'alert'
+    && /a échoué il y a 1 h/.test(await ligneImport().textContent()) && /Gmail inaccessible/.test(await ligneImport().getByTestId('import-auto-detail').textContent()), await ligneImport().textContent())
+  sql(`update services set import_statut = 'ok', import_note = 'Rien de nouveau', import_at = now() - interval '20 days' where id = '${idClaude}'`)
+  await rouvrir()
+  verifie('import auto muet depuis plus de 2 cadences : « n’est pas passé depuis 20 jours (prévu chaque semaine) »',
+    await ligneImport().getAttribute('data-niveau') === 'retard' && /n’est pas passé depuis 20 jours \(prévu chaque semaine\)/.test(await ligneImport().textContent()), await ligneImport().textContent())
+  sql(`update services set import_at = null, import_statut = null, import_note = null where id = '${idClaude}'`)
+  await rouvrir()
+  verifie('cadence réglée mais jamais passé : « pas encore passé »', await ligneImport().getAttribute('data-niveau') === 'attente' && /pas encore passé/.test(await ligneImport().textContent()))
+
+  // la date de départ se règle dans le crayon du prestataire, et un enregistrement n'efface JAMAIS le battement
+  sql(`update services set import_at = now() - interval '2 days', import_statut = 'ok', import_note = 'Rien de nouveau' where id = '${idClaude}'`)
+  await rouvrir()
+  await page.getByRole('button', { name: 'Modifier Claude' }).click()
+  verifie('le crayon d’un prestataire avec import automatique propose la date de départ des reçus', await page.getByTestId('import-depuis').inputValue() === '2026-10-13')
+  await page.getByTestId('import-depuis').fill('2099-01-01')
+  verifie('une date de départ dans le futur est refusée avec message', /date de départ des reçus/.test(await page.getByRole('alert').textContent()) && await page.getByRole('button', { name: 'Enregistrer' }).isDisabled())
+  await page.getByTestId('import-depuis').fill('2026-07-01')
+  await page.getByRole('button', { name: 'Enregistrer' }).click()
+  await page.getByText('Prestataire mis à jour.').waitFor({ timeout: 8000 })
+  const apres = sql(`select import_depuis::text d, import_cadence_jours c, import_statut st, import_note n, import_at is not null a from services where id = '${idClaude}'`)[0]
+  verifie('date de départ reculée au 1er juillet ; cadence, issue, note et date du dernier passage intactes', apres.d === '2026-07-01' && apres.c === 7 && apres.st === 'ok' && apres.n === 'Rien de nouveau' && apres.a === true, apres)
+  await page.getByRole('button', { name: 'Modifier Sans import' }).click()
+  verifie('un prestataire sans import automatique ne propose pas de date de départ', await page.getByTestId('import-depuis').count() === 0)
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  // brancher la lecture des reçus par le programme du compte Google (0085) : seulement pour Claude, la clé n'apparaît qu'à la demande
+  await rouvrir()
+  verifie('« Brancher la lecture des reçus » sur Claude seulement', await carte('Claude').getByTestId('brancher-recus').count() === 1 && await carte('Sans import').getByTestId('brancher-recus').count() === 0)
+  await carte('Claude').getByTestId('brancher-recus').click()
+  verifie('le dialogue dit « seulement lire » et ne montre encore aucune étape ni clé', /seulement lire/.test(await page.getByTestId('brancher-recus-dialogue').textContent()) && await page.getByTestId('recus-etapes').count() === 0)
+  await page.getByTestId('preparer-recus').click()
+  await page.getByTestId('recus-etapes').waitFor({ timeout: 10000 })
+  const lignesEtapes = await page.getByTestId('recus-etapes').locator('li').count()
+  const enBase = sql(`select import_cle_hash ~ '^[0-9a-f]{64}$' h, import_cle_at is not null a, import_cadence_jours c from services where id = '${idClaude}'`)[0]
+  verifie('7 étapes numérotées avec le lien exact script.google.com/create ; clé créée en base (hash seulement)', lignesEtapes === 7 && await page.locator('a[href="https://script.google.com/create"]').count() === 1 && enBase.h === true && enBase.a === true && enBase.c === 7, JSON.stringify(enBase))
+  const aucuneCleVisible = !/rc_[0-9a-f]{64}/.test(await page.getByTestId('brancher-recus-dialogue').textContent())
+  verifie('la clé n’est jamais écrite à l’écran (elle n’existe que dans le texte copié)', aucuneCleVisible)
+  await page.getByTestId('copier-programme').click()
+  await page.getByText('Programme copié.').or(page.getByText(/Copie impossible/)).first().waitFor({ timeout: 5000 })
+  await page.getByRole('button', { name: 'Fermer', exact: true }).last().click()
+  await carte('Claude').getByTestId('brancher-recus').click()
+  verifie('rouvert : « branché », sans étapes ni clé (elle ne se redonne pas)', await page.getByTestId('recus-branche').count() === 1 && await page.getByTestId('recus-etapes').count() === 0)
+  await page.getByRole('button', { name: 'Débrancher' }).click()
+  await page.getByRole('button', { name: 'Débrancher' }).last().click()
+  await page.getByText('Lecture automatique débranchée.').waitFor({ timeout: 8000 })
+  const apresDeb = sql(`select import_cle_hash is null h, import_cle_at is null a from services where id = '${idClaude}'`)[0]
+  verifie('débranché : la clé est retirée en base', apresDeb.h === true && apresDeb.a === true, JSON.stringify(apresDeb))
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++

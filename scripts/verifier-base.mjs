@@ -2056,7 +2056,9 @@ async function controle44_pr_conflit_visible() {
   const fermee = lancer(["302", "--fermee"]);
   verifie("PR fermée ou fusionnée : la carte d'état se retire aussi", fermee.code === 0 && ouverts(await conflits(302)) === 0, fermee);
   // CI en cours : une carte « Fusionne » déjà posée est gardée, pas retirée.
-  lancer(["303", "--etat", "open", "--merge-state", "clean", "--titre", "PR avec CI"]);
+  // (Titre en mots simples : « CI » est refusé par la règle de vocabulaire depuis 5084dfb, la carte n'était alors jamais posée.)
+  const posee = lancer(["303", "--etat", "open", "--merge-state", "clean", "--titre", "PR aux contrôles en cours"]);
+  verifie("PR propre : la carte « Fusionne » est posée (témoin du contrôle qui suit)", posee.code === 0 && ouverts(await fusionne(303)) === 1, posee);
   const cours = lancer(["303", "--etat", "open", "--merge-state", "unstable", "--ci", "cours"]);
   verifie("CI en cours : la carte « Fusionne » déjà posée est GARDÉE, aucune carte d'état", cours.code === 0 && ouverts(await fusionne(303)) === 1 && (await conflits(303)).length === 0, cours);
 
@@ -2810,6 +2812,14 @@ async function controle38_filet_securite() {
   verifie("filet_passe() sans argument : le projet de test n'est pas réveillé", !JSON.stringify(vraie.r).includes(SLUG_K) || vraie.r.find((x) => x.projet === SLUG_K)?.resultat === "projet_de_test", vraie.r);
   const reel = await une(`select count(*)::int as n from filet_reveils f join projets p on p.id = f.projet_id where f.simule and p.slug not like 'test-%'`);
   verifie("aucun réveil simulé sur un vrai projet", reel.n === 0, reel);
+  // 0082 : « aucune session chef » n'est PAS « jeton manquant » (constaté sur le moteur le 13 oct. : l'écran réclamait un jeton qui existait,
+  // le dernier réveil tiré avec lui avait reçu HTTP 200). Contrôle de COHÉRENCE en LECTURE SEULE sur le vrai projet « cockpit » : quel que soit
+  // l'état du moment (une chef vit ou non), le statut doit dire la vérité sur ses propres ingrédients (cible du réveil, jeton de la cible, jeton ailleurs).
+  const m = (await une(`select to_jsonb(x) as j from (select etat_filet('cockpit') as e, cible_reveil(p.id) is null as sans_cible, exists (select 1 from reveils_immediats where actif) as jeton_ailleurs, exists (select 1 from reveils_immediats ri where ri.projet_id = cible_reveil(p.id) and ri.actif) as jeton_cible from projets p where p.slug = 'cockpit') x`)).j;
+  const avant = !m.e.global_actif || !m.e.projet_actif || !m.e.cron?.actif; // statuts plus prioritaires (coupé pour tous, éteint, surveillance absente)
+  const attendu = m.sans_cible && m.jeton_ailleurs ? "sans_chef" : !m.jeton_cible ? "sans_jeton" : null;
+  verifie("etat_filet du moteur : sans cible de réveil mais avec un jeton configuré = « sans_chef », jamais « sans_jeton » ; avec une cible munie d'un jeton, ni l'un ni l'autre",
+    avant || (attendu ? m.e.statut === attendu : !["sans_chef", "sans_jeton"].includes(m.e.statut)), { statut: m.e.statut, attendu, sans_cible: m.sans_cible, jeton_ailleurs: m.jeton_ailleurs, jeton_cible: m.jeton_cible });
 }
 
 // 40. Libération automatique (0050) : le job pg_cron libère seul un chantier tenu par une session morte, jamais un vivant, jamais un projet de test au vrai cron.
@@ -3070,6 +3080,69 @@ async function controle50_retour_carte_bloque() {
   verifie("droits : retirer_carte pour les connectés seulement, jamais anon ; est_retour_carte réservé au service", !droits.anon && droits.auth && !droits.est, droits);
 }
 
+async function controle58_verdict_dit_en_session() {
+  section("58. Verdict dit dans une session (0085) : ses mots dans le fil, carte de confirmation, SEUL un humain admin certifie");
+  const repondre = (mid, reponse) => rpcUtilisateur("repondre_message", { p_id: mid, p_par: "Raphaël", p_reponse: reponse, p_precision: null, p_etat: null }, jwt);
+  const attente = async () => (await sql(`select message_id from reponses_sans_suite(${q(P1)})`)).map((r) => r.message_id);
+  const relayer = (c, ok, mots) => sql(`select relayer_verdict(${q(c)}::uuid, 'session-test', ${ok}, ${q(mots)}) as r`).then((r) => r[0].r);
+  // 1. Chantier non « à vérifier » : refusé, rien n'est écrit.
+  const cl = await creerChantier(P1, { titre: "58 Pas livré", etat: "libre" });
+  const refus = await sql(`select relayer_verdict(${q(cl)}::uuid, 's', true, 'ça marche') as r`).catch((e) => ({ erreur: String(e.message ?? e) }));
+  verifie("chantier pas « à vérifier » : refusé, aucune carte", (refus.erreur ?? "").includes("pas") && (await une(`select count(*)::int as n from messages where chantier_id = ${q(cl)}`)).n === 0, refus);
+  // 2. « Ça marche » dit en session : ses mots dans le fil + UNE carte, rien n'est certifié.
+  const c = await creerChantier(P1, { titre: "58 Livré à vérifier", etat: "a_verifier" });
+  verifie("« ça marche » : carte posée", (await relayer(c, true, "oui ça marche, je viens de tester")) === "carte posée");
+  verifie("deuxième fois : pas de doublon", (await relayer(c, true, "oui oui")) === "carte déjà posée");
+  const ch = await une(`select etat, archived_at from chantiers where id = ${q(c)}`);
+  verifie("la session NE certifie PAS : le chantier reste « à vérifier »", ch.etat === "a_verifier" && ch.archived_at === null, ch);
+  const cartes = await sql(`select id, kind, corps, options, answered_at from messages where chantier_id = ${q(c)} and verdict_carte`);
+  verifie("une seule carte, question « Tu confirmes que … marche ? », deux réponses prêtes (la première recommandée)",
+    cartes.length === 1 && cartes[0].kind === "question" && cartes[0].corps.startsWith("Tu confirmes que « 58 Livré") && cartes[0].options.length === 2 && cartes[0].options[0].recommande === true && cartes[0].answered_at === null, cartes);
+  verifie("ses mots sont dans le fil (message de session, pas un message libre à servir)",
+    (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and via_session and corps like 'Dit dans la session : oui ça marche%'`)).n >= 1);
+  // 3a. Un MEMBRE (non admin) qui répond « Oui » ne certifie pas : seul Raphaël (admin) certifie.
+  const cm = await creerChantier(P1, { titre: "58 Réponse d'un membre", etat: "a_verifier" });
+  await relayer(cm, true, "ça marche");
+  const km = (await une(`select id from messages where chantier_id = ${q(cm)} and verdict_carte`)).id;
+  await repondre(km, "Oui, ça marche");
+  verifie("un membre non admin qui répond « Oui » ne certifie pas", (await une(`select etat from chantiers where id = ${q(cm)}`)).etat === "a_verifier");
+  // Le compte de test devient admin le temps de ce contrôle (retiré à la fin, même en cas d'échec).
+  await sql(`insert into admins (user_id) values (${q(userId)}) on conflict do nothing`);
+  try {
+  // 3. Son « Oui » (humain admin) certifie, UN toucher ; la chef ne reprend rien.
+  const r = await repondre(cartes[0].id, "Oui, ça marche");
+  verifie("répondre « Oui » : accepté", r.status < 300, r);
+  const apres = await une(`select etat, valide_par, archived_at from chantiers where id = ${q(c)}`);
+  verifie("le chantier est CERTIFIÉ par lui (valide, valide_par = Raphaël)", apres.etat === "valide" && apres.valide_par === "Raphaël" && apres.archived_at !== null, apres);
+  verifie("sa réponse sur la carte n'est jamais « à reprendre » (pas de chantier parasite)", !(await attente()).includes(cartes[0].id));
+  // 4. « Non » : la vérification est demandée, rien n'est certifié.
+  const c2 = await creerChantier(P1, { titre: "58 Dit non", etat: "a_verifier" });
+  await relayer(c2, true, "je crois que ça marche");
+  const k2 = (await une(`select id from messages where chantier_id = ${q(c2)} and verdict_carte`)).id;
+  await repondre(k2, "Non, ça ne marche pas");
+  const a2 = await une(`select etat, verif_motif, verif_demandee_at from chantiers where id = ${q(c2)}`);
+  verifie("« Non » : pas certifié, vérification « ne marche pas » demandée", a2.etat === "a_verifier" && a2.verif_motif === "ne_marche_pas" && a2.verif_demandee_at !== null, a2);
+  } finally { await sql(`delete from admins where user_id = ${q(userId)}`); }
+  // 5. « Ça ne marche pas » dit en session : même effet que son bouton, sans carte.
+  const c3 = await creerChantier(P1, { titre: "58 Ne marche pas", etat: "a_verifier" });
+  verifie("« ne marche pas » : noté", (await relayer(c3, false, "ça plante sur le bouton")) === "ne marche pas noté");
+  const a3 = await une(`select verif_motif, verif_demandee_at, (select count(*)::int from messages where chantier_id = ${q(c3)} and verdict_carte) as cartes from chantiers where id = ${q(c3)}`);
+  verifie("vérification demandée, aucune carte", a3.verif_motif === "ne_marche_pas" && a3.verif_demandee_at !== null && a3.cartes === 0, a3);
+  // 6. La carte se ferme seule si le chantier est certifié ailleurs.
+  const c4 = await creerChantier(P1, { titre: "58 Certifié ailleurs", etat: "a_verifier" });
+  await relayer(c4, true, "ça marche");
+  await rpcUtilisateur("certifier_chantier", { p_id: c4, p_par: "Raphaël", p_mots: null }, jwt);
+  const f4 = await une(`select answered_at, reponse from messages where chantier_id = ${q(c4)} and verdict_carte`);
+  verifie("carte fermée seule quand le chantier est certifié depuis l'app", f4.answered_at !== null && f4.reponse.startsWith("Plus utile"), f4);
+  // 7. Une réponse « Oui » posée par le service (pas un humain admin) ne certifie rien.
+  const c5 = await creerChantier(P1, { titre: "58 Réponse service", etat: "a_verifier" });
+  await relayer(c5, true, "ça marche");
+  await sql(`update messages set answered_at = now(), reponse = 'Oui, ça marche' where chantier_id = ${q(c5)} and verdict_carte`);
+  verifie("une session qui « répond Oui » ne certifie pas", (await une(`select etat from chantiers where id = ${q(c5)}`)).etat === "a_verifier");
+  const droits = await une(`select has_function_privilege('authenticated', 'cockpit.relayer_verdict(uuid,text,boolean,text)', 'execute') as auth, has_function_privilege('anon', 'cockpit.relayer_verdict(uuid,text,boolean,text)', 'execute') as anon, has_function_privilege('service_role', 'cockpit.relayer_verdict(uuid,text,boolean,text)', 'execute') as srv`);
+  verifie("droits : relayer_verdict réservé aux sessions (service)", !droits.auth && !droits.anon && droits.srv, droits);
+}
+
 async function controle49_passe_sans_perte() {
   section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
   await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
@@ -3241,6 +3314,115 @@ async function controle54_paquets_de_cinq() {
   const auto = (await sql(`select unnest(ids) as id from paquets_attente(${q(PPQ)}, 5, true)`)).map((r) => r.id);
   const manuel = (await sql(`select unnest(ids) as id from paquets_attente(${q(PPQ)}, 5, false)`)).map((r) => r.id);
   verifie("pris par un renfort il y a moins de 30 min : exclu de l'ouverture automatique, pas du bouton manuel", !auto.includes(seul) && manuel.includes(seul), { auto, manuel });
+}
+// 55. Réveil horaire réglable (0078). Raphaël, 13 oct. : « coupe les réveils qui relisent 750 000 jetons, corrige le problème de relecture ».
+// La routine horaire relisait 514 000 jetons par heure ; chef.sh --prendre demandait à chaque nouvelle chef d'en recréer une.
+const PRH = randomUUID(), SLUG_RH = `test-verif-${rand}-rh`;
+async function controle55_reveil_horaire() {
+  section("55. Réveil horaire réglable (0078) : oui par défaut ; non = aucune consigne d'en créer un à la prise de poste, aucun « prochain passage » annoncé");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRH)}, ${q(SLUG_RH)}, 'Projet de test réveil horaire', 'rnab26/test-inexistant')`);
+  const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const chef = (args, sid = "chef-rh-1") => {
+    try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_RH, CLAUDE_CODE_SESSION_ID: sid }, stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ""}${e.stderr ?? ""}` }; }
+  };
+  const flag = async () => (await une(`select reveil_horaire from chefs where projet_id = ${q(PRH)}`))?.reveil_horaire;
+  const prochain = async () => (await une(`select prochain_passage_chef(${q(PRH)}::uuid) as p`)).p;
+
+  // Par défaut (comportement d'avant) : la prise de poste demande de déplacer / créer le réveil horaire.
+  const premiere = chef(["--prendre"], "chef-rh-1");
+  verifie("par défaut : la prise de poste donne la consigne du réveil horaire (comportement d'avant)", premiere.code === 0 && /Déplace le réveil horaire/.test(premiere.sortie) && !/COUPÉ/.test(premiere.sortie) && (await flag()) === true, premiere);
+
+  // Un passage horaire annoncé seulement si la routine est notée ET le réglage est « oui ».
+  await sql(`update chefs set reveil_minute = 30, reveil_trigger = 'trig_test_rh', actif = true where projet_id = ${q(PRH)}`);
+  verifie("réglage oui + routine notée : un prochain passage est annoncé", (await prochain()) !== null, { prochain: await prochain() });
+
+  const coupe = chef(["--reveil-horaire", "non"]);
+  verifie("--reveil-horaire non : enregistré en base, et le script rappelle de mettre la routine en pause", coupe.code === 0 && (await flag()) === false && /update_trigger enabled=false/.test(coupe.sortie), coupe);
+  verifie("réglage non : plus aucun prochain passage annoncé (la routine notée ne compte plus)", (await prochain()) === null, { prochain: await prochain() });
+
+  const relais = chef(["--prendre"], "chef-rh-2");
+  verifie("réglage non : la nouvelle chef lit « COUPÉ » et n'a AUCUNE consigne de créer ou déplacer un réveil horaire",
+    relais.code === 0 && /COUPÉ/.test(relais.sortie) && /N'en crée AUCUN/.test(relais.sortie) && !/Déplace le réveil horaire/.test(relais.sortie) && !/crée-en un/.test(relais.sortie), relais);
+
+  const remis = chef(["--reveil-horaire", "oui"]);
+  verifie("--reveil-horaire oui : rétabli, le passage est de nouveau annoncé", remis.code === 0 && (await flag()) === true && (await prochain()) !== null, { remis, prochain: await prochain() });
+
+  const mauvais = chef(["--reveil-horaire", "peut-etre"]);
+  verifie("--reveil-horaire exige oui ou non (rien n'est écrit sinon)", mauvais.code === 2 && (await flag()) === true, mauvais);
+
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.regler_reveil_horaire(text, boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regler_reveil_horaire(text, boolean)', 'execute') as auth`);
+  verifie("regler_reveil_horaire : fermée au public (anon), ouverte aux comptes connectés (la garde admin est dans la fonction)", !droits.anon && droits.auth, droits);
+}
+const PCL = randomUUID(), SLUG_CL = `test-verif-${rand}-cl`;
+async function controle56_classer_livres() {
+  section("56. Classer sans test (0079) : la règle « livré sans retour », le geste groupé, le classement automatique — jamais « certifié », jamais un projet réel sans réglage");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PCL)}, ${q(SLUG_CL)}, 'Projet de test classer les livrés', 'rnab26/test-inexistant')`);
+  const ch = async (titre, colonneEnPlus = "", valeurEnPlus = "", etat = "a_verifier", livre = "now() - interval '10 days'") => {
+    const id = randomUUID();
+    await sql(`insert into chantiers (id, projet_id, titre, demande, etat${etat === "a_verifier" ? ", livre_at" : ""}${colonneEnPlus}) values (${q(id)}, ${q(PCL)}, ${q(titre)}, 'Test.', ${q(etat)}${etat === "a_verifier" ? `, ${livre}` : ""}${valeurEnPlus})`);
+    return id;
+  };
+  const A = await ch("livré il y a 10 jours, sans un mot");
+  const B = await ch("livré il y a 10 jours, Raphaël a écrit depuis");
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PCL)}, ${q(B)}, 'Raphaël', 'proprietaire', 'info', 'je regarde ça demain')`);
+  const C = await ch("livré il y a 2 jours", "", "", "a_verifier", "now() - interval '2 days'");
+  const D = await ch("livré, une question reste ouverte");
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PCL)}, ${q(D)}, 'Claude', 'session', 'question', 'Quelle couleur ?')`);
+  const E = await ch("livré, « vérifie pour moi » en cours", ", verif_demandee_at", ", now()");
+  const F = await ch("pas livré (libre)", "", "", "libre");
+  const regle = async (id, j) => (await une(`select cockpit.livre_sans_retour(c, ${j}) as r from chantiers c where id = ${q(id)}`)).r;
+
+  verifie("règle : livré depuis 10 jours sans un mot = sans retour à 7 jours (et à 10), pas à 11", (await regle(A, 7)) === true && (await regle(A, 10)) === true && (await regle(A, 11)) === false);
+  verifie("règle : un mot de Raphaël depuis la livraison, une question ouverte, un « vérifie pour moi », un livré récent, un chantier pas livré : AUCUN n'est sans retour",
+    (await regle(B, 7)) === false && (await regle(D, 7)) === false && (await regle(E, 7)) === false && (await regle(C, 7)) === false && (await regle(F, 7)) === false,
+    { B: await regle(B, 7), D: await regle(D, 7), E: await regle(E, 7), C: await regle(C, 7), F: await regle(F, 7) });
+
+  // Le réglage : 1 à 90, ou vide ; hors bornes refusé ; défaut = jamais.
+  verifie("par défaut : jamais (livres_classes_apres_j vide)", (await une(`select livres_classes_apres_j as j from projets where id = ${q(PCL)}`)).j === null);
+  let refus = null; try { await sql(`select regler_classement_livres(${q(SLUG_CL)}, 0)`); } catch (e) { refus = e.message; }
+  let refus2 = null; try { await sql(`select regler_classement_livres(${q(SLUG_CL)}, 91)`); } catch (e) { refus2 = e.message; }
+  verifie("réglage hors de 1 à 90 jours : refusé, rien n'est écrit", !!refus && !!refus2 && (await une(`select livres_classes_apres_j as j from projets where id = ${q(PCL)}`)).j === null, { refus, refus2 });
+
+  // Sans réglage : le job ne touche à rien (même en mode test).
+  const sans = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, true) as n`)).n;
+  verifie("sans réglage : le classement automatique ne classe rien", sans === 0 && (await une(`select count(*)::int as n from chantiers where projet_id = ${q(PCL)} and archived_at is not null`)).n === 0, sans);
+
+  // Réglé à 7 jours : SEUL A est classé (le job ignore un projet de test sans le mode test).
+  await sql(`select regler_classement_livres(${q(SLUG_CL)}, 7)`);
+  const horsTest = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, false) as n`)).n;
+  verifie("un projet de test n'est JAMAIS classé par le job réel (sans le mode test)", horsTest === 0);
+  const n = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, true) as n`)).n;
+  const etat = await sql(`select id, etat, archived_at is not null as archive, valide_at is not null as certifie from chantiers where projet_id = ${q(PCL)}`);
+  const parId = Object.fromEntries(etat.map((r) => [r.id, r]));
+  verifie("réglé à 7 jours : SEUL le livré sans un mot est classé (1)", n === 1 && parId[A].archive && !parId[B].archive && !parId[C].archive && !parId[D].archive && !parId[E].archive && !parId[F].archive, { n, parId });
+  verifie("classé ≠ certifié : le chantier garde « à vérifier », sans date de validation (seul Raphaël pose « valide »)", parId[A].etat === "a_verifier" && parId[A].certifie === false, parId[A]);
+  const msg = await sql(`select auteur, auteur_type, kind, corps from messages where chantier_id = ${q(A)} and corps like 'Classé automatiquement%'`);
+  verifie("une ligne dans son fil dit pourquoi, et comment le rouvrir", msg.length === 1 && /livré depuis plus de 7 jours/.test(msg[0].corps) && /Désarchiver/.test(msg[0].corps) && msg[0].kind === "constat", msg);
+  const encore = (await une(`select classer_livres_anciens(${q(SLUG_CL)}, true) as n`)).n;
+  verifie("le job est idempotent : un deuxième passage ne reclasse rien", encore === 0);
+
+  // Le geste groupé : admin ou session ; ne touche que « à vérifier » non archivé ; une ligne par chantier.
+  const g = (await une(`select archiver_livres(array[${q(B)}, ${q(C)}, ${q(F)}, ${q(A)}]::uuid[], 'test du geste groupé') as r`)).r;
+  const apres = Object.fromEntries((await sql(`select id, archived_at is not null as archive from chantiers where projet_id = ${q(PCL)}`)).map((r) => [r.id, r.archive]));
+  verifie("archiver_livres : classe B et C (à vérifier), ignore F (pas livré) et A (déjà classé) → 2", g.classes === 2 && apres[B] && apres[C] && !apres[F], { g, apres });
+  const lignes = await sql(`select chantier_id, auteur, corps from messages where chantier_id in (${q(B)}, ${q(C)}) and corps like 'Classé sans test%' order by chantier_id`);
+  verifie("… une ligne « Classé sans test : test du geste groupé » par chantier classé, avec le moyen de le rouvrir", lignes.length === 2 && lignes.every((l) => /Classé sans test : test du geste groupé\./.test(l.corps) && /Désarchiver/.test(l.corps)), lignes);
+
+  // Droits : ni le public, ni anon ; le job et la règle ne sont pas des portes ouvertes aux comptes connectés.
+  const d = await une(`select
+      has_function_privilege('anon', 'cockpit.archiver_livres(uuid[], text)', 'execute') as anon_archiver,
+      has_function_privilege('anon', 'cockpit.regler_classement_livres(text, int)', 'execute') as anon_regler,
+      has_function_privilege('authenticated', 'cockpit.archiver_livres(uuid[], text)', 'execute') as auth_archiver,
+      has_function_privilege('authenticated', 'cockpit.regler_classement_livres(text, int)', 'execute') as auth_regler,
+      has_function_privilege('authenticated', 'cockpit.classer_livres_anciens(text, boolean)', 'execute') as auth_job,
+      has_function_privilege('anon', 'cockpit.classer_livres_anciens(text, boolean)', 'execute') as anon_job,
+      has_function_privilege('authenticated', 'cockpit.livre_sans_retour(cockpit.chantiers, int)', 'execute') as auth_regle,
+      has_function_privilege('anon', 'cockpit.livre_sans_retour(cockpit.chantiers, int)', 'execute') as anon_regle`);
+  verifie("droits : les deux gestes sont fermés à anon et ouverts aux comptes connectés (la garde admin est dans la fonction) ; le job et la règle ne sont ouverts à personne d'autre que les sessions",
+    !d.anon_archiver && !d.anon_regler && d.auth_archiver && d.auth_regler && !d.auth_job && !d.anon_job && !d.auth_regle && !d.anon_regle, d);
+  const cron = await une(`select count(*)::int as n from cron.job where jobname = 'cockpit-livres-classes' and active`);
+  verifie("le job pg_cron horaire existe et est actif", cron.n === 1, cron);
 }
 async function controle51_reactivite() {
   section("51. Réactivité (0071) : chef muette relevée, filet, délai de réponse mesuré, réglages visibles");
@@ -3544,6 +3726,182 @@ async function controle42_deja_livre_rien_repris() {
   verifie("la passe rend la réservation expirée (pris_par vidé) et garde la valide", e.exp === null && e.val === "agent/vivant", e);
 }
 
+const PRG = randomUUID(), SLUG_RG = `test-verif-${rand}-rg`;
+async function controle57_rapprochement_github() {
+  section("57. Rapprochement GitHub (0080) : un chantier ouvert que personne ne tient, dont l'ACHÈVEMENT est prouvé dans main, passe « livré, à vérifier » — jamais sur une simple mention, jamais « validé », jamais un chantier tenu ou qui attend Raphaël");
+  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRG)}, ${q(SLUG_RG)}, 'Projet de test rapprochement GitHub', 'rnab26/test-inexistant')`);
+  const il = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+  // Un chantier « mort » : créé il y a 3 jours, dernière trace 2 jours 23 h avant maintenant ; rien ne l'a touché depuis (updated_at vieux).
+  const ch = async (titre, o = {}) => {
+    const id = randomUUID();
+    await sql(`insert into chantiers (id, projet_id, titre, demande, etat, pris_par, jalons, created_at, updated_at) values (${q(id)}, ${q(PRG)}, ${q(titre)}, 'Test.', ${q(o.etat ?? "en_cours")}, ${q(o.pris_par ?? null)}, ${q(JSON.stringify(o.jalons ?? {}))}::jsonb, ${q(il(72))}, ${q(il(71))})`);
+    await sql(`insert into activite (projet_id, chantier_id, session, etape, pourcentage, statut, updated_at) values (${q(PRG)}, ${q(id)}, ${q(o.pris_par ?? "session-test")}, 'je travaille dessus', 50, 'en_cours', ${q(il(71))})`);
+    return id;
+  };
+  const vieillir = () => sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '71 hours' where projet_id = ${q(PRG)}`);
+  const etat = async (id) => await une(`select etat, pris_par, livre_at, comment_verifier, jalons, archived_at from chantiers where id = ${q(id)}`);
+
+  const A = await ch("Jalon : le commit signalé est dans main", { pris_par: "claude/a", jalons: { pousse: { at: il(70), detail: "abc1234" } } });
+  const B = await ch("Branche dédiée dont le code est dans main", { pris_par: "claude/b" });
+  const B1 = await ch("Branche partagée, premier chantier", { pris_par: "claude/partagee" });
+  const B2 = await ch("Branche partagée, second chantier", { pris_par: "claude/partagee" });
+  const C = await ch("PR venue de sa branche", { pris_par: "claude/c" });
+  const D = await ch("Titre cité par une PR", { etat: "libre" });
+  const D2 = await ch("Mentionné seulement dans un commit", { pris_par: "claude/d2" });
+  const E = await ch("Alerte GPU facturés sans job (incident)", { etat: "libre" });
+  const E2 = await ch("Alerte GPU facturés sans job (suite)", { etat: "libre" });
+  const F = await ch("On en a parlé après la livraison", { pris_par: "claude/f", jalons: { pousse: { at: il(70), detail: "fff1234" } } });
+  const G = await ch("Tenu par une session vivante", { pris_par: "claude/g", jalons: { pousse: { at: il(70), detail: "ggg1234" } } });
+  const H = await ch("Attend une réponse de Raphaël", { pris_par: "claude/h", jalons: { pousse: { at: il(70), detail: "hhh1234" } } });
+  const I = await ch("Chantier libre avec un jalon", { etat: "libre", pris_par: "claude/i", jalons: { pousse: { at: il(70), detail: "iii1234" } } });
+  const J = await ch("Déjà livré", { etat: "a_verifier" });
+  const K = await ch("Poursuivi après le dernier envoi", { pris_par: "claude/k", jalons: { pousse: { at: il(70), detail: "kkk1234" } } });
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PRG)}, ${q(F)}, 'Raphaël', 'proprietaire', 'info', 'mon verdict était faux, on reprend', ${q(il(10))})`);
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(PRG)}, ${q(H)}, 'Claude', 'session', 'question', 'Je lance le test payant ?')`);
+  await sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at) values (${q(randomUUID())}, ${q(PRG)}, 'claude/g', now(), now())`);
+  await sql(`update activite set updated_at = ${q(il(30))} where chantier_id = ${q(K)}`); // du travail signalé 40 h APRÈS le dernier envoi
+  await vieillir();
+
+  const dateFusion = il(48);
+  const url = (n) => `https://github.com/rnab26/test-inexistant/pull/${n}`;
+  const faits = {
+    depot: "rnab26/test-inexistant",
+    par_chantier: {
+      [A]: { regle: "jalon", n: 1, sha: "abc1234ffffffffffffffffffffffffffffffff", date: dateFusion, sujet: "Merge pull request #1", url: "https://github.com/rnab26/test-inexistant/commit/abc1234" },
+      [B]: { regle: "branche", n: 3, sha: "bbb1234", date: dateFusion, sujet: "Merge b", url: "https://github.com/rnab26/test-inexistant/commit/bbb1234" },
+      [B1]: { regle: "branche", n: 2, sha: "b11234", date: dateFusion, sujet: "Merge b1", url: "https://github.com/rnab26/test-inexistant/commit/b11234" },
+      [F]: { regle: "jalon", n: 1, sha: "fff1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/fff1234" },
+      [G]: { regle: "jalon", n: 1, sha: "ggg1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/ggg1234" },
+      [H]: { regle: "jalon", n: 1, sha: "hhh1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/hhh1234" },
+      [I]: { regle: "jalon", n: 1, sha: "iii1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/iii1234" },
+      [K]: { regle: "jalon", n: 1, sha: "kkk1234", date: dateFusion, sujet: "x", url: "https://github.com/rnab26/test-inexistant/commit/kkk1234" },
+    },
+    fusions: [
+      { sha: "c121212", date: dateFusion, sujet: "Merge pull request #12 from rnab26/claude/c", corps: "Banc : cas ajouté", titre: "Banc : cas ajouté", numero: 12, branche: "claude/c", url: url(12) },
+      { sha: "d131313", date: dateFusion, sujet: "Merge pull request #13 from rnab26/claude/x", corps: `Le titre d'une PR qui cite le chantier ${D.slice(0, 8)}`, titre: `Une PR (chantier ${D.slice(0, 8)})`, numero: 13, branche: "claude/x", url: url(13) },
+      { sha: "d2d2d2d", date: dateFusion, sujet: `Étape du chantier ${D2.slice(0, 8)}`, corps: "", titre: null, numero: null, branche: null, url: "https://github.com/rnab26/test-inexistant/commit/d2d2d2d" },
+      { sha: "e141414", date: dateFusion, sujet: "Merge pull request #14 from rnab26/claude/y", corps: "Alerte GPU facturés sans job", titre: "Alerte GPU facturés sans job", numero: 14, branche: "claude/y", url: url(14) },
+    ],
+  };
+  const essai = (await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, false) as r`)).r;
+  const avant = await etat(A);
+  verifie("passage d'essai (p_appliquer = false) : dit ce qui serait fait et n'écrit RIEN", essai.a_livrer >= 3 && essai.livres === 0 && avant.etat === "en_cours" && avant.pris_par === "claude/a" && (await une(`select rapproche_at as r from projets where id = ${q(PRG)}`)).r === null, { a_livrer: essai.a_livrer, livres: essai.livres, avant });
+
+  const r = (await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`)).r;
+  const reg = Object.fromEntries(r.actions.map((a) => [a.chantier, a.regle]));
+  verifie("preuve 0 : le commit que la session avait signalé « envoyé » est dans main → livré (règle « jalon »)", reg[A] === "jalon" && (await etat(A)).etat === "a_verifier", reg[A]);
+  verifie("preuve 1 : le travail de code de sa branche est dans main → livré (règle « branche »)", reg[B] === "branche" && (await etat(B)).etat === "a_verifier", reg[B]);
+  verifie("preuve 1b : une PR venue de sa branche, fusionnée après sa dernière trace → livré", reg[C] === "branche" && (await etat(C)).etat === "a_verifier", reg[C]);
+  verifie("preuve 2 : le titre d'une PR fusionnée cite son identifiant → livré, même « libre »", reg[D] === "identifiant" && (await etat(D)).etat === "a_verifier", reg[D]);
+  verifie("une simple MENTION de l'identifiant dans un commit (pas une PR) n'est PAS un achèvement", (await etat(D2)).etat === "en_cours" && !reg[D2], reg[D2]);
+  verifie("preuve 3 : un titre de PR presque identique à UN SEUL chantier ouvert le livre ; s'il en ressemble à deux, aucun n'est touché",
+    (await etat(E)).etat === "libre" && (await etat(E2)).etat === "libre" && !reg[E] && !reg[E2], { E: reg[E], E2: reg[E2] });
+  verifie("une branche tenue par DEUX chantiers ouverts : preuve ambiguë, aucun des deux n'est livré", (await etat(B1)).etat === "en_cours" && (await etat(B2)).etat === "en_cours", { B1: reg[B1], B2: reg[B2] });
+  verifie("on en a parlé APRÈS la livraison (message de Raphaël plus récent) : jamais livré", (await etat(F)).etat === "en_cours" && !reg[F], reg[F]);
+  verifie("du travail signalé APRÈS le dernier envoi : le jalon n'est qu'une étape, jamais livré", (await etat(K)).etat === "en_cours" && !reg[K], reg[K]);
+  verifie("tenu par une session VIVANTE : jamais touché (sa session reçoit un rappel à la place)", (await etat(G)).etat === "en_cours" && !reg[G] && r.tenus_vivants >= 1, { reg: reg[G], tenus: r.tenus_vivants });
+  verifie("une question de Raphaël reste sans réponse : le chantier n'est jamais touché", (await etat(H)).etat === "en_cours" && !reg[H], reg[H]);
+  verifie("un chantier « libre » (rendu par le balayage) : un jalon ne suffit pas", (await etat(I)).etat === "libre" && !reg[I], reg[I]);
+  verifie("un chantier déjà « à vérifier » n'est pas retouché", (await etat(J)).etat === "a_verifier" && !reg[J]);
+
+  // Ce qui est écrit pour les livrés.
+  const a = await etat(A);
+  verifie("livré : plus de réservation, jamais « valide », « Comment vérifier » avec le lien, livré à la date de la FUSION (pas du rapprochement), jalon « pousse » posé",
+    a.pris_par === null && a.etat === "a_verifier" && /github\.com\/rnab26\/test-inexistant/.test(a.comment_verifier) && Math.abs(new Date(a.livre_at) - new Date(dateFusion)) < 2000 && a.jalons?.pousse?.detail, a);
+  const fil = await sql(`select kind, auteur_type, corps from messages where chantier_id = ${q(A)} and corps like 'Livré, d''après GitHub%'`);
+  verifie("une ligne « Livré, d'après GitHub : <preuve> » dans le fil (constat, jamais une réponse de Claude), avec le moyen de le contester", fil.length === 1 && fil[0].kind === "constat" && /Ça ne marche pas/.test(fil[0].corps) && /signalé comme envoyé/.test(fil[0].corps), fil);
+  const act = await sql(`select statut, pourcentage from activite where chantier_id = ${q(A)} and session = 'rapprochement'`);
+  verifie("la barre du chantier est fermée (activité « rapprochement » terminée à 100 %)", act.length === 1 && act[0].statut === "termine" && act[0].pourcentage === 100, act);
+  const journal = await sql(`select regle, annule_at from rapprochements where projet_id = ${q(PRG)}`);
+  verifie("chaque livraison est tracée dans le journal (4 : A, B, C, D)", journal.length === 4 && journal.every((j) => j.annule_at === null), journal.length);
+  verifie("le passage est daté (projets.rapproche_at) et compté par l'écran (etat_rapprochement)", (await une(`select rapproche_at is not null as ok from projets where id = ${q(PRG)}`)).ok === true && (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e.livres_24h === 4);
+
+  // Idempotent ; défaisable.
+  const encore = (await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`)).r;
+  verifie("idempotent : un deuxième passage ne livre plus rien", encore.a_livrer === 0 && encore.livres === 0, encore.a_livrer);
+  const rid = (await une(`select id from rapprochements where chantier_id = ${q(B)}`)).id;
+  const ann = (await une(`select cockpit.annuler_rapprochement(${q(rid)}) as r`)).r;
+  const apresAnn = await etat(B);
+  verifie("annuler_rapprochement : le chantier reprend son état d'avant (en cours), sans date de livraison ni jalon posé par le rapprochement", ann.ok === true && apresAnn.etat === "en_cours" && apresAnn.livre_at === null && !apresAnn.jalons?.pousse, { ann, apresAnn });
+  const ann2 = (await une(`select cockpit.annuler_rapprochement(${q(rid)}) as r`)).r;
+  verifie("… et on ne l'annule pas deux fois", ann2.ok === false && ann2.raison === "deja_annule", ann2);
+
+  // Le rappel précis pour une session VIVANTE.
+  const vieux = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/g', 4) as j`)).j;
+  const frais = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/g', 500) as j`)).j;
+  const autre = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/inconnue', 4) as j`)).j;
+  verifie("rappel : les chantiers qu'une session tient sans trace depuis plus de N h sont listés (id, titre, heures) ; sous le seuil ou pour une autre branche : rien",
+    vieux.length === 1 && vieux[0].id === G && vieux[0].heures > 60 && frais.length === 0 && autre.length === 0, { vieux, frais, autre });
+  const attend = (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/h', 4) as j`)).j;
+  verifie("rappel : un chantier qui attend une réponse de Raphaël n'est jamais réclamé à la session", attend.length === 0, attend);
+
+  // Un passage qui ÉCHOUE se dit : la cause et l'heure sont montrées par etat_rapprochement, le passage réussi suivant les efface.
+  const noter = (await une(`select cockpit.noter_echec_rapprochement(${q(SLUG_RG)}, 'clone impossible : test du banc') as r`)).r;
+  const e1 = (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e;
+  await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`);
+  const e2 = (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e;
+  verifie("un passage qui ÉCHOUE est noté (cause + date) et montré par etat_rapprochement ; le passage réussi suivant l'efface",
+    noter.ok === true && e1.erreur === "clone impossible : test du banc" && !!e1.erreur_at && e2.erreur === null && e2.erreur_at === null, { noter, e1, e2 });
+  await une(`select cockpit.noter_echec_rapprochement(${q(SLUG_RG)}, '${"x".repeat(500)}') as r`);
+  verifie("… la cause notée est coupée à 300 signes ; un message vide devient « erreur inconnue » ; un projet inconnu n'écrit rien",
+    ((await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e.erreur ?? "").length === 300
+      && (await une(`select cockpit.noter_echec_rapprochement(${q(SLUG_RG)}, '   ') as r`)).r.ok === true
+      && (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e.erreur === "erreur inconnue"
+      && (await une(`select cockpit.noter_echec_rapprochement('test-projet-qui-nexiste-pas', 'x') as r`)).r.ok === false);
+  await une(`select cockpit.rapprocher_depot(${q(SLUG_RG)}, ${q(JSON.stringify(faits))}::jsonb, true) as r`);
+
+  // Réglages généraux (0081) : deux délais par projet (aucune valeur arbitraire en dur), un interrupteur GÉNÉRAL, des seuils en constantes nommées.
+  const dflt = (await une(`select to_jsonb(x) as j from (select rapprochement_trace_h as t, rapprochement_passage_min as m from projets where id = ${q(PRG)}) x`)).j;   // exec_sql rend la 1re colonne seule pour un select de table à 2 colonnes : to_jsonb
+  verifie("délais par défaut : rappel après 4 h sans trace, recherche dans GitHub au plus toutes les 20 min", dflt.t === 4 && dflt.m === 20, dflt);
+  const tenus = async (...args) => (await une(`select cockpit.chantiers_tenus_sans_trace(${q(SLUG_RG)}, 'claude/g'${args.length ? ", " + args.join(", ") : ""}) as j`)).j;
+  verifie("sans délai donné, le rappel suit le réglage du PROJET (4 h : le chantier tenu depuis 71 h est listé)", (await tenus()).length === 1);
+  await une(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 72, null) as r`);
+  verifie("… délai du projet 72 h : plus listé (71 h sans trace) ; un délai donné par l'appelant (1 h, hooks d'avant) l'emporte", (await tenus()).length === 0 && (await tenus(1)).length === 1);
+  const dl = (await une(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 4, 45) as r`)).r;
+  verifie("regler_rapprochement_delais : pose les deux délais ; un paramètre nul laisse l'autre inchangé", dl.trace_h === 4 && dl.passage_min === 45 && (await une(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, null, 20) as r`)).r.trace_h === 4, dl);
+  const refus = async (requete) => { try { await sql(requete); return null; } catch (e) { return e.message; } };
+  const r0 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 0, null)`), r73 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, 73, null)`);
+  const m4 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, null, 4)`), m1441 = await refus(`select cockpit.regler_rapprochement_delais(${q(SLUG_RG)}, null, 1441)`);
+  const inc = await refus(`select cockpit.regler_rapprochement_delais('test-projet-qui-nexiste-pas', 4, 20)`);
+  verifie("délais hors bornes refusés en clair (0 et 73 h ; 4 min et 1441 min) et projet inconnu refusé ; rien n'est écrit",
+    /entre 1 et 72 heures/.test(r0 ?? "") && /entre 1 et 72 heures/.test(r73 ?? "") && /entre 5 minutes et 24 heures/.test(m4 ?? "") && /entre 5 minutes et 24 heures/.test(m1441 ?? "") && /projet inconnu/.test(inc ?? "")
+      && (await une(`select to_jsonb(x) as j from (select rapprochement_trace_h as t, rapprochement_passage_min as m from projets where id = ${q(PRG)}) x`)).j.m === 20, { r0, r73, m4, m1441, inc });
+  const et = (await une(`select cockpit.etat_rapprochement(${q(SLUG_RG)}) as e`)).e;
+  verifie("etat_rapprochement donne les deux délais et l'interrupteur général (allumé par défaut)", et.trace_h === 4 && et.passage_min === 20 && et.global === true, et);
+  // L'interrupteur général est UN réglage partagé par tous les projets : on le teste dans une transaction ANNULÉE (le vrai n'est jamais touché, même une seconde).
+  let general = null; try { await sql(`do $$ begin perform cockpit.regler_rapprochement(null, false); raise exception 'RESULTAT:%', cockpit.etat_rapprochement('${SLUG_RG}')->>'global'; end $$`); } catch (e) { general = /RESULTAT:(\w+)/.exec(e.message)?.[1] ?? e.message; }
+  verifie("interrupteur GÉNÉRAL : éteint, etat_rapprochement le dit pour tout projet ; essai fait dans une transaction annulée (le vrai reste allumé)",
+    general === "false" && (await une(`select rapprochement_actif as g from filet_reglage where id = 1`)).g === true, general);
+  const def = (await une(`select pg_get_functiondef('cockpit.rapprocher_depot(text, jsonb, boolean)'::regprocedure) as d`)).d;
+  verifie("la règle garde ses seuils en constantes NOMMÉES et documentées (jamais « >= 0.6 » ou « interval '30 minutes' » en clair dans la requête)",
+    /c_seuil_titre/.test(def) && /c_apres_parole/.test(def) && !/>= 0\.6/.test(def) && !/interval '30 minutes'\s*(--|\n|union|and|\)|$)/.test(def.replace(/constant interval := interval '30 minutes'/g, "")), def.length);
+
+  // Réglage, validation d'adresse, droits.
+  const off = (await une(`select cockpit.regler_rapprochement(${q(SLUG_RG)}, false) as r`)).r;
+  const on = (await une(`select cockpit.regler_rapprochement(${q(SLUG_RG)}, true) as r`)).r;
+  verifie("réglage : éteindre / rallumer le passage automatique du projet (allumé par défaut)", off.auto === false && on.auto === true && (await une(`select rapprochement_auto as a from projets where id = ${q(PRG)}`)).a === true);
+  let inconnu = null; try { await sql(`select cockpit.regler_rapprochement('test-projet-qui-nexiste-pas', true)`); } catch (e) { inconnu = e.message; }
+  verifie("réglage d'un projet inconnu : refusé", /projet inconnu/.test(inconnu ?? ""), inconnu);
+  const u = await une(`select cockpit.url_github('https://github.com/rnab26/x/pull/3') as bon, cockpit.url_github('https://evil.example/x') as mauvais, cockpit.url_github('javascript:alert(1)') as js`);
+  verifie("seules les adresses GitHub sont montrées (jamais une adresse venue d'ailleurs)", u.bon === "https://github.com/rnab26/x/pull/3" && u.mauvais === null && u.js === null, u);
+  const d = await une(`select
+      has_function_privilege('anon', 'cockpit.rapprocher_depot(text, jsonb, boolean)', 'execute') as anon_rapprocher,
+      has_function_privilege('anon', 'cockpit.livrer_par_fusion(uuid, text, text, text, timestamptz)', 'execute') as anon_livrer,
+      has_function_privilege('authenticated', 'cockpit.rapprocher_depot(text, jsonb, boolean)', 'execute') as auth_rapprocher,
+      has_function_privilege('authenticated', 'cockpit.livrer_par_fusion(uuid, text, text, text, timestamptz)', 'execute') as auth_livrer,
+      has_function_privilege('anon', 'cockpit.etat_rapprochement(text)', 'execute') as anon_etat,
+      has_function_privilege('authenticated', 'cockpit.etat_rapprochement(text)', 'execute') as auth_etat,
+      has_function_privilege('anon', 'cockpit.regler_rapprochement(text, boolean)', 'execute') as anon_regler,
+      has_function_privilege('authenticated', 'cockpit.regler_rapprochement(text, boolean)', 'execute') as auth_regler,
+      has_function_privilege('anon', 'cockpit.regler_rapprochement_delais(text, int, int)', 'execute') as anon_delais,
+      has_function_privilege('authenticated', 'cockpit.regler_rapprochement_delais(text, int, int)', 'execute') as auth_delais,
+      has_function_privilege('anon', 'cockpit.noter_echec_rapprochement(text, text)', 'execute') as anon_noter,
+      has_function_privilege('authenticated', 'cockpit.noter_echec_rapprochement(text, text)', 'execute') as auth_noter,
+      (select relrowsecurity from pg_class where oid = 'cockpit.rapprochements'::regclass) as rls`);
+  verifie("droits : rapprocher et livrer = scripts et sessions seulement (ni anon ni comptes connectés) ; l'état et le réglage = comptes connectés (la garde admin est dans la fonction), jamais anon ; RLS sur le journal",
+    !d.anon_rapprocher && !d.anon_livrer && !d.auth_rapprocher && !d.auth_livrer && !d.anon_etat && d.auth_etat && !d.anon_regler && d.auth_regler && !d.anon_delais && d.auth_delais && !d.anon_noter && !d.auth_noter && d.rls === true, d);
+}
+
 try {
   await purgerRestesDePassesPrecedentes();
   await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
@@ -3553,7 +3911,8 @@ try {
   const admin = await une(`select count(*)::int as n from admins where user_id = ${q(userId)}`);
   if (admin.n !== 0) throw new Error("le compte de test est admin : les contrôles RLS n'auraient aucun sens");
 
-  const etapes = [
+
+const etapes = [
   // UN contrôle par ligne : en ajouter un = UNE ligne, insérée à côté du contrôle de ton sujet (pas en fin de liste : deux ajouts au même endroit se marchent dessus).
     controle1_reservation,
     controle2_historique,
@@ -3619,6 +3978,10 @@ try {
     controle52_mesure_reaction,
     controle53_reveil_chantier,
     controle54_paquets_de_cinq,
+    controle58_verdict_dit_en_session,
+    controle55_reveil_horaire,
+    controle56_classer_livres,
+    controle57_rapprochement_github,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
@@ -3630,7 +3993,7 @@ try {
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH, PCL, PRG, P11E, PAF]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -3638,7 +4001,7 @@ try {
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}, ${q(PRF)}))::int as projets,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}, ${q(PRF)}, ${q(PRG)}, ${q(P11E)}, ${q(PAF)}))::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);

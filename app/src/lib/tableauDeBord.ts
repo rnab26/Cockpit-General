@@ -2,7 +2,9 @@
 // fais A + D ») : quatre tuiles et trois listes, pour TOUS les projets ou un
 // seul. Les tuiles sont les LONGUEURS des listes, rien d'autre : le nombre
 // qu'on touche et la liste qu'on voit ne peuvent pas diverger.
-//   pour toi   = « À toi de jouer »        (entonnoir.aToi)
+//   pour toi   = « À toi de jouer »        (entonnoir.aToi, SEULEMENT les demandes : question, action, décision,
+//                blocage, fusion — 13 oct. 2026, estDemande)
+//   à tester   = chantiers livrés qui attendent leur « Ça marche » (leur propre liste, jamais « pour toi »)
 //   ça avance  = « Ça avance tout seul »   (entonnoir.caAvanceToutSeul, SEULEMENT ce qui a une
 //                preuve de vie : session ou assistant qui travaille vraiment — Raphaël, 30 sept. :
 //                « sinon c'est de la fausse information »)
@@ -11,7 +13,7 @@
 //   fini       = certifiés dans la période (ouJenSuis.estFiniDans)
 // Pur, vérifié par scripts/verifier-tableau-de-bord.ts.
 import type { Activite, Chantier, Message, SessionClaude, Tache } from './types.ts'
-import { aToi, aLancer, caAvanceToutSeul, horsChantier, type ElementAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from './entonnoir.ts'
+import { aToi, aLancer, aTesterDe, caAvanceToutSeul, demandesDe, horsChantier, type ElementAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from './entonnoir.ts'
 import { estFiniDans } from './ouJenSuis.ts'
 import { quiTravaille, resumeTravail, type QuiTravaille, type Resume } from './sessions.ts'
 import type { Fenetre } from './fenetre.ts'
@@ -25,7 +27,10 @@ export interface Donnees {
 }
 
 export interface TableauDeBord {
+  /** Les DEMANDES (ce qui attend une réponse ou un geste), sans les chantiers à tester : c'est le « pour toi ». */
   aToi: ElementAToi[]
+  /** Les chantiers livrés qui attendent un test (13 oct. 2026) : leur propre liste. */
+  aTester: ElementAToi[]
   caAvance: LigneCaAvance[]
   /** En cours (ou réponse à reprendre) mais AUCUNE preuve de vie : jamais compté dans « ça avance », compté « en pause ». */
   sansSession: LigneCaAvance[]
@@ -37,13 +42,15 @@ export interface TableauDeBord {
   /** Le détail par session (replié sous « Ça avance tout seul ») et son résumé chiffré. */
   travail: QuiTravaille[]
   resume: Resume
-  tuiles: { pourToi: number; caAvance: number; enPause: number; deCote: number; fini: number }
+  tuiles: { pourToi: number; aTester: number; caAvance: number; enPause: number; deCote: number; fini: number }
 }
 
 export function tableauDeBord(
   d: Donnees, now: Date, silenceMs: number, fenetre: Fenetre, ordreProjets: readonly string[], projetId: string | null = null,
 ): TableauDeBord {
-  const elements = aToi(d.chantiers, d.messages, projetId, d.activites, d.taches)
+  const tous = aToi(d.chantiers, d.messages, projetId, d.activites, d.taches)
+  const elements = demandesDe(tous)
+  const aTester = aTesterDe(tous)
   const lignes = caAvanceToutSeul(d.chantiers, d.activites, d.messages, d.sessions, d.taches, now, silenceMs, projetId)
   const caAvance = lignes.filter((l) => l.vivant)
   const sansSession = lignes.filter((l) => !l.vivant)
@@ -54,8 +61,8 @@ export function tableauDeBord(
   const deCote = d.chantiers.filter((c) => c.etat === 'reporte' && !c.archived_at && (!projetId || c.projet_id === projetId))
     .sort((a, b) => (a.reporte_jusqu_a ?? '9').localeCompare(b.reporte_jusqu_a ?? '9') || b.updated_at.localeCompare(a.updated_at))
   return {
-    aToi: elements, caAvance, sansSession, horsChantier: horsChantier(travail), pretALancer, fini, deCote, travail, resume: resumeTravail(travail),
-    tuiles: { pourToi: elements.length, caAvance: caAvance.length, enPause: pretALancer.length + sansSession.length, deCote: deCote.length, fini: fini.length },
+    aToi: elements, aTester, caAvance, sansSession, horsChantier: horsChantier(travail), pretALancer, fini, deCote, travail, resume: resumeTravail(travail),
+    tuiles: { pourToi: elements.length, aTester: aTester.length, caAvance: caAvance.length, enPause: pretALancer.length + sansSession.length, deCote: deCote.length, fini: fini.length },
   }
 }
 

@@ -33,6 +33,7 @@
 // travail). Les projets réels ne sont que LUS (premier écran, FacePro). Captures dans $CAPTURES (défaut : le scratchpad de la session).
 // Prérequis : Chromium Playwright (CHROMIUM ou /opt/pw-browsers/chromium),
 // SUPABASE_SERVICE_ROLE_KEY pour scripts/sql.sh.
+// GitHub (exécutions du dépôt) et la lecture des réglages de sa branche principale sont SIMULÉS : ni le dépôt de test ni GitHub ne sont touchés.
 import { chromium } from 'playwright'
 import { spawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -197,6 +198,9 @@ const compterVivants = (slug = null) => {
 const navigateur = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
 const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'fr-FR', timezoneId: 'Asia/Jerusalem' })
 await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGINE })
+// Ce banc parcourt l'accueil complet (« vue détaillée » : tuiles, tableau par section, sections repliables), qui est la
+// vue PAR DÉFAUT : aucun réglage n'est posé ici, c'est exprès (le banc prouve aussi que le défaut n'a pas changé).
+// L'accueil SIMPLE, choisi à un toucher, a son propre banc : app/scripts/verifier-accueil.mjs.
 // Le Chromium de l'environnement cloud Claude ne fait pas confiance au proxy
 // TLS (ERR_CERT_AUTHORITY_INVALID, constaté le 29 sept.) : les appels HTTP à
 // Supabase (et au site d'un projet, lu pour sa version en ligne) passent par
@@ -220,6 +224,10 @@ await ctx.route('https://api.github.com/**', (route) => {
     : [runGitHub('Déployer sur GitHub Pages', 'completed', 'success', 30)]
   return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ total_count: workflow_runs.length, workflow_runs }) })
 })
+// Réglages des hooks lus sur la branche PRINCIPALE du dépôt (« le cockpit est-il sur main ? », 14 oct. 2026, Melissa Nabet) :
+// simulé comme GitHub. Le dépôt de test n'a aucun cockpit sur main ; une lecture réelle y ferait un 404 dans la console.
+const REGLAGES_MAIN_SANS_COCKPIT = '{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh" } ] } ] } }'
+await ctx.route('https://raw.githubusercontent.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: REGLAGES_MAIN_SANS_COCKPIT }))
 const page = await ctx.newPage()
 const erreursConsole = []
 page.on('pageerror', (e) => erreursConsole.push(String(e)))
@@ -284,7 +292,12 @@ const fermerConv = async () => { await conv().getByTestId('fermer-conversation')
 // Une ligne « À toi de jouer » d'un chantier, en dépliant « Voir les N autres » s'il le faut.
 const elementAToi = async (chantierId, type) => {
   const el = page.locator(`[data-testid="element-a-toi"][data-type="${type}"][data-element-chantier="${chantierId}"]`)
-  if (!(await el.count())) { const plus = page.getByTestId('voir-a-toi'); if (await plus.count()) await plus.click() }
+  // 13 oct. 2026 : un chantier livré n'est plus une demande de « À toi de jouer » : il est dans « À tester », repliée d'emblée.
+  if (type === 'a_verifier') {
+    const bascule = page.getByTestId('a-tester-total-repli')
+    if (await bascule.count() && (await bascule.getAttribute('aria-expanded')) !== 'true') await bascule.click()
+  }
+  if (!(await el.count())) { const plus = page.getByTestId(type === 'a_verifier' ? 'voir-a-tester' : 'voir-a-toi'); if (await plus.count()) await plus.click() }
   await el.waitFor({ timeout: 10000 })
   return el
 }
@@ -344,7 +357,7 @@ try {
   console.log('  — accueil « Tout » (tableau de bord)')
   verifie('l’onglet « Tout » est l’accueil (sélectionné par défaut)', (await page.getByTestId('choix-projet').getAttribute('data-vue')) === 'tout')
   const bTuiles = await page.getByTestId('tuiles').boundingBox()
-  verifie('les cinq tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 5, bTuiles)
+  verifie('les six tuiles sont en haut de l’écran', bTuiles && bTuiles.y < 220 && await page.locator('[data-testid^="tuile-"]').count() === 6, bTuiles)
   const nTuile = async (cle) => Number(await page.getByTestId(`tuile-${cle}`).getByTestId('nombre-tuile').textContent())
   verifie('tuile « pour toi » = le nombre de « À toi de jouer » (une seule règle)', await nTuile('pourToi') === Number(await page.getByTestId('a-toi-total').textContent()))
   verifie('tuile « ça avance » = le nombre de « Ça avance tout seul »', await nTuile('caAvance') === Number(await page.getByTestId('ca-avance-total').textContent()))
@@ -923,8 +936,9 @@ try {
   else verifie('sans direct (conteneur), la question apparaît après « Actualiser », et l’écran le dit', await page.getByTestId('direct-coupe').count() === 1)
   const elQ = await elementAToi(Q1.id, 'question')
   verifie('« À toi de jouer » compte la question du projet (tuile « pour toi » comprise)', await page.locator('[data-testid="element-a-toi"][data-type="question"]').count() >= nAttenteAvant + 1 && Number(await page.getByTestId('tuile-pourToi').getByTestId('nombre-tuile').textContent()) === Number(await page.getByTestId('a-toi-total').textContent()))
-  verifie('la ligne : le titre du chantier d’abord, « Claude te pose une question », bouton « Répondre »',
-    (await elQ.getByTestId('titre-a-toi').textContent()).includes(Q1.titre) && /Claude te pose une question/.test(await elQ.getByTestId('attente-a-toi').textContent()) && (await elQ.getByTestId('verbe-a-toi').textContent()).trim() === 'Répondre')
+  // 13 oct. 2026 : la 2e ligne est la QUESTION elle-même (ce qui distingue deux cartes d'un même chantier), plus la phrase générique.
+  verifie('la ligne : le titre du chantier d’abord, la question en dessous, bouton « Répondre »',
+    (await elQ.getByTestId('titre-a-toi').textContent()).includes(Q1.titre) && (await elQ.getByTestId('attente-a-toi').textContent()).includes('Quelle option ?') && (await elQ.getByTestId('verbe-a-toi').textContent()).trim() === 'Répondre')
   // 0022 (Raphaël : « je ne sais pas quelles sont les plus récentes et les plus vieilles ») : âge visible, le plus récent en haut, tri réglable.
   {
     const premier = page.getByTestId('element-a-toi').first()
@@ -1000,8 +1014,8 @@ try {
     await actualiser()
     const elA = await elementAToi(AC1.id, 'action')
     // Depuis e069feb : plus de bouton « Faire » qui ouvre un fil, les trois réponses sont sur la ligne même.
-    verifie('action : la ligne dit « Claude attend un geste de toi », avec « Fait » directement dessus',
-      /Claude attend un geste de toi/.test(await elA.getByTestId('attente-a-toi').textContent()) && await elA.getByTestId('action-fait').count() === 1 && await elA.getByTestId('verbe-a-toi').count() === 0)
+    verifie('action : la ligne dit ce qu’il y a à faire (« Fusionne la PR de test »), avec « Fait » directement dessus',
+      /Fusionne la PR de test/.test(await elA.getByTestId('attente-a-toi').textContent()) && await elA.getByTestId('action-fait').count() === 1 && await elA.getByTestId('verbe-a-toi').count() === 0)
     const puceA = page.locator('[data-testid="filtre-a-toi-puce"][data-type="action"]')
     verifie('pastille « Actions » avec son compteur, à côté des autres', await puceA.count() === 1 && /^Actions\s*\d+$/.test((await puceA.textContent()).trim()), await puceA.count() ? await puceA.textContent() : null)
     await puceA.click()
@@ -1192,9 +1206,12 @@ try {
   verifie('les trois étapes écrites sur UNE ligne s’affichent sur trois lignes distinctes', nEtapes === 3 && ys.every((y, i) => i === 0 || y > ys[i - 1] + 8), { nEtapes, ys })
   const textesEtapes = await etapesV.allTextContents()
   verifie('chaque ligne porte son numéro et son texte, sans le suivant', /^1\.\s*Ouvre la page/.test(textesEtapes[0] ?? '') && /^3\.\s*Tu dois voir/.test(textesEtapes[2] ?? '') && !(textesEtapes[0] ?? '').includes('Touche'), textesEtapes)
-  const lienCv = encadre.getByRole('link')
-  verifie('le lien du texte est cliquable, nouvel onglet, rel noopener',
-    await lienCv.count() === 1 && await lienCv.getAttribute('href') === 'https://rnab26.github.io/Cockpit-General/' && await lienCv.getAttribute('target') === '_blank' && /noopener/.test(await lienCv.getAttribute('rel') ?? ''))
+  // Depuis #116 l'adresse du texte est aussi proposée en gros bouton nommé (LiensAOuvrir) : plusieurs liens vers la même page,
+  // il suffit qu'il y en ait au moins un et que TOUS s'ouvrent dans un nouvel onglet avec rel noopener.
+  const lienCv = encadre.locator('a[href="https://rnab26.github.io/Cockpit-General/"]')
+  const attrsCv = await lienCv.evaluateAll((els) => els.map((e) => ({ cible: e.getAttribute('target'), rel: e.getAttribute('rel') ?? '' })))
+  verifie('les liens vers l’adresse du texte sont cliquables : nouvel onglet, rel noopener (au moins un, tous conformes)',
+    attrsCv.length >= 1 && attrsCv.every((a) => a.cible === '_blank' && /noopener/.test(a.rel)), attrsCv)
   const [bEnc, bCert] = [await encadre.boundingBox(), await blocV1.getByTestId('btn-certifier').boundingBox()]
   verifie('l’encadré est AVANT les boutons « Ça marche / Corriger »', bEnc && bCert && bEnc.y + bEnc.height <= bCert.y, { bEnc, bCert })
   const friseV1 = blocV1.getByTestId('frise-en-ligne')
@@ -1623,7 +1640,7 @@ try {
   // 7 bis. Mise en ligne (GitHub simulé) et mode autonome, dans « Réglages du projet » (replié)
   console.log('  — mise en ligne et mode autonome')
   // Vue du projet (9cc71872) : on arrive sur « travail » ; les réglages sont derrière la 2e icône.
-  verifie('vue projet : barre du bas, on arrive sur « travail »', await page.getByTestId('barre-onglets').getByRole('tab').count() === 5 && (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('autonome-projet').count() === 0)
+  verifie('vue projet : barre du bas (6 onglets depuis « Discussions »), on arrive sur « travail »', await page.getByTestId('barre-onglets').getByRole('tab').count() === 6 && (await page.getByTestId('barre-onglets').getAttribute('data-actif')) === 'projet' && await page.getByTestId('autonome-projet').count() === 0)
   await page.getByTestId('onglet-vue-reglages').click()
   const reglagesP = page.getByTestId('reglages-projet')
   await reglagesP.locator('> button').click()
@@ -1639,6 +1656,12 @@ try {
   verifie('GitHub en limite (403) : l’écran le dit, et garde le dernier état lu', /GitHub limite les consultations/.test(await dep.textContent()) && /Mise en ligne en cours/.test(await dep.textContent()))
   githubMode = 'ok'
   await dep.getByTestId('deploiement-relire').click()
+  // Pourquoi la prise est éteinte : la cause LUE sur la branche principale du dépôt (14 oct. 2026, Melissa Nabet : le branchement était
+  // resté sur une branche de travail, l'écran disait seulement « plus aucune session depuis 15 j »).
+  const lignesBranchement = reglagesP.getByTestId('branchement')
+  await lignesBranchement.getByText(/pas installé sur la branche principale/).waitFor({ timeout: 10000 }).catch(() => {})
+  const texteBranchement = await lignesBranchement.textContent()
+  verifie('réglages du projet : sans le cockpit sur main, la ligne dit POURQUOI et la phrase à dire', /pas installé sur la branche principale/.test(texteBranchement) && /« branche le cockpit »/.test(texteBranchement), texteBranchement)
   await capture(page, 'deploiement')
   // Mode autonome (0031, chantier 79ec70d6) : un interrupteur visible HORS du repli, un toucher allume ou éteint.
   const zoneAuto = () => page.getByTestId('autonome-projet')
@@ -1689,6 +1712,50 @@ try {
   await inter().click()
   await toastAuPremierPlan(/Mode autonome arrêté/)
   verifie('arrêté : en base, éteint', (({ autonome_toujours, autonome_jusqu_a }) => autonome_toujours === false && autonome_jusqu_a === null)(enBase()))
+  // « Chantiers et GitHub » (0080) : les chantiers que plus personne ne tient passent « livré » d'après GitHub. Le rôle en une phrase, UN état, un interrupteur.
+  const rgh = page.getByTestId('rapprochement-github')
+  await rgh.waitFor({ timeout: 10000 })
+  const rghBase = () => sql(`select rapprochement_auto as a from projets where id = '${projet.id}'`)[0]?.a
+  verifie('Chantiers et GitHub : le rôle est dit en une phrase, et « jamais validé : c’est toi »', /livré, à vérifier/.test(await rgh.getByTestId('rapprochement-role').textContent()) && /Jamais « validé »/.test(await rgh.getByTestId('rapprochement-role').textContent()))
+  verifie('Chantiers et GitHub : projet neuf, jamais passé → « Pas encore passé » + quand il passera, bouton « Éteindre »', /Pas encore passé/.test(await rgh.getByTestId('rapprochement-titre').textContent()) && /ouverture d’une session/.test(await rgh.getByTestId('rapprochement-detail').textContent()) && /Éteindre/.test(await rgh.getByTestId('rapprochement-interrupteur').textContent()) && (await rgh.getAttribute('data-ton')) === 'attente')
+  const bRg = await rgh.boundingBox()
+  verifie('Chantiers et GitHub : dans l’écran (390 px), bouton assez grand pour un pouce', !!bRg && bRg.x >= 0 && bRg.x + bRg.width <= 390 && ((await rgh.getByTestId('rapprochement-interrupteur').boundingBox())?.height ?? 0) >= 28, bRg)
+  await rgh.getByTestId('rapprochement-interrupteur').click()
+  verifie('Éteindre : toast visible', await toastAuPremierPlan(/Rapprochement avec GitHub éteint/), { auPremierPlan: dernierDessus })
+  verifie('Éteindre : en base, éteint', rghBase() === false)
+  await page.waitForFunction(() => /Rallumer/.test(document.querySelector('[data-testid="rapprochement-interrupteur"]')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {})
+  verifie('éteint : l’écran le dit (« Éteint sur ce projet ») et propose « Rallumer »', /Éteint sur ce projet/.test(await rgh.getByTestId('rapprochement-titre').textContent()) && (await rgh.getAttribute('data-ton')) === 'eteint' && /Rallumer/.test(await rgh.getByTestId('rapprochement-interrupteur').textContent()))
+  await capture(page, 'rapprochement-github-eteint')
+  // Un passage qui a ÉCHOUÉ se dit (sinon « Pas encore passé » ferait croire que tout va bien).
+  sql(`select j from (select cockpit.noter_echec_rapprochement('${SLUG}', 'clone impossible : test du banc') as j) q`)
+  await rgh.getByTestId('rapprochement-interrupteur').click()
+  verifie('Rallumer : toast visible, en base rallumé', await toastAuPremierPlan(/Rapprochement avec GitHub rallumé/) && rghBase() === true)
+  await page.waitForFunction(() => /a échoué/.test(document.querySelector('[data-testid="rapprochement-titre"]')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {})
+  verifie('rallumé après un échec : l’écran dit « Le dernier passage a échoué » (en rouge), la cause, et qu’il réessaie — pas « Pas encore passé »', (await rgh.getAttribute('data-ton')) === 'erreur' && /Le dernier passage a échoué/.test(await rgh.getByTestId('rapprochement-titre').textContent()) && /clone impossible : test du banc/.test(await rgh.getByTestId('rapprochement-detail').textContent()) && /réessaie/.test(await rgh.getByTestId('rapprochement-detail').textContent()), await rgh.textContent())
+  await capture(page, 'rapprochement-github-echec')
+  sql(`update projets set rapproche_erreur = null, rapproche_erreur_at = null where id = '${projet.id}'`)
+  // On attend le CHANGEMENT du bouton entre deux touchers (pas un toast : celui de la fois d'avant serait encore à l'écran).
+  const libelleInter = (re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid="rapprochement-interrupteur"]')?.textContent ?? ''), re, { timeout: 10000 }).catch(() => {})
+  await rgh.getByTestId('rapprochement-interrupteur').click()
+  await libelleInter('Rallumer')
+  await rgh.getByTestId('rapprochement-interrupteur').click()
+  await libelleInter('Éteindre')
+  await page.waitForFunction(() => /Pas encore passé/.test(document.querySelector('[data-testid="rapprochement-titre"]')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {})
+  verifie('échec effacé : l’écran redit « Pas encore passé » (jamais passé)', /Pas encore passé/.test(await rgh.getByTestId('rapprochement-titre').textContent()) && (await rgh.getAttribute('data-ton')) === 'attente')
+  // Réglages (0081) : deux délais par projet (aucune valeur arbitraire en dur), réglables ici.
+  const delaisBase = () => sql(`select to_jsonb(x) as j from (select rapprochement_trace_h as t, rapprochement_passage_min as m from projets where id = '${projet.id}') x`)[0]?.j
+  verifie('délais par défaut en base : rappel après 4 h, recherche toutes les 20 min', delaisBase()?.t === 4 && delaisBase()?.m === 20, delaisBase())
+  await rgh.getByTestId('rapprochement-regler').click()
+  verifie('« Régler… » ouvre les deux délais, aux valeurs du projet (4 heures, 20 minutes)', (await rgh.getByTestId('rapprochement-trace').inputValue()) === '4' && (await rgh.getByTestId('rapprochement-passage').inputValue()) === '20')
+  await rgh.getByTestId('rapprochement-trace').selectOption('8')
+  verifie('rappel après 8 h : toast visible, en base 8 h (l’autre délai ne bouge pas)', await toastAuPremierPlan(/Rappel d’une session après 8 heures/) && delaisBase()?.t === 8 && delaisBase()?.m === 20, delaisBase())
+  await rgh.getByTestId('rapprochement-passage').selectOption('60')
+  verifie('recherche toutes les heures : toast visible, en base 60 min', await toastAuPremierPlan(/au plus toutes les 1 heure/) && delaisBase()?.m === 60 && delaisBase()?.t === 8, delaisBase())
+  await page.waitForFunction(() => document.querySelector('[data-testid="rapprochement-trace"]')?.value === '8' && document.querySelector('[data-testid="rapprochement-passage"]')?.value === '60', null, { timeout: 10000 }).catch(() => {})
+  verifie('les sélecteurs affichent les nouvelles valeurs (8 heures, 1 heure)', (await rgh.getByTestId('rapprochement-trace').inputValue()) === '8' && (await rgh.getByTestId('rapprochement-passage').inputValue()) === '60')
+  await capture(page, 'rapprochement-github-reglages')
+  await rgh.getByTestId('rapprochement-regler').click()
+  verifie('« Fermer les réglages » replie les délais', await rgh.getByTestId('rapprochement-delais').count() === 0)
   await allerTout()
   await page.getByTestId('reglages-projets').locator('> button').click()
   const resumeProjet = page.locator(`[data-testid="projet-resume"][data-projet="${SLUG}"]`)
@@ -1738,8 +1805,9 @@ try {
   const [ra] = sql(`select renforts_auto, renforts_auto_seuil from chefs where projet_id = '${projet.id}'`)
   verifie('réglages : ouverture automatique allumée, seuil 4 enregistré (la même règle que la chef lit)', ra?.renforts_auto === true && ra?.renforts_auto_seuil === 4, ra)
   await renf().getByTestId('renforts-auto').waitFor({ timeout: 10000 })
-  await page.waitForFunction((slug) => /dès 4 chantiers/.test(document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renforts-auto"]`)?.textContent ?? ''), SLUG, { timeout: 10000 }).catch(() => {})
-  verifie('réglages : la ligne d’état dit le seuil enregistré', /dès 4 chantiers/.test(await renf().getByTestId('renforts-auto').textContent()), await renf().getByTestId('renforts-auto').textContent())
+  // 0076 : un chantier en attente suffit à ouvrir une session (par paquets) ; le seuil enregistré (4) ne sert plus qu'à l'alerte « bientôt saturée ».
+  await page.waitForFunction((slug) => /dès 1 chantier en attente, par paquets/.test(document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renforts-auto"]`)?.textContent ?? ''), SLUG, { timeout: 10000 }).catch(() => {})
+  verifie('réglages : la ligne d’état dit la règle en vigueur (un chantier suffit, par paquets)', /dès 1 chantier en attente, par paquets/.test(await renf().getByTestId('renforts-auto').textContent()), await renf().getByTestId('renforts-auto').textContent())
   await renf().getByTestId('lancer-renforts').click()
   verifie('clic : toast « 1 renfort demandé : <section> »', await toastAuPremierPlan(/1 renfort demandé : /), { auPremierPlan: dernierDessus })
   const rdem = sql(`select r.id, r.statut, r.max_agents, coalesce(s.nom, 'Sans section') as section from renforts r left join sections s on s.id = r.section_id where r.projet_id = '${projet.id}'`)
@@ -1898,7 +1966,8 @@ try {
   await page.getByTestId('titre').fill(titreTest)
   await page.getByTestId('demande').fill('Créé par verifier-web, supprimé juste après.')
   await page.getByTestId('creer-chantier').click()
-  await page.getByText(/créé\.$/).first().waitFor({ timeout: 10000 })
+  // Le message dit maintenant où le chantier apparaît (« Chantier « … » créé. Il est dans … ») : il ne se termine plus par « créé. ».
+  await page.getByText(/Chantier « .* » créé/).first().waitFor({ timeout: 10000 })
   await deplierTout()
   const ligneTest = ligneDe(titreTest)
   await ligneTest.waitFor({ timeout: 15000 })
