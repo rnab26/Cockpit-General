@@ -1106,6 +1106,7 @@ async function controle26_fil_discussion() {
   await ins({ kind: "constat", corps: "Je ne sais pas dire si c’est bon : vérifie pour moi.", il_y_a: 630 });
   await ins({ corps: "Raphaël demande : où en est ce chantier ?", ou_en_est: true, il_y_a: 620 });
   await ins({ corps: "Doublon fusionné : « X »", il_y_a: 610 });
+  await ins({ corps: "J'ai retiré la carte « Y » : déjà fait", il_y_a: 605 });
   await ins({ corps: "1 photo", medias: media, il_y_a: 590 }); // jointe à la réponse à la question (10 s après)
   await ins({ corps: "1 photo plus tard", medias: media, il_y_a: 60 });
   const lignes = await sql(`select m.id, m.auteur_type, m.kind, m.corps, m.ou_en_est, m.medias, m.chantier_id,
@@ -1115,7 +1116,7 @@ async function controle26_fil_discussion() {
   const racine = dirname(dirname(fileURLToPath(import.meta.url)));
   const { estMessageLibre } = await import(join(racine, "app/src/lib/discussion.ts"));
   const ecarts = lignes.filter((m) => estMessageLibre(m, lignes) !== m.libre_base).map((m) => ({ corps: m.corps, base: m.libre_base }));
-  verifie(`même règle « message libre » dans l'app et en base (${lignes.length} lignes, chaque cas)`, lignes.length === 11 && ecarts.length === 0, ecarts);
+  verifie(`même règle « message libre » dans l'app et en base (${lignes.length} lignes, chaque cas)`, lignes.length === 12 && ecarts.length === 0, ecarts);
   verifie("« je n'ai pas compris », Corriger, une photo seule : attendent une réponse ; boutons, où ça en est, doublon, photo de réponse : non",
     lignes.filter((m) => m.libre_base).map((m) => m.corps).join("|") === "Je n'ai pas compris ta demande|Et pour moi ?|Ça ne marche pas : le bouton|1 photo plus tard", lignes.filter((m) => m.libre_base).map((m) => m.corps));
 

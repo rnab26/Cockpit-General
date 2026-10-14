@@ -43,6 +43,8 @@ export function estMessageLibre(m: M, fil: readonly M[]): boolean {
   if (m.kind === 'constat' && !m.corps.startsWith('Ça ne marche pas : ')) return false
   if (m.ou_en_est) return false
   if (m.corps.startsWith('Doublon fusionné : ')) return false
+  // Note de retirer_carte (0087) : la carte est déjà fermée, rien à répondre.
+  if (m.corps.startsWith("J'ai retiré la carte « ")) return false
   // Les pièces jointes d'une réponse à une question : servies avec la réponse (0017).
   if ((m.medias?.length ?? 0) > 0) {
     const t = Date.parse(m.created_at)
