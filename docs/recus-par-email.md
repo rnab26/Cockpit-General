@@ -15,8 +15,8 @@ prestataire dit quand le programme est passé et ce qu'il a fait. Aucune session
 | Pièce | Rôle |
 |---|---|
 | `app/src/google/recus-claude/Code.gs` | LE programme tel que Raphaël le colle chez Google. `installer()` (une fois : programme le dimanche vers 7 h, heure d'Israël, puis premier passage), `essai()` (dit ce qui SERAIT ajouté, n'écrit rien), `passage()` (le dimanche). `const VERSION` : à augmenter à chaque changement (voir plus bas). |
-| `app/src/google/recus-claude/appsscript.json` | Les réglages Google : lecture des mails (`gmail.readonly`, rien d'autre côté Gmail), appels extérieurs, programmation du passage ; `urlFetchWhitelist` = Gmail et la fonction, rien d'autre. |
-| `supabase/functions/cockpit-recus/` | `regle.ts` (le port TypeScript de la règle, sans dépendance), `traiter.ts` (ce que la fonction fait d'un reçu et d'un passage, sur une base injectée : testable sans réseau), `index.ts` (HTTP + vraie base). Déployée : `VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-recus` (UNE fois en fin de lot). |
+| `app/src/google/recus-claude/appsscript.json` | Les réglages Google : le service avancé « Gmail » (`enabledAdvancedServices`, v1 : Google l'active tout seul sur un projet Apps Script par défaut), lecture des mails (`gmail.readonly`, rien d'autre côté Gmail), appels extérieurs, programmation du passage ; `urlFetchWhitelist` = la fonction du cockpit, cette seule adresse. |
+| `supabase/functions/cockpit-recus/` | `regle.ts` (le port TypeScript de la règle, sans dépendance), `traiter.ts` (ce que la fonction fait d'un reçu et d'un passage, sur une base injectée : testable sans réseau), `lien.ts` (le téléchargement du lien « Download invoice » : hôte, redirections, taille et délai, sur un réseau injectable), `index.ts` (HTTP + vraie base). Déployée : `VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-recus` (UNE fois en fin de lot). |
 | Migration 0087, table `cockpit.cles_import` | La clé : seule son empreinte sha256 et ses 4 derniers caractères sont gardés ; UNE active par prestataire ; `derniere_utilisation_at` et `programme_version` (l'écran voit si le programme est venu, et s'il est périmé). `creer_cle_import(service)` rend la clé en clair UNE fois et révoque la précédente ; `revoquer_cle_import(id)`. Admin seulement. |
 | `app/src/lib/recusGoogle.ts`, `components/ImportGoogle.tsx` | La ligne « Reçus Claude par e-mail » de la carte du prestataire et l'assistant (sept étapes, une à la fois). Le texte copié est `Code.gs` avec la clé posée (`programmeAvecCle`). |
 | `scripts/recus-fixtures.mjs` | Les reçus FICTIFS (une seule source pour tous les bancs). Un format de reçu qui change = un cas de plus ici, puis la règle corrigée dans LES DEUX lecteurs. |
@@ -24,9 +24,16 @@ prestataire dit quand le programme est passé et ce qu'il a fait. Aucune session
 **Le protocole** (POST JSON, en-tête `x-cockpit-key`) : `etat` (projet, prestataire, jour de départ, cadence) → pour chaque mail, `recu`
 (`texte`, `pdfs: [{nom, base64}]`, `essai`) → `passage` (les résultats rapportés, l'échec éventuel, la cadence : écrit le « battement » de la carte).
 Un refus de la règle est une réponse NORMALE (`statut: "refus"`), pas une panne. Idempotent : le même reçu renvoyé chaque semaine ne s'ajoute
-jamais deux fois ; une ligne déjà là SANS PDF reçoit celui du mail (c'est ainsi que les anciennes factures retrouvent le leur). Le PDF est celui
-du MÊME mail : sa pièce jointe doit s'appeler `Invoice-<n° de facture>.pdf` (le n° lu dans le texte), être un vrai PDF et faire 5 Mo au plus ;
-sinon la ligne est ajoutée sans lui et le refus est dit dans la note. Le contenu du PDF n'est PAS relu (pas de lecteur de PDF côté serveur) :
+jamais deux fois ; une ligne déjà là SANS PDF reçoit celui du mail (c'est ainsi que les anciennes factures retrouvent le leur). **Le PDF** :
+le programme envoie les PDF du mail (3 au plus, 5 Mo en tout, la facture avant le reste) ; la fonction prend celui dont le NOM PORTE le n° de
+facture lu dans le texte (`Invoice-<n°>.pdf`, nom vu sur de vrais mails du 13 oct. ; tout autre PDF dont le nom porte le n° est aussi accepté, et rien
+d'autre ; le PDF du reçu, `Receipt-<n° de reçu>.pdf`, ne le porte pas), vrai PDF (en-tête `%PDF-`), 5 Mo au plus ; une
+pièce fausse n'est jamais rangée : la ligne est ajoutée sans elle et le refus est dit dans la note (avec le nom des pièces vues). **Secours** :
+sans pièce jointe utilisable, la fonction ouvre elle-même le lien « Download invoice » du mail, SEULEMENT s'il est de la forme
+`https://pay.stripe.com/invoice/…` (jamais une adresse choisie par le texte du mail) et ses redirections restent chez `stripe.com` (4 au plus,
+25 s, 5 Mo) ; ce lien expire (valable à 11 jours, expiré à 33, constaté le 13 oct.), donc son échec ne compte JAMAIS comme une erreur : la facture
+est ajoutée sans PDF, la note dit « PDF à joindre à la main : <n°> » et la carte reste verte (sinon chaque vieille facture la ferait rougir à
+chaque passage). Une ligne qui a déjà son PDF n'ouvre aucun lien. Le contenu du PDF n'est PAS relu (pas de lecteur de PDF côté serveur) :
 c'est la seule différence avec la voie « session » (qui le recoupe avec `pdftotext`).
 
 **La clé.** Créée dans l'app (Coûts › Claude › « Brancher mon compte Google »), montrée UNE fois, posée dans le programme au moment de la copie
@@ -36,8 +43,10 @@ viennent de sa ligne, jamais de la requête). `essai` n'écrit rien dans Coûts 
 
 **Ce que le programme ne fait pas, et comment c'est tenu.** Il n'envoie, ne supprime, ne classe, n'écrit aucun mail : Google lui-même
 refuserait (portée `gmail.readonly`). Il lit l'EXPÉDITEUR de chaque mail (en-têtes seulement) AVANT d'en lire le contenu et n'envoie jamais le
-contenu d'un autre expéditeur (nom d'affichage trompeur compris : on lit l'adresse). Il ne montre jamais la clé dans son journal. `Code.gs` n'utilise
-ni `GmailApp`, ni `MailApp`, ni `DriveApp`… (le banc le vérifie dans le code).
+contenu d'un autre expéditeur (nom d'affichage trompeur compris : on lit l'adresse). Il ne montre jamais la clé dans son journal. Gmail n'est appelé
+que par TROIS lectures du service avancé (`Messages.list`, `Messages.get`, `Messages.Attachments.get`) ; le seul appel web est un POST vers le
+cockpit, et le jeton Google n'est jamais manipulé (aucun `getOAuthToken`). `Code.gs` n'utilise ni `GmailApp`, ni `MailApp`, ni `DriveApp`… (le banc le
+vérifie dans le code, et son faux service Gmail fait échouer le banc au moindre appel qui n'est pas une lecture).
 
 **Installer (une fois, 10 à 15 min, par Raphaël).** L'assistant de l'app donne les sept étapes, une à la fois, avec le lien exact et les deux
 textes à copier : (1) créer la clé ; (2) ouvrir https://script.google.com/ et créer un projet ; (3) coller le programme ; (4) cocher « Afficher le
@@ -50,20 +59,30 @@ départ à la plus ancienne facture de Coûts, et le prochain passage ajoute les
 à chaque appel, l'écran dit « version 1 ; la version 2 est disponible » et propose de recopier). Sans cela, une vieille copie dans le compte
 Google dérive en silence. Le texte copié change alors : la clé devra être recréée (la clé n'est jamais re-montrée).
 
-**Vérifié (14 oct. 2026, preuves : les bancs).** `node --experimental-strip-types scripts/verifier-recus-parite.mjs` (66 : les deux lecteurs lisent
-22 reçus valides et 24 refusés pareil, au caractère près ; mêmes phrases, mêmes constantes, mêmes mots d'écran sans jargon) ; `app/scripts/verifier-recus-regle.ts`
-(96 : la règle et ce que la fonction en fait, sur une base en mémoire) ; `app/scripts/verifier-recus-google.ts` (29 : règles de l'écran) ;
-`scripts/verifier-recus-google.mjs` (86 : la fonction sur la vraie base avec un projet jetable, et LE programme exécuté contre un faux Gmail) ;
-`app/scripts/verifier-recus-google.mjs` (46 : parcours complet sur un écran de téléphone) ; `verifier-base` §58 (12).
-**Déduit** (doc Google lue, jamais exécuté chez Google) : la portée `gmail.readonly` suffit pour `messages.list/get` et `attachments.get`
-(listes d'autorisations de la doc) ; `ScriptApp.getOAuthToken()` porte les portées déclarées dans le fichier de réglages (« only includes scopes
-that the script currently needs ») ; les libellés de l'écran d'avertissement de Google viennent de guides, pas de la doc officielle (les étapes
-donnent les mots anglais et français) ; le texte brut du mail existe en `text/plain` (le texte lu par le lecteur Gmail des sessions n'a pas la
-mise en page cachée du HTML), sinon le programme réduit la partie HTML à du texte (chemin testé sur un HTML fictif, pas sur un vrai mail Stripe).
-**Inconnu / non vérifié** : l'exécution réelle chez Google (autorisations, formes de déclencheur `everyWeeks`, quotas ; un repli « le dimanche à
-7 h » est prévu), l'éditeur Google sur téléphone (« Version pour ordinateur » conseillée), l'arrivée des mails d'un vrai dimanche.
+**Vérifié (14 oct. 2026, preuves : les bancs, rejoués après la dernière modification).** `node --experimental-strip-types scripts/verifier-recus-parite.mjs`
+(69 : les deux lecteurs lisent 23 reçus valides et 24 refusés pareil, au caractère près ; mêmes phrases, mêmes constantes, MÊME règle du lien PDF
+sur 18 adresses, mêmes mots d'écran sans jargon) ; `app/scripts/verifier-recus-regle.ts` (151 : la règle et ce que la fonction en fait, sur une
+base en mémoire, dont le choix du PDF, le lien de secours et, sur un faux réseau, ses garde-fous : hôte, redirections, taille, délai) ; `app/scripts/verifier-recus-google.ts` (29 : règles de l'écran) ;
+`scripts/verifier-recus-google.mjs --local` (97 : la fonction lancée ici avec Deno sur la vraie base, projet jetable, UN appel réel à Stripe avec
+un lien inventé qu'il refuse ; et LE programme exécuté contre un faux service Gmail qui n'accepte que les trois lectures : pages de résultats,
+six pièces jointes, service non activé, autorisation refusée, clé révoquée) ; `app/scripts/verifier-recus-google.mjs` (46 : parcours complet
+sur un écran de téléphone) ; `verifier-base` §58 (12) ; `deno check` de la fonction propre ; `tsc -b`, tous les `app/scripts/verifier-*.ts` et le
+build passent.
+**Vérifié sur de vrais mails (13 oct. 2026, lus par le lecteur Gmail des sessions, rien gardé)** : un reçu Anthropic porte DEUX pièces jointes PDF,
+`Invoice-<n° de facture>.pdf` (la première) et `Receipt-<n° de reçu>.pdf` (tous les reçus lus, de juillet à octobre, avec deux séries de numéros de facture différentes).
+**Vérifié dans la documentation de Google (lue le 14 oct. 2026)** : un service avancé déclaré dans `dependencies.enabledAdvancedServices` du
+fichier de réglages est utilisable par le programme ; son API s'active toute seule pour un projet Apps Script « par défaut » (le cas de Raphaël,
+qui ne l'a pas lié à un projet Cloud) ; `Gmail.Users.Messages.list('me', {q, maxResults, pageToken})` existe. **Déduit** (la correspondance
+avec l'API REST de Gmail, pas relue ligne à ligne) : `Messages.get('me', id, {format, metadataHeaders})` et `Messages.Attachments.get('me', idMessage,
+idPiece)` ont la même forme ; la portée `gmail.readonly` suffit pour ces trois lectures ; le texte brut du mail existe en `text/plain` (sinon le
+programme réduit la partie HTML à du texte : chemin testé sur un HTML fictif, pas sur un vrai mail Stripe) ; les libellés de l'écran d'avertissement de
+Google viennent de guides, pas de la doc officielle (les étapes donnent les mots anglais et français).
+**Inconnu / non vérifié** : l'exécution réelle chez Google (autorisations, forme de déclencheur `everyWeeks` ; un repli « le dimanche à 7 h » est
+prévu ; quotas), l'éditeur Google sur téléphone (« Version pour ordinateur » conseillée), l'arrivée des mails d'un vrai dimanche, le comportement
+réel de `pay.stripe.com` sur un vrai lien encore valable (le banc n'a vu que le refus d'un lien inventé : le corps de la requête, les
+redirections et le délai sont prouvés sur des cas fabriqués seulement).
 
-**Limites dites.** Un seul fournisseur : Anthropic (un autre = une entrée de plus dans les DEUX lecteurs + ses cas dans les fixtures). Deux
+**Limites dites.** Un seul fournisseur : Anthropic (un autre = une entrée de plus dans les DEUX lecteurs + ses cas dans les fixtures ; voir « Et les autres fournisseurs ? » plus bas). Au plus 40 mails par passage (les plus récents) : un jour de départ très ancien avec plus de 40 reçus en laisserait les plus vieux de côté. Deux
 passages simultanés sur la même facture inédite pourraient l'ajouter deux fois (aucun verrou : les passages sont hebdomadaires et le programme
 ne tourne qu'un à la fois) ; il n'existe pas d'index unique sur `depenses.reference` (des références identiques chez deux fournisseurs sont permises).
 Les reçus d'avant le jour de départ sont laissés de côté (le bouton de rattrapage les reprend). Une facture refusée par la règle (format changé)
@@ -73,6 +92,20 @@ reste « non lue » à chaque passage jusqu'à ce que la règle la lise : la car
 programme depuis l'app ; « Gmail a répondu 403 » → relancer `installer` et accepter la lecture des mails ; « Le programme n'a pas sa clé » →
 il a été collé sans passer par l'app ; « Clé inconnue » → clé mal recopiée ; rien dans le journal de Google → l'exécution n'a pas eu lieu (voir
 « Executions » dans l'éditeur Google) ; carte « en retard » → le passage du dimanche n'a pas tourné (supprimé, ou compte Google différent).
+
+**Et les autres fournisseurs ? (question de Raphaël, 14 oct. : « valable pour tous les reçus que j'ajoute, pas que Claude ? »)** Honnêtement :
+**pas automatiquement, mais presque tout est déjà générique.** Ce qui sert à tous : la clé (une par prestataire), la carte « dernier passage »,
+le dédoublonnage par n° de facture, le rangement du PDF, le jour de départ, l'assistant d'installation, la règle « jamais d'écriture hors de son
+prestataire ». Ce qui est propre à Anthropic : **le lecteur** (expéditeur exact, objet, forme du texte : montant d'en-tête = total = payé, lignes qui
+s'additionnent, vendeur « Anthropic, PBC »). Un autre fournisseur = un autre lecteur, écrit sur UN VRAI reçu de lui (aucun format ne se devine :
+la règle refuse ce qu'elle ne comprend pas, c'est voulu). D'après la première recherche de fournisseurs (13 oct.), les reçus de sa boîte tombent dans
+quatre familles : (1) même modèle Stripe que celui d'Anthropic (le lecteur se généralise presque tel quel : autre expéditeur, autre vendeur) ;
+(2) reçus de la plateforme de facturation Orb (autre forme de texte, à lire un par un) ; (3) factures en hébreu, souvent un PDF seul (Tamal…) : pas
+de texte fiable à lire, il faudrait une lecture de PDF (non disponible dans la fonction) ; (4) achats uniques, sans régularité. Pour les familles 1 et 2,
+le chemin propre est de rendre le programme du compte Google NEUTRE (il demande au cockpit « quel expéditeur et quel objet chercher ? » au lieu de
+les avoir en dur) et de déclarer un lecteur par prestataire dans la fonction ; pour la famille 3, une décision de Raphaël (ligne « à saisir » sans montant,
+ou lecture de PDF). **Pas fait**, faute d'un reçu réel de chaque famille ; à faire sur demande, un fournisseur à la fois, en commençant par un reçu
+qu'il m'indique.
 
 ---
 
