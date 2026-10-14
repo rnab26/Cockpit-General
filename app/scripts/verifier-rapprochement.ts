@@ -2,7 +2,7 @@
 // La règle elle-même (qui est livré, sur quelle preuve) est en base : verifier-base §57 et scripts/verifier-rapprochement.mjs.
 // node --experimental-strip-types app/scripts/verifier-rapprochement.ts
 import { verifie, bilan } from './_assert.ts'
-import { avecCourant, CHOIX_PASSAGE_MIN, CHOIX_TRACE_H, libelleHeures, libelleMinutes, phraseRapprochement, ROLE_RAPPROCHEMENT, type EtatRapprochement } from '../src/lib/rapprochement.ts'
+import { avecCourant, CHOIX_PASSAGE_MIN, CHOIX_TRACE_H, libelleHeures, libelleMinutes, phraseRapprochement, ROLE_RAPPROCHEMENT, derniersPassages, libelleRegle, phraseConfirmationAnnulation, statutPassage, type EtatRapprochement, type PassageAuto } from '../src/lib/rapprochement.ts'
 
 const now = new Date('2026-10-13T12:00:00Z').getTime()
 const il = (heures: number) => new Date(now - heures * 3600_000).toISOString()
@@ -50,4 +50,12 @@ verifie('les choix par défaut contiennent les valeurs par défaut du serveur (4
 verifie('une valeur posée ailleurs (6 h) reste choisissable : le sélecteur ne ment jamais', avecCourant(CHOIX_TRACE_H, 6).join(',') === '1,2,4,6,8,24', avecCourant(CHOIX_TRACE_H, 6))
 verifie('… sans doublon, et sans valeur quand elle est inconnue', avecCourant(CHOIX_TRACE_H, 4).join(',') === '1,2,4,8,24' && avecCourant(CHOIX_TRACE_H, undefined).join(',') === '1,2,4,8,24')
 verifie('date illisible : pas de plantage, ni « NaN »', !/NaN/.test(JSON.stringify(phraseRapprochement(etat({ rapproche_at: 'n\'importe quoi' }), now))))
+console.log('rapprochement GitHub : derniers passages et « Annuler »')
+const passage = (p: Partial<PassageAuto>): PassageAuto => ({ id: 'p1', chantier_id: 'c1', regle: 'jalon', preuve: 'x', url: null, at: il(2), annule_at: null, etat_avant: 'en_cours', chantier: { titre: 'Accueil', etat: 'a_verifier', archived_at: null }, ...p })
+verifie('un chantier encore « à vérifier » s’annule', statutPassage(passage({})) === 'annulable')
+verifie('un passage déjà annulé ne propose plus rien', statutPassage(passage({ annule_at: il(1) })) === 'annule')
+verifie('certifié, corrigé, archivé ou supprimé : rien à défaire', ['valide', 'en_cours'].every((e) => statutPassage(passage({ chantier: { titre: 'a', etat: e, archived_at: null } })) === 'traite') && statutPassage(passage({ chantier: { titre: 'a', etat: 'a_verifier', archived_at: il(1) } })) === 'traite' && statutPassage(passage({ chantier: null })) === 'traite')
+verifie('la confirmation dit le chantier et l’état retrouvé', /« Accueil » redeviendra « en cours »/.test(phraseConfirmationAnnulation(passage({}))) && /prêt à lancer/.test(phraseConfirmationAnnulation(passage({ etat_avant: 'libre' }))))
+verifie('règles lisibles, une règle inconnue reste affichée', libelleRegle('branche') === 'branche du chantier fusionnée' && libelleRegle('autre') === 'autre')
+verifie('les plus récents d’abord, bornés', derniersPassages([passage({ id: 'a', at: il(5) }), passage({ id: 'b', at: il(1) }), passage({ id: 'c', at: il(3) })], 2).map((p) => p.id).join() === 'b,c')
 bilan('verifier-rapprochement')

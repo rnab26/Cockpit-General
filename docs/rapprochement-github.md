@@ -80,7 +80,7 @@ une branche non fusionnée, sur du journal seul ; rien supprimer.
 - Éteindre sur une machine : `COCKPIT_RAPPROCHEMENT=0`.
 - **Défaire** : un chantier passé « livré » à tort se renvoie en correction avec « Ça ne marche pas » (même geste que n'importe quelle
   livraison) ou se classe avec « Classer sans test » ; côté base, `annuler_rapprochement(<id du journal>)` rend l'état d'avant
-  (en cours, réservation, jalon). Pas d'écran pour ce dernier geste.
+  (en cours, réservation, jalon). Écran : « Chantiers et GitHub » › « Derniers passages automatiques » › « Annuler » (confirmation, toast, état vide).
 - Passage d'essai : `python3 scripts/rapprocher.py --projet <slug> --essai` (ou `--json`) dit ce qui SERAIT livré, sans rien écrire.
 
 ## Tous les projets, actuels et futurs (Raphaël, 13 oct. : « pas seulement lié à un seul projet »)

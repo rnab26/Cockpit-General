@@ -4,7 +4,9 @@ import type { Projet } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
-import { avecCourant, CHOIX_PASSAGE_MIN, CHOIX_TRACE_H, libelleHeures, libelleMinutes, phraseRapprochement, ROLE_RAPPROCHEMENT, type EtatRapprochement } from '../lib/rapprochement.ts'
+import { useConfirmer } from '../ui/Confirm.tsx'
+import { dateRelative } from '../lib/dates.ts'
+import { avecCourant, CHOIX_PASSAGE_MIN, CHOIX_TRACE_H, derniersPassages, libelleHeures, libelleMinutes, libelleRegle, PASSAGES_AFFICHES, phraseConfirmationAnnulation, phraseRapprochement, ROLE_RAPPROCHEMENT, statutPassage, type EtatRapprochement, type PassageAuto } from '../lib/rapprochement.ts'
 
 /**
  * « Chantiers et GitHub » (0080, 13 oct. 2026). Raphaël : « mes chantiers ne sont pas à jour » : des sessions s'arrêtaient sans dire
@@ -19,6 +21,32 @@ export function RapprochementGithub({ projet }: { projet: Projet }) {
   const [envoi, setEnvoi] = useState(false)
   const [reglage, setReglage] = useState(false)
   const [envoiDelai, setEnvoiDelai] = useState(false)
+  const confirmer = useConfirmer()
+  const [passages, setPassages] = useState<PassageAuto[] | null>(null)
+  const [erreurPassages, setErreurPassages] = useState<string | null>(null)
+  const [annulation, setAnnulation] = useState<string | null>(null)
+
+  const chargerPassages = useCallback(async () => {
+    const { data, error } = await supabase.from('rapprochements')
+      .select('id, chantier_id, regle, preuve, url, at, annule_at, etat_avant, chantier:chantiers(titre, etat, archived_at)')
+      .eq('projet_id', projet.id).order('at', { ascending: false }).limit(PASSAGES_AFFICHES)
+    if (error) { setErreurPassages(messageErreur(error)); return }
+    setErreurPassages(null); setPassages(derniersPassages((data ?? []) as unknown as PassageAuto[]))
+  }, [projet.id])
+  useEffect(() => { void chargerPassages() }, [chargerPassages])
+
+  const annuler = async (p: PassageAuto) => {
+    const ok = await confirmer({ titre: 'Annuler ce passage « livré » ?', texte: phraseConfirmationAnnulation(p), libelleOk: 'Annuler le passage', libelleAnnuler: 'Garder', danger: true })
+    if (!ok) return
+    setAnnulation(p.id)
+    const { data, error } = await supabase.rpc('annuler_rapprochement', { p_id: p.id })
+    setAnnulation(null)
+    if (error) { toast.erreur(`Passage non annulé : ${messageErreur(error)}`); return }
+    const r = data as { ok?: boolean; raison?: string } | null
+    if (r && r.ok === false) toast.erreur(r.raison === 'deja_annule' ? 'Ce passage était déjà annulé.' : 'Passage non annulé.')
+    else toast.succes(`« ${p.chantier?.titre ?? 'Le chantier'} » est revenu à l’état d’avant.`)
+    await Promise.all([chargerPassages(), charger()])
+  }
 
   const charger = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_rapprochement', { p_projet: projet.slug })
@@ -90,6 +118,39 @@ export function RapprochementGithub({ projet }: { projet: Projet }) {
           </label>
         </div>
       ) : null}
+      <div className="mt-3 border-t border-bord pt-2" data-testid="rapprochement-passages">
+        <h4 className="text-xs font-semibold">Derniers passages automatiques</h4>
+        {erreurPassages ? (
+          <div className="mt-1 text-xs" data-testid="rapprochement-passages-erreur">
+            <p className="text-alerte">Liste indisponible : {erreurPassages}</p>
+            <Button taille="sm" className="mt-1" onClick={() => void chargerPassages()}>Réessayer</Button>
+          </div>
+        ) : !passages ? (
+          <p className="mt-1 text-xs text-texte-2" role="status">Chargement…</p>
+        ) : passages.length === 0 ? (
+          <p className="mt-1 text-xs text-texte-2" data-testid="rapprochement-passages-vide">Aucun chantier n’a encore été passé « livré » tout seul sur ce projet.</p>
+        ) : (
+          <ul className="mt-1 divide-y divide-bord">
+            {passages.map((p) => {
+              const st = statutPassage(p)
+              return (
+                <li key={p.id} className="flex items-start gap-2 py-2" data-testid="rapprochement-ligne-passage" data-statut={st}>
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-medium leading-snug">{p.chantier?.titre ?? 'Chantier supprimé'}</p>
+                    <p className="text-xs leading-snug text-texte-2">
+                      {libelleRegle(p.regle)} · {dateRelative(p.at, new Date())}
+                      {st === 'annule' ? ' · annulé' : st === 'traite' ? ' · déjà traité depuis, rien à défaire' : ''}
+                    </p>
+                  </div>
+                  {st === 'annulable' ? (
+                    <Button taille="sm" variante="discret" chargement={annulation === p.id} data-testid="rapprochement-annuler" onClick={() => void annuler(p)}>Annuler</Button>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
     </section>
   )
 }
