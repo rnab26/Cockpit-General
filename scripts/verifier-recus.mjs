@@ -16,6 +16,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { projetsDeTestAbandonnes, purgerProjetsDeTest } from "./bancs.mjs";
+import { recu } from "./recus-fixtures.mjs";
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SQL = join(RACINE, "scripts/sql.sh");
@@ -35,14 +36,7 @@ function sql(requete) {
 const SLUG = `test-recus-${randomUUID().slice(0, 8)}`, P = randomUUID(), S = randomUUID();
 const dossier = mkdtempSync(join(tmpdir(), "cockpit-recus-"));
 
-// ---------- un reçu FICTIF au format réel du texte brut d'un mail (numéros et montants inventés)
-function recu({ sym = "₪", montant, total: tot, paye, date = "October 2, 2026", numRecu = "1111-2222-3333", numRecuBas, numFact = "TESTAAAA-0001",
-  periode = "", lignes, vendeur = "Anthropic, PBC", lien = "https://pay.stripe.com/invoice/acct_TEST/live_TEST/pdf?s=em", avant = "", apres = "", sansFacture = false }) {
-  const l = lignes.map(([lib, m]) => `${lib} Qty 1 ${m.startsWith("-") ? "-" + sym + m.slice(1) : sym + m}`).join(" ");
-  return `Anthropic, PBC (https://www.anthropic.com/)\n\nAnthropic, PBC\n\nReceipt from ${vendeur} ${sym}${montant} Paid ${date} (invoice illustration [https://stripe-images.s3.amazonaws.com/emails/invoices_invoice_illustration.png]) `
-    + `Download invoice (${lien}) Download receipt (https://dashboard.stripe.com/receipts/invoices/TEST/pdf?s=em) Receipt number ${numRecu} ${sansFacture ? "" : `Invoice number ${numFact} `}Payment method - 0000\n\n`
-    + `Receipt #${numRecuBas ?? numRecu} ${periode ? periode + " " : ""}${l} ${avant}Total ${sym}${tot ?? montant} Amount paid ${sym}${paye ?? tot ?? montant} Questions? Visit our support site (https://support.anthropic.com/).\n\nPowered by stripe logo (https://stripe.com)${apres}`;
-}
+// un reçu FICTIF au format réel du texte brut d'un mail (numéros et montants inventés) : scripts/recus-fixtures.mjs, partagé avec les bancs de la voie Google
 let n = 0;
 function ecrire(nom, contenu) { const f = join(dossier, `${++n}-${nom}`); writeFileSync(f, contenu); return f; }
 function lire(texte) {

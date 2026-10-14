@@ -34,6 +34,7 @@ verifie('délai réglé à 60 s : toujours voyant à 30 s', niveauAffichage({ ..
 verifie('refus du serveur : panneau tout de suite', niveauAffichage({ ...base, refuses: 1 }) === 'panneau')
 verifie('délai : défaut 10, valeur lue, valeur absurde ignorée', delaiPanneauDe(null) === 10 && delaiPanneauDe('30') === 30 && delaiPanneauDe('x') === 10 && delaiPanneauDe('-5') === 10)
 verifie('RPC à secret (jeton) : jamais gardée', !aGarder('POST', `${B}/rest/v1/rpc/regler_reveil_immediat`))
+verifie('clé d’import : créer (rend la clé) et révoquer (faux sentiment de sécurité hors ligne) ne sont jamais gardées', !aGarder('POST', `${B}/rest/v1/rpc/creer_cle_import`) && !aGarder('POST', `${B}/rest/v1/rpc/revoquer_cle_import`) && !aMettreEnCache('POST', `${B}/rest/v1/rpc/creer_cle_import`) && !aMettreEnCache('POST', `${B}/rest/v1/rpc/revoquer_cle_import`) && aGarder('POST', `${B}/rest/v1/rpc/revoquer_invitation`))
 verifie('abonnement push : non', !aGarder('POST', `${B}/rest/v1/push_abonnements`))
 verifie('dépôt de fichier', aGarder('POST', `${B}/storage/v1/object/cockpit-medias/a/b.png`))
 verifie('lecture : jamais gardée', !aGarder('GET', `${B}/rest/v1/messages`))
@@ -83,7 +84,7 @@ const noms = new Set<string>()
 const parcourir = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) parcourir(p); else if (/\.tsx?$/.test(f)) for (const m of readFileSync(p, 'utf8').matchAll(/rpc\('([a-z_0-9]+)'/g)) noms.add(m[1]) } }
 parcourir(new URL('../src', import.meta.url).pathname)
 // Cas à part, voulus : ni gardée ni mise en cache (jeton secret ou rendu ; un rejeu doublerait le texte ajouté ; simple suggestion). Hors ligne elles échouent VISIBLEMENT.
-const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes', 'inviter', 'completer_chantier', 'freiner', 'chantiers_proches_creation'])
+const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes', 'inviter', 'completer_chantier', 'freiner', 'chantiers_proches_creation', 'creer_cle_import', 'revoquer_cle_import'])
 for (const n of [...noms].sort()) {
   const url = `${B}/rest/v1/rpc/${n}`
   const lecture = aMettreEnCache('POST', url) && !aGarder('POST', url)
