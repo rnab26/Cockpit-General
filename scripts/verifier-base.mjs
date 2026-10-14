@@ -2919,6 +2919,14 @@ async function controle45_renforts_frein_erreurs() {
   verifie("3 h écoulées APRÈS la levée : vraie erreur « Jamais ouvert »", l.statut === "erreur" && /Jamais ouvert/.test(l.erreur), l);
   const datee = await une(`select erreur_at is not null as ok from renforts where projet_id = ${q(PRE)} and prefixe = 'renfort/frein1'`);
   verifie("l'erreur est datée (erreur_at posé par le trigger)", datee.ok === true);
+  // 0089 : une demande vieille de 4 h dont la section n'a plus rien à faire se ferme « fini », sans « Jamais ouvert »
+  const S2 = randomUUID();
+  await sql(`insert into sections (id, projet_id, nom, position) values (${q(S2)}, ${q(PRE)}, 'Vide', 2)`);
+  await sql(`insert into renforts (projet_id, section_id, prefixe, statut, chantiers, created_at) values (${q(PRE)}, ${q(S2)}, 'renfort/vide1', 'demande', 1, now() - interval '4 hours')`);
+  await sql(`select renforts_expirer(${q(PRE)})`);
+  const vide = await une(`select statut, erreur from renforts where projet_id = ${q(PRE)} and prefixe = 'renfort/vide1'`);
+  verifie("demande expirée SANS travail restant : « fini », pas d'erreur « Jamais ouvert » (0089)", vide.statut === "fini" && !vide.erreur, vide);
+  await sql(`update renforts set efface_at = now() where projet_id = ${q(PRE)} and prefixe = 'renfort/vide1'`); // hors de l'écran, pour les contrôles suivants
   e = await etat();
   verifie("l'erreur récente est affichée", e.renforts.some((r) => r.statut === "erreur"), e.renforts);
   await sql(`select regler_renforts_erreurs(${q(SLUG_RE)}, 6)`);
