@@ -111,3 +111,25 @@ export async function restesDansLesVraisProjets(sql) {
   const total = r.chantiers + r.supprimes + r.messages + r.activite + r.sessions + r.taches
   return { total, ...r }
 }
+
+/**
+ * Lance une fonction serveur du dépôt (supabase/functions/<nom>/index.ts) ICI, avec Deno, contre la vraie base : sert à prouver une
+ * fonction AVANT son déploiement (14 oct. 2026, reçus Google). Deno n'est pas installé dans l'environnement : `npm install deno` dans un
+ * dossier à part, puis DENO=<ce dossier>/node_modules/.bin/deno. Rend l'adresse locale et la fonction qui arrête le serveur.
+ */
+export async function lancerFonctionLocale(racine, nom, supabaseUrl, deno = process.env.DENO || 'deno') {
+  const { spawn } = await import('node:child_process')
+  const { join } = await import('node:path')
+  const port = 8800 + Math.floor(Math.random() * 150)
+  const p = spawn(deno, ['run', '--allow-net', '--allow-env', join(racine, 'supabase/functions', nom, 'index.ts')],
+    { env: { ...process.env, SUPABASE_URL: supabaseUrl, DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}` }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  let journal = ''
+  p.stdout.on('data', (d) => { journal += d }); p.stderr.on('data', (d) => { journal += d })
+  await new Promise((res, rej) => {
+    const t = setTimeout(() => { clearInterval(i); rej(new Error(`La fonction ${nom} ne démarre pas avec Deno :\n` + journal.slice(-600))) }, 60000)
+    const i = setInterval(() => { if (journal.includes('Listening on')) { clearTimeout(t); clearInterval(i); res() } }, 100)
+  })
+  const arreter = () => { try { process.kill(-p.pid, 'SIGTERM') } catch { /* déjà arrêtée */ } }
+  process.on('exit', arreter)
+  return { url: `http://127.0.0.1:${port}/`, arreter, journal: () => journal }
+}

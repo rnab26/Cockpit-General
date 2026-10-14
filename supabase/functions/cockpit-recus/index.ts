@@ -1,146 +1,196 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
-import { analyser, choisirPdf, hoteStripe, lienPdfAccepte, noteDuPassage, nomSur, Refus } from "./lecteur.ts"
+import {
+  ErreurDonnees, traiterPassage, traiterRecu, validerCadence, validerResultats, texteBorne,
+  type Contexte, type Magasin,
+} from "./traiter.ts"
+import { pdfDuLienStripe } from "./lien.ts"
 
 /**
- * cockpit-recus — reçoit les reçus Claude que le petit programme du compte Google de Raphaël lit dans sa boîte (Google Apps
- * Script, docs/recus-par-email.md) et les range dans Coûts (chantier 72a8d0f4, migration 0086).
+ * cockpit-recus — la porte d'entrée des reçus Claude envoyés par le programme du compte Google de Raphaël.
  *
- * Qui parle : la clé du prestataire (en-tête `x-cockpit-cle`, créée par `brancher_import_recus`, seul son sha256 est en base).
- * Elle ne permet QUE d'ajouter des factures à CE prestataire de CE projet et de noter le passage : rien d'autre.
- * Un mail n'est qu'une DONNÉE : `lecteur.ts` (même règle que scripts/importer-recus.py) refuse tout ce qui est incohérent.
+ * POURQUOI ELLE EXISTE (14 oct. 2026, chantier 72a8d0f4) : Raphaël veut que ses reçus Anthropic arrivent seuls dans Coûts, sans
+ * session Claude ni jeton (« Programme dans ton compte Google »). Un petit programme de son compte (Google Apps Script) lit,
+ * en lecture seule, ses mails « Your receipt from Anthropic » et appelle cette fonction ; elle applique la MÊME règle que
+ * scripts/importer-recus.py (regle.ts, comparée à lui à chaque envoi par scripts/verifier-recus-parite.mjs), dédoublonne par
+ * numéro de facture, range le PDF de la facture, et écrit le « battement » que la carte du prestataire affiche.
  *
- * POST { mails: [{ texte, pdfs?: [{ nom, base64 }] }], cadence_jours? }  -> { ok, statut, note, mails: [...], bilan }
- * POST { echec: "raison" }                                                 -> le passage n'a pas pu avoir lieu : noté, visible dans Coûts
- * POST { etat: true }                                                      -> { depuis, cadence_jours } (lecture seule)
+ * La CLÉ est la seule authentification : une clé par prestataire (cockpit.cles_import, migration 0088), montrée une fois dans
+ * l'app, révocable ; seule son empreinte sha256 est gardée. Elle porte le projet ET le prestataire : une requête ne peut écrire
+ * nulle part ailleurs. verify_jwt = false (déployée avec VERIFY_JWT=false scripts/deployer-fonction.sh cockpit-recus) : ce n'est
+ * pas une personne connectée, c'est un programme.
+ *
+ * Contrat : POST JSON `{action, ...}`, en-tête `x-cockpit-key` (ou champ `cle`). Réponse `{ok: true, ...}` ; un refus de la
+ * règle (un reçu qui ne concorde pas) est une réponse NORMALE (`statut: "refus"`), pas une panne ; toute erreur = `{ok: false,
+ * erreur}` en français lisible, code HTTP juste (400 requête, 401 clé, 405 méthode, 413 trop gros, 500 imprévu).
+ *   etat    -> projet, prestataire, jour de départ des reçus, cadence
+ *   recu    -> UN reçu : {texte, pdfs: [{nom, base64}], essai} -> ajouté / déjà là / PDF joint / refus ... (voir traiter.ts)
+ *   passage -> la fin du passage : {resultats, echec, cadence_jours, essai} -> écrit le battement (rien en mode essai)
+ * Mode `essai` : rien n'est écrit dans Coûts (ni ligne, ni fichier, ni battement) ; seule la date de dernier contact de la clé bouge,
+ * ce qui permet à l'app de dire « le programme a bien appelé ».
+ *
+ * Ce qui ne sort JAMAIS d'ici : la clé, l'empreinte, le texte des mails (il n'est ni gardé ni journalisé).
  */
-const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } })
-const BUCKET = "cockpit-medias"
-const PDF_MAX = 5 * 1024 * 1024
-const MAILS_MAX = 20
+
+const BUCKET_MEDIAS = "cockpit-medias"
+// Un PDF de 5 Mo en base64 (≈ 6,7 Mo) + le texte du mail (200 000 caractères au plus) tiennent sous 8 Mo. Mesuré le 14 oct. 2026 sur la fonction
+// déployée : un corps de 7 à 8,5 Mo est accepté en 1 à 4 s ; un corps que la fonction refuse d'avance (413) sans l'avoir lu reste suspendu côté
+// plateforme (9,5 Mo : 160 s puis 503 ; cause non établie, probablement le corps non lu). Sans importance pour un vrai reçu : le programme ne
+// prend jamais une pièce de plus de 5 Mo.
+const CORPS_MAX = 8 * 1024 * 1024
 const TEXTE_MAX = 200_000
-const NOTE_MAX = 300
+const PDFS_MAX = 3
+const RE_CLE = /^cki_[0-9a-f]{64}$/
 
-async function sha256(t: string): Promise<string> {
-  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t))
-  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("")
+/** Le client de la base du cockpit (schéma `cockpit`, clé de service) : une seule façon de le créer, son type en découle. */
+function clientDe(url: string, cleService: string) {
+  return createClient(url, cleService, { db: { schema: "cockpit" }, auth: { persistSession: false, autoRefreshToken: false } })
 }
-function octets(b64: string): Uint8Array | null {
-  try {
-    const bin = atob(b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, ""))
-    const out = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-    return out
-  } catch { return null }
-}
-const estPdf = (o: Uint8Array) => o.length > 4 && o.length <= PDF_MAX && o[0] === 0x25 && o[1] === 0x50 && o[2] === 0x44 && o[3] === 0x46
+type Client = ReturnType<typeof clientDe>
 
-/** Le PDF depuis le lien du mail : seulement pay.stripe.com, redirections vérifiées une à une. */
-async function pdfDuLien(lien: string | null): Promise<{ o: Uint8Array | null; raison: string }> {
-  if (!lienPdfAccepte(lien)) return { o: null, raison: "lien du PDF inattendu" }
-  let url = lien!
-  for (let i = 0; i < 4; i++) {
-    let r: Response
-    try { r = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(20000) }) } catch { return { o: null, raison: "téléchargement impossible" } }
-    if (r.status >= 300 && r.status < 400) {
-      const suite = r.headers.get("location")
-      if (!suite) return { o: null, raison: "redirection sans adresse" }
-      url = new URL(suite, url).toString()
-      if (!hoteStripe(url)) return { o: null, raison: "redirection hors de Stripe refusée" }
-      continue
-    }
-    if (r.status !== 200) {
-      const t = (await r.text()).slice(0, 80).toLowerCase()
-      return { o: null, raison: t.includes("expired") ? "lien expiré" : `PDF refusé par Stripe (HTTP ${r.status})` }
-    }
-    const o = new Uint8Array(await r.arrayBuffer())
-    return estPdf(o) ? { o, raison: "" } : { o: null, raison: "le fichier reçu n'est pas un PDF" }
+class ErreurLisible extends Error {
+  constructor(public statut: number, message: string) {
+    super(message)
   }
-  return { o: null, raison: "trop de redirections" }
+}
+
+function json(corps: Record<string, unknown>, statut = 200): Response {
+  return new Response(JSON.stringify(corps), { status: statut, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } })
+}
+
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+interface Ouverture { cleId: string; utilisations: number; contexte: Contexte; projetNom: string; serviceNom: string; derniere: string | null }
+
+/** Ce que la clé ouvre : son prestataire et son projet. Une clé inconnue, révoquée ou d'un prestataire disparu n'ouvre rien. */
+async function ouvrir(sb: Client, cle: string): Promise<Ouverture> {
+  if (!cle) throw new ErreurLisible(401, "Clé manquante : le programme du compte Google doit envoyer sa clé.")
+  if (!RE_CLE.test(cle)) throw new ErreurLisible(401, "Clé inconnue : recopie le programme depuis le cockpit (Coûts › Claude).")
+  const { data: k, error } = await sb.from("cles_import").select("id, projet_id, service_id, revoquee_at, utilisations").eq("empreinte", await sha256Hex(cle)).maybeSingle()
+  if (error) { console.error("cockpit-recus : lecture de la clé refusée :", error.message); throw new ErreurLisible(500, "Le serveur n'a pas pu vérifier la clé. Réessaie dans un instant.") }
+  if (!k) throw new ErreurLisible(401, "Clé inconnue : recopie le programme depuis le cockpit (Coûts › Claude).")
+  if (k.revoquee_at) throw new ErreurLisible(401, "Cette clé a été remplacée ou révoquée : crée-en une nouvelle dans le cockpit (Coûts › Claude) et recopie le programme.")
+  const [s, p] = await Promise.all([
+    sb.from("services").select("id, nom, import_depuis, import_cadence_jours, import_at, archived_at").eq("id", k.service_id).maybeSingle(),
+    sb.from("projets").select("id, nom, actif").eq("id", k.projet_id).maybeSingle(),
+  ])
+  if (s.error || p.error) { console.error("cockpit-recus : lecture du prestataire refusée :", (s.error ?? p.error)?.message); throw new ErreurLisible(500, "Le serveur n'a pas pu lire le prestataire. Réessaie dans un instant.") }
+  if (!s.data || !p.data) throw new ErreurLisible(401, "Le prestataire de cette clé n'existe plus : crée une nouvelle clé dans le cockpit.")
+  if (s.data.archived_at) throw new ErreurLisible(401, "Le prestataire de cette clé est archivé dans le cockpit.")
+  if (p.data.actif === false) throw new ErreurLisible(401, "Ce projet est désactivé dans le cockpit.")
+  return {
+    cleId: k.id, utilisations: Number(k.utilisations) || 0, projetNom: p.data.nom, serviceNom: s.data.nom, derniere: s.data.import_at ?? null,
+    contexte: {
+      projetId: k.projet_id, serviceId: k.service_id, depuis: String(s.data.import_depuis), cadenceActuelle: s.data.import_cadence_jours ?? null,
+      erreurInterne: (e) => console.error("cockpit-recus : écriture refusée :", e instanceof Error ? e.message : e),
+    },
+  }
+}
+
+/** Toute l'écriture, sur la vraie base (service_role). Les erreurs sont levées : traiter.ts décide quoi en dire. */
+function magasinDe(sb: Client): Magasin {
+  const echec = (quoi: string, e: { message: string } | null) => { if (e) throw new Error(`${quoi} : ${e.message}`) }
+  return {
+    pdfDuLien: (lien) => pdfDuLienStripe(lien),
+    async depenseParReference(projetId, reference) {
+      const { data, error } = await sb.from("depenses").select("id, fichier, type").eq("projet_id", projetId).eq("reference", reference).limit(1)
+      echec("lecture des dépenses", error)
+      return data?.[0] ? { id: data[0].id, fichier: data[0].fichier, type: data[0].type } : null
+    },
+    async deposer(chemin, octets) {
+      const { error } = await sb.storage.from(BUCKET_MEDIAS).upload(chemin, octets, { contentType: "application/pdf", upsert: false })
+      echec("dépôt du PDF", error)
+    },
+    async retirer(chemin) {
+      await sb.storage.from(BUCKET_MEDIAS).remove([chemin])
+    },
+    async inserer(d) {
+      const { error } = await sb.from("depenses").insert(d)
+      echec("ajout de la dépense", error)
+    },
+    async joindre(id, fichier) {
+      const { data, error } = await sb.from("depenses").update({ fichier }).eq("id", id).is("fichier", null).select("id")
+      echec("ajout du PDF à la dépense", error)
+      return (data?.length ?? 0) > 0
+    },
+    async battement(serviceId, b) {
+      const { error } = await sb.from("services").update(b).eq("id", serviceId)
+      echec("écriture du battement", error)
+    },
+  }
+}
+
+function pdfsDe(brut: unknown): { nom: string; base64: string }[] {
+  if (brut === undefined || brut === null) return []
+  if (!Array.isArray(brut)) throw new ErreurLisible(400, "La liste des pièces jointes est illisible.")
+  if (brut.length > PDFS_MAX) throw new ErreurLisible(400, `${PDFS_MAX} pièces jointes au plus par reçu.`)
+  return brut.map((x) => {
+    const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>
+    if (typeof o.nom !== "string" || typeof o.base64 !== "string") throw new ErreurLisible(400, "Une pièce jointe n'a pas de nom ou de contenu.")
+    return { nom: o.nom.slice(0, 200), base64: o.base64 }
+  })
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return json({ ok: false, erreur: "POST seulement" }, 405)
-  const cle = req.headers.get("x-cockpit-cle") ?? ""
-  if (!/^rc_[0-9a-f]{64}$/.test(cle)) return json({ ok: false, erreur: "clé absente ou mal formée" }, 401)
-  const base = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { db: { schema: "cockpit" } })
-  const { data: service } = await base.from("services").select("id, projet_id, nom, import_depuis, import_cadence_jours")
-    .eq("import_cle_hash", await sha256(cle)).is("archived_at", null).maybeSingle()
-  if (!service) return json({ ok: false, erreur: "clé inconnue ou retirée" }, 401)
-
-  let corps: { mails?: unknown; echec?: unknown; etat?: unknown; cadence_jours?: unknown } = {}
-  try { corps = await req.json() } catch { return json({ ok: false, erreur: "corps illisible" }, 400) }
-  const cadence = Number.isInteger(corps.cadence_jours) && (corps.cadence_jours as number) >= 1 && (corps.cadence_jours as number) <= 90 ? corps.cadence_jours as number : null
-  const battement = async (statut: "ok" | "echec", note: string) => {
-    const maj: Record<string, unknown> = { import_at: new Date().toISOString(), import_statut: statut, import_note: note.slice(0, NOTE_MAX) }
-    if (cadence) maj.import_cadence_jours = cadence
-    else if (!service.import_cadence_jours) maj.import_cadence_jours = 7
-    await base.from("services").update(maj).eq("id", service.id)
-  }
-
-  if (corps.etat) return json({ ok: true, depuis: service.import_depuis, cadence_jours: service.import_cadence_jours })
-  if (typeof corps.echec === "string") {
-    const note = `Le passage n'a pas pu avoir lieu : ${corps.echec.replace(/\s+/g, " ").trim()}`.slice(0, NOTE_MAX)
-    await battement("echec", note)
-    return json({ ok: true, statut: "echec", note })
-  }
-  if (!Array.isArray(corps.mails) || corps.mails.length > MAILS_MAX) return json({ ok: false, erreur: `mails : une liste de ${MAILS_MAX} au plus` }, 400)
-
-  const ajoutes: { montant: string; devise: string; date: string; facture: string; pdf: string }[] = []
-  const erreurs: string[] = []
-  const resultats: Record<string, unknown>[] = []
-  let deja = 0, hors = 0
-  for (const [i, m] of (corps.mails as { id?: unknown; texte?: unknown; pdfs?: unknown }[]).entries()) {
-    const idMail = typeof m.id === "string" ? m.id.slice(0, 64) : String(i)
+  if (req.method !== "POST") return json({ ok: false, erreur: "Cette adresse n'accepte que des requêtes POST." }, 405)
+  const debut = Date.now()
+  let action = "?"
+  try {
+    if (Number(req.headers.get("content-length") ?? 0) > CORPS_MAX) throw new ErreurLisible(413, "La requête est trop grosse (8 Mo au plus).")
+    const brut = await req.text()
+    if (brut.length > CORPS_MAX) throw new ErreurLisible(413, "La requête est trop grosse (8 Mo au plus).")
+    let corps: Record<string, unknown>
     try {
-      if (typeof m.texte !== "string" || m.texte.length > TEXTE_MAX) throw new Refus("texte absent ou trop long")
-      const r = analyser(m.texte)
-      const ligne = { id: idMail, facture: r.facture, montant: r.montant, devise: r.devise, date: r.date }
-      if (r.date < String(service.import_depuis)) { hors++; resultats.push({ ...ligne, statut: "hors_periode" }); continue }
-      const { data: existe } = await base.from("depenses").select("id").eq("projet_id", service.projet_id).eq("reference", r.facture).limit(1)
-      if (existe?.length) { deja++; resultats.push({ ...ligne, statut: "deja_la" }); continue }
-
-      // le PDF : la pièce jointe du mail d'abord, sinon le lien du mail s'il est encore valable
-      let pdf: Uint8Array | null = null, raisonPdf = ""
-      const jointes = Array.isArray(m.pdfs) ? (m.pdfs as { nom?: unknown; base64?: unknown }[]).filter((p) => typeof p.nom === "string" && typeof p.base64 === "string").slice(0, 6) : []
-      const k = choisirPdf(r.facture, jointes.map((p) => ({ nom: p.nom as string })))
-      if (k >= 0) {
-        const o = octets(jointes[k].base64 as string)
-        if (o && estPdf(o)) pdf = o
-        else raisonPdf = "pièce jointe illisible ou trop grosse"
-      }
-      if (!pdf) { const l = await pdfDuLien(r.lien_facture); pdf = l.o; raisonPdf ||= l.raison }
-
-      let fichier: Record<string, unknown> | null = null, chemin = ""
-      let etatPdf = "absent"
-      try {
-        if (pdf) {
-          const nomPdf = `Invoice-${r.facture}.pdf`
-          chemin = `${service.projet_id}/depenses/${crypto.randomUUID()}-${nomSur(nomPdf)}`
-          const { error: e } = await base.storage.from(BUCKET).upload(chemin, pdf, { contentType: "application/pdf", upsert: false })
-          if (e) throw new Error(`dépôt du PDF refusé : ${e.message}`)
-          fichier = { chemin, nom: nomPdf, type: "application/pdf", taille: pdf.length }
-          etatPdf = "depose"
-        }
-        const { error: e2 } = await base.from("depenses").insert({
-          projet_id: service.projet_id, service_id: service.id, date: r.date, montant: r.montant, devise: r.devise,
-          type: "facture", description: r.description, reference: r.facture, fichier,
-        })
-        if (e2) throw new Error(`écriture refusée : ${e2.message}`)
-      } catch (e) {
-        if (chemin && fichier) await base.storage.from(BUCKET).remove([chemin])
-        throw new Refus(`${r.facture} : ${(e as Error).message}`.slice(0, 120))
-      }
-      ajoutes.push({ montant: r.montant, devise: r.devise, date: r.date, facture: r.facture, pdf: etatPdf })
-      resultats.push({ ...ligne, statut: "ajoute", pdf: etatPdf, raison_pdf: raisonPdf })
-    } catch (e) {
-      const msg = e instanceof Refus ? e.message : "erreur inattendue"
-      erreurs.push(msg)
-      resultats.push({ id: idMail, statut: "erreur", message: msg })
+      corps = JSON.parse(brut) as Record<string, unknown>
+      if (!corps || typeof corps !== "object" || Array.isArray(corps)) throw new Error("pas un objet")
+    } catch {
+      throw new ErreurLisible(400, "Le corps de la requête n'est pas du JSON valide.")
     }
+    action = typeof corps.action === "string" ? corps.action : "?"
+    const cle = (req.headers.get("x-cockpit-key") ?? (typeof corps.cle === "string" ? corps.cle : "")).trim()
+
+    const url = Deno.env.get("SUPABASE_URL")
+    const cleService = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+    if (!url || !cleService) throw new ErreurLisible(500, "Le serveur du Cockpit est mal configuré (clé de service absente).")
+    const sb = clientDe(url, cleService)
+
+    const o = await ouvrir(sb, cle)
+    // La preuve que le programme a bien appelé (l'app la montre) ; l'essai ne touche rien d'autre. Jamais bloquant.
+    const version = typeof corps.version === "number" && Number.isInteger(corps.version) && corps.version >= 1 && corps.version <= 1000 ? corps.version : null
+    await sb.from("cles_import").update({ derniere_utilisation_at: new Date().toISOString(), utilisations: o.utilisations + 1, ...(version ? { programme_version: version } : {}) })
+      .eq("id", o.cleId).then(() => {}, () => {})
+
+    const mag = magasinDe(sb)
+    let resultat: Record<string, unknown>
+    switch (action) {
+      case "etat":
+        resultat = { projet: o.projetNom, prestataire: o.serviceNom, depuis: o.contexte.depuis, cadence_jours: o.contexte.cadenceActuelle, dernier_passage: o.derniere }
+        break
+      case "recu": {
+        const texte = typeof corps.texte === "string" ? corps.texte : ""
+        if (!texte.trim()) throw new ErreurLisible(400, "Il manque le texte du reçu.")
+        if (texte.length > TEXTE_MAX) throw new ErreurLisible(413, "Le texte du reçu est trop long.")
+        resultat = { ...(await traiterRecu(o.contexte, { texte, pdfs: pdfsDe(corps.pdfs), essai: corps.essai === true }, mag)) }
+        break
+      }
+      case "passage":
+        resultat = await traiterPassage(o.contexte, {
+          resultats: validerResultats(corps.resultats), echec: texteBorne(corps.echec, 200) ?? null,
+          cadenceJours: validerCadence(corps.cadence_jours), essai: corps.essai === true,
+        }, mag)
+        break
+      default:
+        throw new ErreurLisible(400, action !== "?" ? `Action inconnue : « ${action.slice(0, 40)} ».` : "Il manque le champ « action ».")
+    }
+    console.log(`cockpit-recus ${action} ${Date.now() - debut} ms`)
+    return json({ ok: true, ...resultat })
+  } catch (e) {
+    if (e instanceof ErreurDonnees) { console.log(`cockpit-recus ${action} ${Date.now() - debut} ms -> 400 ${e.message}`); return json({ ok: false, erreur: e.message }, 400) }
+    if (e instanceof ErreurLisible) { console.log(`cockpit-recus ${action} ${Date.now() - debut} ms -> ${e.statut} ${e.message}`); return json({ ok: false, erreur: e.message }, e.statut) }
+    console.error(`cockpit-recus ${action} erreur imprévue :`, e instanceof Error ? e.message : e)
+    return json({ ok: false, erreur: "Le serveur n'a pas pu traiter la requête. Réessaie dans un instant." }, 500)
   }
-  const note = noteDuPassage(ajoutes, deja, erreurs)
-  const statut = erreurs.length ? "echec" : "ok"
-  await battement(statut, note)
-  return json({ ok: true, statut, note, mails: resultats, bilan: { ajoutes: ajoutes.length, deja_la: deja, hors_periode: hors, erreurs: erreurs.length } })
 })
