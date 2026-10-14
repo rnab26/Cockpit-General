@@ -10,6 +10,7 @@ import {
   lireDepense, lireService, parService, resumeCompta, soldeBas, sommer, type Canal, type Depense, type FichierDepense, type Periode, type Service, type TypeDepense,
 } from '../lib/depenses.ts'
 import { RechercheFournisseurs } from './RechercheFournisseurs.tsx'
+import { BrancherRecus, lisiblePar } from './BrancherRecus.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Badge } from '../ui/Badge.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -149,6 +150,7 @@ export function CoutsProjet() {
               ) : null}
               {s.note ? <p className="mt-1.5 text-xs text-texte-2">{s.note}</p> : null}
               <LigneImportAuto service={s} now={now} />
+              {lisiblePar(s.nom) ? <div className="mt-2"><BrancherRecus service={s} now={now} onChange={() => void recharger()} /></div> : null}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {s.url_tableau ? <a className="inline-flex h-8 items-center gap-1 rounded-xl border border-bord px-2.5 text-sm hover:bg-carte-2" href={s.url_tableau} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Tableau de bord</a> : null}
                 {s.url_factures ? <a className="inline-flex h-8 items-center gap-1 rounded-xl border border-bord px-2.5 text-sm hover:bg-carte-2" href={s.url_factures} target="_blank" rel="noopener noreferrer"><FileText size={14} />Factures</a> : null}

@@ -120,6 +120,10 @@ donc sans risque pour un rejeu ; 16 chantiers FacePro « en cours » que personn
 **Déduit, non vérifié** : le CLAUDE.md global du compte (`/root/.claude/CLAUDE.md`) est pris des dotfiles au démarrage d'une session ; les trois règles ajoutées
 aux dotfiles aujourd'hui n'arrivent donc qu'aux NOUVELLES sessions.
 
+## 0 quater bis. Reçus Claude : programme dans le compte Google de Raphaël (14 oct. 2026, migration 0086, chantier 72a8d0f4)
+
+Raphaël a choisi « Programme dans ton compte Google » (gratuit, sans IA, PDF de toutes les factures). **Fait** : bouton « Brancher la lecture des reçus » sur la carte Claude de Coûts (`BrancherRecus.tsx`, 7 étapes, liens exacts, textes à copier ; la clé n'est jamais affichée), fonction `cockpit-recus` déployée (v1), migration 0086 appliquée, lecteur TS comparé au Python par `scripts/verifier-recus-fonction.mjs` (63/63). Détail, limites et **ce qui n'est pas vérifié** : `docs/recus-par-email.md` › « Voie choisie le 14 oct. ». **Reste à Raphaël** : poser le programme (10 à 15 min, une fois) ; **reste à faire** : (1) lui proposer les bonnes adresses officielles quand il choisit Claude/Supabase/RunPod… (page factures Claude = claude.ai/settings/billing, pas /code#…), (2) dépense mensuelle récurrente pour un abonnement ; la tâche planifiée « Import des reçus Claude » reste en pause (à supprimer sur son accord).
+
 ## 0 quinquies. Les reçus Claude dans Coûts (13 oct. 2026, soir) : « Configure-le que ce soit constant »
 
 Chantier `72a8d0f4`. Procédure complète, garde-fous, coûts mesurés, voie gratuite : **`docs/recus-par-email.md`** (à lire avant d'y toucher).

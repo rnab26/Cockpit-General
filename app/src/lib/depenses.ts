@@ -18,6 +18,8 @@ export interface Service {
   note: string | null; archived_at: string | null; created_at: string
   /** Import automatique des reçus par e-mail (0083) : battement écrit par scripts/importer-recus.py. */
   import_depuis?: string; import_cadence_jours?: number | null; import_at?: string | null; import_statut?: StatutImport | null; import_note?: string | null
+  /** Quand la clé du programme du compte Google a été créée (0085) ; le hash de la clé ne sert qu'au serveur. */
+  import_cle_at?: string | null
 }
 export interface Depense {
   id: string; projet_id: string; service_id: string | null; date: string; montant: number; devise: string
