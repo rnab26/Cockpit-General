@@ -3079,6 +3079,69 @@ async function controle50_retour_carte_bloque() {
   verifie("droits : retirer_carte pour les connectés seulement, jamais anon ; est_retour_carte réservé au service", !droits.anon && droits.auth && !droits.est, droits);
 }
 
+async function controle58_verdict_dit_en_session() {
+  section("58. Verdict dit dans une session (0085) : ses mots dans le fil, carte de confirmation, SEUL un humain admin certifie");
+  const repondre = (mid, reponse) => rpcUtilisateur("repondre_message", { p_id: mid, p_par: "Raphaël", p_reponse: reponse, p_precision: null, p_etat: null }, jwt);
+  const attente = async () => (await sql(`select message_id from reponses_sans_suite(${q(P1)})`)).map((r) => r.message_id);
+  const relayer = (c, ok, mots) => sql(`select relayer_verdict(${q(c)}::uuid, 'session-test', ${ok}, ${q(mots)}) as r`).then((r) => r[0].r);
+  // 1. Chantier non « à vérifier » : refusé, rien n'est écrit.
+  const cl = await creerChantier(P1, { titre: "58 Pas livré", etat: "libre" });
+  const refus = await sql(`select relayer_verdict(${q(cl)}::uuid, 's', true, 'ça marche') as r`).catch((e) => ({ erreur: String(e.message ?? e) }));
+  verifie("chantier pas « à vérifier » : refusé, aucune carte", (refus.erreur ?? "").includes("pas") && (await une(`select count(*)::int as n from messages where chantier_id = ${q(cl)}`)).n === 0, refus);
+  // 2. « Ça marche » dit en session : ses mots dans le fil + UNE carte, rien n'est certifié.
+  const c = await creerChantier(P1, { titre: "58 Livré à vérifier", etat: "a_verifier" });
+  verifie("« ça marche » : carte posée", (await relayer(c, true, "oui ça marche, je viens de tester")) === "carte posée");
+  verifie("deuxième fois : pas de doublon", (await relayer(c, true, "oui oui")) === "carte déjà posée");
+  const ch = await une(`select etat, archived_at from chantiers where id = ${q(c)}`);
+  verifie("la session NE certifie PAS : le chantier reste « à vérifier »", ch.etat === "a_verifier" && ch.archived_at === null, ch);
+  const cartes = await sql(`select id, kind, corps, options, answered_at from messages where chantier_id = ${q(c)} and verdict_carte`);
+  verifie("une seule carte, question « Tu confirmes que … marche ? », deux réponses prêtes (la première recommandée)",
+    cartes.length === 1 && cartes[0].kind === "question" && cartes[0].corps.startsWith("Tu confirmes que « 58 Livré") && cartes[0].options.length === 2 && cartes[0].options[0].recommande === true && cartes[0].answered_at === null, cartes);
+  verifie("ses mots sont dans le fil (message de session, pas un message libre à servir)",
+    (await une(`select count(*)::int as n from messages where chantier_id = ${q(c)} and via_session and corps like 'Dit dans la session : oui ça marche%'`)).n >= 1);
+  // 3a. Un MEMBRE (non admin) qui répond « Oui » ne certifie pas : seul Raphaël (admin) certifie.
+  const cm = await creerChantier(P1, { titre: "58 Réponse d'un membre", etat: "a_verifier" });
+  await relayer(cm, true, "ça marche");
+  const km = (await une(`select id from messages where chantier_id = ${q(cm)} and verdict_carte`)).id;
+  await repondre(km, "Oui, ça marche");
+  verifie("un membre non admin qui répond « Oui » ne certifie pas", (await une(`select etat from chantiers where id = ${q(cm)}`)).etat === "a_verifier");
+  // Le compte de test devient admin le temps de ce contrôle (retiré à la fin, même en cas d'échec).
+  await sql(`insert into admins (user_id) values (${q(userId)}) on conflict do nothing`);
+  try {
+  // 3. Son « Oui » (humain admin) certifie, UN toucher ; la chef ne reprend rien.
+  const r = await repondre(cartes[0].id, "Oui, ça marche");
+  verifie("répondre « Oui » : accepté", r.status < 300, r);
+  const apres = await une(`select etat, valide_par, archived_at from chantiers where id = ${q(c)}`);
+  verifie("le chantier est CERTIFIÉ par lui (valide, valide_par = Raphaël)", apres.etat === "valide" && apres.valide_par === "Raphaël" && apres.archived_at !== null, apres);
+  verifie("sa réponse sur la carte n'est jamais « à reprendre » (pas de chantier parasite)", !(await attente()).includes(cartes[0].id));
+  // 4. « Non » : la vérification est demandée, rien n'est certifié.
+  const c2 = await creerChantier(P1, { titre: "58 Dit non", etat: "a_verifier" });
+  await relayer(c2, true, "je crois que ça marche");
+  const k2 = (await une(`select id from messages where chantier_id = ${q(c2)} and verdict_carte`)).id;
+  await repondre(k2, "Non, ça ne marche pas");
+  const a2 = await une(`select etat, verif_motif, verif_demandee_at from chantiers where id = ${q(c2)}`);
+  verifie("« Non » : pas certifié, vérification « ne marche pas » demandée", a2.etat === "a_verifier" && a2.verif_motif === "ne_marche_pas" && a2.verif_demandee_at !== null, a2);
+  } finally { await sql(`delete from admins where user_id = ${q(userId)}`); }
+  // 5. « Ça ne marche pas » dit en session : même effet que son bouton, sans carte.
+  const c3 = await creerChantier(P1, { titre: "58 Ne marche pas", etat: "a_verifier" });
+  verifie("« ne marche pas » : noté", (await relayer(c3, false, "ça plante sur le bouton")) === "ne marche pas noté");
+  const a3 = await une(`select verif_motif, verif_demandee_at, (select count(*)::int from messages where chantier_id = ${q(c3)} and verdict_carte) as cartes from chantiers where id = ${q(c3)}`);
+  verifie("vérification demandée, aucune carte", a3.verif_motif === "ne_marche_pas" && a3.verif_demandee_at !== null && a3.cartes === 0, a3);
+  // 6. La carte se ferme seule si le chantier est certifié ailleurs.
+  const c4 = await creerChantier(P1, { titre: "58 Certifié ailleurs", etat: "a_verifier" });
+  await relayer(c4, true, "ça marche");
+  await rpcUtilisateur("certifier_chantier", { p_id: c4, p_par: "Raphaël", p_mots: null }, jwt);
+  const f4 = await une(`select answered_at, reponse from messages where chantier_id = ${q(c4)} and verdict_carte`);
+  verifie("carte fermée seule quand le chantier est certifié depuis l'app", f4.answered_at !== null && f4.reponse.startsWith("Plus utile"), f4);
+  // 7. Une réponse « Oui » posée par le service (pas un humain admin) ne certifie rien.
+  const c5 = await creerChantier(P1, { titre: "58 Réponse service", etat: "a_verifier" });
+  await relayer(c5, true, "ça marche");
+  await sql(`update messages set answered_at = now(), reponse = 'Oui, ça marche' where chantier_id = ${q(c5)} and verdict_carte`);
+  verifie("une session qui « répond Oui » ne certifie pas", (await une(`select etat from chantiers where id = ${q(c5)}`)).etat === "a_verifier");
+  const droits = await une(`select has_function_privilege('authenticated', 'cockpit.relayer_verdict(uuid,text,boolean,text)', 'execute') as auth, has_function_privilege('anon', 'cockpit.relayer_verdict(uuid,text,boolean,text)', 'execute') as anon, has_function_privilege('service_role', 'cockpit.relayer_verdict(uuid,text,boolean,text)', 'execute') as srv`);
+  verifie("droits : relayer_verdict réservé aux sessions (service)", !droits.auth && !droits.anon && droits.srv, droits);
+}
+
 async function controle49_passe_sans_perte() {
   section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
   await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
@@ -3914,6 +3977,7 @@ const etapes = [
     controle52_mesure_reaction,
     controle53_reveil_chantier,
     controle54_paquets_de_cinq,
+    controle58_verdict_dit_en_session,
     controle55_reveil_horaire,
     controle56_classer_livres,
     controle57_rapprochement_github,
