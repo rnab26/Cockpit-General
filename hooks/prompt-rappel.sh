@@ -56,8 +56,16 @@ tenus=""
 if [ -n "$branche" ] && [ -x "$SQL" ]; then
   tenus=$("$SQL" "select coalesce(string_agg(format('« %s » (%s, %s)', c.titre, c.id, c.etat), ' ; '), '') as t from chantiers c join projets p on p.id = c.projet_id where p.slug = '$PROJET' and c.pris_par = '$branche' and c.pris_jusqu_a > now()" 2>/dev/null | jq -r '.rows[0].t // ""' 2>/dev/null || echo "")
 fi
+# VERDICT DIT EN SESSION (0085) : les chantiers livrés qui attendent son verdict (5 au plus, les plus
+# récents), pour que « ça marche » / « ça ne marche pas » dit ici arrive dans le cockpit.
+verif_txt=""
+if [ -x "$SQL" ]; then
+  av=$("$SQL" "select coalesce(string_agg(format('« %s » (%s)', t.titre, t.id), ' ; '), '') as t from (select c.titre, c.id from chantiers c join projets p on p.id = c.projet_id where p.slug = '$PROJET' and c.etat = 'a_verifier' and c.archived_at is null order by c.updated_at desc limit 5) t" 2>/dev/null | jq -r '.rows[0].t // ""' 2>/dev/null || echo "")
+  [ -n "$av" ] && verif_txt=" VERDICT : si ce message dit qu'un de ces chantiers livrés marche ou ne marche pas ($av), relaie-le : $CHANTIER_CMD --verdict-dit <id> --marche|--ne-marche-pas --mots \"<ses mots>\" (« marche » pose UNE carte de confirmation dans « À toi » : seul Raphaël certifie, jamais toi)."
+fi
 texte="Cockpit (projet $PROJET) — si ce message demande du TRAVAIL (fonctionnalité, correctif, reprise d'un sujet), enregistre-le AVANT de coder : $CHANTIER_CMD --ouvrir \"<titre court, lisible par Raphaël>\" --demande \"<ses mots>\" --section \"<rubrique>\" (il reprend ou rouvre le chantier existant au lieu d'en créer un doublon). Doublons et rangement, c'est TOI qui tranches, jamais Raphaël : sur « ambigu », lis les extraits et relance avec --id ou --nouveau ; deux chantiers existants identiques → --suggerer-fusion (il accepte d'un toucher). Puis $PROG_CMD à chaque étape, les jalons pousse / ci-ok / en-ligne, et --termine avec --verifier et --en-ligne. Chaque agent que tu lances : écris dans sa consigne d'appeler $PROG_CMD --agent \"<sa description exacte>\" --etape … --pct … --eta … à chaque étape. Une simple question ou discussion : rien à enregistrer."
 [ -n "$tour_txt" ] && texte="$texte$tour_txt"
+[ -n "$verif_txt" ] && texte="$texte$verif_txt"
 [ -n "$tenus" ] && texte="$texte Ta session tient déjà : $tenus."
 [ -n "$chef_txt" ] && texte="$texte $chef_txt"
 jq -n --arg c "$texte" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'

@@ -18,6 +18,13 @@ demandes des utilisateurs, progression des autres sessions.
   donne la preuve. S'il touche « Je ne sais pas : vérifie pour moi », c'est à
   toi de juger ce qu'il a collé : `scripts/cockpit-verdict.sh --chantier <id>
   --bon "…"` ou `--pas-bon "…"` (la session chef du projet lance un agent pour ça).
+- **UN VERDICT DIT EN SESSION ARRIVE DANS LE COCKPIT** (13 oct. : « quand je dis dans la
+  session que ça marche, le cockpit ne le sait pas »). S'il dit qu'un chantier livré marche
+  ou ne marche pas : `scripts/cockpit-chantier.sh --verdict-dit <id> --marche|--ne-marche-pas
+  --mots "<ses mots>"`. Ses mots vont dans le fil ; « ne marche pas » = son bouton (tu
+  vérifies) ; « marche » pose UNE carte « Tu confirmes que X marche ? » dans « À toi » : il
+  certifie d'un toucher. **Tu ne certifies JAMAIS toi-même.** Le hook te liste les chantiers
+  à vérifier (id compris) à chaque message.
 - **UNE RÉPONSE DE RAPHAËL N'EST JAMAIS PERDUE** (29 sept. : « je réponds, mais
   je ne sais pas si c'est pris en compte »). Sur un chantier que tu tiens, elle
   t'arrive en direct : suis-la tout de suite (un message ou une étape). Sur un
