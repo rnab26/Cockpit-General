@@ -94,6 +94,15 @@ try {
   verifie("fin de tour : « en attente », action effacée", act.statut === "attente" && act.action_live == null, act);
   verifie("le battement s'arrête à Stop", !existsSync(join(TMP, "cockpit-tour-vie-sa")));
 
+  // Chantier réservé au nom d'une AUTRE branche (copie de travail), mais suivi par cette session vivante (étape signalée).
+  const AUTRE = randomUUID();
+  sql(`insert into chantiers (id, projet_id, titre, etat, pris_par, pris_jusqu_a) values (${q(AUTRE)}, ${q(P)}, 'Voile sur la main', 'en_cours', 'claude/copie-de-travail', now() + interval '1 hour')`);
+  sql(`insert into activite (projet_id, chantier_id, session, etape, pourcentage, statut, updated_at) values (${q(P)}, ${q(AUTRE)}, 'claude/direct-a', 'Voile encore visible', 80, 'en_cours', now() - interval '2 hours')`);
+  suivi(DIR_A, { session_id: "sa", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { description: "Lance le banc" }, tool_response: {} });
+  await attendre(2500);
+  const viv = sql(`select action_live, pourcentage, extract(epoch from now() - updated_at)::int as age from activite where chantier_id = ${q(AUTRE)}`)[0];
+  verifie("un chantier réservé à une autre branche mais suivi par la session vivante montre son action en direct (barre à jour, 80 % gardé)", viv?.action_live === "Lance : Lance le banc" && viv.pourcentage === 80 && viv.age < 30, viv);
+
   console.log("\n6-7. ce que personne ne tient arrive à la session ouverte, une seule fois");
   sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps) values (${q(P)}, null, 'raphael@test', 'proprietaire', 'info', 'Je ne vois aucune barre de progression sur ce projet, regarde.')`);
   const Q = randomUUID();

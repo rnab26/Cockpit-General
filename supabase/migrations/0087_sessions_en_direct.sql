@@ -109,24 +109,35 @@ end $$;
 -- Ce que la session fait MAINTENANT (hook PostToolUse) : alimente la barre du chantier qu'elle tient.
 create or replace function cockpit.signaler_action_live(p_projet text, p_branche text, p_action text)
 returns uuid language plpgsql security definer set search_path to 'cockpit', 'pg_temp' as $$
-declare v_pid uuid; v_c uuid;
+declare v_pid uuid; v_c uuid; v_premier uuid; c record;
 begin
   perform cockpit.exiger(cockpit.est_service(), 'réservé aux sessions');
   if nullif(btrim(coalesce(p_branche, '')), '') is null then return null; end if;
   select id into v_pid from cockpit.projets where slug = p_projet and actif;
   if v_pid is null then return null; end if;
-  select id into v_c from cockpit.chantiers
-   where projet_id = v_pid and pris_par = p_branche and pris_jusqu_a > now() and archived_at is null and etat = 'en_cours'
-   order by updated_at desc limit 1;
-  if v_c is null then return null; end if;
-  insert into cockpit.activite (projet_id, chantier_id, session, etape, pourcentage, statut, action_live, action_live_at, pct_estime)
-  values (v_pid, v_c, p_branche, 'Au travail', 0, 'en_cours', left(btrim(coalesce(p_action, '')), 200), now(), false)
-  on conflict (chantier_id, session) do update
-     set action_live = excluded.action_live, action_live_at = now(), updated_at = now(), statut = 'en_cours';
-  -- Tant qu'elle travaille, sa réservation ne tombe pas (un long travail continu n'est jamais « libéré »).
-  update cockpit.chantiers set pris_jusqu_a = now() + interval '3 hours'
-   where id = v_c and pris_jusqu_a < now() + interval '2 hours';
-  return v_c;
+  -- Les chantiers de cette session : ceux réservés à sa branche, ET ceux sur lesquels elle a signalé une
+  -- étape il y a moins de 12 h (même règle que cockpit.sans_signe_de_vie : un chantier réservé au nom d'une
+  -- AUTRE branche — copie de travail — mais suivi par cette session vivante est le sien aussi).
+  for c in
+    select ch.id, ch.pris_par, ch.pris_jusqu_a from cockpit.chantiers ch
+     where ch.projet_id = v_pid and ch.archived_at is null and ch.etat = 'en_cours'
+       and ((ch.pris_par = p_branche and ch.pris_jusqu_a > now())
+            or exists (select 1 from cockpit.activite a where a.chantier_id = ch.id and a.session = p_branche
+                          and a.updated_at > now() - interval '12 hours'))
+     order by ch.updated_at desc limit 3
+  loop
+    v_premier := coalesce(v_premier, c.id);
+    insert into cockpit.activite (projet_id, chantier_id, session, etape, pourcentage, statut, action_live, action_live_at, pct_estime)
+    values (v_pid, c.id, p_branche, 'Au travail', 0, 'en_cours', left(btrim(coalesce(p_action, '')), 200), now(), false)
+    on conflict (chantier_id, session) do update
+       set action_live = excluded.action_live, action_live_at = now(), updated_at = now(), statut = 'en_cours';
+    -- Tant qu'elle travaille, sa réservation ne tombe pas (un long travail continu n'est jamais « libéré »).
+    if c.pris_par = p_branche then
+      update cockpit.chantiers set pris_jusqu_a = now() + interval '3 hours'
+       where id = c.id and pris_jusqu_a < now() + interval '2 hours';
+    end if;
+  end loop;
+  return v_premier;
 end $$;
 
 -- Fin de tour (hook Stop) : la session a rendu la main à Raphaël, elle attend son prochain message.
@@ -138,7 +149,7 @@ begin
   update cockpit.activite a set statut = 'attente', action_live = null, updated_at = now()
    where a.session = p_branche and a.statut = 'en_cours'
      and a.chantier_id in (select c.id from cockpit.chantiers c join cockpit.projets p on p.id = c.projet_id
-                            where p.slug = p_projet and c.pris_par = p_branche and c.archived_at is null);
+                            where p.slug = p_projet and c.archived_at is null and c.etat = 'en_cours');
   get diagnostics n = row_count;
   return n;
 end $$;
