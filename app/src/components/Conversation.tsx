@@ -40,6 +40,7 @@ import { chantierTenu, etatOuEnEst } from '../lib/ouEnEst.ts'
 import { Progression } from './Progression.tsx'
 import { TachesDuChantier } from './QuiTravaille.tsx'
 import { PointTravaille } from './Vivant.tsx'
+import { DescriptifChantier } from './DescriptifChantier.tsx'
 import { IconePresence, PointProjet } from './Icones.tsx'
 import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, deposerMedia, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
@@ -596,11 +597,12 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   return (
     <>
       <EnTete titre={c.titre}
-        sousTitre={
+        sousTitre={<>
+          <DescriptifChantier c={c} />
           <p className={`mt-0.5 flex items-center gap-1.5 text-xs ${teinte}`} data-testid="presence-conversation" data-presence={presence.code}>
             {presence.code === 'travaille' ? <span className="point-vivant inline-block h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden /> : <IconePresence code={presence.code} taille={14} />}
             <span className="truncate">{presenceEnMots(presence, activite)}</span>
-          </p>
+          </p></>
         }
         menu={admin ? <MenuChantier chantier={c} nMessages={fil.length} onHistorique={() => setSignalHistorique((n) => n + 1)} /> : null} />
       <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'} cle={cle} nbActions={nbActions} faites={faites}

@@ -1,3 +1,4 @@
+import { DescriptifChantier } from './DescriptifChantier.tsx'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Ban, Check, Clock, ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
@@ -352,6 +353,7 @@ export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste
                 <PastilleReponse cle={c.id} />
                 <ChevronRight size={16} className="shrink-0 text-texte-2" aria-hidden />
               </button>
+              <div className="pb-2"><DescriptifChantier c={c} /></div>
             </li>
           )
         })}

@@ -15,6 +15,8 @@
 #     chantier vivant qui existe déjà (sans toucher à son état) ; --reponse
 #     (sinon une phrase par défaut) part dans le fil d'origine avec un bouton
 #     vers le nouveau fil, et compte comme ta réponse à son message.
+#   scripts/chantier.sh --decrire <id> --court "<une phrase simple, 160 car.>" [--detail "<texte plus long, imagé, 1500 car.>"]
+#      (descriptif sous le titre, texte détaillé au toucher ; mots de tous les jours, clarte.py contrôle)
 #   scripts/chantier.sh --ranger <id> --section "Tête entière"     # le ranger (section créée si besoin)
 #   (un correctif visuel / mise en page / ergonomie est rangé TOUT SEUL dans
 #    « Correctifs » à la création, migration 0021 ; --ranger corrige un faux tri)
@@ -56,7 +58,7 @@
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="$RACINE/scripts/sql.sh"
-decote=""; jusqua=""; abandon=""; depuis=""; reponse=""; verdict=""; verdict_ok=""; mots=""
+decrire=""; court=""; detail=""; decote=""; jusqua=""; abandon=""; depuis=""; reponse=""; verdict=""; verdict_ok=""; mots=""
 projet="${COCKPIT_PROJET:-}"; titre=""; demande=""; id=""; nouveau=false; chercher=""; section=""; ranger=""; fusion=""; regrouper=""; avec=""; dans=""; pourquoi=""
 session="${COCKPIT_SESSION:-$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$PWD" symbolic-ref --short -q HEAD 2>/dev/null || echo "session-${CLAUDE_CODE_SESSION_ID:0:8}")}"
 while [ $# -gt 0 ]; do
@@ -74,6 +76,9 @@ while [ $# -gt 0 ]; do
     --avec)     avec="${2:-}"; shift 2 ;;
     --dans)     dans="${2:-}"; shift 2 ;;
     --pourquoi) pourquoi="${2:-}"; shift 2 ;;
+    --decrire)  decrire="${2:-}"; shift 2 ;;
+    --court)    court="${2:-}"; shift 2 ;;
+    --detail)   detail="${2:-}"; shift 2 ;;
     --verdict-dit) verdict="${2:-}"; shift 2 ;;
     --marche)   verdict_ok=true; shift ;;
     --ne-marche-pas) verdict_ok=false; shift ;;
@@ -102,6 +107,16 @@ ranger_dans() { # id, section
     && echo "Rangé dans la section « $2 »." || { echo "Échec du rangement dans « $2 »." >&2; return 1; }
 }
 
+if [ -n "$decrire" ]; then
+  [[ "$decrire" =~ ^[0-9a-f-]{36}$ ]] || { echo "--decrire <id du chantier> (36 caractères)." >&2; exit 2; }
+  [ -n "${court// /}" ] || { echo "--court \"<une phrase simple : à quoi sert ce chantier>\" manque (160 caractères au plus)." >&2; exit 2; }
+  [ "${#court}" -le 160 ] || { echo "--court dépasse 160 caractères (${#court}) : une seule phrase." >&2; exit 2; }
+  [ "${#detail}" -le 1500 ] || { echo "--detail dépasse 1500 caractères (${#detail})." >&2; exit 2; }
+  { printf '%s\0' "le descriptif court" "$court"; [ -z "$detail" ] || printf '%s\0' "le texte détaillé" "$detail"; } | python3 "$RACINE/scripts/clarte.py" || exit 2
+  r=$("$SQL" "select decrire_chantier('$(q "$decrire")'::uuid, '$(q "$court")', '$(q "$detail")', '$(q "$session")') as ok") || { echo "Descriptif refusé." >&2; exit 1; }
+  [ "$(printf '%s' "$r" | jq -r '.rows[0].ok')" = "true" ] && echo "Descriptif posé : il s'affiche sous le titre, le texte détaillé au toucher." || { echo "Chantier introuvable." >&2; exit 1; }
+  exit 0
+fi
 if [ -n "$verdict" ]; then
   [[ "$verdict" =~ ^[0-9a-f-]{36}$ ]] || { echo "--verdict-dit <id du chantier> (36 caractères)." >&2; exit 2; }
   [ -n "$verdict_ok" ] || { echo "Dis lequel : --marche ou --ne-marche-pas." >&2; exit 2; }
@@ -229,4 +244,6 @@ else
     echo "Rangé tout seul dans « Correctifs » (correctif visuel, de mise en page ou d'ergonomie). Si ce n'en est pas un : ${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh} --ranger $cid --section \"<rubrique>\"."
   fi
 fi
+dej=$("$SQL" "select (descriptif is not null) as d from chantiers where id = '$cid'" | jq -r '.rows[0].d' 2>/dev/null || echo true)
+[ "$dej" = "true" ] || echo "À DÉCRIRE par toi : ${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh} --decrire $cid --court \"<une phrase simple : à quoi sert ce chantier, 160 car.>\" --detail \"<2 à 4 phrases, mots de tous les jours, une image du genre « c'est comme… »>\" (Raphaël le lit sous le titre)."
 echo "Ensuite : scripts/progression.sh --chantier <id> --etape … à chaque étape ; jalons « pousse », « ci-ok », « en-ligne » ; puis --termine avec --verifier."
