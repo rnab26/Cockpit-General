@@ -188,7 +188,7 @@ export function AssistantGoogle({ service, cle, now, plusAncienneFacture, onFerm
                     <div className="space-y-2 rounded-xl border border-bord px-3 py-2" data-testid="google-rattrapage">
                       <p className="text-sm font-medium">{RATTRAPAGE.titre(jourLisible(reculerA) ?? reculerA)}</p>
                       <p className="text-sm text-texte-2">{RATTRAPAGE.explication}</p>
-                      <Button variante="secondaire" chargement={recule} onClick={() => void reculer()} data-testid="google-reculer"><History size={16} />{RATTRAPAGE.bouton}</Button>
+                      <Button variante="secondaire" chargement={recule} onClick={() => void reculer()} data-testid="google-reculer" className="h-auto! min-h-10 whitespace-normal! py-1.5 text-left leading-tight"><History size={16} className="shrink-0" />{RATTRAPAGE.bouton}</Button>
                     </div>
                   ) : null}
                 </div>
