@@ -147,7 +147,7 @@ factures, et comme ça on actualise ». Procédure : `docs/recus-par-email.md` �
 repliait toute seule quand on ignorait le dernier « nouveau »). **Limite** : l'écran n'ouvre pas de session ; sans session qui a Gmail la demande attend. **Piège** : la recherche ne lit JAMAIS un mail
 (`search_threads` seulement : expéditeur, date, objet) ; ne pas ajouter de `get_thread` « pour être plus précis ».
 
-## 0 septies. Le Trieur de Data est branché (14 oct. 2026, matin) — chantier `8c1e730f` pour le défaut trouvé en route
+## 0 septies. Le Trieur de Data est branché, avec son bouton « Demandes » (14 oct. 2026) — chantiers `8c1e730f` (défaut du moteur) et `04e4bcdc` (bouton)
 
 Raphaël : « brancher un projet à moi sur le cockpit, étape par étape » → le Trieur (`rnab26/Trieur-Data`, projet `trieur-data`, « Trieur de Data »). Skill `cockpit` : quatre choix posés d'un coup (nom, reprise des chantiers,
 mise en ligne, mode autonome : non), puis tout fait. **Fait et vérifié** : `brancher.sh` (settings.json valide, l'ancien hook de démarrage du Trieur est gardé à côté du nôtre), hook lancé pour de vrai, 3 chantiers
@@ -155,8 +155,15 @@ ouverts côté Trieur = 3 repris en base (rangés par `cockpit-chantier.sh --ran
 enregistré « commit ignoré » pour ses deux services `main` (`list_events`), aucun déploiement. **Défaut trouvé et corrigé** : l'étape 5 de `brancher.sh` (questionnaire d'emplacement) a été refusée par le filtre de
 clarté parce que le texte du choix « menu » citait `frontend/src/App.tsx` ; `analyser-depot.py` ne cite plus de chemin, `verifier-emplacement.mjs` couvre front / frontend / backend / runtime (rouge 4 KO → vert 25/25).
 **Pièges** : (1) des appels d'outil lancés en parallèle partagent le dossier courant : un `cd` dans l'un change l'autre (une vérification du Trieur a lu le dépôt du cockpit) ; chemins absolus et `git -C`.
-(2) Le dépôt du Trieur a été renommé (`Trieur-Data` avec majuscules) : GitHub redirige l'ancienne adresse, la base garde `rnab26/Trieur-Data`. (3) `[skip render]` : la doc Render ne dit pas s'il doit être dans la
-première ligne ; il y est, et l'événement `commit_ignored` l'a confirmé. **Reste** : l'ancien hook du Trieur liste les mêmes 3 chantiers que le cockpit (décision de Raphaël : le garder ou le couper).
+(2) Le dépôt du Trieur a été renommé (`Trieur-Data` avec majuscules) : GitHub redirige l'ancienne adresse ; `brancher.sh` met le dépôt en minuscules en base (`rnab26/trieur-data`), sans conséquence. (3) `[skip render]` : Render
+la cherche n'importe où dans le MESSAGE, pas seulement sur la première ligne : un envoi qui devait déployer a été ignoré parce que je l'avais écrite dans une explication (« pas de [skip render] ») ; mise en ligne lancée à la main
+(`trigger_deploy`, site seul, l'API n'avait pas changé), puis site en ligne vérifié. (4) Le mode autonome du Trieur est « tout le temps » parce que Raphaël l'a allumé lui-même dans l'app (journaux de la base : deux appels
+à `regler_autonome` depuis son compte, 08:19) après avoir répondu « non » au bilan : son geste prime, on ne l'éteint pas à sa place.
+**La suite, après sa remarque** (« on n'est pas censé pouvoir le mettre directement en copier-coller quand on ajoute un projet ? » ; décision D-16 dans dotfiles) : le bouton n'était pas à cadrer, il fallait le poser. Fait : composant
+`CockpitCentral` du Trieur (comptes administrateurs seulement, la règle de son onglet Cockpit ; bouton « Demandes » dans le menu à partir de 640 px, bouton flottant du module en dessous), menu du Trieur qui ne déborde plus sur
+téléphone (494 px sur 390, défaut qui existait avant : rangée d'onglets qui défile), `tests/test_cockpit_central.py`, 33 contrôles dans Chromium sur le build puis sur le VRAI site (comptes simulés, API et base interceptées).
+Skill `cockpit` étape 5 réécrite (dotfiles, PR 5). **Reste** : (a) « Copier le code » de l'app donne encore une balise « page » sans tenir compte de l'emplacement choisi (chantier `949ed6d7`, prêt à lancer) ; (b) garder ou remplacer l'écran Cockpit
+intégré du Trieur (décision de Raphaël) ; (c) l'ancien hook de démarrage du Trieur liste les mêmes 3 chantiers que le cockpit ; (d) **non vérifié** : un vrai compte administrateur du Trieur (aucun identifiant côté session).
 
 ## 1. Ce qui est EN LIGNE et vérifié (état du 29 sept.)
 
