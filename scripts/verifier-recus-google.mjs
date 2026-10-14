@@ -8,8 +8,9 @@
 // 2. la porte : sans clé, clé inconnue ou révoquée, mauvaise méthode, requête illisible, trop grosse : refus en clair ;
 // 3. un reçu : ajouté une seule fois, PDF rangé, PDF joint à une ligne qui n'en avait pas, PDF suspect refusé, refus de la règle, essai sans
 //    aucune écriture, avant la date de départ ; le battement (dernier passage, échec, essai) ;
-// 4. LE PROGRAMME lui-même (Code.gs + appsscript.json, tels que Raphaël les collera) exécuté contre un faux Gmail : il ne lit que l'expéditeur
-//    voulu, n'envoie jamais le contenu d'un autre mail, ne fait que des GET sur Gmail, n'écrit rien dans Gmail, ne montre jamais la clé,
+// 4. LE PROGRAMME lui-même (Code.gs + appsscript.json, tels que Raphaël les collera) exécuté contre un faux service Gmail (le service
+//    avancé « Gmail » de Google Apps Script : trois lectures seulement, tout autre appel fait échouer le banc) : il ne lit que l'expéditeur
+//    voulu, n'envoie jamais le contenu d'un autre mail, n'écrit rien dans Gmail, ne parle qu'au cockpit, ne montre jamais la clé,
 //    programme UN seul passage du dimanche, remonte ses échecs ; et ce qu'il envoie arrive vraiment dans Coûts ;
 // 5. aucun reste : ligne, prestataire, clé, projet et fichiers sont supprimés à la fin.
 // Aucune donnée réelle : reçus FICTIFS (scripts/recus-fixtures.mjs). Ne vise jamais un vrai projet.
@@ -20,7 +21,13 @@ import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import vm from "node:vm";
 import { lancerFonctionLocale, projetsDeTestAbandonnes, purgerProjetsDeTest } from "./bancs.mjs";
-import { recu } from "./recus-fixtures.mjs";
+import { recu as recuBrut } from "./recus-fixtures.mjs";
+
+// Les reçus de ce banc portent un lien « Download invoice » qui n'est PAS celui de Stripe : la fonction ne l'ouvre jamais (seul pay.stripe.com
+// est ouvert), donc le banc ne fait aucun appel à Stripe sauf dans l'essai prévu pour cela (LIEN_STRIPE, un lien inventé que Stripe refuse).
+const LIEN_NEUTRE = "https://exemple.test/invoice/acct_TEST/live_TEST/pdf?s=em";
+const LIEN_STRIPE = "https://pay.stripe.com/invoice/acct_TEST/live_TEST/pdf?s=em";
+const recu = (o) => recuBrut({ lien: LIEN_NEUTRE, ...o });
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SQL = join(RACINE, "scripts/sql.sh");
@@ -209,10 +216,18 @@ try {
 
   const R4 = recuP(4);
   r = await appel({ action: "recu", texte: R4, pdfs: [{ nom: "Invoice-AUTRE0000-0001.pdf", base64: A1.base64 }] }, { cle: K });
-  verifie("un PDF d'une autre facture : la ligne est ajoutée SANS lui, le refus est dit", r.json.statut === "ajoute" && r.json.pdf === "refuse" && /ne s'appelle/.test(r.json.message) && objets().length === 2, r);
+  verifie("un PDF d'une autre facture : la ligne est ajoutée SANS lui, le refus est dit", r.json.statut === "ajoute" && r.json.pdf === "refuse" && /ne porte le n°/.test(r.json.message) && objets().length === 2, r);
   const R5 = recuP(5);
   r = await appel({ action: "recu", texte: R5, pdfs: [{ nom: "Invoice-TESTRG0005-0001.pdf", base64: b64url(Buffer.from("MZ ceci n'est pas un pdf")) }] }, { cle: K });
   verifie("un « PDF » qui n'en est pas un n'est jamais rangé", r.json.statut === "ajoute" && r.json.pdf === "refuse" && objets().length === 2, r);
+
+  // Le lien « Download invoice » en secours (un seul appel réel à Stripe, avec un lien INVENTÉ que Stripe refuse) : la facture est ajoutée sans PDF,
+  // sans message d'erreur, et la carte du prestataire reste verte (une vieille facture au lien expiré ne doit pas rougir la carte à chaque passage).
+  const R8 = recuP(8, { lien: LIEN_STRIPE });
+  r = await appel({ action: "recu", texte: R8 }, { cle: K });
+  verifie("un lien Stripe que Stripe refuse (lien inventé), sans pièce jointe : la facture est ajoutée SANS PDF, « PDF absent », aucun message d'erreur", r.code === 200 && r.json.statut === "ajoute" && r.json.pdf === "absent" && r.json.message === undefined && depenses().find((x) => x.reference === "TESTRG0008-0001")?.fichier === null && objets().length === 2, r);
+  r = await appel({ action: "passage", resultats: [{ statut: "ajoute", facture: "TESTRG0008-0001", montant: "289.00", devise: "ILS", date: "2026-10-02", pdf: "absent", quoi: "mail du 2026-10-02" }], cadence_jours: 7 }, { cle: K });
+  verifie("…et le passage reste « ok » (« PDF à joindre à la main : … »), la carte du prestataire ne rougit pas", r.json.statut === "ok" && service(S1).st === "ok" && /PDF à joindre à la main : TESTRG0008-0001/.test(service(S1).note), service(S1));
 
   const avantEssai = depenses().length, objetsAvant = objets().length, serviceAvant = service(S1);
   const R6 = recuP(6);
@@ -255,11 +270,14 @@ try {
   verifie("les réglages Google sont du JSON valide, en V8, fuseau d'Israël", reglages.runtimeVersion === "V8" && reglages.timeZone === "Asia/Jerusalem");
   verifie("autorisations demandées à Google : lecture des mails (readonly), appels extérieurs, programmation du passage — RIEN d'autre (ni envoi, ni suppression, ni accès complet)",
     JSON.stringify([...reglages.oauthScopes].sort()) === JSON.stringify(["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/script.external_request", "https://www.googleapis.com/auth/script.scriptapp"].sort()), reglages.oauthScopes);
-  const urlCockpit = /const URL_COCKPIT = '([^']+)';/.exec(source)?.[1], urlGmail = /const GMAIL = '([^']+)';/.exec(source)?.[1];
-  verifie("Google ne laisse le programme parler qu'à Gmail et au cockpit (liste du fichier de réglages) : les deux adresses du programme y figurent", Array.isArray(reglages.urlFetchWhitelist) && reglages.urlFetchWhitelist.length === 2
-    && reglages.urlFetchWhitelist.every((p) => p.startsWith("https://")) && [urlCockpit, urlGmail + "/messages"].every((u) => reglages.urlFetchWhitelist.some((p) => u.startsWith(p))), { urlCockpit, urlGmail });
-  verifie("le programme n'utilise aucun service Google d'écriture ou de lecture directe (ni GmailApp, MailApp, DriveApp, SpreadsheetApp, DocumentApp, CalendarApp, ni la liste des appels autres que Gmail et le cockpit)", !/\b(GmailApp|MailApp|DriveApp|SpreadsheetApp|DocumentApp|CalendarApp|ContactsApp|FormApp|SitesApp|Session|PropertiesService|CacheService|LockService)\b/.test(source));
-  verifie("tout appel à Gmail est un GET (aucun POST, PUT, PATCH ou DELETE vers Gmail dans le code)", !/UrlFetchApp\.fetch\(GMAIL[^)]*(post|put|patch|delete)/i.test(source) && (source.match(/method: 'get'/g) ?? []).length === 1 && (source.match(/method: 'post'/g) ?? []).length === 1);
+  const urlCockpit = /const URL_COCKPIT = '([^']+)';/.exec(source)?.[1];
+  verifie("Gmail est lu par le service avancé « Gmail » de Google, déclaré dans le fichier de réglages (il s'active tout seul) : userSymbol Gmail, version v1", JSON.stringify(reglages.dependencies?.enabledAdvancedServices) === JSON.stringify([{ userSymbol: "Gmail", serviceId: "gmail", version: "v1" }]), reglages.dependencies);
+  verifie("Google ne laisse le programme parler qu'au cockpit (liste du fichier de réglages : cette seule adresse) ; Gmail n'est plus joint par une adresse web", Array.isArray(reglages.urlFetchWhitelist) && reglages.urlFetchWhitelist.length === 1
+    && reglages.urlFetchWhitelist[0].startsWith("https://") && urlCockpit.startsWith(reglages.urlFetchWhitelist[0]) && !/gmail\.googleapis\.com/.test(source), { urlCockpit, urlGmail: /gmail\.googleapis\.com/.test(source) });
+  verifie("le programme n'utilise aucun autre service Google (ni GmailApp, MailApp, DriveApp, SpreadsheetApp, DocumentApp, CalendarApp, Session, PropertiesService, CacheService, LockService)", !/\b(GmailApp|MailApp|DriveApp|SpreadsheetApp|DocumentApp|CalendarApp|ContactsApp|FormApp|SitesApp|Session|PropertiesService|CacheService|LockService)\b/.test(source));
+  verifie("Gmail n'est appelé que par ses trois LECTURES : Messages.list, Messages.get, Messages.Attachments.get (aucun send, modify, trash, delete, insert, import, batch…)",
+    JSON.stringify([...new Set([...source.matchAll(/Gmail\.Users(?:\.[A-Za-z]+)+/g)].map((m) => m[0]))].sort()) === JSON.stringify(["Gmail.Users.Messages.Attachments.get", "Gmail.Users.Messages.get", "Gmail.Users.Messages.list"].sort()), [...source.matchAll(/Gmail\.Users(?:\.[A-Za-z]+)+/g)].map((m) => m[0]));
+  verifie("le seul appel web du programme est un POST vers le cockpit ; il ne manipule jamais le jeton Google (aucun getOAuthToken : il ne peut pas le transmettre)", (source.match(/UrlFetchApp\.fetch\(/g) ?? []).length === 1 && (source.match(/method: 'post'/g) ?? []).length === 1 && !/getOAuthToken/.test(source) && /UrlFetchApp\.fetch\(URL_COCKPIT/.test(source));
   verifie("le programme porte sa marque de clé exactement une fois ; sa version est lisible", source.split(`'__CLE__'`).length === 2 && versionDuProgramme(source) === 1);
   verifie("sans clé posée, le programme refuse de tourner", (() => {
     const ctx = fabriqueContexte(source, { cle: null });
@@ -296,42 +314,53 @@ try {
   BOITE.push(M.m1, M.m2, M.m3, M.m4, M.m5);
 
   const idsDe = (msgs) => msgs.map((m) => ({ id: m.id, threadId: m.threadId }));
-  function fabriqueContexte(src, { cle, boite = BOITE, gmailHs = null, everyWeeksRefuse = false }) {
-    const sortie = { requetes: [], logs: [], declencheurs: [], supprimes: [], appelsCockpit: [] };
-    const manifest = reglages;
-    const prefixes = manifest.urlFetchWhitelist;
+  /**
+   * Le service avancé « Gmail » de Google Apps Script, tel que le programme le voit : `Gmail.Users.Messages.list / get` et
+   * `Gmail.Users.Messages.Attachments.get`, rien d'autre. Toute autre propriété lue est une tentative d'écriture (ou d'un appel non déclaré)
+   * et fait échouer le banc. Les réponses sont des objets, comme celles du service (pas du JSON à décoder).
+   */
+  function fabriqueGmail(boite, appels, { refus = null, taillePage = 0 } = {}) {
+    const lecture = (nom) => { appels.push({ nom }); if (refus) throw new Error(refus); };
+    const interdit = (chemin) => new Proxy({}, { get: (_, prop) => { if (typeof prop === "symbol") return undefined; throw new Error(`APPEL GMAIL NON LECTURE : ${chemin}.${String(prop)}`); } });
+    const attendu = (userId) => { if (userId !== "me") throw new Error(`userId inattendu : ${userId}`); };
+    const Attachments = { get: (userId, idMessage, idPiece) => {
+      attendu(userId); appels.push({ nom: "attachment", idMessage, idPiece }); if (refus) throw new Error(refus);
+      const data = boite.find((x) => x.id === idMessage)?.pdfsParId?.[idPiece];
+      if (data === undefined) throw new Error("API call to gmail.users.messages.attachments.get failed with error: Requested entity was not found.");
+      return { size: data.length, data };
+    } };
+    const Messages = new Proxy({
+      list: (userId, args = {}) => {
+        attendu(userId); lecture("list"); appels[appels.length - 1].args = JSON.parse(JSON.stringify(args));
+        const page = Math.min(Number(args.maxResults) || 100, taillePage || 100);
+        const debut = args.pageToken ? Number(args.pageToken) : 0;
+        const tranche = boite.slice(debut, debut + page);
+        const suite = debut + page < boite.length ? String(debut + page) : undefined;
+        return { messages: idsDe(tranche), ...(suite ? { nextPageToken: suite } : {}), resultSizeEstimate: boite.length };
+      },
+      get: (userId, id, args = {}) => {
+        attendu(userId); lecture("get"); appels[appels.length - 1].id = id; appels[appels.length - 1].args = JSON.parse(JSON.stringify(args));
+        const msg = boite.find((x) => x.id === id);
+        if (!msg) throw new Error("API call to gmail.users.messages.get failed with error: Requested entity was not found.");
+        if (args.format === "metadata") {
+          const voulus = (args.metadataHeaders ?? []).map((x) => x.toLowerCase());
+          return { id: msg.id, threadId: msg.threadId, internalDate: msg.internalDate, labelIds: msg.labelIds, payload: { headers: msg.payload.headers.filter((h) => !voulus.length || voulus.includes(h.name.toLowerCase())) } };
+        }
+        if (args.format !== "full") throw new Error("format inattendu : " + args.format);
+        const { pdfsParId: _ignore, ...propre } = msg;
+        return JSON.parse(JSON.stringify(propre));
+      },
+      Attachments,
+    }, { get: (cible, prop) => { if (prop in cible) return cible[prop]; if (typeof prop === "symbol") return undefined; throw new Error(`APPEL GMAIL NON LECTURE : Gmail.Users.Messages.${String(prop)}`); } });
+    return { Users: new Proxy({ Messages, Labels: interdit("Gmail.Users.Labels"), Drafts: interdit("Gmail.Users.Drafts"), Threads: interdit("Gmail.Users.Threads") }, { get: (cible, prop) => { if (prop in cible) return cible[prop]; if (typeof prop === "symbol") return undefined; throw new Error(`APPEL GMAIL NON LECTURE : Gmail.Users.${String(prop)}`); } }) };
+  }
+  function fabriqueContexte(src, { cle, boite = BOITE, gmailRefus = null, sansGmail = false, taillePage = 0, everyWeeksRefuse = false }) {
+    const sortie = { requetes: [], gmail: [], logs: [], declencheurs: [], supprimes: [], appelsCockpit: [] };
+    const prefixes = reglages.urlFetchWhitelist;
     const fetch = (url, params = {}) => {
       const methode = String(params.method ?? "get").toLowerCase();
       sortie.requetes.push({ url, methode, entetes: params.headers ?? {} });
       if (!prefixes.some((p) => url.startsWith(p))) throw new Error(`Google refuserait cette adresse (urlFetchWhitelist) : ${url}`);
-      if (url.startsWith("https://gmail.googleapis.com/")) {
-        if (methode !== "get") throw new Error("ÉCRITURE VERS GMAIL : " + methode + " " + url);
-        if (gmailHs) return { getResponseCode: () => gmailHs, getContentText: () => JSON.stringify({ error: { code: gmailHs, message: "Request had insufficient authentication scopes." } }) };
-        const u = new URL(url);
-        const chemin = u.pathname.replace("/gmail/v1/users/me", "");
-        const rep = (o) => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify(o) });
-        if (chemin === "/messages") return rep({ messages: idsDe(boite), resultSizeEstimate: boite.length });
-        let m = /^\/messages\/([^/]+)$/.exec(chemin);
-        if (m) {
-          const msg = boite.find((x) => x.id === m[1]);
-          if (!msg) return { getResponseCode: () => 404, getContentText: () => "{}" };
-          const format = u.searchParams.get("format");
-          const { pdfsParId: _ignore, ...propre } = msg;
-          if (format === "metadata") {
-            const voulus = u.searchParams.getAll("metadataHeaders").map((x) => x.toLowerCase());
-            return rep({ id: msg.id, threadId: msg.threadId, internalDate: msg.internalDate, labelIds: msg.labelIds, payload: { headers: msg.payload.headers.filter((h) => voulus.includes(h.name.toLowerCase())) } });
-          }
-          if (format !== "full") throw new Error("format inattendu : " + format);
-          return rep(propre);
-        }
-        m = /^\/messages\/([^/]+)\/attachments\/([^/]+)$/.exec(chemin);
-        if (m) {
-          const msg = boite.find((x) => x.id === m[1]);
-          const data = msg?.pdfsParId?.[m[2]];
-          return data === undefined ? { getResponseCode: () => 404, getContentText: () => "{}" } : rep({ size: data.length, data });
-        }
-        throw new Error("appel Gmail inattendu : " + url);
-      }
       if (url === urlCockpit) {
         if (methode !== "post") throw new Error("le cockpit ne reçoit que des POST");
         const rr = spawnSync("curl", ["-sS", "-m", "90", "-X", "POST", "-H", "content-type: application/json", "-H", `x-cockpit-key: ${params.headers?.["x-cockpit-key"] ?? ""}`, "--data-binary", "@-", "-w", "\n__CODE__%{http_code}", FONCTION], { input: params.payload, encoding: "utf8", maxBuffer: 50 * 1024 * 1024 });
@@ -341,23 +370,22 @@ try {
       }
       throw new Error("adresse inattendue : " + url);
     };
-    const declencheur = { fonction: null, etapes: [] };
     const baseTrigger = (nom) => {
       const t = { fonction: nom, etapes: [] };
       const b = { timeBased: () => { t.etapes.push("timeBased"); return b; }, everyWeeks: (n) => { if (everyWeeksRefuse) throw new Error("Google refuse everyWeeks (simulé)"); t.etapes.push(["everyWeeks", n]); return b; }, onWeekDay: (j) => { t.etapes.push(["onWeekDay", j]); return b; }, atHour: (h) => { t.etapes.push(["atHour", h]); return b; }, create: () => { sortie.declencheurs.push(t); return { getHandlerFunction: () => nom, _t: t }; } };
       return b;
     };
-    void declencheur;
     const base64Octets = (s) => Array.from(Buffer.from(s, "base64url"), (o) => (o > 127 ? o - 256 : o));
     const env = {
       Logger: { log: (x) => sortie.logs.push(String(x)) },
       UrlFetchApp: { fetch },
       ScriptApp: {
-        getOAuthToken: () => "jeton-oauth-factice", getProjectTriggers: () => sortie.declencheurs.map((t) => ({ getHandlerFunction: () => t.fonction, _t: t })),
+        getProjectTriggers: () => sortie.declencheurs.map((t) => ({ getHandlerFunction: () => t.fonction, _t: t })),
         deleteTrigger: (t) => { const i = sortie.declencheurs.indexOf(t._t); if (i >= 0) sortie.declencheurs.splice(i, 1); sortie.supprimes.push(t._t.fonction); },
         newTrigger: baseTrigger, WeekDay: { SUNDAY: "SUNDAY", MONDAY: "MONDAY" },
       },
       Utilities: { base64DecodeWebSafe: base64Octets, newBlob: (octets) => ({ getDataAsString: () => Buffer.from(octets.map((o) => o & 0xff)).toString("utf8") }) },
+      ...(sansGmail ? {} : { Gmail: fabriqueGmail(boite, sortie.gmail, { refus: gmailRefus, taillePage }) }),
     };
     const contexte = vm.createContext(env);
     const posee = cle ? programmeAvecCle(src, cle) : src;
@@ -376,16 +404,16 @@ try {
   const repli = fabriqueContexte(source, { cle: K2, everyWeeksRefuse: true });
   repli.run("programmer_()");
   verifie("si Google refuse la forme « toutes les semaines », la forme classique « le dimanche à 7 h » est programmée (un seul passage)", repli.sortie.declencheurs.length === 1 && JSON.stringify(repli.sortie.declencheurs[0].etapes) === JSON.stringify(["timeBased", ["onWeekDay", "SUNDAY"], ["atHour", 7]]), repli.sortie.declencheurs);
-  const reqGmail = prog.sortie.requetes.filter((x) => x.url.startsWith("https://gmail.googleapis.com/"));
-  const listeGmail = reqGmail.find((x) => new URL(x.url).pathname.endsWith("/messages"));
+  const appelsGmail = prog.sortie.gmail;
+  const listeGmail = appelsGmail.find((x) => x.nom === "list");
   const regle = await import("../supabase/functions/cockpit-recus/regle.ts");
-  verifie("la recherche Gmail est celle de la règle : expéditeur exact, objet, un jour de marge (même chaîne que le lecteur Python et TypeScript)", decodeURIComponent(new URL(listeGmail.url).searchParams.get("q")) === regle.requeteGmail("2026-01-01"), listeGmail?.url);
-  verifie("le programme ne fait que des GET vers Gmail, avec le jeton Google, et ne lui envoie jamais la clé du cockpit", reqGmail.length > 0 && reqGmail.every((x) => x.methode === "get" && x.entetes.Authorization === "Bearer jeton-oauth-factice" && !JSON.stringify(x).includes(K2)));
+  verifie("la recherche Gmail est celle de la règle : expéditeur exact, objet, un jour de marge (même chaîne que le lecteur Python et TypeScript)", listeGmail?.args?.q === regle.requeteGmail("2026-01-01") && listeGmail.args.maxResults === 50, listeGmail);
+  verifie("le programme ne lit Gmail que par list, get et attachment, et ne lui envoie jamais la clé du cockpit (un autre appel aurait fait échouer le faux service)", appelsGmail.length > 0 && appelsGmail.every((x) => ["list", "get", "attachment"].includes(x.nom)) && !JSON.stringify(appelsGmail).includes(K2));
   const reqCockpit = prog.sortie.requetes.filter((x) => x.url === urlCockpit);
-  verifie("le cockpit reçoit la clé dans un en-tête, jamais le jeton Google", reqCockpit.length > 0 && reqCockpit.every((x) => x.methode === "post" && x.entetes["x-cockpit-key"] === K2 && !JSON.stringify(x.entetes).includes("jeton-oauth-factice")));
-  verifie("un mail dont l'ADRESSE n'est pas la bonne (nom d'affichage trompeur) est reconnu avant d'être lu : son contenu n'est jamais demandé à Gmail", !reqGmail.some((x) => /\/messages\/m3(\?|$|\/)/.test(x.url) && x.url.includes("format=full")) && reqGmail.some((x) => x.url.includes("/messages/m3?format=metadata")), reqGmail.map((x) => x.url));
+  verifie("la seule adresse web jointe est le cockpit, avec la clé dans un en-tête (POST) ; aucun jeton Google ne circule", prog.sortie.requetes.length > 0 && prog.sortie.requetes.length === reqCockpit.length && reqCockpit.every((x) => x.methode === "post" && x.entetes["x-cockpit-key"] === K2) && !JSON.stringify(prog.sortie.requetes).includes("Bearer") && !JSON.stringify(prog.sortie.appelsCockpit).includes("Bearer"));
+  verifie("un mail dont l'ADRESSE n'est pas la bonne (nom d'affichage trompeur) est reconnu avant d'être lu : seuls ses en-têtes sont demandés à Gmail, son contenu jamais", appelsGmail.filter((x) => x.id === "m3").map((x) => x.args.format).join() === "metadata" && appelsGmail.some((x) => x.id === "m3" && x.args.metadataHeaders?.join() === "From,Subject"), appelsGmail.filter((x) => x.id === "m3"));
   verifie("…ni envoyé au cockpit", !JSON.stringify(prog.sortie.appelsCockpit).includes("MARQUEUR-SECRET-M3") && !JSON.stringify(prog.sortie.appelsCockpit).includes("TESTRG0103"));
-  verifie("seules les pièces « Invoice-….pdf » sont récupérées (jamais le PDF du reçu)", !reqGmail.some((x) => x.url.includes("att-m1-1")) && reqGmail.some((x) => x.url.includes("/attachments/att-m1-0")));
+  verifie("les PDF du mail 1 sont récupérés (la facture d'abord, puis le reçu : 3 au plus), et le cockpit range celui de la facture seulement", appelsGmail.filter((x) => x.nom === "attachment" && x.idMessage === "m1").map((x) => x.idPiece).join() === "att-m1-0,att-m1-1" && appelsGmail.filter((x) => x.nom === "attachment").every((x) => x.idMessage === "m1"));
   const recus = prog.sortie.appelsCockpit.filter((x) => x.corps.action === "recu");
   verifie("quatre mails d'Anthropic envoyés (le cinquième, d'un autre expéditeur, non)", recus.length === 4, recus.map((x) => x.corps.texte.slice(0, 20)));
   verifie("chaque appel porte la version du programme", prog.sortie.appelsCockpit.every((x) => x.corps.version === 1));
@@ -422,22 +450,52 @@ try {
   // -- un PDF trop gros n'est même pas téléchargé
   M.m5.payload.parts.push({ partId: "8", mimeType: "application/pdf", filename: "Invoice-TESTRG0105-0001.pdf", body: { attachmentId: "att-gros", size: 6 * 1024 * 1024 } });
   M.m5.pdfsParId = { "att-gros": "AAAA" };
-  prog.sortie.requetes.length = 0;
+  prog.sortie.gmail.length = 0;
   prog.run("passage()");
-  verifie("un PDF de plus de 5 Mo n'est même pas téléchargé : la ligne reste sans fichier (elle ne perd rien, rien n'est déposé)", !prog.sortie.requetes.some((x) => x.url.includes("att-gros")) && depenses().find((x) => x.reference === "TESTRG0105-0001")?.fichier === null, prog.sortie.requetes.map((x) => x.url));
+  verifie("un PDF de plus de 5 Mo n'est même pas téléchargé : la ligne reste sans fichier (elle ne perd rien, rien n'est déposé)", !prog.sortie.gmail.some((x) => x.idPiece === "att-gros") && depenses().find((x) => x.reference === "TESTRG0105-0001")?.fichier === null, prog.sortie.gmail);
+
+  // -- Gmail rend les mails par pages
+  const avantPages = { lignes: depenses().length, fichiers: objets().length };
+  const pages = fabriqueContexte(source, { cle: K2, taillePage: 2 });
+  pages.run("essai()");
+  const listes = pages.sortie.gmail.filter((x) => x.nom === "list");
+  verifie("Gmail rend les mails page par page : le programme suit les pages (pageToken) jusqu'au bout et lit les 5 mails", listes.length === 3 && listes[0].args.pageToken === undefined && listes[1].args.pageToken === "2" && listes[2].args.pageToken === "4"
+    && new Set(pages.sortie.gmail.filter((x) => x.nom === "get").map((x) => x.id)).size === 5, listes);
+  verifie("…en essai, rien n'est écrit (ni ligne ni fichier)", depenses().length === avantPages.lignes && objets().length === avantPages.fichiers, { avantPages, apres: { lignes: depenses().length, fichiers: objets().length } });
+
+  // -- le choix des PDF d'un mail : la facture d'abord, 3 au plus, jamais plus de 5 Mo ni un fichier qui n'est pas un PDF
+  M.m6 = messageGmail({ id: "m6", de: ANTHROPIC, sujet: SUJ("2222-0000-0106"), date: "2026-10-06T08:00:00Z", texte: recuP(106, { numRecu: "2222-0000-0106" }), pdfs: [
+    ASSET("Receipt-2222-0000-0106.pdf", pdf("reçu 106")), ASSET("Annexe-1.pdf", pdf("annexe 1")), ASSET("Invoice-TESTRG0106-0001.pdf", pdf("facture 106")),
+    ASSET("Annexe-2.pdf", pdf("annexe 2")), ASSET("Enorme.pdf", pdf("énorme")), ASSET("photo.png", Buffer.from("pas un pdf")),
+  ] });
+  M.m6.payload.parts[5].body.size = 6 * 1024 * 1024; // « Enorme.pdf »
+  const six = fabriqueContexte(source, { cle: K2, boite: [M.m6] });
+  six.run("essai()");
+  const recu6 = six.sortie.appelsCockpit.find((x) => x.corps.action === "recu");
+  verifie("six pièces jointes : 3 PDF au plus sont envoyés, la facture AVANT le reste, l'énorme PDF (6 Mo) et l'image ne le sont pas", JSON.stringify(recu6?.corps.pdfs.map((x) => x.nom)) === JSON.stringify(["Invoice-TESTRG0106-0001.pdf", "Receipt-2222-0000-0106.pdf", "Annexe-1.pdf"])
+    && !six.sortie.gmail.some((x) => x.idPiece === "att-m6-4" || x.idPiece === "att-m6-5"), { noms: recu6?.corps.pdfs.map((x) => x.nom), gmail: six.sortie.gmail.filter((x) => x.nom === "attachment") });
+  verifie("…et le cockpit y reconnaît la facture (« serait déposé »), sans rien écrire", JSON.parse(recu6.reponse).statut === "a_ajouter" && JSON.parse(recu6.reponse).pdf === "serait_depose" && !depenses().some((x) => x.reference === "TESTRG0106-0001"), recu6?.reponse);
+
+  // -- le service Gmail n'est pas activé (le fichier de réglages n'a pas été collé)
+  const sans = fabriqueContexte(source, { cle: K2, sansGmail: true });
+  let erreurSans = null;
+  try { sans.run("passage()"); } catch (e) { erreurSans = String(e.message); }
+  sv = service(S2);
+  verifie("service Gmail non activé : message clair (recoller le fichier de réglages), dit sur la carte du prestataire, rien d'écrit dans Coûts", /Le service Gmail n'est pas activé dans ce projet/.test(erreurSans ?? "") && sv.st === "echec" && /Le passage n'a pas pu avoir lieu : Le service Gmail n'est pas activé/.test(sv.note) && depenses().length === rowsAvant + 3, { erreurSans, sv });
+  verifie("…installer() refuse aussi, avant de programmer quoi que ce soit", (() => { const c = fabriqueContexte(source, { cle: K2, sansGmail: true }); try { c.run("installer()"); return false; } catch (e) { return /Le service Gmail n'est pas activé/.test(e.message) && c.sortie.declencheurs.length === 0; } })());
 
   // -- les pannes
-  const panne = fabriqueContexte(source, { cle: K2, gmailHs: 403 });
+  const panne = fabriqueContexte(source, { cle: K2, gmailRefus: "API call to gmail.users.messages.list failed with error: Request had insufficient authentication scopes." });
   let erreurPanne = null;
   try { panne.run("passage()"); } catch (e) { erreurPanne = String(e.message); }
   sv = service(S2);
-  verifie("Gmail refuse (autorisation manquante) : le programme le dit à la carte du prestataire (« echec » avec la raison et quoi faire) et l'exécution apparaît en échec chez Google", sv.st === "echec" && /Le passage n'a pas pu avoir lieu : Gmail a répondu 403 — relance installer\(\) et accepte la lecture de tes mails/.test(sv.note) && /Gmail a répondu 403/.test(erreurPanne ?? ""), { sv, erreurPanne });
+  verifie("Gmail refuse (autorisation manquante) : le programme le dit à la carte du prestataire (« echec » avec la raison et quoi faire) et l'exécution apparaît en échec chez Google", sv.st === "echec" && /Le passage n'a pas pu avoir lieu : Gmail a refusé la lecture : .*insufficient authentication scopes.* — relance installer\(\) et accepte la lecture de tes mails/.test(sv.note) && /Gmail a refusé la lecture/.test(erreurPanne ?? ""), { sv, erreurPanne });
   verifie("…sans avoir rien écrit dans Coûts", depenses().length === rowsAvant + 3);
   await rpc("revoquer_cle_import", { p_cle: sql(`select id from cles_import where service_id = ${q(S2)} and revoquee_at is null`)[0].id }, jeton);
   const revoque = fabriqueContexte(source, { cle: K2 });
   let erreurRevoque = null;
   try { revoque.run("passage()"); } catch (e) { erreurRevoque = String(e.message); }
-  verifie("clé révoquée : le programme s'arrête avec le message du cockpit (« remplacée ou révoquée… »), rien n'est lu dans Gmail", /remplacée ou révoquée/.test(erreurRevoque ?? "") && !revoque.sortie.requetes.some((x) => x.url.startsWith("https://gmail.googleapis.com/")), { erreurRevoque });
+  verifie("clé révoquée : le programme s'arrête avec le message du cockpit (« remplacée ou révoquée… »), rien n'est lu dans Gmail", /remplacée ou révoquée/.test(erreurRevoque ?? "") && revoque.sortie.gmail.length === 0, { erreurRevoque });
   verifie("…et après révocation il ne reste aucune clé active pour ce prestataire", sql(`select count(*)::int n from cles_import where service_id = ${q(S2)} and revoquee_at is null`)[0].n === 0);
 
   console.log("5. Nettoyage");

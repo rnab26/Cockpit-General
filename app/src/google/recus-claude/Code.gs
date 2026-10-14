@@ -8,9 +8,10 @@
  *   3. dit au cockpit comment ça s'est passé (la carte « Claude » de Coûts l'affiche).
  *
  * Ce qu'il NE fait PAS : il n'envoie, ne supprime, ne classe et n'écrit aucun mail. L'autorisation demandée à Google est
- * « lecture seule » (gmail.readonly) : Google lui-même refuserait toute écriture. Il ne parle qu'à Gmail et à ton cockpit
- * (liste dans appsscript.json). Il vérifie l'expéditeur de chaque mail AVANT de lire son contenu (en-têtes seulement), et
- * ne lit ni n'envoie jamais le contenu d'un mail qui ne vient pas d'Anthropic.
+ * « lecture seule » (gmail.readonly) : Google lui-même refuserait toute écriture. Gmail est lu par le service « Gmail » de Google
+ * (déclaré dans appsscript.json, il s'active tout seul) ; le seul site extérieur auquel il parle est ton cockpit (liste dans
+ * appsscript.json). Il vérifie l'expéditeur de chaque mail AVANT de lire son contenu (en-têtes seulement), et ne lit ni
+ * n'envoie jamais le contenu d'un mail qui ne vient pas d'Anthropic.
  *
  * Trois fonctions à connaître (liste des fonctions, en haut de l'éditeur, puis « Exécuter ») :
  *   installer()  à lancer UNE fois : programme le passage du dimanche, puis fait un premier passage.
@@ -28,13 +29,14 @@ const EXPEDITEUR = 'invoice+statements@mail.anthropic.com';
 const SUJET = 'Your receipt from Anthropic';
 const CADENCE_JOURS = 7;
 const MESSAGES_MAX = 40;
-const PDF_MAX_OCTETS = 5 * 1024 * 1024;
+const PDF_MAX_OCTETS = 5 * 1024 * 1024; // pour un PDF, et pour tous les PDF d'un mail ensemble
+const PDFS_MAX = 3;
 const DUREE_MAX_MS = 5 * 60 * 1000; // Google coupe un programme à 6 minutes : on s'arrête avant, le passage suivant continue
-const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 /** À lancer une seule fois : programme le passage du dimanche vers 7 h (heure d'Israël), puis fait un premier passage pour de vrai. */
 function installer() {
   clePresente_();
+  serviceGmail_();
   const anciens = ScriptApp.getProjectTriggers();
   for (let i = 0; i < anciens.length; i++) {
     if (anciens[i].getHandlerFunction() === 'passage') ScriptApp.deleteTrigger(anciens[i]);
@@ -69,6 +71,7 @@ function executer_(essai) {
   const resultats = [];
   let echec = null;
   try {
+    serviceGmail_();
     const etat = appeler_({ action: 'etat' });
     Logger.log('Cockpit joint : projet « ' + etat.projet + ' », prestataire « ' + etat.prestataire + ' », reçus lus à partir du ' + etat.depuis + '.');
     const requete = requete_(etat.depuis);
@@ -98,14 +101,14 @@ function executer_(essai) {
 function traiter_(id, essai) {
   let quoi = 'un mail';
   try {
-    const entete = gmail_('/messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=Subject');
+    const entete = gmail_(function () { return Gmail.Users.Messages.get('me', id, { format: 'metadata', metadataHeaders: ['From', 'Subject'] }); });
     quoi = 'mail du ' + new Date(Number(entete.internalDate)).toISOString().slice(0, 10);
     const entetes = entetes_(entete.payload);
     if (adresse_(entetes.from) !== EXPEDITEUR || (entetes.subject || '').indexOf(SUJET) !== 0) {
       Logger.log(quoi + ' : pas un reçu d\'Anthropic, ignoré (son contenu n\'est pas lu).');
       return null;
     }
-    const m = gmail_('/messages/' + id + '?format=full');
+    const m = gmail_(function () { return Gmail.Users.Messages.get('me', id, { format: 'full' }); });
     const texte = texteDe_(m);
     if (!texte) return { statut: 'refus', quoi: quoi, message: 'aucun texte lisible dans ce mail' };
     const r = appeler_({ action: 'recu', texte: texte, pdfs: pdfsDe_(m), essai: essai });
@@ -128,7 +131,9 @@ function chercher_(requete) {
   const ids = [];
   let page = null;
   do {
-    const r = gmail_('/messages?maxResults=50&q=' + encodeURIComponent(requete) + (page ? '&pageToken=' + encodeURIComponent(page) : ''));
+    const args = { q: requete, maxResults: 50 };
+    if (page) args.pageToken = page;
+    const r = gmail_(function () { return Gmail.Users.Messages.list('me', args); });
     const l = r.messages || [];
     for (let i = 0; i < l.length; i++) ids.push(l[i].id);
     page = r.nextPageToken || null;
@@ -136,15 +141,25 @@ function chercher_(requete) {
   return ids.slice(0, MESSAGES_MAX);
 }
 
-/** Une lecture Gmail (jamais autre chose qu'un GET). */
-function gmail_(chemin) {
-  const r = UrlFetchApp.fetch(GMAIL + chemin, { method: 'get', headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-  const code = r.getResponseCode();
-  if (code !== 200) {
-    const aide = code === 403 || code === 401 ? ' — relance installer() et accepte la lecture de tes mails' : '';
-    throw new Error('Gmail a répondu ' + code + aide + ' : ' + r.getContentText().slice(0, 160).replace(/\s+/g, ' '));
+/** Le service « Gmail » de Google doit être activé dans ce projet : c'est le fichier de réglages (appsscript.json) qui le déclare. */
+function serviceGmail_() {
+  if (typeof Gmail === 'undefined') {
+    throw new Error('Le service Gmail n\'est pas activé dans ce projet : recolle le fichier de réglages (appsscript.json), ou touche « + » à côté de « Services », choisis « Gmail API » puis « Ajouter ».');
   }
-  return JSON.parse(r.getContentText());
+}
+
+/** Une lecture Gmail. Les trois appels de ce programme (list, get, Attachments.get) sont des lectures : Google refuserait tout le reste (portée gmail.readonly). */
+function gmail_(lecture) {
+  serviceGmail_();
+  try {
+    return lecture();
+  } catch (e) {
+    const t = texte_(e).replace(/\s+/g, ' ');
+    let aide = '';
+    if (/scope|authori[sz]|permission|insufficient|401|403/i.test(t)) aide = ' — relance installer() et accepte la lecture de tes mails';
+    else if (/has not been used|is disabled|not enabled/i.test(t)) aide = ' — le service Gmail n\'est pas activé : recolle le fichier de réglages (appsscript.json)';
+    throw new Error('Gmail a refusé la lecture : ' + t.slice(0, 160) + aide);
+  }
 }
 
 function entetes_(payload) {
@@ -171,7 +186,7 @@ function parties_(p) {
 /** Le contenu d'une partie : dans le mail lui-même, ou à aller chercher quand il est trop gros. */
 function donnees_(idMessage, corps) {
   if (!corps) return '';
-  if (corps.attachmentId) return gmail_('/messages/' + idMessage + '/attachments/' + corps.attachmentId).data || '';
+  if (corps.attachmentId) return gmail_(function () { return Gmail.Users.Messages.Attachments.get('me', idMessage, corps.attachmentId); }).data || '';
   return corps.data || '';
 }
 
@@ -205,16 +220,31 @@ function enTexte_(html) {
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, '\'');
 }
 
-/** Le PDF de la facture (« Invoice-….pdf ») : jamais le PDF du reçu, jamais plus de deux pièces, jamais plus de 5 Mo. */
+/**
+ * Les PDF du mail (3 au plus, 5 Mo en tout) : le cockpit choisit celui qui porte le n° de la facture (« Invoice-….pdf », jamais le PDF
+ * du reçu). Chaque mail d'Anthropic en porte deux (`Invoice-<n°>.pdf` et `Receipt-<n°>.pdf`, vu sur de vrais mails) ; on n'en écarte aucune d'après son nom ; « Invoice » passe en
+ * premier : si la place manque, c'est le reçu qui saute, pas la facture.
+ */
 function pdfsDe_(m) {
-  const out = [];
+  const candidats = [];
   const l = parties_(m.payload);
-  for (let i = 0; i < l.length && out.length < 2; i++) {
+  for (let i = 0; i < l.length; i++) {
     const p = l[i];
-    if (!p.filename || !/^Invoice-.+\.pdf$/i.test(p.filename)) continue;
-    if (p.body && p.body.size > PDF_MAX_OCTETS) continue;
+    if (!p.filename || !/\.pdf$/i.test(p.filename)) continue;
+    if (!p.body || !(p.body.size > 0) || p.body.size > PDF_MAX_OCTETS) continue;
+    candidats.push(p);
+  }
+  candidats.sort(function (a, b) { return Number(/invoice|facture/i.test(b.filename)) - Number(/invoice|facture/i.test(a.filename)); });
+  const out = [];
+  let total = 0;
+  for (let i = 0; i < candidats.length && out.length < PDFS_MAX; i++) {
+    const p = candidats[i];
+    if (total + p.body.size > PDF_MAX_OCTETS) continue;
     const data = donnees_(m.id, p.body);
-    if (data) out.push({ nom: p.filename, base64: data });
+    if (data) {
+      out.push({ nom: p.filename, base64: data });
+      total += p.body.size;
+    }
   }
   return out;
 }

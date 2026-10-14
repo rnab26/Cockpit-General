@@ -140,7 +140,7 @@ export const ETAPES: readonly Etape[] = [
     consignes: [
       'Reviens à l’éditeur (l’icône « < > » à gauche) et ouvre le fichier « appsscript.json ».',
       'Efface tout, touche « Copier les réglages » ci-dessous, colle, puis enregistre.',
-      'Ces réglages disent à Google que le programme lit seulement tes mails, et ne parle qu’à Gmail et à ton cockpit.',
+      'Ces réglages activent le service Gmail de Google, disent que le programme lit seulement tes mails, et qu’il ne parle qu’à ton cockpit.',
     ],
     copier: { quoi: 'reglages', libelle: 'Copier les réglages' },
   },
@@ -151,6 +151,7 @@ export const ETAPES: readonly Etape[] = [
       'Google demande ton accord : touche « Examiner les autorisations » et choisis ton compte.',
       'Un écran « Google n’a pas validé cette appli » apparaît. C’est normal : le programme est le tien. Touche « Paramètres avancés », puis « Accéder à … (non sécurisé) », puis « Autoriser ».',
       'Tu autorises seulement la lecture de tes mails : Google refusera au programme d’en envoyer ou d’en supprimer.',
+      'Si le journal dit que le service Gmail n’est pas activé : touche « + » à côté de « Services », choisis « Gmail API », touche « Ajouter », puis relance.',
     ],
   },
   {

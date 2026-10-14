@@ -1,6 +1,10 @@
 {
   "timeZone": "Asia/Jerusalem",
-  "dependencies": {},
+  "dependencies": {
+    "enabledAdvancedServices": [
+      { "userSymbol": "Gmail", "serviceId": "gmail", "version": "v1" }
+    ]
+  },
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8",
   "oauthScopes": [
@@ -9,7 +13,6 @@
     "https://www.googleapis.com/auth/script.scriptapp"
   ],
   "urlFetchWhitelist": [
-    "https://gmail.googleapis.com/",
     "https://bexiyvmdbxcwxasgslxp.supabase.co/functions/v1/cockpit-recus"
   ]
 }
