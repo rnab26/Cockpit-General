@@ -88,21 +88,12 @@ balise)
   if [ -z "$empl" ] || [ -z "$acces" ]; then
     echo "Pas encore tranché (emplacement « ${empl:-?} », accès « ${acces:-?} ») : réponds aux cartes « À toi », puis relance. Rien à coller pour l'instant." >&2; exit 4
   fi
-  src='<script src="https://rnab26.github.io/Cockpit-General/embed/cockpit-embed.js" data-cle="'"$cle"'" data-utilisateur="Prénom"'
-  case "$empl" in
-    menu) if [ -n "$declencheur" ]; then ouv=" data-mode=\"bouton\" data-declencheur=\"$(esc_attr "$declencheur")\""; else ouv=' data-mode="bouton" data-libelle="Cockpit"'; fi
-          echo "Emplacement : bouton dans le menu. Colle ceci dans le gabarit commun du site (juste avant </body>) :"
-          echo "  $src$ouv></script>"
-          [ -n "$declencheur" ] || echo "Pour ouvrir le cockpit depuis un lien PRÉCIS du menu, relance avec --gabarit \"#id-du-lien\" ; sinon un bouton flottant « Cockpit » est posé." ;;
-    page) echo "Emplacement : page à part. Crée une page « /cockpit » (hors du menu) et mets-y :"
-          echo "  $src data-mode=\"page\"></script>" ;;
-    appli) echo "Emplacement : app Chrome. RIEN à coller dans le site : ouvre https://rnab26.github.io/Cockpit-General/ puis « Installer l'appli » (menu ⋮ de Chrome)." ;;
-  esac
-  case "$acces" in
-    moi) echo "Accès : toi seul. Mets la balise dans une zone que toi seul vois (compte admin), ou n'utilise que l'app." ;;
-    equipe) echo "Accès : l'équipe. Mets la balise dans une zone réservée aux membres (compte du site), et ajoute-les dans Réglages du projet › Membres pour l'app." ;;
-    utilisateurs) echo "Accès : tous les utilisateurs du site. Mets la balise dans une zone qui exige d'être connecté et passe leur prénom dans data-utilisateur." ;;
-  esac
+  # UNE règle, partagée avec « Copier le code » de l'app : scripts/balise.mjs
+  res=$(node "$RACINE/scripts/balise.mjs" "$cle" "$empl" "$acces" "$declencheur")
+  jq -r '.consigne' <<<"$res"
+  [ "$(jq -r '.code' <<<"$res")" = null ] || echo "  $(jq -r '.code' <<<"$res")"
+  if [ "$empl" = menu ] && [ -z "$declencheur" ]; then echo "Pour ouvrir le cockpit depuis un lien PRÉCIS du menu, relance avec --gabarit \"#id-du-lien\" ; sinon un bouton flottant « Cockpit » est posé."; fi
+  jq -r '.acces_consigne' <<<"$res"
   exit 0 ;;
 esac
 
