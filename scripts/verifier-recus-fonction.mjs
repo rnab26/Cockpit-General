@@ -1,4 +1,4 @@
-// Reçus Claude lus par le programme du compte Google (migration 0085, fonction cockpit-recus, chantier 72a8d0f4).
+// Reçus Claude lus par le programme du compte Google (migration 0086, fonction cockpit-recus, chantier 72a8d0f4).
 //   node --experimental-strip-types scripts/verifier-recus-fonction.mjs     (LIVE=0 pour ne jouer que les parties sans base)
 // 1. PARITÉ : le lecteur de la fonction (supabase/functions/cockpit-recus/lecteur.ts) et celui du script Python
 //    (importer-recus.py --analyser) donnent EXACTEMENT les mêmes champs sur les mêmes reçus fictifs, et refusent les mêmes ;

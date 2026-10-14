@@ -4,7 +4,7 @@ import { analyser, choisirPdf, hoteStripe, lienPdfAccepte, noteDuPassage, nomSur
 
 /**
  * cockpit-recus — reçoit les reçus Claude que le petit programme du compte Google de Raphaël lit dans sa boîte (Google Apps
- * Script, docs/recus-par-email.md) et les range dans Coûts (chantier 72a8d0f4, migration 0085).
+ * Script, docs/recus-par-email.md) et les range dans Coûts (chantier 72a8d0f4, migration 0086).
  *
  * Qui parle : la clé du prestataire (en-tête `x-cockpit-cle`, créée par `brancher_import_recus`, seul son sha256 est en base).
  * Elle ne permet QUE d'ajouter des factures à CE prestataire de CE projet et de noter le passage : rien d'autre.
