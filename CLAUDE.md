@@ -78,6 +78,7 @@ node scripts/verifier-recus.mjs                            # reçus par e-mail �
 node scripts/verifier-fournisseurs.mjs                     # bouton « Chercher mes fournisseurs » : regroupement par fournisseur (domaines, .co.il, vendeur derrière Stripe/PayPal, webmails écartés), demande → liste, décisions gardées, hooks qui préviennent une session (projet jetable)
 node app/scripts/verifier-fournisseurs.mjs                 # le même bouton sur écran de téléphone : demande, annulation, liste qui arrive seule, Suivre (sans doublon), Ignorer, « Choisir plusieurs » (Suivre / Ignorer / Remettre en groupe, Annuler, refus visible), échec visible (projet jetable)
 node scripts/verifier-embed.mjs                            # fonction serveur déployée + module dans un navigateur
+node app/scripts/verifier-balise.mjs                       # « Copier le code » de Projets & membres suit l'emplacement choisi (vide, menu, page, appli ; échec de copie visible ; = emplacement.sh --balise), projet jetable, téléphone
 node scripts/verifier-emplacement.mjs                      # où le cockpit apparaît : analyse du dépôt (choix possibles seulement) + module en mode bouton / page
 node scripts/verifier-mcp.mjs                              # serveur MCP déployé (Codex, ChatGPT…) : poignée de main, 7 outils, clé, isolation
 node scripts/verifier-base.mjs                             # schéma, RLS, droits des fonctions, temps réel, médias, réponses reprises, images de Claude, aucun reste de test, tri des correctifs, « À toi » à jour, « où ça en est », renforts (§25), fil en discussion (§26), question gardée en certifiant (§27), messages de session dans le fil (§28), un sujet = un fil / relais / réveil immédiat (§29), agents fantômes (§30), marche à suivre d’une action (§31), mode autonome qui s’éteint seul (§15), chantier né dans un fil (§33), réveil horaire (§55), classer sans test (§56), chantiers à jour d'après GitHub (§57)
@@ -157,7 +158,7 @@ marquée. Réponses rangées dans `projets.emplacement` (jsonb, `regler_emplacem
 `emplacement_valide` : appli + utilisateurs refusé) par `emplacement.sh --lire`. La balise n'est
 donnée qu'après réponse : `emplacement.sh --balise [--gabarit "#lien-du-menu"]`. Module embarqué :
 `data-mode="bouton"` (panneau masqué, ouvert par `data-declencheur` ou un bouton flottant, Échap
-referme) / `"page"`. Limite : le site, pas le cockpit, décide qui voit la balise (le cockpit ne
+referme) / `"page"`. **« Copier le code » suit ce choix (14 oct. 2026, chantier 949ed6d7)** : `scripts/balise.mjs` est l'UNE règle de la balise (lue par `emplacement.sh --balise` ET par `ProjetsMembres.tsx`) ; vide = bouton grisé + consigne, appli = « rien à coller » + lien de l'app, menu sans lien = mode bouton flottant avec consigne `data-declencheur`. `verifier-balise.mjs`. Limite : le site, pas le cockpit, décide qui voit la balise (le cockpit ne
 gère pas les comptes du site) ; l'écran de l'app ne montre pas encore l'emplacement choisi.
 **Le texte d'un choix ne cite jamais un chemin de fichier** (14 oct. 2026, branchement du Trieur : « un menu
 repéré (frontend/src/App.tsx) » faisait refuser la carte par `clarte.py` à cause du mot « frontend » ; aucun

@@ -21,6 +21,8 @@ export interface Projet {
   couleur: string | null
   actif: boolean
   cle_embed: string
+  /** Réponses du questionnaire « où / qui » (0049) : mode menu|page|appli, acces moi|equipe|utilisateurs, menu = lien du menu. Admin seulement. */
+  emplacement?: { mode?: string; acces?: string; menu?: string; libelle?: string; page?: string } | null
   created_at: string
   /** Mode autonome (0010) : null = éteint ; sinon la session enchaîne les chantiers libres jusqu'à cette heure. */
   autonome_jusqu_a: string | null
