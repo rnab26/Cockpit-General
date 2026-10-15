@@ -396,6 +396,11 @@ fi
 # ceux qui ont fini. Jamais leur travail elle-même. Projets de test : jamais.
 RENF="${COCKPIT_RENFORT_CMD:-scripts/renfort.sh}"
 renf_txt=""
+# 0089 : ce bloc se calcule APRÈS la réservation des chantiers que la chef donne à ses propres agents (appelé plus bas,
+# calculer_bloc_renforts) : renforts_a_ouvrir POSE les demandes de renfort ; appelé avant, il mettait dans un renfort des
+# vérifications qu'on réservait ensuite à des agents (renfort « Paquet de 2 » inutile, 13 oct.). Il se place EN TÊTE de renf_txt.
+calculer_bloc_renforts() {
+local autres_txt="$renf_txt"; renf_txt=""
 if [ -z "$attente" ]; then
 renforts=$(un "select renforts_a_ouvrir($P) as r" | jq -c '.r // {}')
 renf_txt=$(printf '%s' "$renforts" | jq -r --arg r "$RENF" '
@@ -409,6 +414,8 @@ $fermer_txt
 $renf_txt
 "
 fi
+renf_txt="${renf_txt}${autres_txt}"
+}
 # RELAIS (0028 ; 0075, 6 oct. : AUSSI pour la session réveillée en « attente » — mesuré : le réveil de FacePro ouvrait une
 # session qui sautait ce bloc, donc personne n'ouvrait rien pour FacePro) : si cette chef est LA chef relais (celle du cockpit si elle vit),
 # elle ouvre aussi pour les projets SANS chef vivante : leurs renforts, et UNE
@@ -441,6 +448,7 @@ rien() {
 if [ "$renouv_ouvre" = "1" ]; then
   case "$MODELE_CODE" in sonnet) mid="claude-sonnet-5-5" ;; *) mid="$MODELE_CODE" ;; esac
   nom_p=$(un "select nom from projets where slug = $P" | jq -r '.nom // empty'); nom_p="${nom_p:-$projet}"
+  calculer_bloc_renforts
   printf '%s\n' "$renf_txt"
   cat <<TXT
 RENOUVELLEMENT de la session chef de $projet : ta session porte $r_jet jetons (seuil $r_seuil) et plus aucun agent ne tourne. Fais exactement ceci, rien d'autre :
@@ -466,7 +474,7 @@ fi
 [ "$libres" -lt 0 ] && libres=0
 [ ${#relues[@]} -gt "$libres" ] && relues=("${relues[@]:0:$libres}")
 libres=$(( libres - ${#relues[@]} ))
-if [ "$libres" -le 0 ] && [ ${#relues[@]} -eq 0 ]; then rien "$agents agent(s) travaillent déjà sur $projet (maximum $maxa)."; fi
+if [ "$libres" -le 0 ] && [ ${#relues[@]} -eq 0 ]; then calculer_bloc_renforts; rien "$agents agent(s) travaillent déjà sur $projet (maximum $maxa)."; fi
 
 donnes=()
 # D'abord les RÉPONSES de Raphaël que personne n'a reprises (0017), dans CE
@@ -525,6 +533,7 @@ if [ -z "$attente" ] && [ "${FREIN_ON:-0}" != "1" ] && [ ${#donnes[@]} -lt "$lib
   revue=$(COCKPIT_PROJET="$projet" COCKPIT_SQL="$SQL" bash "$(dirname "${BASH_SOURCE[0]}")/revue-a-toi.sh" 2>/dev/null)
   case "$revue" in RIEN*|"") revue="" ;; esac
 fi
+calculer_bloc_renforts
 nb=$(( ${#donnes[@]} + ${#relues[@]} + $([ -n "$revue" ] && echo 1 || echo 0) ))
 if [ "$nb" -eq 0 ]; then rien "${note_auto:-}aucun chantier à prendre dans $projet ($agents agent(s) au travail)$([ "$jeunes" -gt 0 ] && echo " ; $jeunes chantier(s) réservé(s) par la passe à l’instant attendent leur agent (consigne perdue ? $CHEF_CMD --consignes)")."; fi
 [ -n "$renf_txt" ] && printf '%s\n' "$renf_txt"
