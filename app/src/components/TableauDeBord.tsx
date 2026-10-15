@@ -7,7 +7,7 @@ import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance } from '../lib/entonnoir.ts'
+import { estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from '../lib/entonnoir.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
@@ -36,6 +36,7 @@ import { quandDeCote } from '../lib/reporter.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
+import { sansPourcentage } from '../lib/presence.ts'
 import { apercuDe, bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
 import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
 
@@ -560,13 +561,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
         <ListeUl>
           {visibles.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}
           <VoirPlus reste={lignes.length - visibles.length} onClick={() => setTout(true)} testId="voir-ca-avance" />
-          {t.horsChantier.map((h) => (
-            <li key={h.cle} data-testid="hors-chantier" className="flex items-center gap-2 px-3 py-2 text-xs text-texte-2">
-              {h.pause ? <CirclePause size={14} className="shrink-0 text-attention" aria-hidden /> : <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-texte-2/60" aria-hidden />}
-              <span className={`min-w-0 flex-1 ${h.pause ? 'text-attention' : ''}`}>{h.texte}</span>
-              {avecProjet ? <Projet projetId={h.projetId} /> : null}
-            </li>
-          ))}
+          {t.horsChantier.map((h) => <LigneSession key={h.cle} h={h} avecProjet={avecProjet} />)}
         </ListeUl>
       )}
       {!replie && sans.length ? (
@@ -601,7 +596,16 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
 }
 
 /** La barre d'une ligne : vive (verte, reflet) seulement avec une preuve de vie ; sinon fine et grise. */
-function Barre({ pct, vive }: { pct: number; vive: boolean }) {
+function Barre({ pct, vive, indetermine = false }: { pct: number; vive: boolean; indetermine?: boolean }) {
+  // La session n'a donné aucun pourcentage (sansPourcentage) : une barre en mouvement, jamais « 0 % ».
+  if (indetermine) {
+    return (
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ok/15" role="progressbar" aria-label="Au travail, avancement non estimé"
+        data-testid="progression" data-vive="oui" data-sans-pct="oui">
+        <div className="barre-vive h-full w-1/3 animate-pulse rounded-full bg-ok" />
+      </div>
+    )
+  }
   const p = Math.max(0, Math.min(100, pct))
   return (
     <div className={`h-1.5 flex-1 overflow-hidden rounded-full ${vive ? 'bg-ok/15' : 'bg-carte-2'}`} role="progressbar" aria-valuenow={p} aria-valuemin={0} aria-valuemax={100}
@@ -615,12 +619,36 @@ function Barre({ pct, vive }: { pct: number; vive: boolean }) {
 function BarreDeLigne({ l }: { l: LigneCaAvance }) {
   const a = l.activite
   if (!a) return <span className="mt-1 block text-xs text-texte-2" data-testid="avancement-non-signale">Claude y travaille · avancement pas encore signalé</span>
+  const sans = sansPourcentage(a)
+  if (sans && !l.vivant) return null
   const reste = l.vivant ? etaLisible(a.eta_secondes) : null
   return (
     <span className="mt-1 flex items-center gap-2" data-testid="barre-liste">
-      <Barre pct={a.pourcentage} vive={l.vivant} />
-      <span className={`shrink-0 text-xs tabular-nums ${l.vivant ? 'text-texte' : 'text-texte-2'}`}>{a.pourcentage} %{reste ? ` · reste ${reste}` : ''}</span>
+      <Barre pct={a.pourcentage} vive={l.vivant} indetermine={sans} />
+      <span className={`shrink-0 text-xs tabular-nums ${l.vivant ? 'text-texte' : 'text-texte-2'}`}>{sans ? 'au travail' : `${a.pourcentage} %${reste ? ` · reste ${reste}` : ''}`}</span>
     </span>
+  )
+}
+
+/**
+ * Une conversation Claude ouverte qui ne porte AUCUN chantier (0091) : une ligne discrète, jamais une barre. Elle dit ce que la
+ * session fait à l'instant quand le hook le sait ; un toucher ouvre la discussion du projet (où vont ses messages et les réponses),
+ * avec la pastille rouge quand Claude y a répondu.
+ */
+export function LigneSession({ h, avecProjet }: { h: LigneHorsChantier; avecProjet: boolean }) {
+  const g = useGlobal()
+  return (
+    <li data-testid="hors-chantier" data-session-ligne={h.cle} data-en-direct={h.enDirect ? 'oui' : 'non'}>
+      <button type="button" onClick={() => g.ouvrirChantier(h.projetId, null)} data-testid="hors-chantier-ouvrir"
+        className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs text-texte-2">
+        {h.pause ? <CirclePause size={14} className="shrink-0 text-attention" aria-hidden />
+          : <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${h.enDirect ? 'point-vivant bg-ok' : 'bg-texte-2/60'}`} aria-hidden />}
+        <span className={`min-w-0 flex-1 ${h.pause ? 'text-attention' : ''}`}>{h.texte}</span>
+        {avecProjet ? <Projet projetId={h.projetId} /> : null}
+        <PastilleReponse cle={cleFil(h.projetId, null)} />
+        <ChevronRight size={14} className="shrink-0" aria-hidden />
+      </button>
+    </li>
   )
 }
 
@@ -642,10 +670,10 @@ export function LigneAvance({ l, avecProjet }: { l: LigneCaAvance; avecProjet: b
         <button type="button" onClick={ouvrir} className="min-w-0 flex-1 text-left">
           <span className="line-clamp-2 text-[15px] font-medium leading-snug">{l.c.titre}</span>
           <PastilleReponse cle={cleFil(l.c.projet_id, l.c.id)} className="mt-0.5" />
-          {a ? (
+          {a && !(sansPourcentage(a) && !l.vivant) ? (
             <span className="mt-1 flex items-center gap-2">
-              <Barre pct={a.pourcentage} vive={l.vivant} />
-              <span className={`shrink-0 text-xs tabular-nums ${l.vivant ? 'text-texte' : 'text-texte-2'}`}>{a.pourcentage} %{reste ? ` · reste ${reste}` : ''}</span>
+              <Barre pct={a.pourcentage} vive={l.vivant} indetermine={sansPourcentage(a)} />
+              <span className={`shrink-0 text-xs tabular-nums ${l.vivant ? 'text-texte' : 'text-texte-2'}`}>{sansPourcentage(a) ? 'au travail' : `${a.pourcentage} %${reste ? ` · reste ${reste}` : ''}`}</span>
             </span>
           ) : null}
           {l.vivant ? (

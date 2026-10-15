@@ -176,7 +176,7 @@ export interface Activite {
   eta_secondes: number | null
   statut: StatutActivite
   detail: string | null
-  /** Ce que la session fait à l'instant, relevé par le hook (0087) ; pct_estime faux = aucun pourcentage donné par la session. */
+  /** Plus écrits depuis 0091 (lisibles des membres invités) : l'action en direct vit dans `sessions.action_live` (admin seulement). Anciennes valeurs de 0087 possibles. */
   action_live?: string | null
   action_live_at?: string | null
   pct_estime?: boolean
@@ -228,6 +228,9 @@ export interface SessionClaude {
   pause_at: string | null
   pause_detail: string | null
   relances: number
+  /** Ce que la session fait à l'instant (0091), relevé par le hook ; vide hors d'un tour. Sert à une session SANS chantier. */
+  action_live?: string | null
+  action_live_at?: string | null
 }
 
 export type TypeTache = 'agent' | 'commande' | 'autre'

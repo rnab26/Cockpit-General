@@ -71,6 +71,15 @@ export function preuveDeVie(a: A | null | undefined, now: Date, silenceMs: numbe
   return t !== null && now.getTime() - t < silenceMs
 }
 
+/**
+ * La session n'a signalé AUCUN pourcentage (barre née d'une action en direct, 0087, drapeau levé dès qu'elle en donne un, 0091) :
+ * on n'écrit jamais « 0 % » comme si rien n'avançait, on montre « au travail » (une barre en mouvement). UNE règle, lue par
+ * Progression.tsx et par les lignes de « Ça avance tout seul ».
+ */
+export function sansPourcentage(a: Pick<Activite, 'pct_estime' | 'pourcentage'> | null | undefined): boolean {
+  return !!a && a.pct_estime === false && a.pourcentage === 0
+}
+
 function dernierAvancement(a: A | null | undefined, now: Date): string | null {
   if (!a) return null
   const quand = dateRelative(a.updated_at, now)

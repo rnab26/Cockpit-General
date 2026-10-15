@@ -8,7 +8,7 @@ import { dateLongue } from '../lib/dates.ts'
 import { libelleATester, libelleEnAttente, phraseSansChantier, VISIBLES_ACCUEIL } from '../lib/vueAccueil.ts'
 import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { Button } from '../ui/Button.tsx'
-import { EcrireAuProjet, LigneAToi, LigneAvance, ListeChantiers, ListeUl, Tuiles, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
+import { EcrireAuProjet, LigneAToi, LigneAvance, LigneSession, ListeChantiers, ListeUl, Tuiles, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { PointProjet } from './Icones.tsx'
@@ -49,11 +49,16 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
       </Bloc>
 
       <Bloc titre="En cours" sous="Ce sur quoi Claude travaille" n={t.caAvance.length} testId="accueil-en-cours">
-        {t.caAvance.length === 0 ? (
+        {t.caAvance.length === 0 && t.horsChantier.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-[15px] text-texte-2" data-testid="accueil-personne">
             {phraseSansChantier(t.resume, !!projetId) ?? <>Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.</>}
           </p>
-        ) : <EnCours lignes={t.caAvance} avecProjet={avecProjet} />}
+        ) : null}
+        {t.caAvance.length ? <EnCours lignes={t.caAvance} avecProjet={avecProjet} /> : null}
+        {/* Une conversation ouverte qui ne porte aucun chantier (0091) : une ligne sans barre, un toucher ouvre la discussion du projet. */}
+        {t.horsChantier.length ? (
+          <ListeUl>{t.horsChantier.map((h) => <LigneSession key={h.cle} h={h} avecProjet={avecProjet} />)}</ListeUl>
+        ) : null}
         {attente ? (
           <button type="button" data-testid="accueil-en-attente"
             onClick={() => setListe({ titre: 'En attente d’une session', ids: [...t.pretALancer, ...t.sansSession].map((l) => l.c.id), n: attente, enAttente: true, aide: 'prêts à démarrer, ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris' })}

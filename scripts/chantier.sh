@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Enregistrer dans le cockpit le travail qu'on commence dans une session —
-# AVANT de coder, à chaque nouvelle demande de Raphaël (fonctionnalité,
-# correctif, reprise d'un sujet).
+# AVANT de coder, à chaque nouveau SUJET de travail (fonctionnalité, correctif,
+# reprise d'un sujet). Un message n'est PAS un chantier (0091) : une question, un
+# point d'avancement, un retour, un ajustement ou la suite d'un sujet existant se
+# répondent dans son fil (progression.sh --point), sans rien ouvrir. Cherche
+# d'abord l'existant : --chercher.
 #
 #   scripts/chantier.sh --ouvrir "Bouche hybride sans objet" --demande "<ses mots>"
 #   scripts/chantier.sh --ouvrir "…" --demande "…" --id <uuid>     # c'est CE chantier-là

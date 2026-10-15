@@ -16,7 +16,7 @@ import { Button } from '../ui/Button.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
-import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
+import { actionDeLActivite, presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { situationSilence, phraseLiberee, DELAI_ABANDON_MIN } from '../lib/silence.ts'
 import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
@@ -547,7 +547,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
 }
 
 function FilChantier({ chantierId }: { chantierId: string }) {
-  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser } = useCockpit()
+  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser, sessions } = useCockpit()
   const { projets } = useGlobal()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
@@ -645,7 +645,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
         {presence.code === 'travaille' ? (
           <Bulle cote="gauche" auteur="En ce moment" testId="bulle-travail">
             <p className="flex items-center gap-1.5 text-sm"><PointTravaille />{presence.detail ?? ''}</p>
-            {activite ? <Progression activite={activite} vive={presence.barreVive} compact now={now} /> : null}
+            {activite ? <Progression activite={activite} vive={presence.barreVive} compact now={now} action={actionDeLActivite(sessions, activite, now)} /> : null}
             <div className="mt-1.5"><TachesDuChantier chantierId={c.id} /></div>
           </Bulle>
         ) : null}
