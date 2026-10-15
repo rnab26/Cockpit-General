@@ -61,7 +61,7 @@ export function tableauDeBord(
   const deCote = d.chantiers.filter((c) => c.etat === 'reporte' && !c.archived_at && (!projetId || c.projet_id === projetId))
     .sort((a, b) => (a.reporte_jusqu_a ?? '9').localeCompare(b.reporte_jusqu_a ?? '9') || b.updated_at.localeCompare(a.updated_at))
   return {
-    aToi: elements, aTester, caAvance, sansSession, horsChantier: horsChantier(travail), pretALancer, fini, deCote, travail, resume: resumeTravail(travail),
+    aToi: elements, aTester, caAvance, sansSession, horsChantier: horsChantier(travail, now), pretALancer, fini, deCote, travail, resume: resumeTravail(travail),
     tuiles: { pourToi: elements.length, aTester: aTester.length, caAvance: caAvance.length, enPause: pretALancer.length + sansSession.length, deCote: deCote.length, fini: fini.length },
   }
 }

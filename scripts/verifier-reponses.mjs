@@ -291,11 +291,13 @@ try {
   suivi({ session_id: SID12, hook_event_name: "UserPromptSubmit", prompt: "[cockpit-renfort] consigne d'un renfort" });
   let enAttente = [];
   for (let i = 0; i < 20 && !enAttente.length; i++) { await attendre(500); enAttente = sql(`select id from messages_session_attente where session_id = ${q(SID12)} and texte like '%filtre par date%'`); }
-  verifie("son message est gardé en attente, et PAS déposé dans le chantier que la session tient sans rapport (0029)",
-    enAttente.length === 1 && deposes("%filtre par date%").length === 0, { enAttente, d: deposes("%filtre par date%") });
+  // 0091 : le message est rangé TOUT DE SUITE dans UN fil (le chantier que la session tient, s'il n'y en a qu'un) ; la session le
+  // déplace en répondant ailleurs. Jamais « partout où elle tient un chantier » (0029) : une seule copie.
+  verifie("son message est gardé en attente ET rangé tout de suite dans l'unique chantier que la session tient, une seule fois (0091)",
+    enAttente.length === 1 && deposes("%filtre par date%").length === 1, { enAttente, d: deposes("%filtre par date%") });
   const rep12 = prog(["--chantier", C1, "--point", "Filtre par date ajouté en haut de la liste."]);
   const d12 = deposes("%filtre par date%");
-  verifie("la session répond dans le fil de CE chantier (--point) : son message y arrive, avant la réponse",
+  verifie("la session répond dans le fil de CE chantier (--point) : son message y est toujours UNE seule fois (confirmé, pas dupliqué), avant la réponse",
     rep12.status === 0 && d12.length === 1 && d12[0].via_session === true, rep12.stderr || d12);
   await attendre(1500);
   verifie("jamais une notification, un rapport d'agent, une commande seule ni une consigne de renfort",

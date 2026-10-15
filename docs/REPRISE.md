@@ -6,9 +6,27 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 14 oct. 2026 (sections 0 septies, 0 octies et 0 nonies ci-dessous ; avant : 0 à 0 sexies, 13 oct.). Les sections 1 et
+Dernière mise à jour : 16 oct. 2026 (section 0 duodecies ; avant : 0 septies à 0 undecies, 14 oct. ; 0 à 0 sexies, 13 oct.). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
+
+## 0 duodecies. Lot du 16 oct. 2026 (nuit) : un message n'est pas un chantier (migration 0091, chantier c2c79e7b)
+
+Demande de Raphaël (capture de « Ça avance tout seul », FacePro, 00 h 45) : « chaque message que je crée en discussion est transcrit comme un chantier avec une
+progression […] il vaut mieux une petite pastille de notification et la discussion concernant le chantier en question. » **Tout est dans `CLAUDE.md` §
+« Un message n'est pas un chantier »** (causes mesurées, règle, filet, écran, limites). En une phrase : la base n'ouvre plus de chantier pour un message de session,
+elle le range dans UN fil (le chantier que la session tient, sinon la discussion du projet), la session le déplace en répondant dans le bon fil, le hook d'arrêt réclame
+la réponse écrite, et un chantier n'apparaît que par un TRAVAIL (relance d'arrêt « travail sans chantier »). À l'écran : seules les vraies lignes de chantier ont une barre
+(« au travail » à la place de « 0 % »), une conversation sans chantier est une ligne sans barre qui dit ce qu'elle fait, la pastille « Réponse » s'allume sur la ligne et un
+toucher ouvre la discussion.
+
+**Vérifié (base réelle, projets jetables, écran de téléphone)** : `verifier-direct` (vrais hooks), `app/scripts/verifier-messages.mjs` (la phrase exacte « Vas-y teste toi la piste du relighting… »
+tapée dans la session qui tient le chantier : aucune ligne de plus, la réponse allume la pastille sur la MÊME ligne), règles pures `verifier-messages-fils.ts`, suites pures de l'app, tsc + build.
+**Pas fait / à lui de décider** : le MÉNAGE des chantiers déjà nés d'un message sur FacePro (3 purs « en cours », 15 « livrés » qui disent « relis ma réponse dans la conversation », 1 à voir) :
+`cockpit.ranger_chantiers_nes_de_messages('facepro', 'conversations', true)` donne la liste sans rien écrire ; l'appliquer (`false`) demande SA phrase précise (la plateforme refuse l'écriture en masse
+dans un vrai projet sans elle). Ils sont archivés (« Désarchiver » les rend), leurs messages et le compte rendu de la session reviennent dans la discussion du projet.
+**Piège payé** : `scripts/sql.sh` enveloppe la requête dans `select json_agg(t) from (…) t` : une colonne nommée `t` y masque la ligne et `rows[0].t` devient `undefined` (un banc a passé une date « undefined » à un hook
+sans rien dire : le hook voyait un tour vide et ne refusait jamais l'arrêt). Ne jamais nommer une colonne `t` dans une requête de `sql.sh`.
 
 ## 0 undecies. Lot du 14 oct. 2026 (après-midi) : sessions et cockpit branchés EN DIRECT (migration 0087, chantier d5a2d13f)
 

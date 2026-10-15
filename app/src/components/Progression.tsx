@@ -1,6 +1,7 @@
 import type { Activite } from '../lib/types.ts'
 import { etaLisible, dateRelative } from '../lib/dates.ts'
 import { nomCourtSession } from '../lib/texte.ts'
+import { sansPourcentage } from '../lib/presence.ts'
 
 /**
  * La barre d'avancement d'un chantier. Deux visages, et jamais l'un pour
@@ -11,8 +12,10 @@ import { nomCourtSession } from '../lib/texte.ts'
  *  - sinon : fine et GRISE, « dernier avancement connu : 85 % (il y a 5 h) ».
  * `legende={false}` : la barre seule (la ligne du dessus dit déjà le reste).
  */
-export function Progression({ activite, vive, compact = false, legende = true, now = new Date() }: {
+export function Progression({ activite, vive, compact = false, legende = true, now = new Date(), action = null }: {
   activite: Activite; vive: boolean; compact?: boolean; legende?: boolean; now?: Date
+  /** Ce que la session fait à l'instant (sessions.action_live, admin seulement, 0091) : actionDeLActivite(). Jamais lu dans `activite`. */
+  action?: string | null
 }) {
   const pct = Math.max(0, Math.min(100, activite.pourcentage))
   const eta = etaLisible(activite.eta_secondes)
@@ -20,8 +23,8 @@ export function Progression({ activite, vive, compact = false, legende = true, n
   const quand = dateRelative(activite.updated_at, now)
   // 0087 : la session n'a donné AUCUN pourcentage (barre alimentée par le hook) : on n'invente pas « 0 % »,
   // on montre une barre en mouvement et ce qu'elle fait à l'instant.
-  const sansPct = activite.pct_estime === false && pct === 0
-  const enDirect = activite.action_live && dateRelative(activite.action_live_at ?? activite.updated_at, now) ? activite.action_live : null
+  const sansPct = sansPourcentage(activite)
+  const enDirect = action
   const texteLegende = enDirect ?? activite.etape
   if (vive && sansPct) {
     return (

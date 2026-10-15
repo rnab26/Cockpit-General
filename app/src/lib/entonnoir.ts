@@ -538,29 +538,53 @@ export interface LigneHorsChantier {
   texte: string
   /** Arrêtée sur une limite d'usage : rien ne s'anime. */
   pause: boolean
+  /** La session fait quelque chose à l'instant (action relevée par le hook, 0091) : le point devient vivant. */
+  enDirect: boolean
+}
+
+/** Au-delà, une action relevée par le hook n'est plus « à l'instant » (le hook l'écrit toutes les 15 s tant que la session travaille). */
+export const ACTION_EN_DIRECT_MS = 120_000
+
+/**
+ * Ce que fait une session SANS chantier, dit par la session elle-même (0091) : « Modifie Bandeau.tsx », « Lance : … ».
+ * Vide hors d'un tour (le hook d'arrêt l'efface) ou quand elle date.
+ */
+export function actionEnDirect(s: Pick<SessionClaude, 'action_live' | 'action_live_at'>, now: Date): string | null {
+  const a = s.action_live?.trim()
+  if (!a || !s.action_live_at) return null
+  const t = Date.parse(s.action_live_at)
+  return Number.isFinite(t) && now.getTime() - t < ACTION_EN_DIRECT_MS ? a : null
+}
+
+/** L'action en direct de la session qui a signalé cette barre (par sa branche) : le texte vient de `sessions`, jamais de `activite`. */
+export function actionDeLActivite(sessions: readonly SessionClaude[], a: Pick<Activite, 'projet_id' | 'session'>, now: Date): string | null {
+  const s = sessions.find((x) => x.projet_id === a.projet_id && x.branche === a.session && !x.fin_at)
+  return s ? actionEnDirect(s, now) : null
 }
 
 /**
  * Le travail qu'aucun chantier ne porte : une session vivante dont aucune
  * barre ni aucun agent n'est rattaché à un chantier, ou une barre sans
- * chantier. Une ligne discrète chacune, dans les mots de ce qu'elle fait VRAIMENT.
+ * chantier. Une ligne discrète chacune, dans les mots de ce qu'elle fait VRAIMENT (0091 : et ce qu'elle fait à l'instant, quand le hook le sait).
  */
-export function horsChantier(groupes: readonly QuiTravaille[]): LigneHorsChantier[] {
+export function horsChantier(groupes: readonly QuiTravaille[], now: Date = new Date()): LigneHorsChantier[] {
   const r: LigneHorsChantier[] = []
   for (const g of groupes) {
     for (const vs of g.sessions) {
       const surChantier = vs.activites.some((a) => a.chantier_id) || vs.taches.some((t) => t.chantier)
       if (surChantier) continue
       const nom = nomSession(vs.session)
+      const action = vs.pause ? null : actionEnDirect(vs.session, now)
       const texte = vs.pause ? `Claude (« ${nom} ») ${vs.pause.charAt(0).toLowerCase()}${vs.pause.slice(1)}`
+        : action ? `Claude (« ${nom} ») travaille : ${action}`
         : vs.repond ? `Claude travaille sur autre chose (« ${nom} »)`
         : estSessionAutonome(vs.session) ? 'Claude en autonomie : en veille, se réveille tout seul chaque heure'
         : `Conversation « ${nom} » ouverte : attend ton message`
-      r.push({ cle: `s-${vs.session.id}`, projetId: g.projetId, texte, pause: !!vs.pause })
+      r.push({ cle: `s-${vs.session.id}`, projetId: g.projetId, texte, pause: !!vs.pause, enDirect: !!action || (vs.repond && !vs.pause) })
     }
     for (const a of g.activitesSeules) {
       if (a.chantier_id) continue
-      r.push({ cle: `a-${a.id}`, projetId: g.projetId, texte: `Claude travaille sur autre chose (« ${nomCourtSession(a.session)} »)${a.etape ? ` · ${a.etape}` : ''}`, pause: false })
+      r.push({ cle: `a-${a.id}`, projetId: g.projetId, texte: `Claude travaille sur autre chose (« ${nomCourtSession(a.session)} »)${a.etape ? ` · ${a.etape}` : ''}`, pause: false, enDirect: true })
     }
   }
   return r

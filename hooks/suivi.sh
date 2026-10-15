@@ -82,11 +82,13 @@ orphelins() {
            end)) | join("\n"))'
 }
 
-# CHANTIER OUVERT TOUT SEUL (0087 ; Raphaël, 14 oct. : « des sessions ouvertes où les chantiers ne se
-# créent pas automatiquement, les barres de progression ne s'affichent pas »). Avant, il fallait que la
-# session pense à lancer chantier.sh : sans cela, ni barre, ni réponse remise, ni fil. Maintenant la BASE
-# ouvre (ou reprend un chantier ouvert qui ressemble) le chantier pour tout message de travail, le
-# réserve à cette session et y dépose le message. Sans changement pour le modèle : --ouvrir reprend le même.
+# UN MESSAGE N'EST PAS UN CHANTIER (0091 ; Raphaël, 16 oct. : « chaque message que je crée en discussion est
+# transcrit comme un chantier avec une progression […] il vaut mieux une petite pastille de notification et la
+# discussion concernant le chantier en question »). Avant (0087), la BASE ouvrait un chantier pour tout message de
+# travail : FacePro en a eu 14 au titre copié de ses mots, alors que le vrai chantier du sujet existait. Maintenant
+# le message est rangé tout de suite dans UN fil (le chantier que la session tient, sinon la discussion du projet)
+# et la session y répond ; elle le déplace en répondant dans un autre fil. Un chantier n'est ouvert que par elle,
+# pour un vrai sujet de travail (ou par le filet d'arrêt, hooks/autonome.sh, quand elle a travaillé sans aucun chantier).
 reponses_fraiches() {
   local evn="$1" force="${2:-}" cle="$sid${agent:+-$agent}"
   local cur="${TMPDIR:-/tmp}/cockpit-rep-$cle" rythme="${TMPDIR:-/tmp}/cockpit-repv-$cle" depuis cond brut texte sortie=""
@@ -180,6 +182,7 @@ consigner_message() {
   [ -s "$marque" ] && return 0
   printf '%s' "$invite" | grep -qE '^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event|agent-message|teammate-message)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)' && return 0
   printf '%s' "$invite" | grep -qxE '[[:space:]]*/[A-Za-z0-9:_-]+[[:space:]]*' && return 0
+  : > "${TMPDIR:-/tmp}/cockpit-travail-$sid" 2>/dev/null   # un nouveau tour : on recompte le travail réel (filet d'arrêt, autonome.sh)
   local qp qs qb qt r action cid titre
   qp=$(qsql "$PROJET"); qs=$(qsql "$sid"); qb=$(qsql "$branche"); qt=$(printf '%s' "$invite" | head -c 16000 | sed "s/'/''/g")
   r=$(COCKPIT_FILE_ATTENTE=$SANS_FILE timeout 6 "$SQL" "select chantier_auto_depuis_message('$qp', '$qs', '$qb', '$qt') as r" 2>/dev/null | jq -c '.rows[0].r // empty' 2>/dev/null)
@@ -190,13 +193,16 @@ consigner_message() {
   fi
   action=$(printf '%s' "$r" | jq -r '.action // empty'); cid=$(printf '%s' "$r" | jq -r '.id // empty'); titre=$(printf '%s' "$r" | jq -r '.titre // empty')
   local ouvrir="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}" prog="${COCKPIT_PROG_CMD:-scripts/progression.sh}"
+  # Le même rappel dans les deux cas : un message n'est pas un chantier, la session répond dans le bon fil et le déplace
+  # en répondant ailleurs (rattacher_messages_session : la première réponse explicite corrige, les suivantes copient).
+  local regle="Un message n'est PAS un chantier : une question, un point d'avancement, un retour, un ajustement ou la suite d'un sujet existant = une réponse dans un fil, jamais un nouveau chantier. Il parle d'un AUTRE chantier existant ($ouvrir --chercher \"<mots>\") : réponds dans le sien ($prog --chantier <id> --point \"…\"), le message y est déplacé. Un vrai AUTRE sujet de travail (distinct, plusieurs étapes, un résultat à vérifier) : $ouvrir --ouvrir \"<titre court>\" --demande \"<ses mots>\"."
   case "$action" in
-    cree|repris) SORTIE="${SORTIE:+$SORTIE
-
-}COCKPIT : ce message demande du travail, le cockpit a $( [ "$action" = cree ] && echo "OUVERT TOUT SEUL" || echo "REPRIS" ) le chantier « $titre » ($cid), réservé à ta session : Raphaël le voit déjà, avec sa barre d'avancement et ce que tu fais en direct, et il y reçoit ses réponses. Ne le recrée pas. Précise-le seulement : $ouvrir --ouvrir \"<titre court lisible par Raphaël>\" --demande \"<ses mots>\" --section \"<rubrique>\" (il reprend CE chantier et remplace le titre approximatif). Un AUTRE sujet dans le même message : $ouvrir --ouvrir \"<titre>\" --demande \"…\" --nouveau. Puis $prog --chantier $cid --etape \"…\" --pct N à chaque étape (la barre avance seule sinon, sans pourcentage), --termine --verifier à la fin." ;;
     tenu) SORTIE="${SORTIE:+$SORTIE
 
-}COCKPIT : ce message est consigné dans le fil de « $titre » ($cid), que ta session tient. S'il ouvre un AUTRE sujet : $ouvrir --ouvrir \"<titre>\" --demande \"<ses mots>\"." ;;
+}COCKPIT : le message de Raphaël est rangé dans le fil de « $titre » ($cid), le chantier que ta session tient : il le voit là, avec une pastille quand tu réponds. Réponds-y, court : $prog --chantier $cid --point \"…\". $regle" ;;
+    projet) SORTIE="${SORTIE:+$SORTIE
+
+}COCKPIT : le message de Raphaël est rangé dans la discussion du projet (aucun chantier que ta session tient ne le porte) : il le voit là, avec une pastille quand tu réponds. Réponds-y, court : $prog --point \"…\" (sans --chantier). $regle" ;;
   esac
   return 0
 }
@@ -222,6 +228,18 @@ action_live() {
       else "Travaille" end' 2>/dev/null)
   [ -n "$desc" ] || return 0
   ( setsid "$SQL" "select signaler_action_live('$(qsql "$PROJET")', '$(qsql "$branche")', '$(qsql "$desc")')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
+# TRAVAIL RÉEL DU TOUR (0091) : une ligne par modification de fichier faite par la session elle-même (pas par ses agents).
+# Le hook d'arrêt (autonome.sh) la lit : du travail sans AUCUN chantier tenu → une relance, une seule par tour. C'est le filet
+# qui remplace l'ouverture automatique par message : un chantier naît d'un travail, pas d'une phrase.
+travail_signal() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  est_renfort && return 0
+  case "$(printf '%s' "$entree" | jq -r '.tool_name // empty' 2>/dev/null)" in
+    Edit|Write|MultiEdit|NotebookEdit) printf '1\n' >> "${TMPDIR:-/tmp}/cockpit-travail-$sid" 2>/dev/null ;;
+  esac
+  return 0
 }
 
 fin_de_tour() {
@@ -311,6 +329,7 @@ case "$ev" in
     signaler_jetons
     reponses_fraiches PostToolUse
     action_live
+    travail_signal
     battement_tour
     emettre
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
