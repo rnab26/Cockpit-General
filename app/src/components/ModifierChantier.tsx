@@ -12,9 +12,9 @@ import { ETATS, PRIORITES } from '../lib/etats.ts'
 export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | null; onFermer: () => void }) {
   const { sections, recharger } = useCockpit()
   const toast = useToast()
-  const [v, setV] = useState({ titre: '', demande: '', notes: '', resume_simple: '', comment_verifier: '', section_id: '', priorite: 'normale' as Priorite, etat: 'a_trier' as Etat, visible_utilisateurs: true })
+  const [v, setV] = useState({ titre: '', demande: '', notes: '', resume_simple: '', descriptif: '', descriptif_detail: '', comment_verifier: '', section_id: '', priorite: 'normale' as Priorite, etat: 'a_trier' as Etat, visible_utilisateurs: true })
   const [enCours, setEnCours] = useState(false)
-  const initiales = (c: Chantier) => ({ titre: c.titre, demande: c.demande ?? '', notes: c.notes ?? '', resume_simple: c.resume_simple ?? '',
+  const initiales = (c: Chantier) => ({ titre: c.titre, demande: c.demande ?? '', notes: c.notes ?? '', resume_simple: c.resume_simple ?? '', descriptif: c.descriptif ?? '', descriptif_detail: c.descriptif_detail ?? '',
     comment_verifier: c.comment_verifier ?? '',
     section_id: c.section_id ?? '', priorite: c.priorite, etat: c.etat, visible_utilisateurs: c.visible_utilisateurs })
   useEffect(() => { if (chantier) setV(initiales(chantier)) }, [chantier])
@@ -27,6 +27,7 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
     setEnCours(true)
     const valeurs: Partial<Chantier> = {
       titre: v.titre.trim(), demande: v.demande.trim() || null, notes: v.notes.trim() || null, resume_simple: v.resume_simple.trim() || null,
+      descriptif: v.descriptif.trim() || null, descriptif_detail: v.descriptif_detail.trim() || null,
       comment_verifier: v.comment_verifier.trim() || null,
       section_id: v.section_id || null, priorite: v.priorite, etat: v.etat, visible_utilisateurs: v.visible_utilisateurs,
     }
@@ -43,6 +44,8 @@ export function ModifierChantier({ chantier, onFermer }: { chantier: Chantier | 
       pied={<><Button onClick={onFermer}>Annuler</Button><Button variante="primaire" chargement={enCours} onClick={enregistrer}>Enregistrer</Button></>}>
       <div className="space-y-3">
         <Champ label="Titre"><Input value={v.titre} onChange={(e) => setV({ ...v, titre: e.target.value })} /></Champ>
+        <Champ label="Descriptif (une phrase)" aide="Sous le titre : à quoi sert ce chantier, en mots simples. 160 caractères au plus."><Textarea rows={2} maxLength={160} value={v.descriptif} onChange={(e) => setV({ ...v, descriptif: e.target.value })} data-testid="champ-descriptif" /></Champ>
+        <Champ label="Descriptif détaillé" aide="Au toucher : 2 à 4 phrases, une image du genre « c’est comme… »."><Textarea rows={4} maxLength={1500} value={v.descriptif_detail} onChange={(e) => setV({ ...v, descriptif_detail: e.target.value })} /></Champ>
         <Champ label="Demande"><Textarea rows={5} value={v.demande} onChange={(e) => setV({ ...v, demande: e.target.value })} /></Champ>
         <Champ label="Résumé en langage simple" aide="Ce qu’un utilisateur final comprendra une fois livré."><Textarea rows={2} value={v.resume_simple} onChange={(e) => setV({ ...v, resume_simple: e.target.value })} /></Champ>
         <Champ label="Comment vérifier (étapes pour Raphaël)" aide="Où aller, quoi toucher, ce qu’il doit voir. Une étape par ligne : « 1. … », « 2. … »."><Textarea rows={4} value={v.comment_verifier} onChange={(e) => setV({ ...v, comment_verifier: e.target.value })} data-testid="champ-comment-verifier" /></Champ>

@@ -70,6 +70,9 @@ export interface Chantier {
   demande: string | null
   notes: string | null
   resume_simple: string | null
+  /** 0090 : une phrase simple sous le titre, et le texte plus long au toucher. */
+  descriptif?: string | null
+  descriptif_detail?: string | null
   /** Étapes écrites par la session qui livre, pour la personne qui certifie (0005). */
   comment_verifier: string | null
   /** 0020 : « voici ce que tu dois voir » — images jointes par la session à « Comment vérifier ». */
