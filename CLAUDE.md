@@ -50,7 +50,7 @@ Raphaël : « cela doit être de l'instantané […] des sessions ouvertes où l
 - `demander.sh --repondu <id> "ses mots"` : il a répondu à une carte DANS la session, elle se ferme (pas de doublon de réponse) ; le hook liste les cartes ouvertes à chaque message.
 - Ces appels n'utilisent pas la file d'attente locale de `sql.sh` (`COCKPIT_FILE_ATTENTE=/proc/…`) : rejouer plus tard une réclamation la ferait réclamer à une session qui n'a rien lu.
 - **Limites dites** : une session INACTIVE (tour fini, personne n'écrit) ne peut pas être réveillée par la base : la remise a lieu à son prochain message / outil, sinon par le réveil immédiat (nouvelle session) ; un projet dont `main` ne porte pas du tout le cockpit (Jarvis, Midrag, Pointeur, site Melissa, dotfiles au 14 oct.) n'a aucun hook : « branche le cockpit » y est nécessaire ; une session ouverte hors dépôt : `scripts/connecter.sh`. La session qui reçoit un message d'un autre sujet que le sien est invitée à le dire et à en faire un chantier.
-`verifier-direct.mjs` (19 en 0087, 37 depuis 0091 : voir « Un message n'est pas un chantier »).
+`verifier-direct.mjs` (19 en 0087, 50 depuis 0091 : voir « Un message n'est pas un chantier »).
 
 ## Contrat de données : les migrations, rien d'autre
 
@@ -340,7 +340,7 @@ Raphaël (capture de « Ça avance tout seul », FacePro, 16 oct. 00 h 45) : « 
 - **Consignes** : `docs/bloc-CLAUDE.md` (« UN MESSAGE N'EST PAS UN CHANTIER »), `hooks/prompt-rappel.sh`, `hooks/suivi.sh` (texte donné à la session), `scripts/chef.sh` (agent « Répondre » : seulement un VRAI sujet de travail distinct, jamais une question ni un point d'avancement).
 - **Le ménage de l'existant est une décision de Raphaël, pas une réécriture silencieuse** : `cockpit.ranger_chantiers_nes_de_messages(slug, essai := vrai)` liste (sans rien écrire) les chantiers `titre_auto` « purs » (ses mots, aucune étape, aucun travail livré) qui seraient archivés (« Désarchiver » le rend) avec leurs messages recopiés dans la discussion du projet, et ceux « à voir » (du vrai travail dessus) avec le chantier le plus proche à fusionner. Pour l'appliquer (`essai := faux`) sur un vrai projet : l'accord PRÉCIS de Raphaël, commande et cible nommées (la plateforme refuse sinon l'écriture en masse).
 - **Limites dites** : le rangement par défaut ne devine pas le sujet (seul un chantier TENU par la session est choisi, pas de recherche dans tout le projet) : c'est la session, qui connaît le contexte, qui corrige en répondant ; une réponse sans `--chantier` pendant un tour déplace aussi le message de ce tour vers la discussion du projet ; une session sans tour (réveil, mode autonome) n'a ni message à ranger ni relance ; le nom d'une conversation reste le début de son premier message (`sessions.sujet`).
-`verifier-direct.mjs` (37), `app/scripts/verifier-messages.mjs` (22), `app/scripts/verifier-messages-fils.ts` (16).
+`verifier-direct.mjs` (50), `app/scripts/verifier-messages.mjs` (23), `app/scripts/verifier-messages-fils.ts` (16).
 
 ## Sessions qui se ferment seules (30 sept. 2026, migration 0038, chantier 27d251f8)
 
