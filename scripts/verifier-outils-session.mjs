@@ -64,6 +64,7 @@ try {
   verifie("en base : les deux outils notés", !!flags.create_session && !!flags.archive_session, JSON.stringify(flags));
   s = chef(["--relais-texte"], { SANS_CREATE: "1", SANS_ARCHIVE: "1" }, relais).texte;
   verifie("relais : plus aucun create_session ni archive_session listé", !/create_session\(|archive_session\(/.test(s), s);
+  verifie("relais : sans create_session, le renfort d'un autre projet est traité par la session elle-même (renfort.sh --suivant), pas laissé en attente", /Tu ES le renfort : lance .*--suivant [0-9a-f-]{36}/.test(s), s);
   r = chef(["--sans-outil", "rm_rf"]);
   verifie("nom inconnu refusé", r.status === 2, r.texte);
 
