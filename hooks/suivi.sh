@@ -123,7 +123,7 @@ reponses_fraiches() {
     from messages m join chantiers c on c.id = m.chantier_id
     where m.chantier_id in (select id from mes)
       and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and not m.via_session)
-        or (m.kind in ('question','action') and (m.answered_at is not null or cockpit.est_retour_carte(m)) and coalesce(m.reponse, '') not like 'Retirée par %'))
+        or (m.kind in ('question','action') and (m.answered_at is not null or cockpit.est_retour_carte(m)) and coalesce(m.reponse, '') not like 'Retirée par %' and m.retiree_seule_at is null))
       and $cond" 2>/dev/null)
   local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
   [ -n "$maintenant" ] && printf '%s\n' "$maintenant" > "$cur" 2>/dev/null   # seulement si la base a répondu

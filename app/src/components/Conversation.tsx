@@ -23,6 +23,7 @@ import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { auteurDe, sujetDe } from '../lib/bulleAide.ts'
+import { raisonRetrait } from '../lib/epuration.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, separerChat, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -204,9 +205,23 @@ const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */
 function BulleMessage({ m }: { m: Message }) {
-  const { admin, par, projet, recharger, chantiers, ouvrirChantier } = useCockpit()
+  const { admin, par, projet, recharger, chantiers, ouvrirChantier, messagesLocal, now } = useCockpit()
   const toast = useToast()
   const medias = mediasDe(m)
+  // 0092 : une carte retirée TOUTE SEULE (restée sans réponse pendant que le travail continuait) dit pourquoi et se remet d'un toucher.
+  const retireeSeule = !!m.retiree_seule_at && !!m.answered_at && !m.epuration_exclue
+  const [remise, setRemise] = useState(false)
+  const remettre = async () => {
+    setRemise(true)
+    const avant = m
+    // Elle redevient ouverte tout de suite ; si la base refuse, elle revient telle qu'elle était.
+    messagesLocal.poser({ ...m, answered_at: null, answered_by: null, reponse: null, retiree_seule_at: null, epuration_exclue: true, confirmee_at: new Date().toISOString() })
+    const { error } = await supabase.rpc('restaurer_carte', { p_id: m.id })
+    setRemise(false)
+    if (error) { messagesLocal.poser(avant); toast.erreur(`Carte pas remise, elle reste retirée : ${messageErreur(error)}`); return }
+    toast.succes('Carte remise ✓ Elle ne sera plus retirée toute seule.')
+    void messagesLocal.relire(m.id).then((x) => { if (x) messagesLocal.poser(x) })
+  }
   const lie = filLie(m, chantiers)
   // Le crayon sur une image que Raphaël a déjà envoyée : l'image annotée part dans le même fil, comme une nouvelle pièce.
   const annoter = async (f: File) => {
@@ -225,7 +240,12 @@ function BulleMessage({ m }: { m: Message }) {
       enAttente={m.en_attente_envoi ? { texte: phraseMessageEnAttente(m), refuse: !!m.envoi_refuse } : null}>
       {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
-      {m.reponse ? (
+      {retireeSeule ? (
+        <div className="mt-1 border-t border-bord pt-1 text-sm" data-testid="carte-retiree-seule">
+          <p><span className="text-texte-2" title={dateLongue(m.retiree_seule_at)}>Retirée seule · {dateRelative(m.retiree_seule_at, now)} : </span>{raisonRetrait(m)}</p>
+          {admin ? <Button taille="sm" className="mt-1" chargement={remise} onClick={() => void remettre()} data-testid="remettre-carte">Remettre</Button> : null}
+        </div>
+      ) : m.reponse ? (
         <p className="mt-1 border-t border-bord pt-1 text-sm" data-testid="reponse-donnee">
           <span className="text-texte-2">{m.kind === 'fusion' ? 'Tranché : ' : 'Réponse : '}</span>{m.reponse}{m.precision ? ` — ${m.precision}` : ''}
         </p>

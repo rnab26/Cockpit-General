@@ -6,9 +6,46 @@ et arrive tout seul au démarrage (hook) ; ce fichier dit le contexte et la
 suite. Les décisions de Raphaël, mot pour mot :
 `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md` (les lire aussi).
 
-Dernière mise à jour : 16 oct. 2026 (section 0 duodecies ; avant : 0 septies à 0 undecies, 14 oct. ; 0 à 0 sexies, 13 oct.). Les sections 1 et
+Dernière mise à jour : 16 oct. 2026 (sections 0 terdecies et 0 duodecies ; avant : 0 septies à 0 undecies, 14 oct. ; 0 à 0 sexies, 13 oct.). Les sections 1 et
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
+
+## 0 terdecies. Lot du 16 oct. 2026 (matin) : les cartes déjà traitées se retirent seules, chaque ligne a sa date (migration 0092, chantier fe412d83)
+
+Demande de Raphaël (trois captures de tablette) : « les anciens chantiers ne s'actualisent pas en fonction de ce que les sessions ont avancé […] des questions d'il y a 2 jours,
+il me semble que les tests ont déjà été effectués », « j'ai pas la date ni l'horaire de quand ça date », et sur le lien « la retirer » : « pourquoi est-ce que je devrais faire
+une action manuelle ? […] je veux vraiment que ce soit automatisé. » **Tout est dans `CLAUDE.md` § « Les cartes déjà traitées se retirent seules »** (causes mesurées, règle a/b/c,
+exclusions, écran, réglage, limites). En une phrase : un job de la base (pg_cron, 3 min, sans session) retire toute carte question/action restée 24 h sans réponse (une action : 7 jours) pendant
+que le travail continue, avec sa raison écrite sur la carte et un bouton « Remettre » ; le lien manuel « la retirer » n'existe plus ; chaque ligne de « Pour toi » et de « à tester »
+dit son âge et son heure, la plus récente en haut.
+
+**Fait, sur la vraie base** : migration 0092 appliquée ; job `cockpit-epuration` actif (`*/3 * * * *`, ses 5 dernières exécutions « succeeded » relevées à 08 h 51 UTC) ; **premier passage réel à
+08 h 33 UTC : 13 cartes FacePro retirées**, chacune avec sa raison (9 jours / 46 h / 36 h / 35 h sans réponse ; 19 à 66 livraisons depuis) ; il reste 2 cartes ouvertes dans toute la base, à
+raison (action « Recharge le compte RunPod », 9 h ; question d'argent du Trieur « 60 millions de leads… On la prend ? », 42 h, aucune livraison ni mot de lui depuis). Même matinée, sur son
+« Oui, les 18 » (carte feac1dcd) : **les 18 chantiers FacePro nés de ses messages sont archivés** (relu en base : 18 archivés, 1 resté ouvert, « Vas-y teste toi la piste du relighting… »,
+`a_verifier`, un vrai résultat).
+
+**Vérifié (base réelle, projets jetables, écran de téléphone)** : règles pures `verifier-epuration.ts` 29/29 et les 54 suites pures de l'app ; `verifier-base` §59 37/37 (la règle sur une table de cas, essai sans écriture,
+jamais `answered_by`, jamais servie par `reponses_sans_suite`, délais 72 / 0 / 721, permissions, job, grants, défaut de la base = défaut de l'app, essai sur tous les vrais projets) ; `verifier-base` complet 944/945 (le
+seul rouge, §52 « un message répondu en 90 s », était un contrôle instable depuis 0072 : deux appels séparés ajoutaient le temps écoulé entre eux, 91 s au lieu de 90 ; corrigé en un seul INSERT, rejoué seul 8/8) ;
+parcours téléphone `app/scripts/verifier-epuration.mjs` 38/38 (dates et ordre de « Pour toi », la passe retire 2 cartes, « 2 cartes retirées seules · Voir », la fenêtre, le délai 24 → 48 → 24 dans Réglages du projet
+même avant tout retrait, « Remettre » depuis la liste et depuis le fil, vue simple, aucun lien « la retirer », aucun débordement horizontal, aucune erreur JavaScript) ; `verifier-accueil` 53/53, `verifier-messages` 23/23,
+`verifier-bulle` 42/42, `verifier-hors-ligne` 36/36 (+ sessions 12/12), `verifier-vitesse` 6/6, `verifier-direct` 50/50, `verifier-reponses` 67/67, `verifier-greffe` 48/48, `verifier-connecter` 11/11, `verifier-web` 493/493,
+tsc, build, `bash -n`, parité des reçus 69/69 ; les réglages des VRAIS projets relus après les bancs : toujours 24 h.
+**Deux défauts trouvés en route et corrigés** : (1) `hooks/suivi.sh` et `hooks/session-start.sh` auraient remis à une session une carte retirée seule comme « il a répondu à … → Retirée automatiquement… » (preuve rouge avec les
+hooks d'avant : 65/67 ; verte avec les hooks corrigés : 67/67) ; (2) `verifier-web.mjs` cliquait un détail « Qui travaille » qui n'existe pas quand seules des vérifications demandées vivent (4 « vérifie pour moi » de Melissa) :
+il plantait à 28/29, corrigé (493/493).
+
+**Pas fait / à lui de décider** : (1) les chantiers `a_cadrer` / `bloque` ne sont PAS rangés seuls (relevé du 16 oct. 09 h : FacePro 3 « à cadrer » + 1 « bloqué », Melissa 7 + 6, Trieur 1 « bloqué » ;
+ceux de Melissa sont ses propres à-faire importés : ne jamais les parquer sans règle explicite) ; (2) les cartes de **fusion** ne sont pas acceptées seules (accepter une fusion de doublons livrés est une
+décision de produit) : aucune n'était ouverte le 16 oct. à 09 h, dans aucun projet ; (3) la ligne « N cartes retirées seules · Voir » de « À toi de jouer » n'apparaît qu'après un premier retrait (jamais une ligne vide), alors que le réglage du délai est toujours dans Réglages du projet › « Cartes déjà traitées » ; (4) l'interrupteur général (`regler_epuration(null, null, false)`) n'est pas exercé par le banc ; (5) le commit 175f86f de `rnab26/dotfiles` (règle globale « un message n'est pas un chantier »,
+10 lignes dans `.claude/CLAUDE.md`, lot précédent) est poussé sur la branche `ccr-ef3409f6-v0dx27`, PAS fusionné : il attend son feu vert.
+**À constater par Raphaël** : ouvrir « Pour toi » (une date et une heure sous chaque ligne), voir « 13 cartes retirées seules · Voir » sous « À toi de jouer » sur FacePro, et ne plus voir
+de lien « la retirer » ; une carte qui compte encore se remet d'un toucher (« Remettre »). Jamais testé sur une vraie nouvelle carte posée par une vraie session FacePro.
+**À savoir avant de lancer des bancs** : Supabase signalait le 15 oct. un quota de données sortantes à 96 % (4,8 / 5 Go, période de grâce jusqu'au 2 nov., ensuite erreurs 402 sur Jarvis, cockpit et Trieur) — chantier `892c0410` du cockpit, tenu par une autre session. Un chargement complet de l'app pèse environ 3,6 Mo décodés (messages 2,5 Mo) : les bancs qui rechargent l'app contre la vraie base (`verifier-web`, `verifier-accueil`, rejeux `BASE_URL=…`) consomment ce quota ; ne les rejouer que s'ils servent une décision.
+**Pièges payés** : (1) pour vieillir un chantier dans un banc il faut `set local session_replication_role = replica` (le déclencheur `tracer_chantier` remet `updated_at` à maintenant) ;
+(2) un réglage d'écran ne filtre jamais sur `test-…` : mon banc visait un VRAI projet avant correction (relu : intact) ; (3) `sql.sh` n'accepte ni `insert … returning` ni une colonne nommée
+`t` ; (4) `ageEtHeure` ne répète pas « hier » (« hier 02:44 », pas « hier · hier 02:44 »).
 
 ## 0 duodecies. Lot du 16 oct. 2026 (nuit) : un message n'est pas un chantier (migration 0091, chantier c2c79e7b)
 

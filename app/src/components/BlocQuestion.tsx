@@ -14,7 +14,7 @@ import { mediasDe } from '../lib/medias.ts'
 import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useEnvoi } from '../hooks/useEnvoi.ts'
-import { dejaRepondue, libelleEnvoi, ligneRelueValable, phraseRetourCarte, reponseOptimiste, reponseRetrait, REPONSE_LOCALE, retourCarte } from '../lib/reponseCarte.ts'
+import { dejaRepondue, libelleEnvoi, ligneRelueValable, phraseRetourCarte, reponseOptimiste, retourCarte } from '../lib/reponseCarte.ts'
 import { LiensAOuvrir, TexteAvecLiens } from '../ui/TexteAvecLiens.tsx'
 
 /**
@@ -38,8 +38,6 @@ export function BlocQuestion({ message }: { message: Message }) {
   const pj = useMediasAJoindre(projet.id, message.chantier_id)
   const marche = marcheDe(message)
   const retour = retourCarte(message, messages)
-  const [retrait, setRetrait] = useState<string | null>(null)   // le motif en cours de saisie (null = formulaire fermé)
-  const [retraitEnCours, setRetraitEnCours] = useState(false)
 
   const envoyer = async (reponse: string, etat?: 'fait' | 'pas_encore' | 'bloque') => {
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
@@ -76,20 +74,6 @@ export function BlocQuestion({ message }: { message: Message }) {
     })
   }
 
-
-  // « Cette carte n'a pas lieu d'être » (0070) : il la retire lui-même, avec son motif (lu par Claude dans le fil).
-  const retirer = async () => {
-    const motif = (retrait ?? '').trim()
-    setRetraitEnCours(true)
-    const avant = message
-    messagesLocal.poser({ ...message, answered_at: new Date().toISOString(), answered_by: REPONSE_LOCALE, reponse: reponseRetrait(admin ? 'Raphaël' : par, motif) })
-    const { error } = await supabase.rpc('retirer_carte', { p_id: message.id, p_par: admin ? 'Raphaël' : par, p_motif: motif || null })
-    setRetraitEnCours(false)
-    if (error) { messagesLocal.poser(avant); toast.erreur(`Carte pas retirée, elle est revenue : ${messageErreur(error)}`); return }
-    toast.succes('Carte retirée ✓ Claude voit ton motif dans le fil.')
-    setRetrait(null)
-    void messagesLocal.relire(message.id).then((m) => { if (m) messagesLocal.poser(m) })
-  }
 
   const valider = () => {
     const reponse = choix ?? precision.trim()
@@ -157,20 +141,8 @@ export function BlocQuestion({ message }: { message: Message }) {
           <span className="font-medium">{retour.etat === 'lu' ? 'Lu par Claude' : 'Retour enregistré'} · {dateRelative(retour.depuis, now)}.</span> {phraseRetourCarte(retour)}
         </p>
       ) : null}
-      {/* Une carte qui n'a pas lieu d'être se retire d'ici, jamais « à force de répondre ». */}
-      {retrait === null ? (
-        <button type="button" className="mt-2 text-sm text-texte-2 underline-offset-2 hover:underline" data-testid="retirer-carte-ouvrir"
-          onClick={() => setRetrait(precision.trim())}>Cette carte n’a pas lieu d’être : la retirer</button>
-      ) : (
-        <div className="mt-2 rounded-xl border border-bord bg-carte-2 p-2" data-testid="retirer-carte-formulaire">
-          <p className="text-sm font-medium">Retirer cette carte ? Dis pourquoi en un mot (Claude le lira).</p>
-          <Textarea className="mt-1" rows={2} value={retrait} onChange={(e) => setRetrait(e.target.value)} placeholder="Ex. cette PR n’existe pas" data-testid="retirer-carte-motif" />
-          <div className="mt-2 flex justify-end gap-2">
-            <Button onClick={() => setRetrait(null)} disabled={retraitEnCours}>Annuler</Button>
-            <Button variante="attention" chargement={retraitEnCours} onClick={() => void retirer()} data-testid="retirer-carte-confirmer">Retirer la carte</Button>
-          </div>
-        </div>
-      )}
+      {/* 0092 : plus de « Cette carte n'a pas lieu d'être : la retirer ». Une carte dépassée se retire TOUTE SEULE (base, toutes les
+          3 min : restée sans réponse pendant que le travail continuait) et se remet d'un toucher depuis le fil ou « Retirées seules ». */}
       {estAction && message.etat ? <p className="mt-2 text-xs text-texte-2">Dernier état : {message.etat === 'pas_encore' ? 'pas encore' : message.etat}{message.answered_at ? '' : ' — la session attend « fait »'}</p> : null}
     </div>
   )

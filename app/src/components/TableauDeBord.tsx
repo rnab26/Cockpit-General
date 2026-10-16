@@ -7,7 +7,7 @@ import { marcheDe } from '../lib/marche.ts'
 import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
-import { estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from '../lib/entonnoir.ts'
+import { demandesDe, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from '../lib/entonnoir.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
@@ -15,7 +15,7 @@ import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { DELAI_ABANDON_MIN } from '../lib/silence.ts'
 import { useProchainPassage } from '../hooks/useProchainPassage.ts'
 import { useVueAccueil } from '../hooks/useVueAccueil.ts'
-import { etaLisible, dateRelative, dateLongue, heureLisible } from '../lib/dates.ts'
+import { etaLisible, dateRelative, dateLongue, heureLisible, ageEtHeure } from '../lib/dates.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -36,6 +36,8 @@ import { quandDeCote } from '../lib/reporter.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
+import { depuisParChantier, ordrePourToi } from '../lib/epuration.ts'
+import { EpurationProjet, LigneRetireesSeules } from './CartesRetireesSeules.tsx'
 import { sansPourcentage } from '../lib/presence.ts'
 import { apercuDe, bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
 import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
@@ -140,7 +142,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'deCote', libelle: 'de côté', aide: 'mis de côté ou reportés exprès : ils ne bougent pas tant que tu ne les relances pas', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-export interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string }
+export interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; aTester?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string }
 
 function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
@@ -205,7 +207,7 @@ export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; 
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', enAttente: x.cle === 'enPause', deCote: x.cle === 'deCote', aide: x.aide })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', aTester: x.cle === 'aTester', enAttente: x.cle === 'enPause', deCote: x.cle === 'deCote', aide: x.aide })}
               className="min-w-0 rounded-2xl border border-bord bg-carte px-0.5 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-[11px] text-texte-2">{x.libelle}</span>
@@ -320,11 +322,15 @@ export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste
   }, [aToi])
   // La MÊME ligne que « Ça avance tout seul » (une seule source) : barre et % du dépliage = ceux de la ligne.
   const ligneDe = useMemo(() => new Map(avance.map((l) => [l.c.id, l])), [avance])
+  // Depuis quand ça t'attend (Raphaël, 16 oct. : « j'ai pas la date ni l'horaire de quand ça date ») : la MÊME date que « À toi de jouer »
+  // (ElementAToi.depuis), le plus récent en haut. Seulement les listes de ce qui attend un geste : « pour toi » et « à tester ».
+  const depuis = useMemo(() => depuisParChantier(liste?.pourToi ? demandesDe(aToi) : liste?.aTester ? aToi.filter((e) => e.type === 'a_verifier') : []), [aToi, liste?.pourToi, liste?.aTester])
   const chantiers = useMemo(() => {
     if (!liste) return []
     const ids = new Set(liste.ids)
-    return ordreListe(g.chantiers.filter((c) => ids.has(c.id)), !!liste.fini)
-  }, [liste, g.chantiers])
+    const lignes = ordreListe(g.chantiers.filter((c) => ids.has(c.id)), !!liste.fini)
+    return depuis.size ? ordrePourToi(lignes, depuis) : lignes
+  }, [liste, g.chantiers, depuis])
   return (
     <Dialog ouvert={!!liste} onFermer={onFermer} titre={`${liste?.titre ?? ''} (${liste?.n ?? 0})`}>
       {liste?.aide ? <p className="mb-1 text-xs text-texte-2" data-testid="aide-liste">{liste.aide.charAt(0).toUpperCase() + liste.aide.slice(1)}.</p> : null}
@@ -349,6 +355,11 @@ export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste
                       : <span>{infoEtat(c.etat).court}</span>}
                     {liste?.pourToi && (nbParChantier.get(c.id) ?? 0) > 1 ? <span className="shrink-0 font-medium text-alerte" data-testid="nb-choses">· {nbParChantier.get(c.id)} choses à faire</span> : null}
                   </span>
+                  {depuis.get(c.id) ? (
+                    <span className="block text-xs tabular-nums text-texte-2" data-testid="age-ligne-liste" title={dateLongue(depuis.get(c.id))}>
+                      {ageEtHeure(depuis.get(c.id), g.now)}
+                    </span>
+                  ) : null}
                   {ligneDe.get(c.id) ? <BarreDeLigne l={ligneDe.get(c.id)!} /> : null}
                 </span>
                 <PastilleReponse cle={c.id} />
@@ -445,6 +456,8 @@ function SectionAToi({ elements, avecProjet, replie, onToggle }: { elements: Ele
           </ListeUl>
         </>
       )}
+      {/* 0092 : ce que le cockpit a retiré tout seul (cartes dépassées), à un toucher ; rien si rien n'a été retiré. */}
+      {replie ? null : <LigneRetireesSeules projetId={g.vue === 'tout' ? null : g.vue} />}
     </section>
   )
 }
@@ -818,6 +831,7 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
       {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
       {g.admin ? <FiletSecurite projet={p} onJeton={versJeton} /> : null}
       {g.admin ? <RapprochementGithub projet={p} /> : null}
+      {g.admin ? <EpurationProjet projet={p} /> : null}
       <Repliable testId="reglages-projet" ouvert={reglagesOuverts} onToggle={setReglagesOuverts} titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
         <BarreProjet projet={p} nu sansAutonome />
         <div className="mt-3 space-y-2">

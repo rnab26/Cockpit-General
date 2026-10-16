@@ -159,6 +159,24 @@ try {
   const blocBloque = (o.additionalContext ?? "").split("## Ses RÉPONSES que personne n'a encore prises")[1]?.split("\n## ")[0] ?? "";
   verifie("une nouvelle session voit ce retour au démarrage, avec « la carte est restée ouverte »", /PR #998/.test(blocBloque) && /toujours pas/.test(blocBloque) && /RESTÉE OUVERTE/.test(blocBloque), blocBloque || o);
 
+  console.log("\n5 ter. Une carte retirée TOUTE SEULE (0092) n'est jamais remise à une session comme une réponse de Raphaël");
+  // Une carte d'argent que le cockpit a fermée parce que le projet avançait sans elle : la fermer n'est PAS un « oui ».
+  const QA = randomUUID(), QB = randomUUID();
+  sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, options) values (${q(QA)}, ${q(P)}, ${q(C1)}, 'test', 'session', 'question', 'Je lance le rendu payant de 38 dollars ?', '[{"libelle":"Oui"},{"libelle":"Non"}]'::jsonb)`);
+  sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, options) values (${q(QB)}, ${q(P)}, ${q(C1)}, 'test', 'session', 'question', 'Je garde le fond gris ?', '[{"libelle":"Oui"},{"libelle":"Non"}]'::jsonb)`);
+  await attendre(300);
+  // Exactement ce qu'écrit cockpit.epuration_passe : fermée, raison, date, JAMAIS answered_by.
+  sql(`update messages set answered_at = now(), reponse = 'Retirée automatiquement : restée 46 h sans réponse pendant que le projet avançait (3 livraisons depuis).', retiree_seule_at = now() where id = ${q(QA)}`);
+  repondre(QB, "Oui");
+  o = suivi({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} });
+  verifie("la session qui tient le chantier reçoit SA vraie réponse (témoin) mais pas la carte retirée seule",
+    /fond gris/.test(o.additionalContext ?? "") && !/rendu payant|Retirée automatiquement/.test(o.additionalContext ?? ""), o);
+  o = hook("session-start.sh", { session_id: `test-rep5t-${rand}`, hook_event_name: "SessionStart", source: "startup" });
+  verifie("une nouvelle session voit la vraie réponse (témoin) mais ni « Retirée automatiquement » ni la carte retirée seule",
+    /fond gris/.test(o.additionalContext ?? "") && !/rendu payant|Retirée automatiquement/.test(o.additionalContext ?? ""), (o.additionalContext ?? "").slice(0, 600));
+  verifie("la base ne la sert pas non plus à la chef (reponses_sans_suite) : fermée par le cockpit, jamais « à reprendre »",
+    !sql(`select message_id from reponses_sans_suite(${q(P)}, null)`).some((x) => x.message_id === QA));
+
   console.log("\n6. question générale (sans chantier)");
   const QG = randomUUID();
   sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps, options) values (${q(QG)}, ${q(P)}, 'test', 'session', 'question', 'Installer le module pour tous ?', '[{"libelle":"Oui"},{"libelle":"Admin seulement"}]'::jsonb)`);

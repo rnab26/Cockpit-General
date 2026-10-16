@@ -38,6 +38,8 @@ export interface Projet {
   autonome_arret_vide_h?: number
   /** Minutes sans signe de vie après lesquelles une réservation est libérée (1-120, défaut 3 depuis 0046). */
   delai_sans_signe_min?: number
+  /** Une carte restée sans réponse N heures pendant que le travail continue se retire toute seule (0092 ; 0 = jamais, 24 par défaut ; une action : 7 fois plus). */
+  epuration_delai_h?: number
   /** Premier passage qui n'a rien trouvé à prendre (0031), null dès qu'il y a du travail. */
   autonome_vide_depuis?: string | null
   /** Quand il s'est éteint tout seul (0031), null s'il a été réglé à la main depuis. */
@@ -145,6 +147,10 @@ export interface Message {
   marche?: unknown
   /** 0015 : la session a confirmé la question « toujours d'actualité » après avoir avancé. */
   confirmee_at?: string | null
+  /** 0092 : la carte a été retirée TOUTE SEULE (restée sans réponse pendant que le travail continuait) ; `reponse` dit pourquoi. */
+  retiree_seule_at?: string | null
+  /** 0092 : il l'a remise lui-même : elle ne sera plus jamais retirée seule. */
+  epuration_exclue?: boolean | null
   /** 0023 : une demande « Où ça en est ? » (demander_ou_en_est), et quand/par qui elle a été reçue.
    *  0025 : vaut aussi pour un message libre (reçu par une session, ou pris par un assistant `agent/…`). */
   ou_en_est?: boolean | null

@@ -10,6 +10,7 @@ import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { Button } from '../ui/Button.tsx'
 import { EcrireAuProjet, LigneAToi, LigneAvance, LigneSession, ListeChantiers, ListeUl, Tuiles, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
+import { LigneRetireesSeules } from './CartesRetireesSeules.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { PointProjet } from './Icones.tsx'
 
@@ -45,6 +46,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
 
       <Bloc titre="À toi" sous="Ce que Claude attend de toi" n={demandes.length} testId="accueil-a-toi" alerte>
         <DemandesAToi demandes={demandes} avecProjet={avecProjet} />
+        <LigneRetireesSeules projetId={projetId} />
         <LivresATester elements={t.aTester} avecProjet={avecProjet} projetId={projetId} />
       </Bloc>
 

@@ -69,6 +69,15 @@ demandes des utilisateurs, progression des autres sessions.
   Le hook te le rappelle ; l'app marque « Claude a avancé depuis ». Pareil
   pour un chantier « à vérifier / à cadrer / bloqué » (0022) : `--confirmer
   <id du chantier>`, et `--debloquer <id> "pourquoi"` quand il ne l'est plus.
+  **Et si tu oublies, le cockpit le fait pour toi** (16 oct. : « pourquoi est-ce
+  que je devrais faire une action manuelle ? […] je veux que ce soit
+  automatisé ») : une carte restée 24 h sans réponse (réglable par projet, une
+  action : 7 fois plus) pendant que le travail continue (chantier livré, session
+  passée dessus, ou projet qui avance) se retire TOUTE SEULE, avec sa raison
+  écrite sur la carte, et Raphaël la remet d'un toucher. Tu ne ranges donc pas
+  tes vieilles cartes à la main ; `--confirmer <id>` garde une carte qui compte
+  encore (le délai repart), et une carte dont il a écrit un retour n'est jamais
+  retirée seule.
 - **RÈGLE DE CLARTÉ — tout ce que Raphaël lit dans le cockpit** (questions,
   constats à faire, « comment vérifier », titres, messages du fil) : le plus
   simple possible, pour quelqu'un qui ne code pas. On doit comprendre **le
