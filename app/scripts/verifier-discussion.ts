@@ -32,6 +32,7 @@ verifie('« Ça ne marche pas : … » (Corriger) attend une réponse', estMessa
 verifie('« Ça fonctionne, je certifie » non (bouton, servi ailleurs)', !estMessageLibre(moi(0, 'Ça fonctionne, je certifie.', { kind: 'constat' }), []))
 verifie('« vérifie pour moi » non (un agent rend un verdict)', !estMessageLibre(moi(0, 'Je ne sais pas dire si c’est bon : vérifie pour moi.', { kind: 'constat' }), []))
 verifie('« Où ça en est ? » non (sa propre voie)', !estMessageLibre(moi(0, 'Où ça en est', { ou_en_est: true }), []))
+verifie('« J\'ai retiré la carte » non (carte déjà fermée, 0087)', !estMessageLibre(moi(0, "J'ai retiré la carte « Fusionne la PR #5 » : déjà fusionnée"), []))
 verifie('fusion de doublon non', !estMessageLibre(moi(0, 'Doublon fusionné : « X »'), []))
 verifie('écrit dans une session Claude (0027) : non, la session y a déjà répondu', !estMessageLibre(moi(0, 'Ajoute un filtre', { via_session: true }), []))
 verifie('… et il ne déclenche pas « réponse en attente »', attenteReponse([claude(0), moi(1, 'Ajoute un filtre', { via_session: true })], { maintenant: T0 + 5 * 60_000, sessionTient: true, prochainPassage: null }) === null)

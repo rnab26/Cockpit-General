@@ -10,6 +10,7 @@ import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { PREF_LU_DEPUIS, PREF_LU_FILS, lireLus, reponsesNonLues, totalNonLus } from '../lib/lecture.ts'
 import { aToi, pastillesProjet } from '../lib/entonnoir.ts'
+import { estBranche } from '../lib/branchement.ts'
 import { bulleActive, cartesAFaire, notifsChat } from '../lib/bulleAide.ts'
 import { autonomeActif, chantiersPrenables, etatAutonome, travailEnCours } from '../lib/autonome.ts'
 import { Layers, Lock } from 'lucide-react'
@@ -18,6 +19,8 @@ import { EnTete, type ActionMenu, type Pastilles } from './EnTete.tsx'
 import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
+import { AccueilSimple } from './AccueilSimple.tsx'
+import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { lireLienFil } from '../lib/lienNotification.ts'
 import { chargerEtatEcran, etatCoherent, sauverEtatEcran } from '../lib/etatEcran.ts'
 import { Conversation, type CibleConversation } from './Conversation.tsx'
@@ -71,6 +74,9 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   // Discussions de la barre du bas : la liste des chats par projet, puis le chat d'un projet.
   const [discussion, setDiscussion] = useState<{ liste: boolean; projetId: string | null }>({ liste: false, projetId: null })
   const barreBas = useNavMobile()
+  // Accueil simple (3 blocs) par défaut ; l'ancien accueil reste à un toucher (« Vue détaillée »).
+  const [vueAccueil] = useVueAccueil()
+  const accueilSimple = vueAccueil === 'simple'
   const dernierProjet = useRef<string | null>(null)
   const [now, setNow] = useState(() => new Date())
   const admin = moi.admin
@@ -219,7 +225,9 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
       const auto = admin && autonomeActif(p, now)
         ? (etatAutonome(p, (prenables?.get(p.id) ?? chantiersPrenables(d.chantiers, p.id, now, d.activites, d.taches, d.sessions)), travailEnCours(d.chantiers, d.taches, p.id, now), now).alerte ? 'alerte' : 'actif')
         : null
-      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto })
+      // « Branché » = un démarrage avec le hook ET une vraie session (l'admin lit toutes les sessions ; un membre garde la règle d'avant).
+      const branche = admin ? estBranche(p, now, d.sessions.filter((x) => x.projet_id === p.id)) : undefined
+      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto, branche })
     }
     return m
   }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin, prenables])
@@ -298,13 +306,14 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger(false, true)} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-5" data-testid="vue-tout">
-              <TableauDeBord projetId={null} />
-              <ReglagesProjets />
+              {accueilSimple ? <AccueilSimple projetId={null} /> : <><TableauDeBord projetId={null} /><ReglagesProjets /></>}
             </div>
           ) : (
             <AvecProjet projetId={d.projet.id}>
               <div className="space-y-5" data-testid="vue-projet">
-                <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                {accueilSimple
+                  ? <AccueilSimple projetId={d.projet.id} seulementEntre={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />
+                  : <TableauDeBord projetId={d.projet.id} seulementTuiles={onglet !== 'travail'} entre={barreBas ? undefined : <OngletsProjet actif={onglet} onChoisir={setOnglet} />} />}
                 {onglet === 'travail' ? (
                   <TousLesChantiers sectionOuverte={(k) => sectionsOuvertes.has(k)} basculerSection={basculerSection}
                     deplierTout={deplierTout} onNouveau={() => setDialogue('nouveau')} />

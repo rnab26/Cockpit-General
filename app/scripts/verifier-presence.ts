@@ -116,4 +116,12 @@ verifie('silence : un réglage à 5 min fait passer 6 min de silence en « silen
   const vieille = { ...act('en_cours', 600), projet_id: 'p', id: 'a0' } as never
   verifie('une vieille barre « en cours » d’un autre chantier ne ressuscite pas (une chose à la fois)', preuveDeVie(avecSigneDeSession([vieille, a], [s(2)])[0], now, sil) === false)
 }
+
+// 14. (0087) Tour fini (hook Stop) : la session attend SON message — ni « silencieuse » ni « personne dessus ».
+{
+  const pe = presenceChantier(ch('en_cours', 'claude/x', dans(60)), act('attente', 10), false, now)
+  verifie('tour terminé récemment → « Claude attend ton message dans la session »', pe.libelle.includes('attend ton message') && pe.code === 'travaille' && !pe.barreVive, pe)
+  const vieux = presenceChantier(ch('en_cours', 'claude/x', dans(60)), act('attente', 240), false, now)
+  verifie('tour terminé depuis 4 h → redevient « Pris, mais silencieux »', vieux.code === 'silencieux', vieux)
+}
 bilan('verifier-presence')
