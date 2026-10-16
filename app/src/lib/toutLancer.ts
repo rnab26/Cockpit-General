@@ -64,10 +64,10 @@ export function decisionToutLancer(entrees: EntreeLancer[]): DecisionLancer {
     const eteint = lus.some((e) => e.etat!.attente.length && e.etat!.sessions_max === 0)
     const raison = eteint
       ? 'Les renforts sont éteints pour ce projet : règle-les dans Réglages du projet › Renforts (détails).'
-      : 'Ça avance déjà : le reste part tout seul dès qu’une place se libère.'
-    return { ...vide, nChantiers, ligne: `${attendent(nChantiers)} · ${eteint ? 'renforts éteints' : 'ça avance déjà'}${suffixe}`, raison }
+      : 'Déjà demandés : le reste part tout seul dès qu’une place se libère.'
+    return { ...vide, nChantiers, ligne: `${attendent(nChantiers)} · ${eteint ? 'renforts éteints' : 'déjà demandés'}${suffixe}`, raison }
   }
-  return { ...vide, ligne: `${enRoute ? `Rien n’attend, ça avance (${pl(enRoute, 'renfort', 'renforts')} en route)` : 'Rien n’attend'}${suffixe}`, raison: enRoute ? 'Rien n’attend : tout est déjà confié.' : 'Rien n’attend : rien à lancer.' }
+  return { ...vide, ligne: `${enRoute ? `Rien n’attend : ${pl(enRoute, 'renfort', 'renforts')} en route` : 'Rien n’attend'}${suffixe}`, raison: enRoute ? 'Rien n’attend : tout est déjà confié.' : 'Rien n’attend : rien à lancer.' }
 }
 
 export interface ResultatLancer { nom: string; resultat: ResultatDemande | null; erreur: string | null; sansChef: boolean }
@@ -94,5 +94,5 @@ export function messageApresLancer(rs: ResultatLancer[], now: Date): { ok: boole
   const n = lances.reduce((s, r) => s + r.resultat!.demandes.reduce((t, d) => t + d.chantiers, 0), 0)
   const sans = lances.filter((r) => r.sansChef).map((r) => r.nom)
   const aide = sans.length ? ` Aucune session n’est ouverte pour ${sans.join(', ')} : ouvre Claude Code sur ${sans.length > 1 ? 'ces projets' : 'ce projet'} pour que ça démarre.` : ''
-  return { ok: true, reessayer: false, texte: `Lancé à ${hhmm(now)} : ${pl(n, 'chantier', 'chantiers')}, ça avance.${aide}` }
+  return { ok: true, reessayer: false, texte: `Demandé à ${hhmm(now)} : ${pl(n, 'chantier', 'chantiers')}. Ils passent dans « ça avance » dès qu’une session les prend.${aide}` }
 }
