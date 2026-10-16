@@ -36,7 +36,7 @@ export const VUE_TOUT = 'tout'
  * 30 minutes. Tout le reste est incrémental (lib/deltaDonnees.ts) : un événement du
  * direct est APPLIQUÉ à la ligne concernée (regroupé par rafale), un sondage ou une
  * action (`recharger()`) ne lit que les lignes modifiées depuis la plus récente
- * connue. Mesures avant/après dans le CLAUDE.md, section « Vitesse ».
+ * connue. Mesures avant/après dans docs/historique/app-ecran-donnees.md, section « Vitesse ».
  *
  * Les projets de TEST des bancs (slug `test-…`) sont retirés ICI, à la source,
  * pour tout l'écran (onglets, « Tout », pastilles, réglages) : leurs lignes
