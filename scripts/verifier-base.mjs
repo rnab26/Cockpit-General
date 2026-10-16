@@ -2325,6 +2325,17 @@ async function controle39_delai_sans_signe() {
   verifie("…vivant à 10 min de délai (renfort_vivant lit le réglage du projet)", (await vR()) === true);
   await regler(3);
   await sql(`update renforts set statut = 'fini' where id = ${q(R)}`);
+
+  // 0094 (chantier c33c0db9) : un agent qui travaille (ses outils battent, événement « Vie » + agent_id) garde son chantier,
+  // même sans étape signalée depuis 25 min. Cas rejoué : avant, il était libéré à 20 min en plein travail.
+  const ag = await creerChantier(P9, { titre: "DÉLAI Agent qui code sans signaler d'étape", etat: "en_cours" });
+  const sidA = `test-agent-vie-${rand}`;
+  await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sidA)}, ${q(P9)}, 'main', now())`);
+  await sql(`insert into taches (session_id, projet_id, tache_id, type, chantier_id, statut, vu_at, demarre_at, progres_at) values (${q(sidA)}, ${q(P9)}, 'ag-vie', 'agent', ${q(ag)}, 'en_cours', now() - interval '25 minutes', now() - interval '25 minutes', now() - interval '25 minutes')`);
+  await reserver(ag, "agent/vie-0094"); await vieillir(ag, 25);
+  verifie("agent muet depuis 25 min (aucun battement) : chantier sans signe (la règle d'avant 0094 tient)", (await sans(ag)) === true);
+  await sql(`select suivre(${q(SLUG_I)}, ${q(JSON.stringify({ session_id: sidA, hook_event_name: "Vie", branche: "main", agent_id: "ag-vie" }))}::jsonb)`);
+  verifie("le même agent dont un outil vient de battre (Vie + agent_id) : chantier gardé", (await sans(ag)) === false);
 }
 
 // 37. Suggestion automatique de fusion (0042) : une carte « À toi » par paire, jamais un projet de test, seuil réglable.
