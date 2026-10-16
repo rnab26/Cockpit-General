@@ -109,16 +109,11 @@ try {
   verifie('par défaut : « À toi de jouer » et « Prêt à lancer » sont là', await page.getByTestId('a-toi').count() === 1 && await page.getByTestId('a-lancer').count() === 1)
   await page.screenshot({ path: `${CAPTURES}/accueil-par-defaut.png` })
   // Chantier 876e2e4b (16 oct. 2026) : UN seul bouton « Tout lancer » ; plus de bloc Renforts, de « session autonome », de mode autonome ni de pause.
-  verifie('écran principal : UN seul bouton « Tout lancer », une ligne d’état', await page.getByTestId('tout-lancer-bouton').count() === 1 && (await page.getByTestId('tout-lancer-ligne').innerText()).trim().length > 3 && await page.getByTestId('tout-lancer-bouton').isVisible())
+  verifie('écran principal : rien à lancer = aucun bloc « Tout lancer » (ni bouton éteint, ni « Rien n’attend »)', await page.getByTestId('tout-lancer').count() === 0 && await page.getByTestId('tout-lancer-bouton').count() === 0 && await page.getByTestId('reservations-expirees').count() === 0)
   verifie('écran principal : plus de bloc Renforts, de « Lancer une session autonome », de mode autonome ni de pause', await page.getByTestId('renforts').count() === 0 && await page.getByTestId('lancer-renforts').count() === 0
     && await page.getByTestId('traiter').count() === 0 && await page.getByTestId('autonome-projet').count() === 0 && await page.getByTestId('pause-projet').count() === 0)
-  const bTL = await page.getByTestId('tout-lancer-bouton').boundingBox()
-  verifie('« Tout lancer » : gros bouton (≥ 44 px), dans l’écran du téléphone', !!bTL && bTL.height >= 44 && bTL.x >= 0 && bTL.x + bTL.width <= 390, bTL)
-  await page.waitForFunction(() => document.querySelector('[data-testid="tout-lancer"]')?.getAttribute('data-etat') !== 'chargement', null, { timeout: 20000 }).catch(() => {})
   // Ce projet de test n'a aucun chantier « sans personne » (les 4 demandes attendent Raphaël) : l'état vide doit être dit, bouton éteint AVEC sa raison.
   // Le cas « N chantiers attendent » + clic réel est joué par verifier-web.mjs (7 ter).
-  verifie('« Tout lancer » sans rien à lancer : « Rien n’attend », bouton éteint, sans phrase en double', (await page.getByTestId('tout-lancer-ligne').innerText()) === 'Rien n’attend' && await page.getByTestId('tout-lancer-bouton').isDisabled() && await page.getByTestId('tout-lancer-raison').count() === 0, await page.getByTestId('tout-lancer-ligne').innerText())
-  await page.screenshot({ path: `${CAPTURES}/tout-lancer-telephone.png` })
   await page.getByTestId('onglet-vue-reglages').click().catch(() => {})
   await page.getByTestId('renforts-details').waitFor({ timeout: 10000 }).catch(() => {})
   verifie('le détail est dans Réglages du projet : « Renforts (détails) » (replié), mode autonome et pause y sont', await page.getByTestId('renforts-details').count() === 1 && await page.getByTestId('renforts-details').locator('> div').count() === 0

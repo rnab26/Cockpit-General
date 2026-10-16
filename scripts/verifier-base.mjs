@@ -2314,6 +2314,11 @@ async function controle39_delai_sans_signe() {
   await sql(`select liberer_silencieux(${q(SLUG_I)})`);
   const fin = async (id) => new Date((await chantier(id)).pris_jusqu_a).getTime();
   verifie("liberer_silencieux (délai 3 min) : le mort est libéré, l'agent vivant garde sa réservation", (await fin(mort)) <= Date.now() + 5000 &&  (await fin(vivant)) > Date.now());
+  // 0097 (16 oct. 2026) : une réservation EXPIRÉE sur un chantier « en cours » sans signe de vie se libère seule (plus de « à libérer » à la main).
+  await sql(`update chantiers set etat = 'en_cours', pris_par = 'agent/expire', pris_jusqu_a = now() - interval '5 minutes' where id = ${q(mort)}`);
+  await sql(`select liberer_silencieux(${q(SLUG_I)})`);
+  const exp = await chantier(mort);
+  verifie("0097 : réservation expirée + sans signe de vie sur un chantier en cours : libéré seul, redevient « libre »", exp.pris_par === null && exp.etat === 'libre', exp);
 
   // Un renfort vu il y a 5 min : muet à 3 min de délai, vivant à 10 (même règle que le chantier).
   const S = randomUUID();

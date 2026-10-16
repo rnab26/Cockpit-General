@@ -84,7 +84,8 @@ export function ToutLancer({ projetId }: { projetId: string | null }) {
     await charger()
   }
 
-  if (!g.admin || !projets.length) return null
+  // Rien à lancer (ni erreur à réessayer, ni résultat à lire) : aucun bloc à l'écran (16 oct. 2026, Raphaël : « tout le superflu à la poubelle »).
+  if (!g.admin || !projets.length || (!d.actif && !d.enErreur && !dernier)) return null
   return (
     <section aria-label="Tout lancer" data-testid="tout-lancer" data-etat={d.enErreur ? 'erreur' : d.chargement ? 'chargement' : d.actif ? 'pret' : 'rien'}
       className="rounded-2xl border-2 border-accent bg-carte px-3 py-3">

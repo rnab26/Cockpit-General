@@ -257,7 +257,6 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
       return { cle: p.id, nom: p.nom, couleur: p.couleur ?? 'var(--accent)', nombres: r.total, ids }
     })
   }, [t, g.sections, g.chantiers, g.messages, g.projets, g.now, fenetre, projetId])
-  const expirees = lignes.reduce((n, l) => n + l.nombres.expirees, 0)
   return (
     <div className="mt-2 rounded-2xl border border-bord bg-carte px-3 py-2" data-testid="detail-par-ligne">
       <div className="grid grid-cols-[1fr_repeat(4,3rem)] items-end gap-x-1 pb-1 text-[11px] text-texte-2">
@@ -277,12 +276,6 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
         </div>
       ))}
       {!lignes.length ? <p className="py-1 text-sm text-texte-2">Aucun chantier pour l’instant.</p> : null}
-      {expirees ? (
-        <button type="button" data-testid="reservations-expirees" className="mt-1 text-xs text-attention underline-offset-2 hover:underline"
-          onClick={() => ouvrir({ titre: 'Réservations expirées', ids: lignes.flatMap((l) => l.ids.expirees), n: expirees })}>
-          {expirees} réservation{expirees > 1 ? 's' : ''} expirée{expirees > 1 ? 's' : ''} : à libérer
-        </button>
-      ) : null}
     </div>
   )
 }
