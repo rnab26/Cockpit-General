@@ -31,10 +31,10 @@ verifie('tâches : la date la plus récente parmi vu_at / fini_at / progres_at',
 verifie('filtre PostgREST des messages : created_at OU updated_at', filtreDelta('messages', 'X') === 'updated_at.gt.X,created_at.gt.X')
 verifie('filtre des tâches : vu_at, fini_at, progres_at', filtreDelta('taches', 'X') === 'vu_at.gt.X,fini_at.gt.X,progres_at.gt.X')
 
-console.log('relecture complète : seulement au premier passage et toutes les 5 minutes')
+console.log('relecture complète : seulement au premier passage et toutes les 30 minutes')
 verifie('jamais lu : complet', pleinDu(null, 1000))
 verifie('lu il y a 1 min : delta', !pleinDu(0, 60_000))
-verifie('lu il y a 5 min : complet', pleinDu(0, PLEIN_TOUTES_MS))
+verifie('lu il y a 30 min : complet', pleinDu(0, PLEIN_TOUTES_MS))
 
 console.log('événements du direct')
 verifie('INSERT : une écriture', lireEvenement({ eventType: 'INSERT', new: { id: 'x', corps: 'c' } }).type === 'ecrire')
