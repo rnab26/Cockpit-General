@@ -10,12 +10,12 @@ const act = (min: number) => ({ updated_at: il(min), pourcentage: 40, etape: 'x'
 
 console.log('verifier-silence')
 {
-  const s = situationSilence(c, act(45), { now, prochainPassage: dans(20), demandeEnCours: false })
-  verifie('abandonné (45 min) + chef : rien à faire, reprise à l’heure du passage', s.geste === 'rien' && !!s.repriseA && /Rien à faire/.test(s.consigne) && s.consigne.includes(s.repriseA), s)
-  verifie('…dit depuis quand', /45 min/.test(s.depuis), s.depuis)
+  const s = situationSilence(c, act(90), { now, prochainPassage: dans(20), demandeEnCours: false })
+  verifie('abandonné (90 min, au-delà du délai de 60) + chef : rien à faire, reprise à l’heure du passage', s.geste === 'rien' && !!s.repriseA && /Rien à faire/.test(s.consigne) && s.consigne.includes(s.repriseA), s)
+  verifie('…dit depuis quand', /2 h|1 h|90 min/.test(s.depuis), s.depuis)
 }
 {
-  const s = situationSilence(c, act(45), { now, prochainPassage: null, demandeEnCours: false })
+  const s = situationSilence(c, act(90), { now, prochainPassage: null, demandeEnCours: false })
   verifie('abandonné sans chef : le geste est de relancer', s.geste === 'relancer' && /À faire/.test(s.consigne), s)
 }
 {
@@ -23,7 +23,7 @@ console.log('verifier-silence')
   verifie('2 min de silence (délai par défaut 3) : pas encore abandonné, on attend', s.geste === 'attendre' && /Rien à faire/.test(s.consigne) && !!s.repriseA, s)
 }
 {
-  const s = situationSilence(c, act(45), { now, prochainPassage: dans(20), demandeEnCours: true })
+  const s = situationSilence(c, act(90), { now, prochainPassage: dans(20), demandeEnCours: true })
   verifie('déjà demandé : ne pas relancer', s.geste === 'rien' && /Ne relance pas/.test(s.consigne), s)
 }
 {
@@ -36,7 +36,7 @@ console.log('verifier-silence')
   const t = situationSilence(c, act(20), { now, prochainPassage: dans(5), demandeEnCours: false, abandonMin: 10 })
   verifie('délai réglé à 10 min : 20 min de silence, abandonné', t.geste === 'rien' && /s’est arrêté/.test(t.ceQuiSePasse), t)
 }
-verifie('défaut du délai = 3 min (même valeur que la colonne, comparée par verifier-base)', DELAI_ABANDON_MIN === 3)
+verifie('défaut du délai = 60 min (même valeur que la colonne, comparée par verifier-base ; 3 min comptait mort un agent de routine qui lit ou calcule)', DELAI_ABANDON_MIN === 60)
 verifie('borne du réglage : 1 à 120, entier', erreurDelaiSansSigne(1) === null && erreurDelaiSansSigne(120) === null && !!erreurDelaiSansSigne(0) && !!erreurDelaiSansSigne(121) && !!erreurDelaiSansSigne(2.5))
 verifie('passage : saute au premier passage horaire après l’abandon', passageApres(dans(5), now.getTime() + 90 * 60_000, now.getTime()) === now.getTime() + 125 * 60_000)
 {
