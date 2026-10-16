@@ -333,7 +333,7 @@ console.log('verifier-entonnoir')
   verifie('nouveau : déjà en cours / archivé → non', !estNouveau(n('a', 'en_cours', 5), now) && !estNouveau(n('a', 'libre', 5, { archived_at: il(1) }), now))
   const l = nouveauxDabord([{ c: n('vieux', 'libre', 3000) }, { c: n('n1', 'libre', 60) }, { c: n('n2', 'a_trier', 10) }], now)
   verifie('nouveau : les nouveaux en tête, le plus récent d’abord', l.map((x) => x.c.id).join(',') === 'n2,n1,vieux', l.map((x) => x.c.id))
-  verifie('nouveau : on dit où il apparaît', ouApparait('libre').includes('Prêt à lancer') && ouApparait('a_cadrer').includes('À toi'))
+  verifie('nouveau : on dit où il apparaît', ouApparait('libre').includes('Attend Claude') && ouApparait('a_cadrer').includes('À toi'))
 }
 
 bilan('verifier-entonnoir')

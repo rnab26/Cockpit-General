@@ -63,7 +63,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
         ) : null}
         {attente ? (
           <button type="button" data-testid="accueil-en-attente"
-            onClick={() => setListe({ titre: 'En attente d’une session', ids: [...t.pretALancer, ...t.sansSession].map((l) => l.c.id), n: attente, enAttente: true, aide: 'prêts à démarrer, ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris' })}
+            onClick={() => setListe({ titre: 'Attend Claude', ids: [...t.pretALancer, ...t.sansSession].map((l) => l.c.id), n: attente, enAttente: true, aide: 'attend la prise en charge de Claude (nouveaux, corrections demandées, en cours sans session dessus) : rien à faire de ton côté' })}
             className="flex min-h-11 w-full items-center gap-2 rounded-2xl border border-bord bg-carte px-3 text-left text-[15px] transition hover:bg-carte-2 active:scale-[.99]">
             <Rocket size={16} className="shrink-0 text-texte-2" aria-hidden />
             <span className="flex-1">{libelleEnAttente(attente)}</span>

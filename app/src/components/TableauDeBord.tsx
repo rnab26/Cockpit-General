@@ -51,7 +51,7 @@ import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerA
  *   (« pour toi » = les DEMANDES seulement ; les chantiers livrés ont « à tester », 13 oct. 2026) ;
  *   « Ça avance tout seul »  — une ligne par CHANTIER, barre seulement si signalée (en premier) ;
  *   « À toi de jouer »       — une ligne par chose à faire, UN verbe (en second) ;
- *   « Prêt à lancer »        — ce que personne ne tient, « Lancer ».
+ *   « Attend Claude »        — ce que personne ne tient, « Lancer ».
  * Toucher une ligne ouvre la conversation du chantier (modèle D). Les nombres
  * viennent de lib/tableauDeBord.ts : une seule règle, testée.
  */
@@ -138,7 +138,7 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'pourToi', libelle: 'pour toi', aide: 'une question, une action, une décision ou un blocage t’attend', couleur: (n) => (n ? 'text-alerte' : 'text-texte-2') },
   { cle: 'aTester', libelle: 'à tester', aide: 'livrés par Claude : à tester quand tu veux, rien ne presse', couleur: (n) => (n ? 'text-attention' : 'text-texte-2') },
   { cle: 'caAvance', libelle: 'ça avance', aide: 'une session ou un assistant y travaille vraiment (barre de progression)', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
-  { cle: 'enPause', libelle: 'à lancer', aide: 'prêts à démarrer (nouveaux compris) ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
+  { cle: 'enPause', libelle: 'attend Claude', aide: 'attend la prise en charge de Claude (demandes nouvelles, corrections demandées, chantiers en cours sans session dessus) : rien à faire de ton côté, ça passe seul en « ça avance » puis « à tester »', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'deCote', libelle: 'de côté', aide: 'mis de côté ou reportés exprès : ils ne bougent pas tant que tu ne les relances pas', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
@@ -231,7 +231,7 @@ export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; 
 }
 
 const COLONNES: { cle: keyof QuatreNombres; libelle: string }[] = [
-  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'à lancer' }, { cle: 'livre', libelle: 'fini' },
+  { cle: 'pourToi', libelle: 'pour toi' }, { cle: 'bouge', libelle: 'ça avance' }, { cle: 'dort', libelle: 'attend Claude' }, { cle: 'livre', libelle: 'fini' },
 ]
 const TEINTE: Record<keyof QuatreNombres, string> = { pourToi: 'text-alerte', bouge: 'text-texte', dort: 'text-texte-2', livre: 'text-ok', expirees: 'text-attention' }
 interface LigneDetail { cle: string; nom: string; couleur: string | null; nombres: QuatreNombres; ids: LigneOuJenSuis['ids'] }
@@ -568,7 +568,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
       {replie ? null : rien ? (
         <div className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center" data-testid="personne-ne-travaille">
           <p className="text-[15px] text-texte-2">Personne ne travaille {projetId ? 'sur ce projet ' : ''}en ce moment.</p>
-          <p className="mt-0.5 text-xs text-texte-2">Pour faire avancer un chantier : « Lancer », dans « Prêt à lancer ».</p>
+          <p className="mt-0.5 text-xs text-texte-2">Pour faire avancer un chantier : « Lancer », dans « Attend Claude ».</p>
         </div>
       ) : (
         <ListeUl>
@@ -581,7 +581,7 @@ function SectionCaAvance({ t, avecProjet, projetId, replie, onToggle }: { t: Tab
         <div className="mt-1.5 px-1" data-testid="sans-session">
           <button type="button" onClick={() => setVoirSans(!voirSans)} aria-expanded={voirSans} data-testid="voir-sans-session"
             className="inline-flex items-center gap-0.5 text-xs text-attention underline-offset-2 hover:underline">
-            {sans.length} en cours sans session dessus (comptés « à lancer »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
+            {sans.length} en cours sans session dessus (comptés « attend Claude »)<ChevronDown size={14} className={`transition ${voirSans ? 'rotate-180' : ''}`} aria-hidden />
           </button>
           {voirSans ? <div className="mt-1.5"><ListeUl>{sans.map((l) => <LigneAvance key={l.c.id} l={l} avecProjet={avecProjet} />)}</ListeUl></div> : null}
         </div>
@@ -744,11 +744,11 @@ function SectionPretALancer({ lignes, avecProjet, replie, onToggle }: { lignes: 
   const nouveaux = lignes.filter((l) => estNouveau(l.c, g.now)).length
   const visibles = tout ? lignes : lignes.slice(0, Math.max(A_LANCER_VISIBLES, nouveaux))
   return (
-    <section aria-label="Prêt à lancer" data-testid="a-lancer">
-      <TitreSection numero={4} titre="Prêt à lancer" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
+    <section aria-label="Attend Claude" data-testid="a-lancer">
+      <TitreSection numero={4} titre="Attend Claude" n={lignes.length} testId="a-lancer-total" replie={replie} onToggle={onToggle} />
       {replie || !nouveaux ? null : <p className="-mt-1 mb-1.5 text-xs text-texte-2" data-testid="a-lancer-nouveaux">Dont {nouveaux} nouveau{nouveaux > 1 ? 'x' : ''} (créé{nouveaux > 1 ? 's' : ''} depuis moins de 24 h), en haut de la liste.</p>}
       {replie ? null : lignes.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien à lancer : tout ce qui est prêt est déjà en route.</p>
+        <p className="rounded-2xl border border-dashed border-bord px-3 py-3 text-center text-sm text-texte-2">Rien n’attend Claude : tout ce qui est prêt est déjà en route.</p>
       ) : (
         <ListeUl>
           {visibles.map((l) => <LigneLancer key={l.c.id} l={l} avecProjet={avecProjet} />)}

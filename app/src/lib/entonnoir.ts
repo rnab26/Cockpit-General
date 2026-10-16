@@ -298,7 +298,7 @@ export function nouveauxDabord<T extends { c: Pick<Chantier, 'etat' | 'created_a
 /** Où apparaît un chantier qu'on vient de créer : la phrase dite après « Créer » (une seule règle). */
 export function ouApparait(etat: string): string {
   if (etat === 'a_cadrer' || etat === 'bloque') return 'Il apparaît dans « À toi de jouer ».'
-  if (etat === 'a_trier' || etat === 'libre') return 'Il apparaît en haut de « Prêt à lancer », marqué « Nouveau ».'
+  if (etat === 'a_trier' || etat === 'libre') return 'Il apparaît en haut de « Attend Claude », marqué « Nouveau ».'
   return 'Il apparaît dans la liste du projet.'
 }
 
