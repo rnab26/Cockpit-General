@@ -16,13 +16,14 @@ import { Button } from '../ui/Button.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
 import { Repliable } from '../ui/Repliable.tsx'
 import { infoEtat } from '../lib/etats.ts'
-import { presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
+import { actionDeLActivite, presenceDe, presenceEnMots } from '../lib/entonnoir.ts'
 import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { situationSilence, phraseLiberee, DELAI_ABANDON_MIN } from '../lib/silence.ts'
 import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { auteurDe, sujetDe } from '../lib/bulleAide.ts'
+import { raisonRetrait } from '../lib/epuration.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, separerChat, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -40,6 +41,7 @@ import { chantierTenu, etatOuEnEst } from '../lib/ouEnEst.ts'
 import { Progression } from './Progression.tsx'
 import { TachesDuChantier } from './QuiTravaille.tsx'
 import { PointTravaille } from './Vivant.tsx'
+import { DescriptifChantier } from './DescriptifChantier.tsx'
 import { IconePresence, PointProjet } from './Icones.tsx'
 import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, deposerMedia, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
@@ -203,9 +205,23 @@ const coteDe = (m: Pick<Message, 'auteur_type'>) => (m.auteur_type === 'session'
 
 /** Un message du fil, déjà traité (question répondue, info, blocage, fusion tranchée…). */
 function BulleMessage({ m }: { m: Message }) {
-  const { admin, par, projet, recharger, chantiers, ouvrirChantier } = useCockpit()
+  const { admin, par, projet, recharger, chantiers, ouvrirChantier, messagesLocal, now } = useCockpit()
   const toast = useToast()
   const medias = mediasDe(m)
+  // 0092 : une carte retirée TOUTE SEULE (restée sans réponse pendant que le travail continuait) dit pourquoi et se remet d'un toucher.
+  const retireeSeule = !!m.retiree_seule_at && !!m.answered_at && !m.epuration_exclue
+  const [remise, setRemise] = useState(false)
+  const remettre = async () => {
+    setRemise(true)
+    const avant = m
+    // Elle redevient ouverte tout de suite ; si la base refuse, elle revient telle qu'elle était.
+    messagesLocal.poser({ ...m, answered_at: null, answered_by: null, reponse: null, retiree_seule_at: null, epuration_exclue: true, confirmee_at: new Date().toISOString() })
+    const { error } = await supabase.rpc('restaurer_carte', { p_id: m.id })
+    setRemise(false)
+    if (error) { messagesLocal.poser(avant); toast.erreur(`Carte pas remise, elle reste retirée : ${messageErreur(error)}`); return }
+    toast.succes('Carte remise ✓ Elle ne sera plus retirée toute seule.')
+    void messagesLocal.relire(m.id).then((x) => { if (x) messagesLocal.poser(x) })
+  }
   const lie = filLie(m, chantiers)
   // Le crayon sur une image que Raphaël a déjà envoyée : l'image annotée part dans le même fil, comme une nouvelle pièce.
   const annoter = async (f: File) => {
@@ -224,7 +240,12 @@ function BulleMessage({ m }: { m: Message }) {
       enAttente={m.en_attente_envoi ? { texte: phraseMessageEnAttente(m), refuse: !!m.envoi_refuse } : null}>
       {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
-      {m.reponse ? (
+      {retireeSeule ? (
+        <div className="mt-1 border-t border-bord pt-1 text-sm" data-testid="carte-retiree-seule">
+          <p><span className="text-texte-2" title={dateLongue(m.retiree_seule_at)}>Retirée seule · {dateRelative(m.retiree_seule_at, now)} : </span>{raisonRetrait(m)}</p>
+          {admin ? <Button taille="sm" className="mt-1" chargement={remise} onClick={() => void remettre()} data-testid="remettre-carte">Remettre</Button> : null}
+        </div>
+      ) : m.reponse ? (
         <p className="mt-1 border-t border-bord pt-1 text-sm" data-testid="reponse-donnee">
           <span className="text-texte-2">{m.kind === 'fusion' ? 'Tranché : ' : 'Réponse : '}</span>{m.reponse}{m.precision ? ` — ${m.precision}` : ''}
         </p>
@@ -421,7 +442,7 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   const deCote = async (jusqua: Date | null) => {
     const { error } = await supabase.rpc('mettre_de_cote', { p_id: chantier.id, p_jusqu_a: jusqua ? jusqua.toISOString() : null, p_raison: null })
     if (error) { toast.erreur(messageErreur(error)); return false }
-    toast.succes(jusqua ? `Reporté au ${jusqua.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : il reviendra tout seul dans « Prêt à lancer ».` : 'Mis de côté. « Relancer maintenant » le rouvre.')
+    toast.succes(jusqua ? `Reporté au ${jusqua.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : il reviendra tout seul dans « Pour Claude ».` : 'Mis de côté. « Relancer maintenant » le rouvre.')
     await recharger(); return true
   }
   const abandonner = async () => {
@@ -527,7 +548,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
   return (
     <Dialog ouvert={ouvert} onFermer={onFermer} titre="Reporter à quand ?">
       <div className="space-y-2" data-testid="dialogue-reporter">
-        <p className="text-sm text-texte-2">Ce jour-là, il revient tout seul dans « Prêt à lancer ». D’ici là, personne ne le prend.</p>
+        <p className="text-sm text-texte-2">Ce jour-là, il revient tout seul dans « Pour Claude ». D’ici là, personne ne le prend.</p>
         <div className="grid grid-cols-2 gap-2">
           {CHOIX_REPORT.map((c) => (
             <Button key={c.cle} disabled={envoi} onClick={() => void choisir(dateDeReport(c.jours, now))} data-testid={`reporter-${c.cle}`}>{c.libelle}</Button>
@@ -546,7 +567,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
 }
 
 function FilChantier({ chantierId }: { chantierId: string }) {
-  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser } = useCockpit()
+  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser, sessions } = useCockpit()
   const { projets } = useGlobal()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
@@ -589,18 +610,19 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const relancer = async () => {
     const { error } = await supabase.from('chantiers').update({ etat: 'libre', reporte_jusqu_a: null, archived_at: null }).eq('id', c.id)
     if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes(`« ${c.titre} » relancé : il passe dans « Prêt à lancer ».`); await recharger()
+    toast.succes(`« ${c.titre} » relancé : il passe dans « Pour Claude ».`); await recharger()
   }
   const teinte = presence.code === 'travaille' ? 'text-ok' : presence.teinte === 'alerte' ? 'text-alerte' : presence.teinte === 'attention' ? 'text-attention' : presence.teinte === 'info' ? 'text-info' : 'text-texte-2'
 
   return (
     <>
       <EnTete titre={c.titre}
-        sousTitre={
+        sousTitre={<>
+          <DescriptifChantier c={c} />
           <p className={`mt-0.5 flex items-center gap-1.5 text-xs ${teinte}`} data-testid="presence-conversation" data-presence={presence.code}>
             {presence.code === 'travaille' ? <span className="point-vivant inline-block h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden /> : <IconePresence code={presence.code} taille={14} />}
             <span className="truncate">{presenceEnMots(presence, activite)}</span>
-          </p>
+          </p></>
         }
         menu={admin ? <MenuChantier chantier={c} nMessages={fil.length} onHistorique={() => setSignalHistorique((n) => n + 1)} /> : null} />
       <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'} cle={cle} nbActions={nbActions} faites={faites}
@@ -643,7 +665,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
         {presence.code === 'travaille' ? (
           <Bulle cote="gauche" auteur="En ce moment" testId="bulle-travail">
             <p className="flex items-center gap-1.5 text-sm"><PointTravaille />{presence.detail ?? ''}</p>
-            {activite ? <Progression activite={activite} vive={presence.barreVive} compact now={now} /> : null}
+            {activite ? <Progression activite={activite} vive={presence.barreVive} compact now={now} action={actionDeLActivite(sessions, activite, now)} /> : null}
             <div className="mt-1.5"><TachesDuChantier chantierId={c.id} /></div>
           </Bulle>
         ) : null}

@@ -41,6 +41,7 @@
 
 #   scripts/demander.sh --confirmer <id>             la question reste utile (après avoir avancé)
 #   scripts/demander.sh --retirer <id> "pourquoi"    elle ne l'est plus : elle quitte « À toi »
+#   scripts/demander.sh --repondu <id> "ses mots"   il y a répondu DANS la session : la carte se ferme (pas de doublon)
 #   scripts/demander.sh --confirmer <id du chantier> un « à vérifier / à cadrer / bloqué » reste à lui (0022)
 #   scripts/demander.sh --debloquer <id du chantier> "pourquoi"   il n'est plus bloqué : repasse « libre »
 #
@@ -85,6 +86,7 @@ while [ $# -gt 0 ]; do
     --action)    kind="action"; shift ;;
     --retirer)   mode="retirer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     --confirmer) mode="confirmer"; cible="${2:-}"; shift 2 ;;
+    --repondu)   mode="repondu"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     --debloquer) mode="debloquer"; cible="${2:-}"; raison="${3:-}"; shift 3 ;;
     -h|--help)   sed -n '2,63p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
@@ -111,6 +113,15 @@ if [ "$mode" != "poser" ]; then
   if [ "$mode" = "confirmer" ] && [ "$est_chantier" = "1" ]; then
     "$SQL" "update chantiers set a_toi_revu_at = now() where id = '$qc'" >/dev/null || { echo "La base a refusé la confirmation." >&2; exit 1; }
     echo "Chantier confirmé : toujours à Raphaël, son âge repart de maintenant."; exit 0
+  fi
+  if [ "$mode" = "repondu" ]; then
+    # Raphaël a répondu à cette question DANS LA SESSION (0087) : la carte quitte « À toi », sans doublon de réponse.
+    [ -n "${raison// /}" ] || { echo "--repondu <id> \"ce que Raphaël a répondu\" : recopie ses mots." >&2; exit 2; }
+    ok=$("$SQL" "select count(*) as n from messages where id = '$qc' and answered_at is null and kind in ('question','action')" | jq -r '.rows[0].n // 0')
+    [ "$ok" = "1" ] || { echo "Rien fermé : question introuvable ou déjà répondue." >&2; exit 1; }
+    "$SQL" "update messages set answered_at = now(), reponse = 'Répondu dans la session : $(printf '%s' "$raison" | sed "s/'/''/g" | head -c 400)' where id = '$qc' and answered_at is null" >/dev/null || { echo "La base a refusé." >&2; exit 1; }
+    echo "Carte fermée : sa réponse (dite dans la session) est enregistrée, elle quitte « À toi »."
+    exit 0
   fi
   if [ "$mode" = "retirer" ]; then
     [ -n "${raison// /}" ] || { echo "--retirer <id> \"pourquoi\" : dis en une phrase pourquoi elle n'est plus utile." >&2; exit 2; }

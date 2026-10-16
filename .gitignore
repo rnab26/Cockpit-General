@@ -5,3 +5,5 @@ app/node_modules/
 .DS_Store
 *.tsbuildinfo
 .claude/worktrees/
+__pycache__/
+*.pyc
