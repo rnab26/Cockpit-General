@@ -98,4 +98,11 @@ verifie('silence : un réglage à 5 min fait passer 6 min de silence en « silen
   verifie('agent signalé il y a 3 min sur le chantier → « 🟢 Un agent y travaille »', p.code === 'travaille' && p.libelle.includes('Un agent'), p)
   verifie('sans agent, le même chantier reste « Personne dessus »', presenceDe(c, [], new Set(), now, 15 * 60_000, []).presence.code === 'personne')
 }
+// 13. (0087) Tour fini (hook Stop) : la session attend SON message — ni « silencieuse » ni « personne dessus ».
+{
+  const pe = presenceChantier(ch('en_cours', 'claude/x', dans(60)), act('attente', 10), false, now)
+  verifie('tour terminé récemment → « Claude attend ton message dans la session »', pe.libelle.includes('attend ton message') && pe.code === 'travaille' && !pe.barreVive, pe)
+  const vieux = presenceChantier(ch('en_cours', 'claude/x', dans(60)), act('attente', 240), false, now)
+  verifie('tour terminé depuis 4 h → redevient « Pris, mais silencieux »', vieux.code === 'silencieux', vieux)
+}
 bilan('verifier-presence')

@@ -21,6 +21,8 @@ export interface Projet {
   couleur: string | null
   actif: boolean
   cle_embed: string
+  /** Réponses du questionnaire « où / qui » (0049) : mode menu|page|appli, acces moi|equipe|utilisateurs, menu = lien du menu. Admin seulement. */
+  emplacement?: { mode?: string; acces?: string; menu?: string; libelle?: string; page?: string } | null
   created_at: string
   /** Mode autonome (0010) : null = éteint ; sinon la session enchaîne les chantiers libres jusqu'à cette heure. */
   autonome_jusqu_a: string | null
@@ -36,6 +38,8 @@ export interface Projet {
   autonome_arret_vide_h?: number
   /** Minutes sans signe de vie après lesquelles une réservation est libérée (1-120, défaut 3 depuis 0046). */
   delai_sans_signe_min?: number
+  /** Une carte restée sans réponse N heures pendant que le travail continue se retire toute seule (0092 ; 0 = jamais, 24 par défaut ; une action : 7 fois plus). */
+  epuration_delai_h?: number
   /** Premier passage qui n'a rien trouvé à prendre (0031), null dès qu'il y a du travail. */
   autonome_vide_depuis?: string | null
   /** Quand il s'est éteint tout seul (0031), null s'il a été réglé à la main depuis. */
@@ -43,6 +47,11 @@ export interface Projet {
   /** Où partent les factures (0052) : moyen et destinataire (e-mail, numéro WhatsApp, nom). */
   compta_canal?: 'email' | 'whatsapp' | 'autre' | null
   compta_destinataire?: string | null
+  /** Classer sans test les chantiers livrés restés sans un mot de Raphaël après N jours (0079, 1-90) ; null = jamais. */
+  livres_classes_apres_j?: number | null
+  /** Rapprochement GitHub → chantiers (0080) : passage automatique des hooks allumé (défaut) ; date du dernier passage. */
+  rapprochement_auto?: boolean
+  rapproche_at?: string | null
 }
 
 export interface Section {
@@ -63,6 +72,9 @@ export interface Chantier {
   demande: string | null
   notes: string | null
   resume_simple: string | null
+  /** 0090 : une phrase simple sous le titre, et le texte plus long au toucher. */
+  descriptif?: string | null
+  descriptif_detail?: string | null
   /** Étapes écrites par la session qui livre, pour la personne qui certifie (0005). */
   comment_verifier: string | null
   /** 0020 : « voici ce que tu dois voir » — images jointes par la session à « Comment vérifier ». */
@@ -135,6 +147,10 @@ export interface Message {
   marche?: unknown
   /** 0015 : la session a confirmé la question « toujours d'actualité » après avoir avancé. */
   confirmee_at?: string | null
+  /** 0092 : la carte a été retirée TOUTE SEULE (restée sans réponse pendant que le travail continuait) ; `reponse` dit pourquoi. */
+  retiree_seule_at?: string | null
+  /** 0092 : il l'a remise lui-même : elle ne sera plus jamais retirée seule. */
+  epuration_exclue?: boolean | null
   /** 0023 : une demande « Où ça en est ? » (demander_ou_en_est), et quand/par qui elle a été reçue.
    *  0025 : vaut aussi pour un message libre (reçu par une session, ou pris par un assistant `agent/…`). */
   ou_en_est?: boolean | null
@@ -166,6 +182,10 @@ export interface Activite {
   eta_secondes: number | null
   statut: StatutActivite
   detail: string | null
+  /** Plus écrits depuis 0091 (lisibles des membres invités) : l'action en direct vit dans `sessions.action_live` (admin seulement). Anciennes valeurs de 0087 possibles. */
+  action_live?: string | null
+  action_live_at?: string | null
+  pct_estime?: boolean
   demarre_at: string
   updated_at: string
 }
@@ -214,6 +234,9 @@ export interface SessionClaude {
   pause_at: string | null
   pause_detail: string | null
   relances: number
+  /** Ce que la session fait à l'instant (0091), relevé par le hook ; vide hors d'un tour. Sert à une session SANS chantier. */
+  action_live?: string | null
+  action_live_at?: string | null
 }
 
 export type TypeTache = 'agent' | 'commande' | 'autre'

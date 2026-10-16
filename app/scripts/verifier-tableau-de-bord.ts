@@ -6,7 +6,7 @@ import { verifie, bilan } from './_assert.ts'
 import { tableauDeBord, classesDe } from '../src/lib/tableauDeBord.ts'
 import { attenteAToi, presenceEnMots, VERBE_A_TOI } from '../src/lib/entonnoir.ts'
 import { ouJenSuis } from '../src/lib/ouJenSuis.ts'
-import { nomSession } from '../src/lib/sessions.ts'
+import { nomIllisible, nomSession, titreSession } from '../src/lib/sessions.ts'
 import { presenceChantier } from '../src/lib/presence.ts'
 
 const now = new Date('2026-09-29T09:00:00Z')
@@ -91,12 +91,16 @@ const t = tableauDeBord(d, now, SILENCE, 'aujourdhui', ['p'], null)
 const ids = (l: { c: { id: string } }[]) => l.map((x) => x.c.id)
 
 // 1. Les tuiles = les longueurs des listes
-verifie('tuiles = longueurs des listes (pour toi, ça avance, en pause, fini)',
-  t.tuiles.pourToi === t.aToi.length && t.tuiles.caAvance === t.caAvance.length && t.tuiles.enPause === t.pretALancer.length + t.sansSession.length && t.tuiles.fini === t.fini.length, t.tuiles)
+verifie('tuiles = longueurs des listes (pour toi, à tester, ça avance, en pause, fini)',
+  t.tuiles.pourToi === t.aToi.length && t.tuiles.aTester === t.aTester.length && t.tuiles.caAvance === t.caAvance.length && t.tuiles.enPause === t.pretALancer.length + t.sansSession.length && t.tuiles.fini === t.fini.length, t.tuiles)
 verifie('de côté : le chantier reporté (pas l’archivé) est compté et listé, jamais dans « à lancer »',
   t.tuiles.deCote === t.deCote.length && t.deCote.every((c) => c.etat === 'reporte' && !c.archived_at) && t.deCote.some((c) => c.id === 'reporte') && !ids(t.pretALancer).includes('reporte'), t.deCote.map((c) => c.id))
-verifie('pour toi : 2 questions, à vérifier ×3, à cadrer, 2 bloqués (8) — sans le « vérifie pour moi » en cours', t.tuiles.pourToi === 8 && !t.aToi.some((e) => e.chantier?.id === 'verif-demandee'), t.aToi.map((e) => e.cle))
-verifie('0016 : après le verdict « c’est bon », la ligne dit de confirmer d’un toucher', /c’est bon, confirme/.test(attenteAToi(t.aToi.find((e) => e.chantier?.id === 'verif-verdict')!, now)))
+// 13 oct. 2026 : « pour toi » = les DEMANDES (2 questions, à cadrer, 2 bloqués = 5) ; les 3 chantiers à vérifier ont leur liste « à tester ».
+verifie('pour toi : 2 questions, à cadrer, 2 bloqués (5) — ni les chantiers à tester, ni le « vérifie pour moi » en cours',
+  t.tuiles.pourToi === 5 && t.aToi.every((e) => e.type !== 'a_verifier') && !t.aToi.some((e) => e.chantier?.id === 'verif-demandee'), t.aToi.map((e) => e.cle))
+verifie('à tester : les 3 chantiers livrés, hors « pour toi », sans le « vérifie pour moi » en cours',
+  t.tuiles.aTester === 3 && t.aTester.length === 3 && t.aTester.every((e) => e.type === 'a_verifier') && !t.aTester.some((e) => e.chantier?.id === 'verif-demandee'), t.aTester.map((e) => e.cle))
+verifie('0016 : après le verdict « c’est bon », la ligne dit de confirmer d’un toucher', /c’est bon, confirme/.test(attenteAToi(t.aTester.find((e) => e.chantier?.id === 'verif-verdict')!, now)))
 verifie('fini : seulement le certifié du jour', t.fini.map((c) => c.id).join(',') === 'fini', t.fini.map((c) => c.id))
 
 // 2. Ça avance tout seul : par chantier, présence honnête
@@ -144,7 +148,7 @@ verifie('tableau par section = tuiles (pour toi, ça avance, en pause, fini)',
 verifie('filtré sur un projet inconnu : tout à zéro', Object.values(tableauDeBord(d, now, SILENCE, 'aujourdhui', ['p'], 'autre').tuiles).every((n) => n === 0))
 
 // 6. En mots simples
-const el = (id: string) => t.aToi.find((e) => e.chantier?.id === id)!
+const el = (id: string) => [...t.aToi, ...t.aTester].find((e) => e.chantier?.id === id)!
 verifie('question → « Claude te pose une question » · Répondre', attenteAToi(el('question'), now) === 'Claude te pose une question' && VERBE_A_TOI.question === 'Répondre')
 verifie('à vérifier en ligne → « en ligne, à tester » · Tester', attenteAToi(el('verif-en-ligne'), now) === 'en ligne, à tester' && VERBE_A_TOI.a_verifier === 'Tester')
 verifie('à vérifier sans jalon → « livré, à tester »', attenteAToi(el('verif-sans-jalon'), now) === 'livré, à tester')
@@ -154,7 +158,7 @@ verifie('fusion → Trancher', VERBE_A_TOI.fusion === 'Trancher')
 verifie('en-tête : « Claude y travaille — 60 % »', presenceEnMots(v.presence, v.activite) === 'Claude y travaille — 60 %')
 verifie('en-tête : « Un agent y travaille », sans % inventé', presenceEnMots(am.presence, am.activite) === 'Un agent y travaille')
 verifie('en-tête : « personne dessus »', presenceEnMots(presenceChantier(chantiers[5], null, false, now), null) === 'personne dessus')
-verifie('aucun emoji dans les mots de l’écran', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test([...hc, ...t.aToi.map((e) => attenteAToi(e, now)), ...t.caAvance.concat(t.sansSession).map((l) => `${l.qui} ${l.pourquoi ?? ''} ${l.presence.libelle}`)].join(' ')))
+verifie('aucun emoji dans les mots de l’écran', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test([...hc, ...t.aToi.concat(t.aTester).map((e) => attenteAToi(e, now)), ...t.caAvance.concat(t.sansSession).map((l) => `${l.qui} ${l.pourquoi ?? ''} ${l.presence.libelle}`)].join(' ')))
 
 // 7. Le nom court d'une session
 verifie('nom de session : autonome / sujet coupé / branche sans claude/ / jamais l’id nu',
@@ -162,5 +166,12 @@ verifie('nom de session : autonome / sujet coupé / branche sans claude/ / jamai
   && nomSession({ id: 'x', sujet: 'Une phrase beaucoup trop longue pour tenir sur la ligne', branche: null }).endsWith('…')
   && nomSession({ id: 'x', sujet: null, branche: 'claude/ecran-a-plus-d-qldenz' }) === 'ecran-a-plus-d'
   && nomSession({ id: '26486ea7-99', sujet: null, branche: null }) === 'sans nom (26486ea7)')
+
+// 13 oct. 2026 : un « nom » qui n'en est pas un (la consigne d'un agent, un identifiant) ne s'affiche pas comme nom de conversation
+verifie('nom de session : « Chantier cockpit 9dcc2c9a-ec45-… » n’est pas un nom (on retombe sur la branche, puis « sans nom »)',
+  nomIllisible('Chantier cockpit 9dcc2c9a-ec45-4aae-a1b2-000000000000') && nomIllisible('9dcc2c9a-ec45-4aae-a1b2') && !nomIllisible('Peux-tu faire des correctifs')
+  && nomSession({ id: 'x', sujet: 'Chantier cockpit 9dcc2c9a-ec45-4aae', branche: 'claude/ecran-a-plus-d-qldenz' }) === 'ecran-a-plus-d'
+  && nomSession({ id: '26486ea7-99', sujet: 'Chantier facepro 26486ea7-99aa', branche: null }) === 'sans nom (26486ea7)'
+  && titreSession({ id: '26486ea7-99', sujet: 'Chantier facepro 26486ea7-99aa', branche: null }) === 'Session sans nom (26486ea7)')
 
 bilan('verifier-tableau-de-bord')

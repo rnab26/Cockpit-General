@@ -5,6 +5,8 @@ import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { phraseFilet, detailsFilet, phraseReaction, ROLE_FILET, type EtatFiletBase, type EtatReaction } from '../lib/filet.ts'
+import { copierTexte } from '../lib/copier.ts'
+import { LIEN_CLAUDE_CODE, phraseTraiter } from '../lib/traiter.ts'
 
 /**
  * RÉVEIL AUTOMATIQUE (« filet de sécurité », 0044) : la base surveille toute seule (pg_cron,
@@ -70,6 +72,13 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
       className="h-9 w-14 rounded-lg border border-bord bg-fond px-2 text-sm text-texte" data-testid={id} />
   )
   const geste = ph.action
+  // Même geste que « Lancer une session autonome » (Renforts) : la phrase est copiée, la page des sessions s'ouvre ; la même phrase et le même lien (lib/traiter.ts).
+  const lancerSession = async () => {
+    const ok = await copierTexte(phraseTraiter(projet.nom))
+    if (ok) toast.succes('Phrase copiée : colle-la dans la nouvelle session.')
+    else toast.erreur('Copie impossible : ouvre une session et écris « Traite le projet ' + projet.nom + ' en lot ».')
+    window.open(LIEN_CLAUDE_CODE, '_blank', 'noopener')
+  }
   return (
     <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="filet-securite" data-statut={etat.statut}>
       <h3 className="text-sm font-semibold">Réveil automatique</h3>
@@ -86,6 +95,7 @@ export function FiletSecurite({ projet, onJeton }: { projet: Projet; onJeton?: (
           <Button taille="sm" variante="primaire" chargement={envoi} data-testid="filet-action"
             onClick={() => {
               if (geste.code === 'jeton') { onJeton?.(); return }
+              if (geste.code === 'session') { void lancerSession(); return }
               if (geste.code === 'plafond') { ouvrirDetails(); return }
               void appliquer({ p_actif: true }, 'Réveil automatique rallumé sur ce projet.')
             }}>{geste.libelle}</Button>

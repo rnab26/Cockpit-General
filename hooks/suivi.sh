@@ -23,6 +23,17 @@ SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"
 command -v jq >/dev/null || exit 0
 
 ev=$(printf '%s' "$entree" | jq -r '.hook_event_name // empty' 2>/dev/null)
+# Tout ce qu'on dit à la session sur cet événement (réponses, chantier ouvert tout seul, ce que
+# personne ne tenait) part dans UN SEUL additionalContext, en fin de traitement (emettre).
+SORTIE=""
+emettre() {
+  [ -n "$SORTIE" ] || return 0
+  jq -n --arg t "$SORTIE" --arg e "$ev" '{hookSpecificOutput: {hookEventName: $e, additionalContext: $t}}'
+  SORTIE=""
+}
+# Sans file d'attente locale : ces appels CLAIMENT ou OUVRENT quelque chose, les rejouer plus tard
+# (hors contexte) ferait réclamer un message à une session qui ne l'a jamais lu.
+SANS_FILE=/proc/cockpit-sans-file
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 [ -n "$ev" ] && [ -n "$sid" ] || exit 0
 branche=$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
@@ -47,6 +58,37 @@ fi
 # ne fait rien perdre). Sans curseur (conteneur recyclé), on remet ce qui n'a
 # été suivi d'aucun message de session depuis 24 h. Le hook de démarrage pose
 # le curseur après avoir montré l'état : rien n'est remis deux fois.
+# Une session de RENFORT ne reçoit rien de ce que personne ne tient : elle a SA section (renfort.sh).
+est_renfort() { [ -s "$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --absolute-git-dir 2>/dev/null)/cockpit-renfort" ]; }
+qsql() { printf '%s' "$1" | sed "s/'/''/g"; }
+
+orphelins() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  est_renfort && return 0
+  local brut
+  brut=$(COCKPIT_FILE_ATTENTE=$SANS_FILE timeout 3 "$SQL" "select remettre_orphelins('$(qsql "$PROJET")', '$(qsql "$sid")', '$(qsql "$branche")') as r" 2>/dev/null | jq -c '.rows[0].r // []' 2>/dev/null)
+  [ -n "$brut" ] && [ "$brut" != "[]" ] || return 0
+  printf '%s' "$brut" | jq -r --arg prog "${COCKPIT_PROG_CMD:-scripts/progression.sh}" --arg dem "${COCKPIT_DEM_CMD:-scripts/demander.sh}" --arg ch "${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}" '
+    "RAPHAËL A ÉCRIT / RÉPONDU DANS LE COCKPIT à l’instant, et PERSONNE ne tenait cela : le cockpit te le remet (il te l’a réservé, nul autre n’y répondra). Réponds-lui TOUT DE SUITE, court, dans son fil — et si le sujet n’est pas le tien, dis-le-lui en une ligne et crée-en le chantier pour un autre :\n"
+    + (map(
+        (if .titre then "« " + .titre + " » : " else "(fil du projet) " end)
+        + (if .type == "carte" then
+             "il a répondu « " + (.reponse // "") + " » à la carte « " + .corps + " »" + (if .precision then " — " + .precision else "" end)
+             + (if .retour then " [carte restée ouverte : traite-le puis ferme-la : " + $dem + " --retirer " + .id + " \"pourquoi\"]" else "" end)
+           elif .type == "ou_en_est" then
+             "il demande OÙ ÇA EN EST → " + $prog + (if .chantier_id then " --chantier " + .chantier_id else "" end) + " --point \"fait / reste / ce qui bloque\""
+           else
+             "il t’écrit : « " + .corps + " » → réponds : " + $prog + (if .chantier_id then " --chantier " + .chantier_id else "" end) + " --point \"…\" (autre sujet ? " + $ch + " --ouvrir \"<titre>\" --demande \"<ses mots>\" --depuis " + (.chantier_id // "projet") + " --reponse \"…\")"
+           end)) | join("\n"))'
+}
+
+# UN MESSAGE N'EST PAS UN CHANTIER (0091 ; Raphaël, 16 oct. : « chaque message que je crée en discussion est
+# transcrit comme un chantier avec une progression […] il vaut mieux une petite pastille de notification et la
+# discussion concernant le chantier en question »). Avant (0087), la BASE ouvrait un chantier pour tout message de
+# travail : FacePro en a eu 14 au titre copié de ses mots, alors que le vrai chantier du sujet existait. Maintenant
+# le message est rangé tout de suite dans UN fil (le chantier que la session tient, sinon la discussion du projet)
+# et la session y répond ; elle le déplace en répondant dans un autre fil. Un chantier n'est ouvert que par elle,
+# pour un vrai sujet de travail (ou par le filet d'arrêt, hooks/autonome.sh, quand elle a travaillé sans aucun chantier).
 reponses_fraiches() {
   local evn="$1" force="${2:-}" cle="$sid${agent:+-$agent}"
   local cur="${TMPDIR:-/tmp}/cockpit-rep-$cle" rythme="${TMPDIR:-/tmp}/cockpit-repv-$cle" depuis cond brut texte sortie=""
@@ -81,7 +123,7 @@ reponses_fraiches() {
     from messages m join chantiers c on c.id = m.chantier_id
     where m.chantier_id in (select id from mes)
       and ((m.auteur_type in ('proprietaire','utilisateur') and m.kind in ('info','reponse','constat') and not m.via_session)
-        or (m.kind in ('question','action') and (m.answered_at is not null or cockpit.est_retour_carte(m)) and coalesce(m.reponse, '') not like 'Retirée par %'))
+        or (m.kind in ('question','action') and (m.answered_at is not null or cockpit.est_retour_carte(m)) and coalesce(m.reponse, '') not like 'Retirée par %' and m.retiree_seule_at is null))
       and $cond" 2>/dev/null)
   local maintenant; maintenant=$(printf '%s' "$brut" | jq -r '.rows[0].maintenant // empty' 2>/dev/null)
   [ -n "$maintenant" ] && printf '%s\n' "$maintenant" > "$cur" 2>/dev/null   # seulement si la base a répondu
@@ -98,7 +140,7 @@ $texte"
   # Tes questions encore ouvertes sur ces chantiers, alors que tu as avancé depuis
   # (0015) : toutes les 15 min au plus, on te demande de les tenir à jour.
   local rq="${TMPDIR:-/tmp}/cockpit-qst-$cle" qst
-  if [ ! -f "$rq" ] || [ $(( $(date +%s) - $(stat -c %Y "$rq" 2>/dev/null || echo 0) )) -ge 900 ]; then
+  if [ "$evn" = UserPromptSubmit ] || [ ! -f "$rq" ] || [ $(( $(date +%s) - $(stat -c %Y "$rq" 2>/dev/null || echo 0) )) -ge 900 ]; then
     touch "$rq" 2>/dev/null
     qst=$(timeout 3 "$SQL" "with mes as ($mes)
       select string_agg(format('- %s (posée %s) « %s »', m.id, to_char(m.created_at at time zone 'Asia/Jerusalem', 'DD/MM HH24:MI'), left(m.corps, 100)), chr(10)) as questions
@@ -106,11 +148,21 @@ $texte"
         and greatest(m.created_at, coalesce(m.confirmee_at, m.created_at)) < now() - interval '15 minutes'" 2>/dev/null | jq -r '.rows[0].questions // empty' 2>/dev/null)
     [ -n "$qst" ] && sortie="${sortie:+$sortie
 
-}Tes questions encore ouvertes pour Raphaël sur tes chantiers — tu as avancé depuis : sont-elles TOUJOURS utiles ? Tiens-les à jour pour qu'il ne réponde pas pour rien : ${COCKPIT_DEM_CMD:-scripts/demander.sh} --confirmer <id> (toujours utile) ou --retirer <id> \"pourquoi\" (dépassée, déjà faite).
+}Tes questions encore ouvertes pour Raphaël sur tes chantiers — tu as avancé depuis : sont-elles TOUJOURS utiles ? Tiens-les à jour pour qu'il ne réponde pas pour rien : ${COCKPIT_DEM_CMD:-scripts/demander.sh} --confirmer <id> (toujours utile) ou --retirer <id> \"pourquoi\" (dépassée, déjà faite) ; et si son message d'à l'instant RÉPOND à l'une d'elles dans la session : ${COCKPIT_DEM_CMD:-scripts/demander.sh} --repondu <id> \"ses mots\" (elle se ferme, il ne répond pas deux fois).
 $qst"
   fi
+  # CE QUE PERSONNE NE TIENT (0087 ; Raphaël, 14 oct. : « cela doit être de l'instantané »). Un message
+  # écrit dans le cockpit au niveau du projet, ou sur un chantier sans preneur, une carte répondue que
+  # rien n'a suivie : ils attendaient la chef (médiane 2 h 11 mesurée sur FacePro). La session
+  # ouverte les reçoit à son prochain pas ; la base les lui RÉCLAME (un seul preneur).
+  local orph; orph=$(orphelins)
+  [ -n "$orph" ] && sortie="${sortie:+$sortie
+
+}$orph"
   [ -n "$sortie" ] || return
-  jq -n --arg t "$sortie" --arg e "$evn" '{hookSpecificOutput: {hookEventName: $e, additionalContext: $t}}'
+  SORTIE="${SORTIE:+$SORTIE
+
+}$sortie"
 }
 
 # SES MESSAGES DANS LA SESSION → LE FIL DU CHANTIER (0027 ; Raphaël, 29 sept. :
@@ -130,11 +182,93 @@ consigner_message() {
   [ -s "$marque" ] && return 0
   printf '%s' "$invite" | grep -qE '^[[:space:]]*(<(task-notification|system-reminder|wake|command-|local-command|webhook-payload|child-session-event|agent-message|teammate-message)|\[cockpit-(renfort|relais)\])|Réveil (horaire|du chef)' && return 0
   printf '%s' "$invite" | grep -qxE '[[:space:]]*/[A-Za-z0-9:_-]+[[:space:]]*' && return 0
-  local qp qs qb qt
-  qp=$(printf '%s' "$PROJET" | sed "s/'/''/g"); qs=$(printf '%s' "$sid" | sed "s/'/''/g")
-  qb=$(printf '%s' "$branche" | sed "s/'/''/g"); qt=$(printf '%s' "$invite" | head -c 16000 | sed "s/'/''/g")
-  ( setsid "$SQL" "select consigner_message_session('$qp', '$qs', '$qb', '$qt')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+  : > "${TMPDIR:-/tmp}/cockpit-travail-$sid" 2>/dev/null   # un nouveau tour : on recompte le travail réel (filet d'arrêt, autonome.sh)
+  local qp qs qb qt r action cid titre
+  qp=$(qsql "$PROJET"); qs=$(qsql "$sid"); qb=$(qsql "$branche"); qt=$(printf '%s' "$invite" | head -c 16000 | sed "s/'/''/g")
+  r=$(COCKPIT_FILE_ATTENTE=$SANS_FILE timeout 6 "$SQL" "select chantier_auto_depuis_message('$qp', '$qs', '$qb', '$qt') as r" 2>/dev/null | jq -c '.rows[0].r // empty' 2>/dev/null)
+  if [ -z "$r" ]; then
+    # Base injoignable ou fonction absente (projet pas encore à jour) : l'ancien chemin, en arrière-plan.
+    ( setsid "$SQL" "select consigner_message_session('$qp', '$qs', '$qb', '$qt')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+    return 0
+  fi
+  action=$(printf '%s' "$r" | jq -r '.action // empty'); cid=$(printf '%s' "$r" | jq -r '.id // empty'); titre=$(printf '%s' "$r" | jq -r '.titre // empty')
+  local ouvrir="${COCKPIT_CHANTIER_CMD:-scripts/chantier.sh}" prog="${COCKPIT_PROG_CMD:-scripts/progression.sh}"
+  # Le même rappel dans les deux cas : un message n'est pas un chantier, la session répond dans le bon fil et le déplace
+  # en répondant ailleurs (rattacher_messages_session : la première réponse explicite corrige, les suivantes copient).
+  local regle="Un message n'est PAS un chantier : une question, un point d'avancement, un retour, un ajustement ou la suite d'un sujet existant = une réponse dans un fil, jamais un nouveau chantier. Il parle d'un AUTRE chantier existant ($ouvrir --chercher \"<mots>\") : réponds dans le sien ($prog --chantier <id> --point \"…\"), le message y est déplacé. Un vrai AUTRE sujet de travail (distinct, plusieurs étapes, un résultat à vérifier) : $ouvrir --ouvrir \"<titre court>\" --demande \"<ses mots>\"."
+  case "$action" in
+    tenu) SORTIE="${SORTIE:+$SORTIE
+
+}COCKPIT : le message de Raphaël est rangé dans le fil de « $titre » ($cid), le chantier que ta session tient : il le voit là, avec une pastille quand tu réponds. Réponds-y, court : $prog --chantier $cid --point \"…\". $regle" ;;
+    projet) SORTIE="${SORTIE:+$SORTIE
+
+}COCKPIT : le message de Raphaël est rangé dans la discussion du projet (aucun chantier que ta session tient ne le porte) : il le voit là, avec une pastille quand tu réponds. Réponds-y, court : $prog --point \"…\" (sans --chantier). $regle" ;;
+  esac
+  return 0
 }
+
+# CE QUE LA SESSION FAIT MAINTENANT (0087) : la barre du chantier qu'elle tient montre l'action en cours,
+# sans que le modèle ait rien à signaler. Au plus une fois toutes les 15 s, détaché, jamais bloquant.
+action_live() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  est_renfort && return 0
+  local rep="${TMPDIR:-/tmp}/cockpit-live-$sid" desc
+  if [ -f "$rep" ] && [ $(( $(date +%s) - $(stat -c %Y "$rep" 2>/dev/null || echo 0) )) -lt "${COCKPIT_LIVE_INTERVALLE:-15}" ]; then return 0; fi
+  touch "$rep" 2>/dev/null
+  desc=$(printf '%s' "$entree" | jq -r '
+    (.tool_input // {}) as $in | (.tool_name // "") as $t
+    | def base: (($in.file_path // $in.notebook_path // $in.path // "") | split("/") | last);
+      if   ($t == "Edit" or $t == "Write" or $t == "MultiEdit" or $t == "NotebookEdit") then "Modifie " + base
+      elif $t == "Read" then "Lit " + base
+      elif ($t == "Grep" or $t == "Glob") then "Cherche dans le code"
+      elif $t == "Bash" then "Lance : " + (($in.description // $in.command // "une commande") | tostring | gsub("\\s+"; " ") | .[0:90])
+      elif ($t == "Agent" or $t == "Task") then "Délègue : " + (($in.description // "une tâche") | tostring | .[0:90])
+      elif ($t == "WebFetch" or $t == "WebSearch") then "Cherche sur le web"
+      elif ($t | startswith("mcp__")) then "Utilise " + ($t | split("__") | last)
+      else "Travaille" end' 2>/dev/null)
+  [ -n "$desc" ] || return 0
+  ( setsid "$SQL" "select signaler_action_live('$(qsql "$PROJET")', '$(qsql "$branche")', '$(qsql "$desc")')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
+# TRAVAIL RÉEL DU TOUR (0091) : une ligne par modification de fichier faite par la session elle-même (pas par ses agents).
+# Le hook d'arrêt (autonome.sh) la lit : du travail sans AUCUN chantier tenu → une relance, une seule par tour. C'est le filet
+# qui remplace l'ouverture automatique par message : un chantier naît d'un travail, pas d'une phrase.
+travail_signal() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  est_renfort && return 0
+  case "$(printf '%s' "$entree" | jq -r '.tool_name // empty' 2>/dev/null)" in
+    Edit|Write|MultiEdit|NotebookEdit) printf '1\n' >> "${TMPDIR:-/tmp}/cockpit-travail-$sid" 2>/dev/null ;;
+  esac
+  return 0
+}
+
+fin_de_tour() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  ( setsid "$SQL" "select signaler_fin_tour('$(qsql "$PROJET")', '$(qsql "$branche")')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
+# BATTEMENT PENDANT TOUT LE TOUR (0087). L'ancien battement dépendait de PreToolUse, absent du
+# .claude/settings.json de certains projets (FacePro : 97 sessions, jamais le hook) : leurs sessions
+# semblaient mortes pendant chaque outil long et leurs chantiers étaient repris en doublon. Il part
+# maintenant au message de Raphaël ET à chaque retour d'outil (événements que TOUS les projets
+# déclarent), bat toutes les 45 s, et s'arrête à la fin du tour (Stop) ou après 11 min sans nouvelle.
+battement_tour() {
+  [ -z "$agent" ] || return 0
+  local marq="${TMPDIR:-/tmp}/cockpit-tour-vie-$sid" pidf="${TMPDIR:-/tmp}/cockpit-tour-pid-$sid" pas="${COCKPIT_BATTEMENT_PAS:-45}" plafond="${COCKPIT_BATTEMENT_MAX:-660}" charge req
+  echo $(( $(date +%s) + plafond )) > "$marq" 2>/dev/null || return 0
+  if [ -s "$pidf" ] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then return 0; fi
+  charge=$(jq -cn --arg s "$sid" --arg b "$branche" '{session_id: $s, hook_event_name: "Vie", branche: $b}') || return 0
+  req="select suivre('$(qsql "$PROJET")', '$(qsql "$charge")'::jsonb)"
+  ( setsid bash -c '
+      while :; do
+        sleep "$2"
+        fin=$(cat "$1" 2>/dev/null) || break
+        [ "$(date +%s)" -lt "${fin:-0}" ] || break
+        "$3" "$4" >/dev/null 2>&1
+      done
+      rm -f "$1" "$5"' _ "$marq" "$pas" "$SQL" "$req" "$pidf" >/dev/null 2>&1 & echo $! > "$pidf" ) >/dev/null 2>&1
+}
+fin_battement() { rm -f "${TMPDIR:-/tmp}/cockpit-tour-vie-$sid" 2>/dev/null; }
 
 # BATTEMENT d'un outil long (0046, Raphaël 30 sept. : « ZÉRO chantier tenu pour
 # rien », délai « sans signe de vie » de 3 min). Mesuré : le signe de vie d'une
@@ -189,11 +323,15 @@ signaler_jetons() {
 }
 
 case "$ev" in
-  PreToolUse) battement; exit 0 ;;
+  PreToolUse) exit 0 ;;   # remplacé par battement_tour (0087) : un projet qui le déclare encore n'est pas doublé
   PostToolUse)
     rm -f "$repere_outil" 2>/dev/null
     signaler_jetons
     reponses_fraiches PostToolUse
+    action_live
+    travail_signal
+    battement_tour
+    emettre
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
     # avec sa description. Sinon, un simple signe de vie, au plus 1 fois/minute.
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '
@@ -220,6 +358,8 @@ case "$ev" in
     # suite, avant son premier pas — sans attendre le rythme de 20 s.
     reponses_fraiches UserPromptSubmit maintenant
     consigner_message
+    battement_tour
+    emettre
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, prompt: ((.prompt // "") | .[0:200])}') ;;
   StopFailure)
     # Une réponse arrêtée par une erreur : limite d'usage (rate_limit), facturation,
@@ -227,6 +367,8 @@ case "$ev" in
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, error, error_details: ((.error_details // "") | tostring | .[0:400])}') ;;
   Stop|SubagentStop|SubagentStart|SessionEnd)
     [ "$ev" = "Stop" ] && signaler_jetons
+    if [ "$ev" = "Stop" ] || [ "$ev" = "SessionEnd" ]; then fin_battement; fi
+    [ "$ev" = "Stop" ] && fin_de_tour
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, agent_id, agent_type, background_tasks}') ;;
   *) exit 0 ;;
 esac

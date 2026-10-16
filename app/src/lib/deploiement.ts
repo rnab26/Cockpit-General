@@ -21,6 +21,8 @@ export interface ExecutionGitHub {
   head_branch: string | null
   html_url: string
   display_title?: string
+  /** Fichier du workflow (« .github/workflows/pages.yml »), ou « dynamic/… » pour une tâche que GitHub lance lui-même. */
+  path?: string
 }
 
 export type EtatDeploiement = 'en_cours' | 'reussi' | 'echoue' | 'annule' | 'inconnu'
@@ -34,6 +36,8 @@ export interface LigneWorkflow {
   titre: string | null
   lien: string
   quand: string
+  /** Renseigné quand l'échec de cette ligne est sans effet : une autre mise en ligne du projet a réussi depuis (voir pagesInterneSansEffet). */
+  note?: string
 }
 
 export interface EtatProjet {
@@ -82,6 +86,29 @@ export function estUnDeploiement(nom: string): boolean {
   return /d[eé]plo[iy]|pages|publi|release|build|image|render/i.test(nom)
 }
 
+/** « pages build and deployment » : la tâche que GitHub lance lui-même pour un site Pages réglé sur « une branche », en plus du workflow du projet. */
+export function estPagesInterne(r: Pick<ExecutionGitHub, 'name' | 'path'>): boolean {
+  return r.path === 'dynamic/pages/pages-build-deployment' || r.name === 'pages build and deployment'
+}
+
+/**
+ * Le 14 oct. 2026 (Melissa Nabet) : le bandeau disait « La dernière mise en ligne a échoué — ce qui est en ligne est la
+ * version d'avant » alors que le site servait exactement la dernière version (page identique octet pour octet à `main`).
+ * Cause PROUVÉE : le workflow du projet (« Deploy to GitHub Pages ») avait réussi sur ce commit, mais la tâche interne
+ * « pages build and deployment » de GitHub, qui vise la MÊME destination, avait échoué (sa mise en ligne annulée après 15 min,
+ * en même temps que celle du workflow) ; et comme plus personne ne poussait, ce dernier passage restait « le dernier ».
+ * UNE règle : l'échec ou l'annulation de cette tâche interne est sans effet quand une autre mise en ligne du projet a réussi
+ * sur le même commit ou après. Rien d'autre n'est masqué : l'échec d'un workflow du projet (la recopie du site vitrine par
+ * exemple) reste un échec, et une tâche interne encore en cours reste « en cours » (elle remplacerait la version en ligne).
+ */
+export function pagesInterneSansEffet(r: ExecutionGitHub, prod: readonly ExecutionGitHub[]): ExecutionGitHub | null {
+  if (!estPagesInterne(r)) return null
+  const etat = etatExecution(r)
+  if (etat !== 'echoue' && etat !== 'annule') return null
+  return prod.find((x) => !estPagesInterne(x) && estUnDeploiement(x.name) && etatExecution(x) === 'reussi'
+    && (x.head_sha === r.head_sha || x.created_at > r.created_at)) ?? null
+}
+
 /**
  * La synthèse d'un projet à partir des exécutions renvoyées par GitHub
  * (du plus récent au plus ancien). Seule la branche principale compte : une
@@ -95,15 +122,19 @@ export function etatDuProjet(runs: readonly ExecutionGitHub[], brancheProd = 'ma
     .sort((a, b) => Number(estUnDeploiement(b.name)) - Number(estUnDeploiement(a.name)) || b.created_at.localeCompare(a.created_at))
     .map((r) => {
       const etat = etatExecution(r)
+      const relais = pagesInterneSansEffet(r, prod)
       return { nom: r.name, etat, phrase: phraseLigne(etat, r, now), commit: r.head_sha.slice(0, 7),
-        titre: r.display_title ?? null, lien: r.html_url, quand: r.updated_at }
+        titre: r.display_title ?? null, lien: r.html_url, quand: r.updated_at,
+        ...(relais ? { note: `sans effet sur le site : « ${relais.name} » a réussi depuis` } : {}) }
     })
   const enCours = lignes.some((l) => l.etat === 'en_cours')
   if (lignes.length === 0) {
     return { titre: 'Aucune publication récente sur la branche principale', etat: 'inconnu', enCours: false, lignes }
   }
-  const deploiements = lignes.filter((l) => estUnDeploiement(l.nom))
-  const ref = deploiements.length ? deploiements : lignes
+  // La phrase de tête ne compte pas ce qui est sans effet (la ligne reste visible, avec sa note).
+  const comptees = lignes.filter((l) => !l.note)
+  const deploiements = comptees.filter((l) => estUnDeploiement(l.nom))
+  const ref = deploiements.length ? deploiements : comptees.length ? comptees : lignes
   let titre: string
   let etat: EtatDeploiement
   if (ref.some((l) => l.etat === 'en_cours')) {

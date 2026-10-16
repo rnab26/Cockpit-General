@@ -42,6 +42,21 @@ const multi = analyse(depot('multi', { 'package.json': '{"dependencies":{"expo":
 verifie('Expo avec react-native-web : vrai multiplateforme, menu/page proposés', multi.type === 'site' && multi.options.includes('page'))
 const vide = analyse(join(tmp, 'absent'))
 verifie('dossier introuvable : pas de plantage, limite dite, appli proposée', vide.options.includes('appli') && vide.limites.length > 0)
+// Le texte d'un choix est LU par Raphaël : le filtre de clarté (scripts/clarte.py) le contrôle avant d'écrire la
+// carte. 14 oct. 2026, branchement du Trieur : « un menu repéré (frontend/src/App.tsx) » citait un chemin, le mot
+// « frontend » a fait refuser la carte, donc aucun questionnaire. Aucun chemin dans ces textes, quel que soit le dossier.
+const claire = (texte) => spawnSync('python3', ['-I', join(RACINE, 'scripts/clarte.py')], { input: 'x\0' + texte + '\0', encoding: 'utf8' }).status === 0
+const rangees = {}
+for (const dossier of ['frontend', 'front', 'backend', 'src/runtime']) {
+  rangees[dossier] = analyse(depot('rang-' + dossier.replace('/', '-'), {
+    'requirements.txt': 'fastapi\n',
+    [dossier + '/src/App.tsx']: 'export default () => <nav className="sidebar"></nav>',
+    [dossier + '/src/useAuth.ts']: 'export const useAuth = () => null\n',
+  }))
+}
+verifie('menu rangé dans un dossier « frontend » : repéré et conseillé tel quel', rangees.frontend.options.includes('menu') && rangees.frontend.gabarit_conseille === 'frontend/src/App.tsx')
+for (const [dossier, a] of Object.entries(rangees)) verifie('  dossier « ' + dossier + ' » : le texte de chaque choix passe le filtre de clarté (aucun chemin cité)', Object.values(a.raisons).every(claire))
+verifie('tous les dépôts jetables : le texte de chaque choix passe le filtre de clarté', [flask, statique, mobile, expo, multi, vide].every((a) => Object.values(a.raisons).every(claire)))
 rmSync(tmp, { recursive: true, force: true })
 
 const candidats = [join(RACINE, 'app', 'node_modules'), '/home/user/Cockpit-General/app/node_modules']

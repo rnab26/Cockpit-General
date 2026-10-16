@@ -1,7 +1,7 @@
 // Répondre à une carte : mise à jour immédiate, un seul envoi, retour arrière (lib/reponseCarte.ts, chantier b287e60a).
 // node --experimental-strip-types app/scripts/verifier-reponse-carte.ts
 import { verifie, bilan } from './_assert.ts'
-import { reponseOptimiste, dejaRepondue, remplacerLigne, retirerLigne, ligneRelueValable, libelleEnvoi, REPONSE_LOCALE, retourCarte, phraseRetourCarte, reponseRetrait } from '../src/lib/reponseCarte.ts'
+import { reponseOptimiste, dejaRepondue, remplacerLigne, retirerLigne, ligneRelueValable, libelleEnvoi, REPONSE_LOCALE, retourCarte, phraseRetourCarte } from '../src/lib/reponseCarte.ts'
 
 const base = { id: 'M1', projet_id: 'P', chantier_id: 'C', auteur: 'claude', auteur_type: 'session', kind: 'question', corps: 'Q ?', pourquoi: null, options: null,
   reponse: null, precision: null, repond_a: null, etat: null, answered_at: null, answered_by: null, created_at: '2026-10-05T10:00:00Z' }
@@ -56,7 +56,7 @@ verifie('un message de session d\'AVANT son retour ne compte pas', retourCarte(r
 verifie('« Pas encore » seul : rien à suivre (un simple état)', retourCarte(rp, filVide) === null)
 verifie('« Pas encore » avec un mot : à suivre', retourCarte(reponseOptimiste(a, { reponse: 'Pas encore', etat: 'pas_encore', precision: 'j\'attends', maintenant: T }), filVide)?.etat === 'attend')
 verifie('carte fermée (« Fait »), question, ou rien : pas de retour', retourCarte(rf, filVide) === null && retourCarte(rq, filVide) === null && retourCarte(a, filVide) === null)
-verifie('la phrase dit qui fait quoi, et que la carte se retire', /Claude le lira/.test(phraseRetourCarte({ etat: 'attend', depuis: T })) && /retire-la toi-même/.test(phraseRetourCarte({ etat: 'lu', depuis: T })))
-verifie('réponse de retrait : même texte que la base (« Retirée par … : motif »)', reponseRetrait('Raphaël', ' cette PR n\'existe pas ') === 'Retirée par Raphaël : cette PR n\'existe pas')
-verifie('retrait sans motif : une phrase par défaut', /^Retirée par Raphaël : /.test(reponseRetrait('', '')))
+verifie('la phrase dit qui fait quoi, et ne demande plus de retirer la carte à la main (0092 : elle se retire toute seule)',
+  /Claude le lira/.test(phraseRetourCarte({ etat: 'attend', depuis: T })) && /Claude a lu ton retour/.test(phraseRetourCarte({ etat: 'lu', depuis: T }))
+  && !/retire-la|retirer/.test(phraseRetourCarte({ etat: 'attend', depuis: T }) + phraseRetourCarte({ etat: 'lu', depuis: T })))
 bilan('verifier-reponse-carte')

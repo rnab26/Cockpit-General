@@ -97,11 +97,6 @@ export function retourCarte(m: Message, fil: readonly Pick<Message, 'chantier_id
 /** La phrase affichée sous la carte pour ce retour. */
 export function phraseRetourCarte(r: RetourCarte): string {
   return r.etat === 'lu'
-    ? 'Claude a lu ton retour. La carte reste ici tant qu’il ne l’a pas fermée ou corrigée : si elle n’a pas lieu d’être, retire-la toi-même.'
-    : 'Ton retour est enregistré : Claude le lira à son prochain passage (quelques minutes). Si la carte n’a pas lieu d’être, retire-la toi-même.'
-}
-
-/** La réponse que `retirer_carte` écrit (0070) : même texte à l'écran avant la confirmation de la base. */
-export function reponseRetrait(par: string, motif: string): string {
-  return `Retirée par ${par.trim() || 'Raphaël'} : ${motif.trim() || 'cette carte n’a pas lieu d’être'}`
+    ? 'Claude a lu ton retour. La carte reste ici tant qu’il ne l’a pas fermée ou corrigée.'
+    : 'Ton retour est enregistré : Claude le lira à son prochain passage (quelques minutes).'
 }

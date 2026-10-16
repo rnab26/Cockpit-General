@@ -95,6 +95,7 @@ export async function purgerMarquesDansLesVraisProjets(sql, marque) {
  * par « [TEST » (chantiers, leurs traces de suppression, messages, étapes,
  * sessions, tâches). Doit valoir 0. Préfixe seulement : une demande de
  * Raphaël qui CITE « [TEST … » n'est pas un reste.
+ * Une session dont l'identifiant commence par `test-` dans un projet réel en est un aussi (13 oct. 2026 : 9 restes du 29 sept., sans « [TEST » dans leur sujet, jamais vus).
  */
 export async function restesDansLesVraisProjets(sql) {
   const reel = `projet_id in (select id from projets where not ${EST_TEST()})`
@@ -103,10 +104,32 @@ export async function restesDansLesVraisProjets(sql) {
       (select count(*) from supprimes where ligne->>'titre' like '[TEST%' and ${reel})::int as supprimes,
       (select count(*) from messages where corps like '[TEST%' and ${reel})::int as messages,
       (select count(*) from activite where etape like '[TEST%' and ${reel})::int as activite,
-      (select count(*) from sessions where sujet like '[TEST%' and ${reel})::int as sessions,
+      (select count(*) from sessions where (sujet like '[TEST%' or id like 'test-%') and ${reel})::int as sessions,
       (select count(*) from taches where description like '[TEST%' and ${reel})::int as taches,
       (select coalesce(jsonb_agg(p.slug || ' : ' || c.titre), '[]'::jsonb) from chantiers c join projets p on p.id = c.projet_id
          where c.titre like '[TEST%' and not ${EST_TEST('p.slug')}) as titres`))[0]
   const total = r.chantiers + r.supprimes + r.messages + r.activite + r.sessions + r.taches
   return { total, ...r }
+}
+
+/**
+ * Lance une fonction serveur du dépôt (supabase/functions/<nom>/index.ts) ICI, avec Deno, contre la vraie base : sert à prouver une
+ * fonction AVANT son déploiement (14 oct. 2026, reçus Google). Deno n'est pas installé dans l'environnement : `npm install deno` dans un
+ * dossier à part, puis DENO=<ce dossier>/node_modules/.bin/deno. Rend l'adresse locale et la fonction qui arrête le serveur.
+ */
+export async function lancerFonctionLocale(racine, nom, supabaseUrl, deno = process.env.DENO || 'deno') {
+  const { spawn } = await import('node:child_process')
+  const { join } = await import('node:path')
+  const port = 8800 + Math.floor(Math.random() * 150)
+  const p = spawn(deno, ['run', '--allow-net', '--allow-env', join(racine, 'supabase/functions', nom, 'index.ts')],
+    { env: { ...process.env, SUPABASE_URL: supabaseUrl, DENO_SERVE_ADDRESS: `tcp:127.0.0.1:${port}` }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  let journal = ''
+  p.stdout.on('data', (d) => { journal += d }); p.stderr.on('data', (d) => { journal += d })
+  await new Promise((res, rej) => {
+    const t = setTimeout(() => { clearInterval(i); rej(new Error(`La fonction ${nom} ne démarre pas avec Deno :\n` + journal.slice(-600))) }, 60000)
+    const i = setInterval(() => { if (journal.includes('Listening on')) { clearTimeout(t); clearInterval(i); res() } }, 100)
+  })
+  const arreter = () => { try { process.kill(-p.pid, 'SIGTERM') } catch { /* déjà arrêtée */ } }
+  process.on('exit', arreter)
+  return { url: `http://127.0.0.1:${port}/`, arreter, journal: () => journal }
 }

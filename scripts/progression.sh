@@ -207,7 +207,9 @@ rattacher_tour() {
   sid=$(awk '$1 == "session" { print $2; exit }' "$tour" 2>/dev/null)
   debut=$(awk '$1 == "debut" { print $2; exit }' "$tour" 2>/dev/null)
   [ -n "$sid" ] && [ -n "$debut" ] || return 0
-  "$SQL" "select rattacher_messages_session('$(q "$projet")', '$(q "$sid")', '$(q "$1")'::uuid, '$(q "$debut")'::timestamptz)" >/dev/null 2>&1 || true
+  # 0091 : sans chantier = la discussion du projet (le message y est déplacé s'il avait été rangé ailleurs par défaut).
+  local cible="null"; [ -n "${1:-}" ] && cible="'$(q "$1")'::uuid"
+  "$SQL" "select rattacher_messages_session('$(q "$projet")', '$(q "$sid")', $cible, '$(q "$debut")'::timestamptz)" >/dev/null 2>&1 || true
 }
 if [ -n "$point" ]; then
   np=$(printf '%s' "$point" | python3 -c 'import sys; print(len(sys.stdin.read().strip()))')
@@ -216,7 +218,8 @@ if [ -n "$point" ]; then
   fi
   printf '%s\0' "--point" "$point" | python3 "$RACINE/scripts/clarte.py" || exit 2
   if [ -z "$chantier" ]; then
-    # Fil du projet (« Écrire à Claude » hors chantier).
+    # Fil du projet (« Écrire à Claude » hors chantier). Son message de ce tour y est rangé (0091).
+    rattacher_tour ""
     r=$("$SQL" "select repondre_dans_fil('$(q "$projet")', null, '$(q "$session")', '$(q "$point")') as r" | jq -r '.rows[0].r // empty')
     [ -n "$r" ] && [ "$r" != "null" ] || { echo "La réponse n'a pas été écrite (projet $projet inconnu, ou base injoignable ?). Réessaie." >&2; exit 1; }
     echo "Réponse écrite dans le fil du projet $projet : Raphaël la voit dans l'app."; exit 0

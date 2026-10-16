@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, ExternalLink, FileText, Landmark, Pencil, Plus, Send, Settings2, Trash2, TriangleAlert, Wallet } from 'lucide-react'
+import { Download, ExternalLink, FileText, Landmark, Pencil, Plus, RefreshCw, Send, Settings2, Trash2, TriangleAlert, Wallet } from 'lucide-react'
 import { useCockpit, useGlobal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { BUCKET_MEDIAS, cheminMedia, tailleLisible } from '../lib/medias.ts'
 import { dateRelative } from '../lib/dates.ts'
 import { copierTexte } from '../lib/copier.ts'
 import {
-  PERIODES, PERIODE_DEFAUT, STATUTS_COMPTA, TYPES, destinataireValide, envoyable, estPeriode, formaterMontant, formaterTotaux, grouper, lienDeRepli,
+  PERIODES, PERIODE_DEFAUT, STATUTS_COMPTA, TYPES, destinataireValide, envoyable, estPeriode, etatImportAuto, formaterMontant, formaterTotaux, grouper, lienDeRepli,
   lireDepense, lireService, parService, resumeCompta, soldeBas, sommer, type Canal, type Depense, type FichierDepense, type Periode, type Service, type TypeDepense,
 } from '../lib/depenses.ts'
+import { cleActive, lireCle, plusAncienneFacture, type CleImport } from '../lib/recusGoogle.ts'
+import { RechercheFournisseurs } from './RechercheFournisseurs.tsx'
+import { AssistantGoogle, LigneGoogle } from './ImportGoogle.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Badge } from '../ui/Badge.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -31,13 +34,19 @@ const lienHttps = (u: string) => !u.trim() || /^https:\/\/\S+$/.test(u.trim())
 function useDonneesDepenses(projetId: string) {
   const [services, setServices] = useState<Service[]>([])
   const [depenses, setDepenses] = useState<Depense[]>([])
+  const [cles, setCles] = useState<CleImport[]>([])
+  const [erreurCles, setErreurCles] = useState<string | null>(null)
   const [charge, setCharge] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const recharger = useCallback(async () => {
-    const [s, d] = await Promise.all([
+    const [s, d, c] = await Promise.all([
       supabase.from('services').select('*').eq('projet_id', projetId).order('nom'),
       supabase.from('depenses').select('*').eq('projet_id', projetId).order('date', { ascending: false }).limit(5000),
+      supabase.from('cles_import').select('id, projet_id, service_id, fin, created_at, revoquee_at, derniere_utilisation_at, utilisations, programme_version').eq('projet_id', projetId).order('created_at', { ascending: false }),
     ])
+    // Les clés d'import (0088) ne bloquent jamais l'écran : une panne de leur lecture est dite sur leur propre ligne.
+    if (c.error) setErreurCles(`Impossible de lire l’état du programme Google : ${messageErreur(c.error)}`)
+    else { setCles((c.data ?? []).map((r) => lireCle(r as Record<string, unknown>))); setErreurCles(null) }
     const err = s.error ?? d.error
     if (err) { setErreur(messageErreur(err)); setCharge(true); return }
     setServices((s.data ?? []).map((r) => lireService(r as Record<string, unknown>)))
@@ -47,11 +56,11 @@ function useDonneesDepenses(projetId: string) {
   useEffect(() => {
     void recharger()
     const ch = supabase.channel(`depenses-${projetId}`)
-    for (const table of ['services', 'depenses']) ch.on('postgres_changes', { event: '*', schema: 'cockpit', table }, () => { void recharger() })
+    for (const table of ['services', 'depenses', 'cles_import']) ch.on('postgres_changes', { event: '*', schema: 'cockpit', table }, () => { void recharger() })
     ch.subscribe()
     return () => { void supabase.removeChannel(ch) }
   }, [projetId, recharger])
-  return { services, depenses, charge, erreur, recharger }
+  return { services, depenses, cles, erreurCles, charge, erreur, recharger }
 }
 
 /** Coûts du projet (0052) : prestataires et liens directs, soldes, dépenses par période, factures et envoi à la compta. */
@@ -59,7 +68,9 @@ export function CoutsProjet() {
   const { projet, admin, par, now, prefs, poser } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
-  const { services, depenses, charge, erreur, recharger } = useDonneesDepenses(projet.id)
+  const { services, depenses, cles, erreurCles, charge, erreur, recharger } = useDonneesDepenses(projet.id)
+  const rafraichir = useCallback(() => { void recharger() }, [recharger])
+  const [google, setGoogle] = useState<string | null>(null)   // l'id du prestataire dont l'assistant « programme Google » est ouvert
   const periode: Periode = estPeriode(prefs[PREF_PERIODE]) ? (prefs[PREF_PERIODE] as Periode) : PERIODE_DEFAUT
   const [filtreService, setFiltreService] = useState<string>('')
   const [serviceEdit, setServiceEdit] = useState<Partial<Service> | null>(null)
@@ -112,6 +123,9 @@ export function CoutsProjet() {
     <section aria-label="Coûts du projet" data-testid="couts-projet" className="space-y-4">
       {erreur ? <Erreur texte={erreur} onReessayer={() => void recharger()} /> : null}
 
+      {/* Fournisseurs de factures : le bouton qui cherche (0084) */}
+      <RechercheFournisseurs projetId={projet.id} services={actifs} par={par} now={now} onServicesChange={() => void recharger()} />
+
       {/* Prestataires : accès direct, solde, alerte */}
       <div className="space-y-2" data-testid="services">
         <div className="flex items-center justify-between gap-2">
@@ -144,6 +158,8 @@ export function CoutsProjet() {
                 </div>
               ) : null}
               {s.note ? <p className="mt-1.5 text-xs text-texte-2">{s.note}</p> : null}
+              <LigneImportAuto service={s} now={now} />
+              <LigneGoogle service={s} cle={cleActive(cles, s.id)} now={now} erreur={erreurCles} onGerer={() => setGoogle(s.id)} />
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {s.url_tableau ? <a className="inline-flex h-8 items-center gap-1 rounded-xl border border-bord px-2.5 text-sm hover:bg-carte-2" href={s.url_tableau} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} />Tableau de bord</a> : null}
                 {s.url_factures ? <a className="inline-flex h-8 items-center gap-1 rounded-xl border border-bord px-2.5 text-sm hover:bg-carte-2" href={s.url_factures} target="_blank" rel="noopener noreferrer"><FileText size={14} />Factures</a> : null}
@@ -235,6 +251,7 @@ export function CoutsProjet() {
         {!aEnvoyer.length ? <p className="mt-2 text-xs text-texte-2">Aucune facture en attente d’envoi.</p> : null}
       </div>
 
+      {google && services.find((x) => x.id === google) ? <AssistantGoogle service={services.find((x) => x.id === google)!} cle={cleActive(cles, google)} now={now} plusAncienneFacture={plusAncienneFacture(depenses, google)} onFermer={() => setGoogle(null)} onChange={rafraichir} /> : null}
       {serviceEdit ? <FormService init={serviceEdit} projetId={projet.id} onFermer={() => setServiceEdit(null)} onFait={() => { setServiceEdit(null); void recharger() }} /> : null}
       {depenseEdit ? <FormDepense init={depenseEdit} projetId={projet.id} services={actifs} onFermer={() => setDepenseEdit(null)} onFait={() => { setDepenseEdit(null); void recharger() }} /> : null}
       {reglageCompta ? <FormCompta projetId={projet.id} canal={(projet.compta_canal ?? 'email') as Canal} destinataire={projet.compta_destinataire ?? ''} onFermer={() => setReglageCompta(false)} /> : null}
@@ -244,20 +261,43 @@ export function CoutsProjet() {
   )
 }
 
+/** L'import automatique des reçus (0083) se voit sur la carte du prestataire : dernier passage, issue, retard, et d'où il lit. */
+const STYLE_IMPORT: Record<string, string> = {
+  ok: 'border-bord text-texte-2', attente: 'border-bord text-texte-2',
+  retard: 'border-attention/40 bg-attention/10 text-attention', echec: 'border-alerte/50 bg-alerte/10 text-alerte',
+}
+function LigneImportAuto({ service, now }: { service: Service; now: Date }) {
+  const e = etatImportAuto(service, now)
+  if (!e) return null
+  return (
+    <div className={`mt-2 rounded-xl border px-2.5 py-1.5 text-xs ${STYLE_IMPORT[e.niveau]}`} data-testid="import-auto" data-niveau={e.niveau} role={e.niveau === 'echec' ? 'alert' : undefined}>
+      <div className="flex items-start gap-1.5">
+        {e.niveau === 'ok' || e.niveau === 'attente' ? <RefreshCw size={14} className="mt-0.5 shrink-0" aria-hidden /> : <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />}
+        <span className="font-medium">{e.titre}</span>
+      </div>
+      {e.detail ? <p className="mt-0.5 pl-5" data-testid="import-auto-detail">{e.detail}</p> : null}
+      {e.depuis ? <p className="mt-0.5 pl-5 opacity-80">Reçus lus à partir du {e.depuis}. Ceux d’avant s’ajoutent à part (touche le crayon pour reculer cette date).</p> : null}
+    </div>
+  )
+}
+
 function FormService({ init, projetId, onFermer, onFait }: { init: Partial<Service>; projetId: string; onFermer: () => void; onFait: () => void }) {
   const toast = useToast()
-  const [f, setF] = useState({ nom: init.nom ?? '', url_tableau: init.url_tableau ?? '', url_factures: init.url_factures ?? '', devise: init.devise ?? 'USD', solde: init.solde != null ? String(init.solde) : '', seuil: init.seuil_alerte != null ? String(init.seuil_alerte) : '', note: init.note ?? '' })
+  const importActif = init.import_cadence_jours != null || !!init.import_at
+  const [f, setF] = useState({ nom: init.nom ?? '', url_tableau: init.url_tableau ?? '', url_factures: init.url_factures ?? '', devise: init.devise ?? 'USD', solde: init.solde != null ? String(init.solde) : '', seuil: init.seuil_alerte != null ? String(init.seuil_alerte) : '', note: init.note ?? '', depuis: init.import_depuis ?? '' })
   const [enCours, setEnCours] = useState(false)
   const soldeNum = f.solde.trim() === '' ? null : Number(f.solde.replace(',', '.'))
   const seuilNum = f.seuil.trim() === '' ? null : Number(f.seuil.replace(',', '.'))
   const erreur = !f.nom.trim() ? 'Le nom est obligatoire.' : !lienHttps(f.url_tableau) || !lienHttps(f.url_factures) ? 'Un lien doit commencer par https://' : !/^[A-Za-z]{3}$/.test(f.devise) ? 'Devise sur 3 lettres (USD, EUR, ILS…).'
-    : (soldeNum !== null && !Number.isFinite(soldeNum)) || (seuilNum !== null && (!Number.isFinite(seuilNum) || seuilNum < 0)) ? 'Solde et seuil : des nombres.' : null
+    : (soldeNum !== null && !Number.isFinite(soldeNum)) || (seuilNum !== null && (!Number.isFinite(seuilNum) || seuilNum < 0)) ? 'Solde et seuil : des nombres.'
+    : importActif && (!/^\d{4}-\d{2}-\d{2}$/.test(f.depuis) || f.depuis < '2023-01-01' || f.depuis > aujourdhui()) ? 'La date de départ des reçus doit être un jour passé ou d’aujourd’hui.' : null
   const enregistrer = async () => {
     if (erreur) return
     setEnCours(true)
     const soldeChange = soldeNum !== (init.solde ?? null)
     const valeurs = { nom: f.nom.trim(), url_tableau: f.url_tableau.trim() || null, url_factures: f.url_factures.trim() || null, devise: f.devise.toUpperCase(), solde: soldeNum,
-      ...(soldeChange ? { solde_at: soldeNum === null ? null : new Date().toISOString() } : {}), seuil_alerte: seuilNum, note: f.note.trim() || null }
+      ...(soldeChange ? { solde_at: soldeNum === null ? null : new Date().toISOString() } : {}), seuil_alerte: seuilNum, note: f.note.trim() || null,
+      ...(importActif ? { import_depuis: f.depuis } : {}) }
     const { error } = init.id ? await supabase.from('services').update(valeurs).eq('id', init.id) : await supabase.from('services').insert({ ...valeurs, projet_id: projetId })
     setEnCours(false)
     if (error) { toast.erreur(messageErreur(error)); return }
@@ -278,6 +318,11 @@ function FormService({ init, projetId, onFermer, onFait }: { init: Partial<Servi
         </div>
         <p className="-mt-1 text-xs text-texte-2">Le solde est celui que tu saisis (le cockpit ne lit pas encore les comptes seul) ; l’alerte s’affiche quand il passe sous le seuil.</p>
         <Champ label="Note"><Textarea value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} rows={2} /></Champ>
+        {importActif ? (
+          <Champ label="Reçus lus à partir du" aide="L’import automatique ignore les reçus plus anciens. Recule la date pour faire entrer l’historique au prochain passage.">
+            <Input type="date" min="2023-01-01" max={aujourdhui()} value={f.depuis} onChange={(e) => setF({ ...f, depuis: e.target.value })} data-testid="import-depuis" />
+          </Champ>
+        ) : null}
         {erreur ? <p className="text-sm text-alerte" role="alert">{erreur}</p> : null}
       </div>
     </Dialog>
