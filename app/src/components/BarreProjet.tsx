@@ -2,6 +2,7 @@ import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { EtatDeploiement } from './Deploiement.tsx'
 import { ModeAutonome } from './ModeAutonome.tsx'
+import { ListePauses, PauseProjet } from './PauseProjet.tsx'
 import { PastilleProjet } from './AvecProjet.tsx'
 import { etatBranchement, memeProprietaire } from '../lib/branchement.ts'
 import { useCockpitSurMain } from '../hooks/useCockpitSurMain.ts'
@@ -45,9 +46,11 @@ export function ProjetsResume() {
   if (!liste.length) return null
   return (
     <section data-testid="projets-resume" aria-label="Tes projets" className="divide-y divide-bord/70">
+      <div className="pb-2"><ListePauses /></div>
       {liste.map((p) => (
         <div key={p.id} data-testid="projet-resume" data-projet={p.slug} className="space-y-1.5 py-2 first:pt-0 last:pb-0">
           <PastilleProjet projet={p} />
+          <PauseProjet projet={p} />
           <Branchement projet={p} />
           <EtatDeploiement projet={p} now={now} />
           <ModeAutonome projet={p} />

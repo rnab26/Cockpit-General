@@ -30,6 +30,7 @@
 #   scripts/chef.sh --ouverture-archive <id>      note l'archivage d'une session relais finie
 #   scripts/chef.sh --renouvellement <session_… | --erreur "raison">   note la nouvelle session chef ouverte quand l'ancienne dépasse son seuil de jetons (0068)
 #   scripts/chef.sh --seuil-jetons <n|0> [on|off]   seuil de jetons du renouvellement (50 000 à 5 000 000, 0 = jamais) et interrupteur
+#   scripts/chef.sh --pause <oui|non> ["raison"]   interrupteur « Branché / En pause » du projet (0093) : en pause = ni chef, ni agent, ni renfort, ni réveil, rien supprimé
 #   scripts/chef.sh --frein <heures> "<raison>"   freine à la main (1 agent, aucune revue) ; 0 = lever le frein
 #   scripts/chef.sh --usage <status> [pct] [--fenetre <rateLimitType>] [--reset <resetsAt>]
 #                                            note l'usage (get_session → rate_limit_info) : la BASCULE règle l'effort, puis le modèle, Haiku en dernier (0045), jamais le nombre d'agents
@@ -58,6 +59,7 @@ sid="${CLAUDE_CODE_SESSION_ID:-}"; mode="passe"; reveil=""; distante=""; max="";
 while [ $# -gt 0 ]; do
   case "$1" in
     --prendre) mode="prendre"; shift ;;
+    --pause)   mode="pause"; cible="${2:-}"; freinraison="${3:-}"; shift $(( $# < 3 ? $# : 3 )) ;;
     --releve)  mode="releve"; shift ;;
     --texte-routine) mode="texte_routine"; shift ;;
     --consignes) mode="consignes"; shift ;;
@@ -127,6 +129,20 @@ if [ -z "$projet" ]; then
   echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2
 fi
 P="'$(q "$projet")'"
+# PROJET EN PAUSE (0093, 16 oct. 2026) : Raphaël l'a éteint dans ses réglages. UNE règle (projets.en_pause, lue aussi par la base :
+# projet_en_pause) : aucune prise de chef, aucune passe, aucun agent, aucun renfort. Rien n'est supprimé ; un chantier déjà tenu
+# finit. Avant la migration 0093 la colonne n'existe pas : la lecture échoue et rend « pas en pause » (rien ne change).
+if [ "$mode" = "pause" ]; then
+  case "$cible" in oui) v=true ;; non) v=false ;; *) echo "--pause <oui|non> [\"raison\"] : met le projet en pause (oui) ou le rallume (non)." >&2; exit 2 ;; esac
+  r=$("$SQL" "select regler_pause_projet($P, $v, '$(q "$freinraison")') as r" 2>&1) && printf '%s' "$r" | jq -e '.rows[0].r.en_pause != null' >/dev/null \
+    && { [ "$v" = true ] && echo "$projet est EN PAUSE : plus de chef, d'agent, de renfort ni de réveil ; rien n'est supprimé, un chantier déjà tenu finit. Rallumer : $CHEF_CMD --pause non." || echo "$projet est de nouveau BRANCHÉ : tout reprend comme avant."; } \
+    || { echo "Réglage refusé : $(printf '%s' "$r" | jq -r '.error // .' 2>/dev/null | head -c 200)" >&2; exit 1; }
+  exit 0
+fi
+if [[ "$mode" =~ ^(prendre|passe|releve|consignes)$ ]] && [ "$(un "select en_pause as p from projets where slug = $P" | jq -r '.p // false')" = "true" ]; then
+  echo "RIEN — le projet $projet est EN PAUSE (réglage de Raphaël : Claude ne travaille pas dessus). Ne deviens pas chef, ne lance aucun agent ni renfort, ne prends aucun chantier. Termine ta réponse en une ligne ; il le rallume d'un toucher dans les Réglages du projet."
+  exit 0
+fi
 # LA ROUTINE DE RÉVEIL (30 sept. 2026). Elle se déclenche de deux façons : son
 # passage horaire reprend la session chef ; son déclencheur API (/fire, réveil
 # immédiat) ouvre une NOUVELLE session (doc « routines » : « starts a new

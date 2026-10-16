@@ -83,7 +83,7 @@ const noms = new Set<string>()
 const parcourir = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) parcourir(p); else if (/\.tsx?$/.test(f)) for (const m of readFileSync(p, 'utf8').matchAll(/rpc\('([a-z_0-9]+)'/g)) noms.add(m[1]) } }
 parcourir(new URL('../src', import.meta.url).pathname)
 // Cas à part, voulus : ni gardée ni mise en cache (jeton secret ou rendu ; un rejeu doublerait le texte ajouté ; simple suggestion). Hors ligne elles échouent VISIBLEMENT.
-const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes', 'inviter', 'completer_chantier', 'freiner', 'chantiers_proches_creation', 'creer_cle_import', 'revoquer_cle_import'])
+const NI_L_UN_NI_L_AUTRE = new Set(['regler_reveil_immediat', 'reveiller_reportes', 'inviter', 'completer_chantier', 'freiner', 'chantiers_proches_creation', 'creer_cle_import', 'revoquer_cle_import', 'regler_pause_projet'])
 for (const n of [...noms].sort()) {
   const url = `${B}/rest/v1/rpc/${n}`
   const lecture = aMettreEnCache('POST', url) && !aGarder('POST', url)

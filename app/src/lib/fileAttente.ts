@@ -57,9 +57,10 @@ const RPC_SECRETES = new Set(['regler_reveil_immediat'])
 /**
  * RPC d'écriture qui doivent ÉCHOUER VISIBLEMENT hors ligne plutôt que d'attendre le retour du réseau : révoquer une clé d'import
  * (0088) qu'on croirait coupée alors qu'elle marche encore serait un faux sentiment de sécurité. (`creer_cle_import` rend la clé en
- * clair : comme `inviter`, elle n'a aucun préfixe d'écriture, donc jamais gardée.)
+ * clair : comme `inviter`, elle n'a aucun préfixe d'écriture, donc jamais gardée.) De même `regler_pause_projet` (0093) : un projet qu'on croirait
+ * en pause alors que l'ordre est resté sur l'appareil laisserait Claude travailler dessus.
  */
-const RPC_EN_DIRECT = new Set(['revoquer_cle_import'])
+const RPC_EN_DIRECT = new Set(['revoquer_cle_import', 'regler_pause_projet'])
 /** Tables sans valeur à rejouer (appareil, préférence jetable). */
 const TABLES_IGNOREES = new Set(['push_abonnements'])
 
