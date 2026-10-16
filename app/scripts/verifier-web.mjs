@@ -377,7 +377,7 @@ try {
   // « En attente » (chantier 37405805) : chaque ligne dit ce qui se passe, ce qui va être fait, et « rien à faire » ou le geste.
   if (await nTuile('enPause')) {
     await page.getByTestId('tuile-enPause').click()
-    const dlgE = page.getByRole('dialog').filter({ hasText: 'À lancer' })
+    const dlgE = page.getByRole('dialog').filter({ hasText: 'Pour Claude' })
     await dlgE.waitFor({ timeout: 5000 })
     const lignesE = dlgE.getByTestId('ligne-en-attente')
     const nE = await lignesE.count()

@@ -26,7 +26,7 @@ function BoutonPretALancer({ chantier, libelle, icone }: { chantier: Chantier; l
       const { error } = await supabase.from('chantiers').update({ etat: 'libre' }).eq('id', chantier.id)
       setEnCours(false)
       if (error) { toast.erreur(messageErreur(error)); return }
-      toast.succes(`« ${chantier.titre} » est prêt : il passe dans « Prêt à lancer ».`)
+      toast.succes(`« ${chantier.titre} » est prêt : il passe dans « Pour Claude ».`)
       await recharger()
     }}>{icone}{libelle}</Button>
   )

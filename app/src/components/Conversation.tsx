@@ -421,7 +421,7 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   const deCote = async (jusqua: Date | null) => {
     const { error } = await supabase.rpc('mettre_de_cote', { p_id: chantier.id, p_jusqu_a: jusqua ? jusqua.toISOString() : null, p_raison: null })
     if (error) { toast.erreur(messageErreur(error)); return false }
-    toast.succes(jusqua ? `Reporté au ${jusqua.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : il reviendra tout seul dans « Prêt à lancer ».` : 'Mis de côté. « Relancer maintenant » le rouvre.')
+    toast.succes(jusqua ? `Reporté au ${jusqua.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : il reviendra tout seul dans « Pour Claude ».` : 'Mis de côté. « Relancer maintenant » le rouvre.')
     await recharger(); return true
   }
   const abandonner = async () => {
@@ -527,7 +527,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
   return (
     <Dialog ouvert={ouvert} onFermer={onFermer} titre="Reporter à quand ?">
       <div className="space-y-2" data-testid="dialogue-reporter">
-        <p className="text-sm text-texte-2">Ce jour-là, il revient tout seul dans « Prêt à lancer ». D’ici là, personne ne le prend.</p>
+        <p className="text-sm text-texte-2">Ce jour-là, il revient tout seul dans « Pour Claude ». D’ici là, personne ne le prend.</p>
         <div className="grid grid-cols-2 gap-2">
           {CHOIX_REPORT.map((c) => (
             <Button key={c.cle} disabled={envoi} onClick={() => void choisir(dateDeReport(c.jours, now))} data-testid={`reporter-${c.cle}`}>{c.libelle}</Button>
@@ -589,7 +589,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const relancer = async () => {
     const { error } = await supabase.from('chantiers').update({ etat: 'libre', reporte_jusqu_a: null, archived_at: null }).eq('id', c.id)
     if (error) { toast.erreur(messageErreur(error)); return }
-    toast.succes(`« ${c.titre} » relancé : il passe dans « Prêt à lancer ».`); await recharger()
+    toast.succes(`« ${c.titre} » relancé : il passe dans « Pour Claude ».`); await recharger()
   }
   const teinte = presence.code === 'travaille' ? 'text-ok' : presence.teinte === 'alerte' ? 'text-alerte' : presence.teinte === 'attention' ? 'text-attention' : presence.teinte === 'info' ? 'text-info' : 'text-texte-2'
 
