@@ -89,6 +89,10 @@ export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: numb
   } else if (!branche && ctx.surMain === 'present') {
     lignes.push({ texte: 'Le cockpit est bien installé sur la branche principale : la prise s’allume dès qu’une vraie session démarre dans ce projet.', teinte: 'neutre' })
   }
+  if (!branche && ctx.surMain !== 'absent') {
+    // Le remède, dit une fois (16 oct. 2026 : « comment y remédier, je ne comprends pas »).
+    lignes.push({ texte: 'Pour le brancher : ouvre une session Claude Code sur le dépôt de ce projet et dis « branche le cockpit » ; la prise s’allume au démarrage de la session suivante.', teinte: 'attention' })
+  }
   const maj = t(p.branchement_maj_at)
   if (!Number.isNaN(maj) && now.getTime() - maj < JOUR) {
     lignes.push({ texte: `Mis à jour automatiquement ${dateRelative(p.branchement_maj_at!, now) || 'à l’instant'} (nouvelle version du cockpit)`, teinte: 'neutre' })
