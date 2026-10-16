@@ -2240,7 +2240,10 @@ async function controle37_traite_sans_attendre() {
       && (await une(`select count(*)::int as n from messages where chantier_id = ${q(mort)} and auteur_type = 'session'`)).n === 0, f);
   verifie("le message que l'agent mort avait pris est de nouveau à servir (recu_at remis à zéro)", (await une(`select recu_at from messages where id = ${q(m)}`)).recu_at === null);
   const n2 = (await une(`select liberer_silencieux(${q(SLUG_I)}) as n`)).n;
-  verifie("repasser ne libère rien de plus (une fois par réservation)", n2 === 0, n2);
+  // 0097 : le chantier « en cours » libéré au 1er passage (réservation à « maintenant ») est remis « libre » au 2e, une seule fois ; le 3e ne trouve plus rien.
+  const n3 = (await une(`select liberer_silencieux(${q(SLUG_I)}) as n`)).n;
+  const fc = await chantier(codeur);
+  verifie("repasser ne libère rien de plus (une fois par réservation) : au plus le chantier en cours déjà libéré passe à « libre », puis plus rien", n2 <= 1 && n3 === 0 && fc.etat === 'libre' && fc.pris_par === null && fc.libere_apres_min >= 44, { n2, n3, fc });
   verifie("liberer_silencieux : refusé à un membre connecté", (await rpcUtilisateur("liberer_silencieux", { p_projet: SLUG_I }, jwt)).status >= 400);
 
   // Renfort : muet depuis 100 min avec un chantier abandonné → sa section est rendue ; signe de vie récent → elle reste tenue.

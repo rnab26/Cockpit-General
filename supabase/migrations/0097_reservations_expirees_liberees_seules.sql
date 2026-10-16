@@ -35,8 +35,12 @@ begin
               and x.etat = 'en_cours' and cockpit.sans_signe_de_vie(x)
             for update skip locked loop
     v_min := greatest(1, floor(extract(epoch from (now() - c.updated_at)) / 60))::int;
+    -- Déjà libéré par la boucle ci-dessus (réservation mise à « maintenant ») : on garde SA trace (qui, depuis combien).
     update cockpit.chantiers set pris_par = null, pris_jusqu_a = null, etat = 'libre',
-           libere_at = now(), libere_de = c.pris_par, libere_apres_min = v_min where id = c.id;
+           libere_at = case when c.libere_at >= c.pris_jusqu_a - interval '1 minute' then c.libere_at else now() end,
+           libere_de = case when c.libere_at >= c.pris_jusqu_a - interval '1 minute' then c.libere_de else c.pris_par end,
+           libere_apres_min = case when c.libere_at >= c.pris_jusqu_a - interval '1 minute' then c.libere_apres_min else v_min end
+     where id = c.id;
     update cockpit.messages set recu_at = null
      where chantier_id = c.id and recu_par = c.pris_par and recu_at is not null;
     n := n + 1;
