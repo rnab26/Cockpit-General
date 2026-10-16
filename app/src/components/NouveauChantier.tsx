@@ -1,6 +1,7 @@
 import { TriangleAlert } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
-import { useCockpit } from '../contexte.ts'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCockpit, useGlobal } from '../contexte.ts'
+import { projetsPourCreation } from '../lib/deplacer.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -24,9 +25,15 @@ import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx
  * ouverte sur les pièces non parties, avec « réessayer ».
  */
 export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFermer: () => void }) {
-  const { admin, projet, sections, recharger, moi, par, ouvrirChantier } = useCockpit()
+  const { admin, projet: projetCourant, recharger, moi, par, ouvrirChantier } = useCockpit()
+  const global = useGlobal()
   const toast = useToast()
   const confirmer = useConfirmer()
+  // Dans quel projet créer (admin seulement : un autre membre n'a qu'un projet). Par défaut, celui qu'on regarde.
+  const [projetId, setProjetId] = useState(projetCourant.id)
+  const choix = useMemo(() => projetsPourCreation(global.projets, projetCourant.id), [global.projets, projetCourant.id])
+  const projet = global.projets.find((p) => p.id === projetId) ?? projetCourant
+  const sections = useMemo(() => global.sections.filter((s) => s.projet_id === projet.id), [global.sections, projet.id])
   const pj = useMediasAJoindre(projet.id, null, { differe: true })
   /** Le chantier déjà créé dont des pièces restent à envoyer. */
   const [cree, setCree] = useState<{ id: string; titre: string } | null>(null)
@@ -54,7 +61,7 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
   }, [titre, ouvert, projet.id])
 
   const { vider } = pj
-  const reinitialiser = useCallback(() => { setTitre(''); setDemande(''); setSectionId(''); setPriorite('normale'); setEtat('a_trier'); setCree(null); vider() }, [vider])
+  const reinitialiser = useCallback(() => { setProjetId(projetCourant.id); setTitre(''); setDemande(''); setSectionId(''); setPriorite('normale'); setEtat('a_trier'); setCree(null); vider() }, [vider, projetCourant.id])
   // Quitter : le brouillon (texte ou pièce jointe) est perdu, la fenêtre l'a demandé (Dialog `brouillon`) ou « Annuler » l'a dit.
   const fermer = useCallback(() => { reinitialiser(); onFermer() }, [reinitialiser, onFermer])
   const annuler = async () => {
@@ -146,9 +153,10 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
       return
     }
     const avec = nb ? `, avec ${nb} pièce${nb > 1 ? 's' : ''} jointe${nb > 1 ? 's' : ''}` : ''
-    const msg = admin ? `Chantier « ${titre.trim()} » créé${avec}. ${ouApparait(etat)}` : `Demande envoyée${avec} : elle apparaît « Pas encore examinée ».`
+    const ailleurs = projet.id !== projetCourant.id ? ` dans « ${projet.nom} »` : ''
+    const msg = admin ? `Chantier « ${titre.trim()} » créé${ailleurs}${avec}. ${ouApparait(etat)}` : `Demande envoyée${avec} : elle apparaît « Pas encore examinée ».`
     const ouvrir = () => ouvrirChantier(id)
-    if (admin) toast.avecAction(msg, { libelle: 'Voir', onClick: ouvrir }, 10000)
+    if (admin && !ailleurs) toast.avecAction(msg, { libelle: 'Voir', onClick: ouvrir }, 10000)
     else toast.succes(msg)
     fermer()
   }
@@ -184,6 +192,13 @@ export function NouveauChantier({ ouvert, onFermer }: { ouvert: boolean; onFerme
     <Dialog ouvert={ouvert} onFermer={fermer} brouillon={brouillon} titre={admin ? '+ Nouveau chantier' : '+ Nouvelle demande'}
       pied={<><Button onClick={() => { void annuler() }}>Annuler</Button><Button variante="primaire" chargement={envoiEnCours && action === 'creer'} disabled={envoiEnCours && action !== 'creer'} onClick={creer} data-testid="creer-chantier">{libelleCreer(proches.length)}</Button></>}>
       <div className="space-y-3">
+        {admin && choix.length > 1 ? (
+          <Champ label="Projet" aide="Le chantier sera créé dans ce projet. Tu pourras aussi le déplacer plus tard (menu ⋯ du chantier).">
+            <Select value={projet.id} onChange={(e) => { setProjetId(e.target.value); setSectionId('') }} data-testid="projet-creation">
+              {choix.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+            </Select>
+          </Champ>
+        ) : null}
         <Champ label="Titre"><Input autoFocus value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="En une phrase : ce qu’il faut faire" data-testid="titre" /></Champ>
         {proches.length ? (
           <div className="rounded-xl border border-l-4 border-bord border-l-attention bg-carte px-3 py-2 text-sm" data-testid="ca-existe-deja">
