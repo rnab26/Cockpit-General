@@ -1769,27 +1769,38 @@ try {
   await allerCockpit()
 
   // ===================================================================
-  // 7 ter. Renforts (0024, D-10) : bouton distinct au-dessus de « Prêt à lancer »,
-  // réglages, demande envoyée / en route / erreur / terminé. Aucune vraie session :
+  // 7 ter. Renforts (0024, D-10) : depuis le 16 oct. 2026 l'écran principal n'a que « Tout lancer » (chantier 876e2e4b) ;
+  // le détail (liste, réglages, historique) est dans Réglages › « Renforts (détails) ».
+  // Réglages, demande envoyée / en route / erreur / terminé. Aucune vraie session :
   // le projet de test n'est jamais servi à une chef (renforts_a_ouvrir).
   console.log('  — renforts')
   await page.evaluate(() => window.scrollTo(0, 0))
   const renf = () => page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`)
-  await renf().waitFor({ timeout: 10000 })
-  const yRenf = (await renf().boundingBox())?.y ?? 1e9, yLancer = (await page.getByTestId('a-lancer').boundingBox())?.y ?? -1
+  const toutL = page.getByTestId('tout-lancer')
+  await toutL.waitFor({ timeout: 10000 })
+  verifie('écran principal : UN seul bouton « Tout lancer » ; plus de bloc Renforts, de « Lancer une session autonome » ni de mode autonome', await toutL.count() === 1 && await page.getByTestId('tout-lancer-bouton').count() === 1
+    && await page.getByTestId('renforts').count() === 0 && await page.getByTestId('traiter').count() === 0 && await page.getByTestId('autonome-projet').count() === 0 && await page.getByTestId('lancer-renforts').count() === 0)
+  const versDetailRenforts = async () => {
+    await page.getByTestId('onglet-vue-reglages').click()
+    const d = page.getByTestId('renforts-details')
+    await d.waitFor({ timeout: 10000 })
+    if ((await d.locator('> button').getAttribute('aria-expanded')) !== 'true') await d.locator('> button').click()
+    await renf().waitFor({ timeout: 15000 })
+  }
+  const versTravail = async () => { await page.getByTestId('onglet-vue-travail').click(); await page.getByTestId('tout-lancer').waitFor({ timeout: 10000 }) }
+  await versDetailRenforts()
   // « Traiter ce projet » : sur tout projet, au-dessus des renforts, sans défiler ni déborder sur 390 px,
   // état dit en clair, phrase visible, et un toucher ouvre la page des sessions (jamais un lien inventé).
   const trait = page.locator(`[data-testid="traiter"][data-projet="${SLUG}"]`)
   await trait.waitFor({ timeout: 10000 })
   const bTr = await trait.boundingBox(), bBtn = await trait.getByTestId('traiter-lancer').boundingBox()
-  verifie('traiter : bloc au-dessus des renforts, dans l’écran (390 px)', !!bTr && bTr.y < yRenf && bTr.x >= 0 && bTr.x + bTr.width <= 390 && !!bBtn && bBtn.height >= 40, { bTr, bBtn, yRenf })
+  verifie('traiter : dans l’écran (390 px)', !!bTr && bTr.x >= 0 && bTr.x + bTr.width <= 390 && !!bBtn && bBtn.height >= 40, { bTr, bBtn })
   verifie('traiter : l’état est dit (session ? chantiers ?)', /(Aucune session ouverte|tient déjà)/.test(await trait.getByTestId('traiter-etat').textContent()) && /(chantier|Rien n’attend)/.test(await trait.getByTestId('traiter-etat').textContent()))
   verifie('traiter : la phrase et les 3 gestes sont affichés', /Traite le projet/.test(await trait.getByTestId('traiter-phrase').textContent()) && (await trait.getByTestId('traiter-etapes').locator('li').count()) === 3)
   verifie('traiter : le bouton s’appelle « Lancer une session autonome »', /Lancer une session autonome/.test(await trait.getByTestId('traiter-lancer').textContent()))
   const [ouvert] = await Promise.all([ctx.waitForEvent('page', { timeout: 5000 }).catch(() => null), trait.getByTestId('traiter-lancer').click()])
   verifie('traiter : un toucher ouvre claude.ai/code et le dit', !!ouvert && /claude\.ai\/code/.test(ouvert.url() + '') , ouvert?.url())
   if (ouvert) await ouvert.close().catch(() => {})
-  verifie('renforts : un bloc à part, AU-DESSUS de « Prêt à lancer »', yRenf < yLancer, { yRenf, yLancer })
   const etatBase = sql(`select etat_renforts('${SLUG}') as e`)[0].e
   const nAtt = etatBase.attente.reduce((n, a) => n + a.n, 0)
   const txtAtt = await renf().getByTestId('renforts-attente').textContent()
@@ -1814,8 +1825,17 @@ try {
   // 0076 : un chantier en attente suffit à ouvrir une session (par paquets) ; le seuil enregistré (4) ne sert plus qu'à l'alerte « bientôt saturée ».
   await page.waitForFunction((slug) => /dès 1 chantier en attente, par paquets/.test(document.querySelector(`[data-testid="renforts"][data-projet="${slug}"] [data-testid="renforts-auto"]`)?.textContent ?? ''), SLUG, { timeout: 10000 }).catch(() => {})
   verifie('réglages : la ligne d’état dit la règle en vigueur (un chantier suffit, par paquets)', /dès 1 chantier en attente, par paquets/.test(await renf().getByTestId('renforts-auto').textContent()), await renf().getByTestId('renforts-auto').textContent())
-  await renf().getByTestId('lancer-renforts').click()
-  verifie('clic : toast « 1 renfort demandé : <section> »', await toastAuPremierPlan(/1 renfort demandé : /), { auPremierPlan: dernierDessus })
+  // Le clic se fait sur l'écran principal : « Tout lancer » (mêmes appels serveur que le détail).
+  await versTravail()
+  await page.waitForFunction(() => /chantiers? attend/.test(document.querySelector('[data-testid="tout-lancer-ligne"]')?.textContent ?? ''), null, { timeout: 15000 }).catch(() => {})
+  verifie('Tout lancer : actif, la ligne dit « N chantiers attendent »', await page.getByTestId('tout-lancer-bouton').isEnabled() && new RegExp(`^${nAtt} chantiers? attend`).test(await page.getByTestId('tout-lancer-ligne').textContent()), await page.getByTestId('tout-lancer-ligne').textContent())
+  await page.getByTestId('tout-lancer-bouton').click()
+  verifie('clic : toast « Lancé à HH:MM : N chantiers, ça avance »', await toastAuPremierPlan(/Lancé à \d\d:\d\d : \d+ chantiers?, ça avance/), { auPremierPlan: dernierDessus })
+  verifie('Tout lancer : le résultat reste écrit sous le bouton', /Lancé à \d\d:\d\d/.test(await page.getByTestId('tout-lancer-resultat').textContent()))
+  await page.waitForFunction(() => document.querySelector('[data-testid="tout-lancer-bouton"]')?.hasAttribute('disabled'), null, { timeout: 15000 }).catch(() => {})
+  verifie('limite atteinte : « Tout lancer » éteint, « ça avance déjà » (le reste part seul)', await page.getByTestId('tout-lancer-bouton').isDisabled() && /ça avance déjà/.test(await page.getByTestId('tout-lancer-ligne').textContent()), await page.getByTestId('tout-lancer-ligne').textContent())
+  await capture(page, 'tout-lancer')
+  await versDetailRenforts()
   const rdem = sql(`select r.id, r.statut, r.max_agents, coalesce(s.nom, 'Sans section') as section from renforts r left join sections s on s.id = r.section_id where r.projet_id = '${projet.id}'`)
   verifie('clic : en base, UNE demande (réglage 1), 2 agents, la section la plus chargée', rdem.length === 1 && rdem[0].statut === 'demande' && rdem[0].max_agents === 2 && rdem[0].section === etatBase.attente[0].section, { rdem, attente: etatBase.attente })
   await renf().getByTestId('renfort').first().waitFor({ timeout: 10000 })
@@ -1843,8 +1863,8 @@ try {
   verifie('renforts : aucun défilement horizontal', await scrollX() <= 0)
   await capture(page, 'renforts-termine')
   await allerTout()
-  await page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`).waitFor({ timeout: 10000 }).catch(() => {})
-  verifie('« Tout » : le bloc renforts du projet, avec son nom', await page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`).count() === 1 && /Test auto/.test(await page.locator(`[data-testid="renforts"][data-projet="${SLUG}"]`).textContent()))
+  await page.getByTestId('tout-lancer').waitFor({ timeout: 10000 }).catch(() => {})
+  verifie('« Tout » : UN seul bouton « Tout lancer » (plus un bloc renforts par projet)', await page.getByTestId('tout-lancer').count() === 1 && await page.getByTestId('renforts').count() === 0 && await page.getByTestId('traiter').count() === 0)
   await allerCockpit()
 
   // 0028 : « Écrire à Claude » au niveau du PROJET (un message libre, même multi-sujets).

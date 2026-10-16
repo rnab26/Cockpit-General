@@ -10,6 +10,10 @@ Dernière mise à jour : 16 oct. 2026 (sections 0 terdecies et 0 duodecies ; ava
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
+## 0 quaterdecies. 16 oct. 2026 : un seul bouton « Tout lancer » (chantier 876e2e4b)
+
+Écran principal : `ToutLancer.tsx` remplace le bloc Renforts et « Lancer une session autonome » ; le détail passe dans Réglages du projet › « Renforts (détails) ». Récit et limites : `docs/historique/chefs-agents-renforts.md`. Bancs : `verifier-tout-lancer.ts`, `verifier-accueil.mjs` (59/59), `verifier-web.mjs` § 7 ter adapté mais NON rejoué (quota Supabase) : à rejouer au prochain passage complet.
+
 ## 0 terdecies. Lot du 16 oct. 2026 (matin) : les cartes déjà traitées se retirent seules, chaque ligne a sa date (migration 0092, chantier fe412d83)
 
 Demande de Raphaël (trois captures de tablette) : « les anciens chantiers ne s'actualisent pas en fonction de ce que les sessions ont avancé […] des questions d'il y a 2 jours,

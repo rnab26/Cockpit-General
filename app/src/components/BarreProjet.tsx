@@ -26,15 +26,14 @@ function Branchement({ projet }: { projet: Projet }) {
   )
 }
 
-/** En tête de la vue d'un projet : l'état de sa mise en ligne et son mode autonome, en une ou deux lignes. */
-export function BarreProjet({ projet, nu = false, sansAutonome = false }: { projet: Projet; nu?: boolean; sansAutonome?: boolean }) {
+/** En tête de la vue d'un projet : l'état de sa mise en ligne, en une ou deux lignes (le mode autonome et la pause sont dans Réglages du projet). */
+export function BarreProjet({ projet, nu = false }: { projet: Projet; nu?: boolean }) {
   const { now, admin } = useGlobal()
   if (!projet.depot && !admin) return null
   return (
     <section data-testid="barre-projet" className={nu ? 'space-y-2' : 'space-y-1.5 rounded-2xl border border-bord bg-carte px-3 py-2'}>
       <Branchement projet={projet} />
       <EtatDeploiement projet={projet} now={now} />
-      {sansAutonome ? null : <ModeAutonome projet={projet} />}
     </section>
   )
 }

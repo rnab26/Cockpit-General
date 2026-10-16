@@ -46,6 +46,16 @@ L'ancienne table `chef` (id = 1) et ses fonctions sans projet restent en base,
 plus lues par les scripts à jour (pas de drop sans Raphaël).
 `verifier-base.mjs` §19.
 
+**Un seul bouton « Tout lancer »** (16 oct. 2026, chantier 876e2e4b). Raphaël : « Je ne veux pas de superflu à l'écran […] je ne veux pas avoir à cliquer
+sur des boutons de renfort. En un seul bouton, lancer tous les chantiers […] ça ne s'arrête pas en plein milieu. Si je réponds à des questions pendant un chantier,
+il attend ma réponse puis continue. Faire simple. » Écran principal : `ToutLancer.tsx` (sous les boxes, au-dessus de « Écrire à Claude »), une ligne d'état
+(« 3 chantiers attendent » / « Rien n'attend » / « Lancé à 11:12 : 4 chantiers, ça avance » / erreur + « Réessayer » ; éteint avec sa raison si projet en pause ou
+places toutes prises). Mêmes appels que le détail (`etat_renforts`, `demander_renforts`) ; la décision est dans `lib/toutLancer.ts` (`verifier-tout-lancer.ts`).
+Le détail (liste, relance, réglages, historique, « Lancer une session autonome ») est dans Réglages du projet › « Renforts (détails) » (replié) ; mode autonome et
+pause y étaient déjà. Dans « Tout », le détail n'est plus montré par projet (il est dans les réglages de chaque projet). **Limite** : « ne s'arrête pas » repose sur
+l'ouverture automatique des renforts et la session chef (inchangées) ; sans session ouverte sur le projet, la ligne de résultat le dit. Le comportement « une
+question pendant un chantier : il attend puis continue » n'est PAS touché par ce lot (il dépend des sessions, pas de l'écran).
+
 **Renforts** (29 sept., migration 0024, D-10). Raphaël : « lancer une session
 par secteur […] plusieurs agents dedans […] 5 maximum par session […] ne jamais
 se marcher dessus ». Bouton « Lancer des renforts » (`Renforts.tsx`), au-dessus

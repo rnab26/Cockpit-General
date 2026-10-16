@@ -37,6 +37,6 @@ export function etapesTraiter(depot: string | null): string[] {
   return [
     `Dans claude.ai/code (s'ouvre au toucher du bouton), choisis le dépôt ${depot ?? 'de ce projet'} puis « Nouvelle session ».`,
     'Colle la phrase (déjà copiée) dans le champ de message et envoie.',
-    'Reviens ici : la session prend les chantiers en lot (fréquence et nombre d’agents : Renforts › Réglages, plus bas).',
+    'Reviens ici : la session prend les chantiers en lot (fréquence et nombre d’agents : Réglages du projet › Renforts (détails)).',
   ]
 }
