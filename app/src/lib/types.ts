@@ -168,6 +168,8 @@ export interface Activite {
   detail: string | null
   demarre_at: string
   updated_at: string
+  /** Dérivé côté écran (presence.ts::avecSigneDeSession), jamais en base : dernier signe de vie de la SESSION qui porte cette barre. */
+  signe_session_at?: string | null
 }
 
 export interface Historique {

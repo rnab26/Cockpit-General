@@ -7,6 +7,7 @@ import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
 import { abonner, etatFile } from '../lib/fetchResilient.ts'
 import { fusionnerEnAttente } from '../lib/fileAttente.ts'
 import { remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
+import { avecSigneDeSession } from '../lib/presence.ts'
 import { appliquer, curseurDelta, filtreDelta, LotEvenements, ORDRES, pleinDu, TACHES_RECENTES_H, type Lot, type TableDonnees } from '../lib/deltaDonnees.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
@@ -343,7 +344,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
   const ids = useMemo(() => new Set(projets.map((p) => p.id)), [projets])
   const vis = useMemo(() => ({
     sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messagesAffiches, ids),
-    activites: lignesVisibles(activites, ids), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
+    activites: avecSigneDeSession(lignesVisibles(activites, ids), lignesVisibles(sessions, ids)), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
   }), [ids, sections, chantiers, messagesAffiches, activites, sessions, taches])
 
   return {
