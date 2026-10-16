@@ -106,5 +106,18 @@ console.log('verifier-branchement')
     const l = etatBranchement({}, 0, now, { surMain: 'absent' })
     verifie('jamais branché + cockpit absent de main : les deux lignes', /Aucune session/.test(l[0].texte) && /pas installé sur la branche principale/.test(l[1].texte), l)
   }
+  // Le moteur (projet « cockpit », 16 oct. 2026 : « il n'apparaît pas branché ») : mesuré en base, une session vivante (sans fin),
+  // des sessions d'agents de quelques secondes et une longue terminée. Une seule règle pour l'icône et la ligne des réglages.
+  {
+    const moteur = [S(2, 1, null), S(40, 39.9, 39.9), S(300, 200, 100), S(1500, 1400, 1400)]
+    const p = { branchement_vu_at: il(3) }
+    verifie('moteur : une session vivante parmi des agents de quelques secondes → branché (icône)', estBranche(p, now, moteur))
+    const l = etatBranchement(p, 2, now, { sessions: moteur, surMain: 'present' })
+    verifie('moteur : même verdict dans les réglages (même règle)', /Sessions branchées/.test(l[0].texte) && l[0].teinte === 'ok', l[0])
+    const longue = [S(300, 200, 100)]
+    verifie('moteur : une session longue terminée vue dans les 24 h → branché', estBranche(p, now, longue))
+    verifie('moteur : seulement des agents de quelques secondes → pas branché, sur l’icône ET les réglages',
+      !estBranche(p, now, [S(40, 39.9, 39.9)]) && !etatBranchement(p, 0, now, { sessions: [S(40, 39.9, 39.9)] })[0].texte.startsWith('Sessions branchées'))
+  }
 }
 bilan('verifier-branchement')
