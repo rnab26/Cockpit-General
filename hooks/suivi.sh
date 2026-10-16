@@ -252,12 +252,17 @@ fin_de_tour() {
 # semblaient mortes pendant chaque outil long et leurs chantiers étaient repris en doublon. Il part
 # maintenant au message de Raphaël ET à chaque retour d'outil (événements que TOUS les projets
 # déclarent), bat toutes les 45 s, et s'arrête à la fin du tour (Stop) ou après 11 min sans nouvelle.
+# 16 oct. (chantier c33c0db9, « arrêt brutal des chantiers en cours ») : un AGENT ne battait pas du tout
+# (ni son outil long, ni ses retours d'outil ne touchaient SA tâche), donc un chantier tenu par un agent
+# qui codait plus de 20 min sans signaler d'étape était libéré et repris en doublon (mesuré : 20 des 40
+# dernières libérations, 20 à 31 min, toutes sur des agent/… et renfort/…). Maintenant l'agent bat
+# comme la session, avec son identifiant : la base rafraîchit SA ligne (suivre, événement « Vie »).
 battement_tour() {
-  [ -z "$agent" ] || return 0
-  local marq="${TMPDIR:-/tmp}/cockpit-tour-vie-$sid" pidf="${TMPDIR:-/tmp}/cockpit-tour-pid-$sid" pas="${COCKPIT_BATTEMENT_PAS:-45}" plafond="${COCKPIT_BATTEMENT_MAX:-660}" charge req
+  local cle="$sid${agent:+-$agent}"
+  local marq="${TMPDIR:-/tmp}/cockpit-tour-vie-$cle" pidf="${TMPDIR:-/tmp}/cockpit-tour-pid-$cle" pas="${COCKPIT_BATTEMENT_PAS:-45}" plafond="${COCKPIT_BATTEMENT_MAX:-660}" charge req
   echo $(( $(date +%s) + plafond )) > "$marq" 2>/dev/null || return 0
   if [ -s "$pidf" ] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then return 0; fi
-  charge=$(jq -cn --arg s "$sid" --arg b "$branche" '{session_id: $s, hook_event_name: "Vie", branche: $b}') || return 0
+  charge=$(jq -cn --arg s "$sid" --arg b "$branche" --arg a "$agent" '{session_id: $s, hook_event_name: "Vie", branche: $b} + (if $a != "" then {agent_id: $a} else {} end)') || return 0
   req="select suivre('$(qsql "$PROJET")', '$(qsql "$charge")'::jsonb)"
   ( setsid bash -c '
       while :; do
@@ -347,10 +352,10 @@ case "$ev" in
               tache_sorte: (if $type == "agent" then ($in.subagent_type // null) else (($in.command // "") | .[0:200]) end)}
         end' 2>/dev/null)
     if [ -z "$charge" ] || [ "$charge" = "null" ] || [ "$(printf '%s' "$charge" | jq -r '.tache_id // empty')" = "" ]; then
-      repere="${TMPDIR:-/tmp}/cockpit-vie-$sid"
+      repere="${TMPDIR:-/tmp}/cockpit-vie-$sid${agent:+-$agent}"
       if [ -f "$repere" ] && [ $(( $(date +%s) - $(stat -c %Y "$repere" 2>/dev/null || echo 0) )) -lt 60 ]; then exit 0; fi
       touch "$repere" 2>/dev/null
-      charge=$(jq -cn --arg s "$sid" --arg b "$branche" '{session_id: $s, hook_event_name: "Vie", branche: $b}')
+      charge=$(jq -cn --arg s "$sid" --arg b "$branche" --arg a "$agent" '{session_id: $s, hook_event_name: "Vie", branche: $b} + (if $a != "" then {agent_id: $a} else {} end)')
     fi ;;
   UserPromptSubmit)
     # Le RÉVEIL d'une session (message de Raphaël, réveil horaire de la chef) :
@@ -368,6 +373,7 @@ case "$ev" in
   Stop|SubagentStop|SubagentStart|SessionEnd)
     [ "$ev" = "Stop" ] && signaler_jetons
     if [ "$ev" = "Stop" ] || [ "$ev" = "SessionEnd" ]; then fin_battement; fi
+    if [ "$ev" = "SubagentStop" ] && [ -n "$agent" ]; then rm -f "${TMPDIR:-/tmp}/cockpit-tour-vie-$sid-$agent" "${TMPDIR:-/tmp}/cockpit-vie-$sid-$agent" 2>/dev/null; fi
     [ "$ev" = "Stop" ] && fin_de_tour
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, agent_id, agent_type, background_tasks}') ;;
   *) exit 0 ;;
