@@ -3,6 +3,7 @@ import { Check, Circle, ExternalLink, Info, X } from 'lucide-react'
 import type { Chantier } from '../lib/types.ts'
 import { useCockpit } from '../contexte.ts'
 import { frise, syntheseMiseEnLigne } from '../lib/jalons.ts'
+import { useEtatsPr } from '../hooks/useEtatsPr.ts'
 
 // Des marques fines, colorées seulement quand elles disent quelque chose (fait, échec).
 const MARQUE = { fait: Check, attente: Circle, echec: X, info: Info }
@@ -14,8 +15,9 @@ const COULEUR_MARQUE = { fait: 'text-ok', attente: 'text-texte-2/50', echec: 'te
  * chantier sans jalon. Étapes pas encore atteintes : grises.
  */
 export function FriseMiseEnLigne({ chantier }: { chantier: Chantier }) {
-  const { now } = useCockpit()
-  const etapes = useMemo(() => frise(chantier.jalons, now), [chantier.jalons, now])
+  const { now, projet } = useCockpit()
+  const etatsPr = useEtatsPr(projet.depot, chantier.jalons)
+  const etapes = useMemo(() => frise(chantier.jalons, now, etatsPr), [chantier.jalons, now, etatsPr])
   if (!etapes) return null
   return (
     <ol className="space-y-1 rounded-lg border border-bord bg-carte px-3 py-2" data-testid="frise-en-ligne" aria-label="Mise en ligne">
@@ -37,8 +39,9 @@ const TEINTE = { ok: 'border-l-ok text-ok', attention: 'border-l-attention text-
 
 /** La phrase au-dessus de « Ça fonctionne » : peut-il vérifier maintenant ? */
 export function PhraseMiseEnLigne({ chantier }: { chantier: Chantier }) {
-  const { now } = useCockpit()
-  const s = useMemo(() => syntheseMiseEnLigne(chantier.jalons, now), [chantier.jalons, now])
+  const { now, projet } = useCockpit()
+  const etatsPr = useEtatsPr(projet.depot, chantier.jalons)
+  const s = useMemo(() => syntheseMiseEnLigne(chantier.jalons, now, etatsPr), [chantier.jalons, now, etatsPr])
   if (!s) return null
   return <p data-testid="phrase-en-ligne" data-code={s.code} className={`rounded-lg border border-l-4 border-bord bg-carte px-3 py-2 text-[15px] font-medium leading-snug ${TEINTE[s.teinte]}`}>{s.texte}</p>
 }
