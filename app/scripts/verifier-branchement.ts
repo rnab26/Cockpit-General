@@ -7,6 +7,8 @@ console.log('verifier-branchement')
 {
   const l = etatBranchement({}, 0, now)
   verifie('jamais vu → le dit en clair', /Aucune session/.test(l[0].texte) && l[0].teinte === 'attention', l)
+  verifie('non branché → dit comment le brancher (« branche le cockpit »)', l.some((x) => /branche le cockpit/.test(x.texte)), l)
+  verifie('branché → pas de consigne de branchement', !etatBranchement({ branchement_vu_at: il(3) }, 1, now).some((x) => /Pour le brancher/.test(x.texte)))
   verifie('module du site jamais vu → « pas encore installé »', /pas encore installé/.test(l[l.length - 1].texte))
 }
 {
