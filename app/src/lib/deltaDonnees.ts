@@ -8,14 +8,14 @@
 //  1. un événement du direct s'APPLIQUE (insert/update/delete) au lieu de déclencher une relecture ;
 //  2. une rafale d'événements est regroupée (un seul passage d'application, jamais N) ;
 //  3. un passage « delta » ne lit que les lignes modifiées depuis la plus récente déjà connue ;
-//  4. une relecture COMPLÈTE n'arrive qu'au chargement, au bouton « Actualiser » et toutes les 5 minutes
+//  4. une relecture COMPLÈTE n'arrive qu'au chargement, au bouton « Actualiser » et toutes les 30 minutes (15 oct. 2026 : 5 min coûtait ~3,5 Mo par rechargement complet, voir CLAUDE.md « Données sortantes »)
 //     (c'est elle qui attrape ce qu'un delta ne voit pas : une ligne supprimée sans que le direct l'ait dit).
 
 export type TableDonnees = 'sections' | 'chantiers' | 'messages' | 'activite' | 'sessions' | 'taches'
 export type LigneId = { id: string }
 
 /** Relecture complète périodique (suppressions non vues). */
-export const PLEIN_TOUTES_MS = 5 * 60_000
+export const PLEIN_TOUTES_MS = 30 * 60_000
 /** Regroupement des événements du direct : un passage 0,8 s après le dernier événement… */
 export const LOT_ATTENTE_MS = 800
 /** …et au plus 4 s après le premier d'une rafale (l'écran ne reste jamais figé plus longtemps). */

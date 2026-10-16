@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Bot, CircleCheck, Terminal } from 'lucide-react'
 import { useCockpit, useGlobal } from '../contexte.ts'
 import { vueTache, tacheEnCoursVivante, activiteDeTache, type VueSession, type VueTache } from '../lib/sessions.ts'
+import { actionDeLActivite } from '../lib/entonnoir.ts'
 import type { Activite } from '../lib/types.ts'
 import { Progression } from './Progression.tsx'
 import { PointTravaille, useFlash } from './Vivant.tsx'
@@ -60,7 +61,7 @@ function LigneActivite({ a, projetId }: { a: Activite; projetId: string }) {
   return (
     <button type="button" data-testid="ligne-session-chantier" onClick={() => chantier && g.ouvrirChantier(projetId, chantier.id)} className="block w-full text-left">
       <span className="block truncate text-sm">{chantier?.titre ?? a.detail ?? 'Travail sans chantier'}</span>
-      <Progression activite={a} vive compact now={g.now} />
+      <Progression activite={a} vive compact now={g.now} action={actionDeLActivite(g.sessions, a, g.now)} />
     </button>
   )
 }

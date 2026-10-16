@@ -27,7 +27,7 @@ export interface EtapeFrise {
   url: string | null
 }
 
-export type CodeSynthese = 'en_ligne' | 'pas_encore' | 'ci_ko' | 'rien' | 'geste'
+export type CodeSynthese = 'en_ligne' | 'pas_encore' | 'ci_ko' | 'rien' | 'geste' | 'fusionnee'
 export interface Synthese { code: CodeSynthese; texte: string; teinte: 'ok' | 'attention' | 'alerte' | 'info'; peutVerifier: boolean }
 
 const CLES: readonly CleJalon[] = ['code', 'pousse', 'ci_ok', 'ci_ko', 'en_ligne', 'pas_en_ligne']
@@ -86,8 +86,34 @@ export function demandeUnGeste(raison: string | null | undefined): boolean {
   return /(install|apk|geste|ta part|à toi de|raphaël|raphael|cliqu|touche|activ|autoris|permission|télécharg|telecharg|mets? à jour|mettre à jour|redémarr)/i.test(raison ?? '')
 }
 
+/** État d'une PR lu sur GitHub : numéro -> fusionnée / ouverte / fermée (absent = pas lu). */
+export type EtatsPr = Readonly<Record<number, 'merged' | 'open' | 'closed' | undefined>>
+
+/** Numéros de PR cités dans une raison libre (« PR #146 pas encore fusionnée (CI en cours) »). */
+export function prCitees(raison: string | null | undefined): number[] {
+  const out: number[] = []
+  for (const m of (raison ?? '').matchAll(/\b(?:PR|pull request)\s*#?\s*(\d{1,6})\b|#(\d{1,6})\b/gi)) {
+    const n = Number(m[1] ?? m[2])
+    if (!out.includes(n)) out.push(n)
+  }
+  return out
+}
+
+/**
+ * La raison « pas en ligne » écrite par la session dit « PR #n pas encore fusionnée » : une information figée,
+ * jamais relue. Si GitHub dit que TOUTES les PR citées sont fusionnées, elle est périmée : renvoie leurs numéros.
+ * (Une raison qui ne parle pas d'une PR non fusionnée n'est jamais contredite.)
+ */
+export function prFusionneesDepuis(raison: string | null | undefined, etats: EtatsPr | undefined): number[] | null {
+  if (!etats || !raison || !/(pas encore|pas|non|sans)\s+(?:été\s+)?fusionn|attend\s+(?:la|sa)\s+fusion|à\s+fusionner/i.test(raison)) return null
+  const prs = prCitees(raison)
+  return prs.length && prs.every((n) => etats[n] === 'merged') ? prs : null
+}
+
+const listePr = (prs: number[]) => prs.map((n) => `#${n}`).join(', ')
+
 /** Les quatre étapes, ou null si aucun jalon n'est posé (ancien chantier : on n'affiche rien). */
-export function frise(brut: unknown, now: Date = new Date()): EtapeFrise[] | null {
+export function frise(brut: unknown, now: Date = new Date(), etatsPr?: EtatsPr): EtapeFrise[] | null {
   const j = lireJalons(brut)
   if (!Object.keys(j).length) return null
   const h = (k: CleJalon) => heureLisible(j[k]?.at, now)
@@ -106,8 +132,9 @@ export function frise(brut: unknown, now: Date = new Date()): EtapeFrise[] | nul
   ]
   if (j.pas_en_ligne && !enLigne) {
     const raison = j.pas_en_ligne.detail
-    etapes.push({ cle: 'ligne', etat: 'info', heure: h('pas_en_ligne'), detail: null, url: null,
-      libelle: demandeUnGeste(raison) ? `Il faut ton geste${raison ? ` : ${raison}` : ''}` : `Rien à mettre en ligne${raison ? ` : ${raison}` : ''}` })
+    const fusion = prFusionneesDepuis(raison, etatsPr)
+    etapes.push({ cle: 'ligne', etat: fusion ? 'fait' : 'info', heure: fusion ? null : h('pas_en_ligne'), detail: null, url: null,
+      libelle: fusion ? `PR ${listePr(fusion)} fusionnée (lu sur GitHub)` : demandeUnGeste(raison) ? `Il faut ton geste${raison ? ` : ${raison}` : ''}` : `Rien à mettre en ligne${raison ? ` : ${raison}` : ''}` })
   } else {
     const d = j.en_ligne?.detail ?? null
     etapes.push({ cle: 'ligne', libelle: 'En ligne', etat: enLigne ? 'fait' : 'attente', heure: h('en_ligne'),
@@ -117,7 +144,7 @@ export function frise(brut: unknown, now: Date = new Date()): EtapeFrise[] | nul
 }
 
 /** La phrase au-dessus de « Ça fonctionne » : peut-il vérifier MAINTENANT ? null sans aucun jalon. */
-export function syntheseMiseEnLigne(brut: unknown, now: Date = new Date()): Synthese | null {
+export function syntheseMiseEnLigne(brut: unknown, now: Date = new Date(), etatsPr?: EtatsPr): Synthese | null {
   const j = lireJalons(brut)
   if (!Object.keys(j).length) return null
   if (j.en_ligne) {
@@ -129,6 +156,8 @@ export function syntheseMiseEnLigne(brut: unknown, now: Date = new Date()): Synt
     texte: 'Les robots ont trouvé un problème : Claude corrige. Attends avant de vérifier.' }
   if (j.pas_en_ligne) {
     const raison = j.pas_en_ligne.detail
+    const fusion = prFusionneesDepuis(raison, etatsPr)
+    if (fusion) return { code: 'fusionnee', teinte: 'ok', peutVerifier: true, texte: `PR ${listePr(fusion)} fusionnée (lu sur GitHub) : tu peux vérifier.` }
     return demandeUnGeste(raison)
       ? { code: 'geste', teinte: 'attention', peutVerifier: false, texte: `Il faut ton geste avant de vérifier${raison ? ` : ${raison}` : '.'}` }
       : { code: 'rien', teinte: 'info', peutVerifier: true, texte: `Rien à mettre en ligne${raison ? ` (${raison})` : ''} : tu peux vérifier.` }

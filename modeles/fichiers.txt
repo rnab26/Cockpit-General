@@ -46,3 +46,4 @@ modeles/cockpit-emplacement.sh
 scripts/clarte.py
 scripts/prochaine-migration.sh
 scripts/deployer-fonction.sh
+scripts/rapprocher.py

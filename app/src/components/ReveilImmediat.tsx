@@ -53,7 +53,7 @@ export function ReveilImmediat({ projet }: { projet: Projet }) {
   }
   const retirer = async () => {
     const ok = await confirmer({ titre: 'Retirer le réveil immédiat ?', libelleOk: 'Retirer', danger: true,
-      texte: <p>Le jeton est effacé du cockpit. Claude reviendra à son passage horaire. Pense à le révoquer aussi sur claude.ai (routine → Modifier → API → Revoke).</p> })
+      texte: <p>Le jeton est effacé du cockpit. Claude lira de nouveau tes messages quand une session s’ouvre sur ce projet. Pense à le révoquer aussi sur claude.ai (routine → Modifier → API → Revoke).</p> })
     if (!ok) return
     const { error } = await supabase.rpc('retirer_reveil_immediat', { p_projet: projet.slug })
     if (error) { toast.erreur(messageErreur(error)); return }
@@ -82,7 +82,7 @@ export function ReveilImmediat({ projet }: { projet: Projet }) {
         </>
       ) : (
         <p className="text-xs leading-snug text-texte-2" data-testid="reveil-etat">
-          Pas en place : Claude lit tes messages à son passage horaire. Pour qu’il réponde en quelques minutes : sur{' '}
+          Pas en place : Claude lit tes messages quand une session s’ouvre sur ce projet. Pour qu’il réponde en quelques minutes : sur{' '}
           <a className="text-accent underline" href="https://claude.ai/code/routines" target="_blank" rel="noreferrer">claude.ai/code/routines</a>,
           ouvre la routine « Réveil du chef », Modifier → Ajouter un déclencheur → API → Générer un jeton, puis colle l’adresse et le jeton ici.
         </p>

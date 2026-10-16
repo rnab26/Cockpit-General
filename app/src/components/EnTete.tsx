@@ -16,6 +16,8 @@ export interface Pastilles {
   travaillent: number; aToi: number; sessions?: number
   /** Mode autonome allumé (0031) : « alerte » = allumé sans rien à prendre ni personne au travail. */
   autonome?: 'actif' | 'alerte' | null
+  /** « Branché » prouvé par une VRAIE session (lib/branchement.estBranche avec les sessions du projet) ; absent = règle d'avant. */
+  branche?: boolean
 }
 
 /**
@@ -84,7 +86,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
             className="flex h-10 w-full min-w-0 items-center gap-2 rounded-full border border-bord bg-carte px-3 text-left text-sm font-semibold text-texte">
             {vueTout ? <Layers size={15} className="shrink-0 text-texte-2" aria-hidden /> : <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: projet?.couleur ?? '#888' }} />}
             <span className="min-w-0 flex-1 truncate">{vueTout ? 'Tout' : projet?.nom ?? 'Projets'}</span>
-            {!vueTout && projet && estBranche(projet, now) ? <span title="Projet branché au cockpit : une session a démarré ici ces dernières 24 h" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
+            {!vueTout && projet && (pastilles.get(projet.id)?.branche ?? estBranche(projet, now)) ? <span title="Projet branché au cockpit : une session a démarré ici ces dernières 24 h" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
             <PastillesOnglet p={pastilles.get(vueTout ? VUE_TOUT : projet?.id ?? '')} legende />
             <ChevronDown size={16} className={`shrink-0 text-texte-2 transition ${ouvert ? 'rotate-180' : ''}`} aria-hidden />
           </button>
@@ -105,7 +107,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
                     className={`flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left text-[15px] hover:bg-carte-2 ${actif ? 'font-semibold text-texte' : 'text-texte-2'} ${!p.actif ? 'opacity-60' : ''}`}>
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.couleur ?? '#888' }} />
                     <span className="min-w-0 flex-1 truncate">{p.nom}</span>
-                    {estBranche(p, now) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : null}
+                    {(pastilles.get(p.id)?.branche ?? estBranche(p, now)) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : <span data-testid="icone-non-branche" title="Pas branché : aucune vraie session n'a démarré ici ces dernières 24 h. Ouvre le projet pour voir pourquoi et comment le brancher." className="shrink-0 text-[11px] text-attention">pas branché</span>}
                     <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
                   </button>
                 )

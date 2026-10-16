@@ -1,8 +1,9 @@
 // Filet de sécurité (0044) : les mots que l'écran affiche. Toute la règle est en base
 // (etat_filet, filet_passe) ; ici seulement la mise en mots, testée (verifier-filet.ts).
+import { LIBELLE_LANCER } from './traiter.ts'
 
 export interface EtatFiletBase {
-  statut: 'actif' | 'eteint' | 'global_eteint' | 'cron_absent' | 'sans_jeton' | 'plafond' | 'test'
+  statut: 'actif' | 'eteint' | 'global_eteint' | 'cron_absent' | 'sans_chef' | 'sans_jeton' | 'plafond' | 'test'
   projet_actif: boolean
   plafond: number
   delai_min: number
@@ -26,8 +27,8 @@ export function phraseChef(c: EtatFiletBase['chef']): string {
   return ''
 }
 
-/** Le geste concret quand ça bloque : `jeton` ouvre le champ du jeton, `rallumer` rallume, `plafond` ouvre la limite. */
-export type ActionFilet = 'jeton' | 'rallumer' | 'plafond'
+/** Le geste concret quand ça bloque : `jeton` ouvre le champ du jeton, `rallumer` rallume, `plafond` ouvre la limite, `session` ouvre une session (copie la phrase, ouvre claude.ai/code). */
+export type ActionFilet = 'jeton' | 'rallumer' | 'plafond' | 'session'
 
 export interface PhraseFilet {
   ton: 'ok' | 'attente' | 'alerte' | 'neutre'
@@ -64,6 +65,10 @@ export function phraseFilet(e: EtatFiletBase): PhraseFilet {
     case 'global_eteint': return { ton: 'alerte', titre: 'Bloqué : coupé pour tous les projets', detail: 'Pour le rallumer : scripts/chef.sh --filet-global oui' }
     case 'eteint': return { ton: 'alerte', titre: 'Éteint sur ce projet', detail: 'Rien ne réveillera Claude tout seul.', action: { code: 'rallumer', libelle: 'Rallumer' } }
     case 'cron_absent': return { ton: 'alerte', titre: 'Bloqué : la surveillance de la base ne tourne pas', detail: 'Le job « cockpit-filet-securite » est absent ou coupé.' }
+    // 0082 : aucune session chef vivante nulle part. Le jeton EXISTE ; ce qui manque, c'est une session à réveiller. Ne jamais redemander un jeton ici.
+    case 'sans_chef': return e.attente.n > 0
+      ? { ton: 'alerte', titre: 'Bloqué : aucune session chef n’est ouverte', detail: `En attente : ${attente}. Rien ne se lance tout seul tant qu’aucune session n’est ouverte.`, action: { code: 'session', libelle: LIBELLE_LANCER } }
+      : { ton: 'ok', titre: 'Tout est en ordre', detail: 'Rien n’attend (aucune session chef n’est ouverte pour l’instant).' }
     case 'sans_jeton': return { ton: 'alerte', titre: 'Bloqué : Claude ne peut pas être réveillé', detail: `${attente ? `${attente} attend. ` : ''}Il manque le jeton du réveil.`, action: { code: 'jeton', libelle: 'Coller le jeton' } }
     case 'plafond': return { ton: 'alerte', titre: `Bloqué : ${e.aujourdhui} réveils déjà faits aujourd’hui`, detail: `${attente ? `${attente} attend. ` : ''}Reprend demain, ou monte la limite.`, action: { code: 'plafond', libelle: 'Changer la limite' } }
     default:

@@ -59,3 +59,18 @@ export function heureLisible(iso: string | null | undefined, now: Date = new Dat
   if (ecart === 1) return `hier ${hh}`
   return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} ${hh}`
 }
+
+/**
+ * L'âge ET l'heure d'une ligne qui attend (Raphaël, 16 oct. 2026 : « j'ai pas la date ni l'horaire de quand ça date ») :
+ * « il y a 3 h · 05:44 », « hier 02:44 » (jamais « hier · hier 02:44 » ni « il y a 2 j · hier 02:44 »), « il y a 2 j · 14 oct. 23:22 »,
+ * « 14 sept. 23:22 » au-delà d'un mois. Vide quand la date manque.
+ */
+export function ageEtHeure(iso: string | null | undefined, now: Date = new Date()): string {
+  const rel = dateRelative(iso, now)
+  if (!rel) return ''
+  if (rel === 'à l’instant') return rel
+  const heure = heureLisible(iso, now)
+  // « il y a 2 j » arrondit (46 h = 2 j) alors que « hier » compte les jours du calendrier : les deux ensemble se contredisent (vu sur FacePro, 16 oct.).
+  if (/^il y a \d+ j$/.test(rel) && heure.startsWith('hier')) return heure
+  return rel.startsWith('il y a') ? `${rel} · ${heure}` : heure   // « hier » et les dates : l'heure dit déjà le jour
+}

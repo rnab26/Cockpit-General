@@ -3,7 +3,7 @@
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
 import { estAction, separerChat } from '../src/lib/discussion.ts'
-import { estNouveau, nouveauxDabord, ouApparait, estCorrectionDemandee, enCeMoment, aToi, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
+import { estNouveau, nouveauxDabord, ouApparait, estCorrectionDemandee, enCeMoment, aToi, demandesDe, aTesterDe, estDemande, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST, etatVerification } from '../src/lib/presence.ts'
 
@@ -149,17 +149,31 @@ console.log('verifier-entonnoir')
     c.map((x) => `${x.code}${x.n}`).join(' ') === 'travaille1 attend_toi1 personne2', c)
   verifie('compteurs : vide → rien', compteursPresence([]).length === 0)
   const p = pastillesProjet(chantiers, messages, activites, [], [], now, SILENCE, 'fp')
-  verifie('pastilles FacePro : 1 chantier qui avance, 1 chose à toi', p.travaillent === 1 && p.aToi === 1, p)
+  // 13 oct. 2026 : « pour toi » (rouge de l'onglet) = les DEMANDES. Le seul élément de FacePro est un chantier à tester.
+  verifie('pastilles FacePro : 1 chantier qui avance, aucune demande (son seul élément est un chantier à tester)',
+    p.travaillent === 1 && p.aToi === 0 && aToi(chantiers, messages, 'fp').length === 1 && aToi(chantiers, messages, 'fp')[0].type === 'a_verifier', p)
   const tout = pastillesProjet(chantiers, messages, activites, [], [], now, SILENCE, null)
   const nSection = caAvanceToutSeul(chantiers, activites, messages, [], [], now, SILENCE, null).filter((l) => l.vivant).length
   verifie('voyant vert « Tout » = le n de « Ça avance tout seul » (une seule source), pas le nombre de sessions',
-    tout.travaillent === nSection && tout.travaillent === 1 && tout.sessions === 2 && tout.aToi === aToi(chantiers, messages).length, { tout, nSection })
+    tout.travaillent === nSection && tout.travaillent === 1 && tout.sessions === 2 && tout.aToi === demandesDe(aToi(chantiers, messages)).length && tout.aToi === 4, { tout, nSection })
   const leg = legendeVoyants({ ...tout, autonome: 'actif' })
   verifie('légende : un libellé en mots par voyant allumé',
     leg.length === 3 && leg.some((x) => x.code === 'travaillent' && x.texte === '1 chantier avance en ce moment (2 sessions de Claude)')
-    && leg.some((x) => x.code === 'aToi' && /^7 choses attendent ta réponse$/.test(x.texte)) && leg.some((x) => x.code === 'autonome' && /autonome allumé/.test(x.texte)), leg)
+    && leg.some((x) => x.code === 'aToi' && /^4 choses attendent ta réponse$/.test(x.texte)) && leg.some((x) => x.code === 'autonome' && /autonome allumé/.test(x.texte)), leg)
   verifie('légende : rien d’allumé → aucune ligne ; singulier correct',
     legendeVoyants({ travaillent: 0, aToi: 0 }).length === 0 && legendeVoyants({ travaillent: 0, aToi: 1 })[0].texte === '1 chose attend ta réponse')
+}
+
+// 4 bis. Demandes et « à tester » (13 oct. 2026) : « pour toi » ne compte que ce qui demande une réponse
+{
+  const tous = aToi(chantiers, messages)
+  const types = (l: { type: string }[]) => [...new Set(l.map((e) => e.type))].sort().join(',')
+  verifie('estDemande : tout sauf un chantier à tester', estDemande({ type: 'question' }) && estDemande({ type: 'action' }) && estDemande({ type: 'fusion' })
+    && estDemande({ type: 'a_cadrer' }) && estDemande({ type: 'bloque' }) && !estDemande({ type: 'a_verifier' }))
+  verifie('demandes + à tester = tout « À toi », rien perdu, rien compté deux fois',
+    demandesDe(tous).length + aTesterDe(tous).length === tous.length && types(aTesterDe(tous)) === 'a_verifier' && !types(demandesDe(tous)).includes('a_verifier'), { tous: tous.length, demandes: demandesDe(tous).length })
+  verifie('l’ordre du tri est gardé dans chaque liste (déjà trié : trier encore ne change rien)',
+    trierAToi(demandesDe(tous)).map((e) => e.cle).join() === demandesDe(tous).map((e) => e.cle).join() && trierAToi(aTesterDe(tous)).map((e) => e.cle).join() === aTesterDe(tous).map((e) => e.cle).join())
 }
 
 // 5. Tri d'une liste de section par présence
@@ -239,13 +253,13 @@ console.log('verifier-entonnoir')
     && /pas encore prise/.test(etatVerification({ pris_par: null, pris_jusqu_a: null, verif_demandee_at: ilY(90) }, now))
     && /prise par agent\/verif-1/.test(etatVerification({ pris_par: 'agent/verif-1', pris_jusqu_a: fut, verif_demandee_at: ilY(90) }, now)))
   const t = aToi(cv, [])
-  verifie('vérifie pour moi : pas dans « À toi » ; les deux autres y sont', !t.some((e) => e.chantier?.id === 'v-demande') && t.length === 2, t.map((e) => e.chantier?.id))
+  verifie('vérifie pour moi : pas dans « À toi » ; les deux autres y sont (à tester, pas des demandes)', !t.some((e) => e.chantier?.id === 'v-demande') && t.length === 2 && demandesDe(t).length === 0 && aTesterDe(t).length === 2, t.map((e) => e.chantier?.id))
   const l = caAvanceToutSeul(cv, [], [], [], [], now, SILENCE)
   const ligne = l.find((x) => x.c.id === 'v-demande')
   verifie('vérifie pour moi sans assistant vivant : ni barre ni vivant (30/09), en attente d’un assistant',
     l.length === 1 && !!ligne && !ligne.vivant && !ligne.activite && ligne.pourquoi === 'Vérification demandée : en attente d’un assistant', l)
   const tb = tableauDeBord({ chantiers: cv, messages: [], activites: [], sessions: [], taches: [] }, now, SILENCE, '7j', ['ck'])
-  verifie('vérifie pour moi sans assistant : PAS dans « ça avance » (0), compté « en attente », pas dans « pour toi » (2)', tb.tuiles.caAvance === 0 && tb.tuiles.enPause === 1 && tb.tuiles.pourToi === 2, tb.tuiles)
+  verifie('vérifie pour moi sans assistant : PAS dans « ça avance » (0), compté « en attente », pas dans « pour toi » (0) ; les deux autres sont « à tester » (2)', tb.tuiles.caAvance === 0 && tb.tuiles.enPause === 1 && tb.tuiles.pourToi === 0 && tb.tuiles.aTester === 2, tb.tuiles)
   // Un agent de vérification vivant ne change pas le nom (il reste « Claude vérifie pour toi »), sa barre s'affiche.
   const agent = { id: 't1', projet_id: 'ck', chantier_id: 'v-demande', type: 'agent', statut: 'en_cours', vu_at: il(1), progres_at: il(1), pourcentage: 40, etape: 'compare à la source', description: 'vérif' } as never
   const la = caAvanceToutSeul(cv, [], [], [], [agent], now, SILENCE).find((x) => x.c.id === 'v-demande')

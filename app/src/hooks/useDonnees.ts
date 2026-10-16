@@ -7,6 +7,7 @@ import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
 import { abonner, etatFile } from '../lib/fetchResilient.ts'
 import { fusionnerEnAttente } from '../lib/fileAttente.ts'
 import { remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
+import { avecSigneDeSession } from '../lib/presence.ts'
 import { appliquer, curseurDelta, filtreDelta, LotEvenements, ORDRES, pleinDu, TACHES_RECENTES_H, type Lot, type TableDonnees } from '../lib/deltaDonnees.ts'
 
 export type EtatDirect = 'connexion' | 'direct' | 'coupe'
@@ -33,10 +34,10 @@ export const VUE_TOUT = 'tout'
  *
  * VITESSE (7 oct. 2026, chantier 9d83828c) : la lecture complète des six tables
  * (≈ 2,9 Mo) n'a lieu qu'au chargement, au bouton « Actualiser » et toutes les
- * 5 minutes. Tout le reste est incrémental (lib/deltaDonnees.ts) : un événement du
+ * 30 minutes. Tout le reste est incrémental (lib/deltaDonnees.ts) : un événement du
  * direct est APPLIQUÉ à la ligne concernée (regroupé par rafale), un sondage ou une
  * action (`recharger()`) ne lit que les lignes modifiées depuis la plus récente
- * connue. Mesures avant/après dans le CLAUDE.md, section « Vitesse ».
+ * connue. Mesures avant/après dans docs/historique/app-ecran-donnees.md, section « Vitesse ».
  *
  * Les projets de TEST des bancs (slug `test-…`) sont retirés ICI, à la source,
  * pour tout l'écran (onglets, « Tout », pastilles, réglages) : leurs lignes
@@ -120,7 +121,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     history.replaceState(null, '', p ? `#projet=${p.slug}` : '#tout')
   }, [projets])
 
-  /** Lecture COMPLÈTE d'une table (chargement, « Actualiser », toutes les 5 minutes). */
+  /** Lecture COMPLÈTE d'une table (chargement, « Actualiser », toutes les 30 minutes). */
   const lireTable = useCallback(async (table: Table): Promise<Ligne[]> => {
     if (table === 'sections') {
       const { data, error } = await supabase.from('sections').select('*').order('position').order('nom')
@@ -210,7 +211,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
   // suivant). Une demande qui arrive pendant un passage en programme donc UN de plus juste derrière, partagé par
   // toutes les demandes du moment.
   // Un passage est INCRÉMENTAL (lireDelta) sauf : tout premier chargement, bouton « Actualiser » / « Réessayer »
-  // (`complet`), ou dernier passage complet vieux de 5 minutes (suppressions que le direct n'aurait pas dites).
+  // (`complet`), ou dernier passage complet vieux de 30 minutes (suppressions que le direct n'aurait pas dites).
   const enCours = useRef<Promise<void> | null>(null)
   const suivant = useRef<{ p: Promise<void>; silencieux: boolean; complet: boolean } | null>(null)
   const dejaCharge = useRef(false)
@@ -305,7 +306,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     return () => { void supabase.removeChannel(ch); canal.current = null }
   }, [aDesProjets, recharger])
 
-  // Direct coupé : sondage toutes les 30 s (delta : quelques Ko ; complet seulement toutes les 5 min).
+  // Direct coupé : sondage toutes les 30 s (delta : quelques Ko ; complet seulement toutes les 30 min).
   // La bibliothèque retente le canal d'elle-même.
   useEffect(() => {
     if (direct !== 'coupe') return
@@ -343,7 +344,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
   const ids = useMemo(() => new Set(projets.map((p) => p.id)), [projets])
   const vis = useMemo(() => ({
     sections: lignesVisibles(sections, ids), chantiers: lignesVisibles(chantiers, ids), messages: lignesVisibles(messagesAffiches, ids),
-    activites: lignesVisibles(activites, ids), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
+    activites: avecSigneDeSession(lignesVisibles(activites, ids), lignesVisibles(sessions, ids)), sessions: lignesVisibles(sessions, ids), taches: lignesVisibles(taches, ids),
   }), [ids, sections, chantiers, messagesAffiches, activites, sessions, taches])
 
   return {

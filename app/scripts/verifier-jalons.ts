@@ -2,7 +2,7 @@
 // « tu peux vérifier maintenant / attends » (src/lib/jalons.ts, migration 0007).
 // Dates construites en heure LOCALE : le test tient quel que soit le fuseau.
 import { verifie, bilan } from './_assert.ts'
-import { frise, syntheseMiseEnLigne, heureLisible, momentLisible, lireJalons, demandeUnGeste } from '../src/lib/jalons.ts'
+import { frise, syntheseMiseEnLigne, heureLisible, momentLisible, lireJalons, demandeUnGeste, prCitees } from '../src/lib/jalons.ts'
 
 const now = new Date(2026, 8, 29, 15, 30)
 const a = (h: number, m: number, jour = 29) => new Date(2026, 8, jour, h, m).toISOString()
@@ -59,6 +59,23 @@ verifie('jsonb mal formé : ignoré sans planter', frise('n’importe quoi', now
   verifie('geste : « 👉 Il faut ton geste : … »', frise(geste, now)![3].libelle.startsWith('Il faut ton geste : installe'))
   verifie('geste : la phrase le dit, il ne peut pas encore vérifier', syntheseMiseEnLigne(geste, now)!.code === 'geste' && !syntheseMiseEnLigne(geste, now)!.peutVerifier)
   verifie('demandeUnGeste : « Raphaël doit activer Pages » oui, « aucun changement déployable » non', demandeUnGeste('Raphaël doit activer Pages') && !demandeUnGeste('aucun changement déployable'))
+}
+
+// 5 bis. « PR #n pas encore fusionnée » figé : relu sur GitHub (16 oct. 2026).
+{
+  const raison = 'PR #146 pas encore fusionnée (CI en cours)'
+  const j = { ...J('code', a(15, 0)), ...J('pas_en_ligne', a(15, 5), raison) }
+  verifie('prCitees : #146', prCitees(raison).join() === '146' && prCitees('PR #3 et PR #4').join() === '3,4' && prCitees('rien').length === 0)
+  verifie('sans lecture GitHub : texte inchangé', frise(j, now)![3].libelle === `Rien à mettre en ligne : ${raison}`)
+  verifie('PR encore ouverte : texte inchangé', frise(j, now, { 146: 'open' })![3].libelle === `Rien à mettre en ligne : ${raison}`)
+  const f = frise(j, now, { 146: 'merged' })!
+  verifie('PR fusionnée : l’étape ne dit plus « pas fusionnée »', f[3].etat === 'fait' && f[3].libelle === 'PR #146 fusionnée (lu sur GitHub)', f[3].libelle)
+  const s = syntheseMiseEnLigne(j, now, { 146: 'merged' })!
+  verifie('PR fusionnée : la phrase dit de vérifier', s.code === 'fusionnee' && s.peutVerifier && s.texte.includes('#146'))
+  const deux = J('pas_en_ligne', a(15, 5), 'PR #1 et PR #2 pas encore fusionnées')
+  verifie('deux PR dont une ouverte : inchangé', syntheseMiseEnLigne(deux, now, { 1: 'merged', 2: 'open' })!.code === 'rien')
+  verifie('une raison qui ne parle pas de fusion n’est jamais contredite', syntheseMiseEnLigne(J('pas_en_ligne', a(15, 5), 'documentation seulement, voir PR #146'), now, { 146: 'merged' })!.code === 'rien')
+  verifie('un geste demandé n’est pas contredit', syntheseMiseEnLigne(J('pas_en_ligne', a(15, 5), 'installe l’APK, PR #146 pas fusionnée'), now, { 146: 'open' })!.code === 'geste')
 }
 
 // 6. Une adresse qui n'en est pas une n'est pas un lien.
