@@ -25,7 +25,7 @@ raison (action « Recharge le compte RunPod », 9 h ; question d'argent du Trieu
 « Oui, les 18 » (carte feac1dcd) : **les 18 chantiers FacePro nés de ses messages sont archivés** (relu en base : 18 archivés, 1 resté ouvert, « Vas-y teste toi la piste du relighting… »,
 `a_verifier`, un vrai résultat).
 
-**Vérifié (base réelle, projets jetables, écran de téléphone)** : règles pures `verifier-epuration.ts` 29/29 et les 54 suites pures de l'app ; `verifier-base` §59 37/37 (la règle sur une table de cas, essai sans écriture,
+**Vérifié (base réelle, projets jetables, écran de téléphone)** : règles pures `verifier-epuration.ts` 31/31 (dans cinq fuseaux horaires) et les 54 suites pures de l'app ; `verifier-base` §59 37/37 (la règle sur une table de cas, essai sans écriture,
 jamais `answered_by`, jamais servie par `reponses_sans_suite`, délais 72 / 0 / 721, permissions, job, grants, défaut de la base = défaut de l'app, essai sur tous les vrais projets) ; `verifier-base` complet 944/945 (le
 seul rouge, §52 « un message répondu en 90 s », était un contrôle instable depuis 0072 : deux appels séparés ajoutaient le temps écoulé entre eux, 91 s au lieu de 90 ; corrigé en un seul INSERT, rejoué seul 8/8) ;
 parcours téléphone `app/scripts/verifier-epuration.mjs` 38/38 (dates et ordre de « Pour toi », la passe retire 2 cartes, « 2 cartes retirées seules · Voir », la fenêtre, le délai 24 → 48 → 24 dans Réglages du projet
@@ -36,6 +36,7 @@ tsc, build, `bash -n`, parité des reçus 69/69 ; les réglages des VRAIS projet
 hooks d'avant : 65/67 ; verte avec les hooks corrigés : 67/67) ; (2) `verifier-web.mjs` cliquait un détail « Qui travaille » qui n'existe pas quand seules des vérifications demandées vivent (4 « vérifie pour moi » de Melissa) :
 il plantait à 28/29, corrigé (493/493).
 
+**Constaté à 12 h 40 (heure d'Israël)** : les sessions de FacePro ont reposé 6 des sujets retirés avec la date du jour (budget GPU pour des tests de 1 à 3 $, clé fal : cartes d'argent encore valables, l'accord « jusqu'à 7 $ » était sans doute épuisé) : le cockpit nettoie, la session redemande ce qui compte. FacePro a donc de nouveau des cartes à lui ; elles sont récentes et claires. Le chantier « Fantôme translucide… », cas de sa première capture, n'a plus de carte mais reste « à cadrer » (aucune session n'a travaillé dessus depuis : son état est juste).
 **Pas fait / à lui de décider** : (1) les chantiers `a_cadrer` / `bloque` ne sont PAS rangés seuls (relevé du 16 oct. 09 h : FacePro 3 « à cadrer » + 1 « bloqué », Melissa 7 + 6, Trieur 1 « bloqué » ;
 ceux de Melissa sont ses propres à-faire importés : ne jamais les parquer sans règle explicite) ; (2) les cartes de **fusion** ne sont pas acceptées seules (accepter une fusion de doublons livrés est une
 décision de produit) : aucune n'était ouverte le 16 oct. à 09 h, dans aucun projet ; (3) la ligne « N cartes retirées seules · Voir » de « À toi de jouer » n'apparaît qu'après un premier retrait (jamais une ligne vide), alors que le réglage du délai est toujours dans Réglages du projet › « Cartes déjà traitées » ; (4) l'interrupteur général (`regler_epuration(null, null, false)`) n'est pas exercé par le banc ; (5) le commit 175f86f de `rnab26/dotfiles` (règle globale « un message n'est pas un chantier »,
@@ -45,7 +46,7 @@ de lien « la retirer » ; une carte qui compte encore se remet d'un toucher («
 **À savoir avant de lancer des bancs** : Supabase signalait le 15 oct. un quota de données sortantes à 96 % (4,8 / 5 Go, période de grâce jusqu'au 2 nov., ensuite erreurs 402 sur Jarvis, cockpit et Trieur) — chantier `892c0410` du cockpit, tenu par une autre session. Un chargement complet de l'app pèse environ 3,6 Mo décodés (messages 2,5 Mo) : les bancs qui rechargent l'app contre la vraie base (`verifier-web`, `verifier-accueil`, rejeux `BASE_URL=…`) consomment ce quota ; ne les rejouer que s'ils servent une décision.
 **Pièges payés** : (1) pour vieillir un chantier dans un banc il faut `set local session_replication_role = replica` (le déclencheur `tracer_chantier` remet `updated_at` à maintenant) ;
 (2) un réglage d'écran ne filtre jamais sur `test-…` : mon banc visait un VRAI projet avant correction (relu : intact) ; (3) `sql.sh` n'accepte ni `insert … returning` ni une colonne nommée
-`t` ; (4) `ageEtHeure` ne répète pas « hier » (« hier 02:44 », pas « hier · hier 02:44 »).
+`t` ; (4) `ageEtHeure` ne répète pas « hier » (« hier 02:44 », pas « hier · hier 02:44 » ni « il y a 2 j · hier 00:53 », vu sur les vraies données de FacePro : corrigé, testé dans cinq fuseaux) ; (5) ne jamais enchaîner un banc avec `| head` : le tube coupé tue le banc avant son nettoyage et laisse un projet `test-…` (supprimé avec `purgerProjetsDeTest`) ; (6) un banc qui clique juste après `a-toi` peut cliquer une tuile encore vide sur une base un peu lente : attendre la fin des lectures (`networkidle`).
 
 ## 0 duodecies. Lot du 16 oct. 2026 (nuit) : un message n'est pas un chantier (migration 0091, chantier c2c79e7b)
 

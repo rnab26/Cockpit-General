@@ -7,7 +7,7 @@ import { cartesRetireesSeules, delaiEpuration, delaiSaisi, depuisParChantier, or
 import { ageEtHeure, dateRelative, heureLisible } from '../src/lib/dates.ts'
 import type { Chantier, Message } from '../src/lib/types.ts'
 
-const now = new Date('2026-10-16T09:00:00Z')
+const now = new Date(2026, 9, 16, 12, 0)                                 // midi, heure LOCALE : aucun test ne dépend du fuseau de la machine
 const il = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString()
 const carte = (id: string, extra: Partial<Message> = {}): Message => ({
   id, projet_id: 'p', chantier_id: 'c1', auteur: 'session', auteur_type: 'session', kind: 'question', corps: `Question ${id} ?`, pourquoi: null, options: null,
@@ -69,6 +69,10 @@ verifie('aujourd’hui : « il y a 5 h · 04:00 »', /^il y a 5 h · \d{2}:\d{2}
 verifie('hier : « hier 07:00 », jamais « hier · hier 07:00 »', /^hier \d{2}:\d{2}$/.test(ageEtHeure(il(26), now)), ageEtHeure(il(26), now))
 verifie('il y a 2 jours : l’âge puis la date et l’heure (« il y a 2 j · 14 oct. 10:00 »)', /^il y a 2 j · \d{1,2} oct\. \d{2}:\d{2}$/.test(ageEtHeure(il(50), now)), ageEtHeure(il(50), now))
 verifie('au-delà d’un mois : la date et l’heure, une seule fois', /^\d{1,2} \S+ \d{2}:\d{2}$/.test(ageEtHeure(il(24 * 40), now)) && !/·/.test(ageEtHeure(il(24 * 40), now)), ageEtHeure(il(24 * 40), now))
+const soir = new Date(2026, 9, 16, 23, 0)                              // heure LOCALE : le test ne dépend pas du fuseau de la machine
+const hierMatin = new Date(2026, 9, 15, 0, 30).toISOString()             // 46 h 30 plus tôt, mais bien « hier » au calendrier
+verifie('46 h plus tôt mais « hier » au calendrier : « hier 00:30 », jamais « il y a 2 j · hier 00:30 »', ageEtHeure(hierMatin, soir) === 'hier 00:30', ageEtHeure(hierMatin, soir))
+verifie('et le même cas en heures reste coherent : 10 h plus tôt, hier soir → « il y a 10 h · hier 23:00 »', ageEtHeure(new Date(2026, 9, 15, 23, 0).toISOString(), new Date(2026, 9, 16, 9, 0)) === 'il y a 10 h · hier 23:00', ageEtHeure(new Date(2026, 9, 15, 23, 0).toISOString(), new Date(2026, 9, 16, 9, 0)))
 verifie('à l’instant : « à l’instant »', ageEtHeure(il(0), now) === 'à l’instant')
 verifie('date manquante : vide', ageEtHeure(null, now) === '' && ageEtHeure(undefined, now) === '' && ageEtHeure('pas une date', now) === '')
 
