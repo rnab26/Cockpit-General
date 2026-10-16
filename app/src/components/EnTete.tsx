@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { SquareCheck, ChevronDown, Copy, Download, FolderTree, Layers, Moon, Plug, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
+import { Fragment, useRef, useState } from 'react'
+import { SquareCheck, ChevronDown, Copy, Download, FolderTree, Layers, Moon, Pause, Plug, MoreHorizontal, Plus, RefreshCw, Settings, type LucideIcon } from 'lucide-react'
 import type { Projet } from '../lib/types.ts'
 import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
@@ -7,6 +7,7 @@ import { dateRelative } from '../lib/dates.ts'
 import { useMenuQuiSeFerme } from '../ui/Modale.ts'
 import { useGlobal } from '../contexte.ts'
 import { estBranche } from '../lib/branchement.ts'
+import { enPause, groupesPause } from '../lib/pause.ts'
 import { legendeVoyants } from '../lib/entonnoir.ts'
 import { BarreRecherche, BoutonLoupe } from './Recherche.tsx'
 
@@ -86,7 +87,8 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
             className="flex h-10 w-full min-w-0 items-center gap-2 rounded-full border border-bord bg-carte px-3 text-left text-sm font-semibold text-texte">
             {vueTout ? <Layers size={15} className="shrink-0 text-texte-2" aria-hidden /> : <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: projet?.couleur ?? '#888' }} />}
             <span className="min-w-0 flex-1 truncate">{vueTout ? 'Tout' : projet?.nom ?? 'Projets'}</span>
-            {!vueTout && projet && (pastilles.get(projet.id)?.branche ?? estBranche(projet, now)) ? <span title="Projet branché au cockpit : une session a démarré ici ces dernières 24 h" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
+            {!vueTout && projet && enPause(projet) ? <span data-testid="icone-pause" title="En pause : Claude ne travaille pas sur ce projet" className="flex shrink-0 items-center gap-1 text-xs font-medium text-attention"><Pause size={14} aria-label="en pause" />pause</span> : null}
+            {!vueTout && projet && !enPause(projet) && (pastilles.get(projet.id)?.branche ?? estBranche(projet, now)) ? <span title="Projet branché au cockpit : une session a démarré ici ces dernières 24 h" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
             <PastillesOnglet p={pastilles.get(vueTout ? VUE_TOUT : projet?.id ?? '')} legende />
             <ChevronDown size={16} className={`shrink-0 text-texte-2 transition ${ouvert ? 'rotate-180' : ''}`} aria-hidden />
           </button>
@@ -100,16 +102,22 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
                   <PastillesOnglet p={pastilles.get(VUE_TOUT)} />
                 </button>
               ) : null}
-              {projets.map((p) => {
+              {(() => { const g = groupesPause(projets); return g.enPause.length ? <p data-testid="titre-branches" className="px-3 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-texte-2">Branchés ({g.branches.length})</p> : null })()}
+              {[...groupesPause(projets).branches, ...groupesPause(projets).enPause].map((p, i, tous) => {
                 const actif = !vueTout && p.id === projet?.id
+                const premierEnPause = enPause(p) && (i === 0 || !enPause(tous[i - 1]))
                 return (
-                  <button key={p.id} type="button" role="option" aria-selected={actif} onClick={() => choisir(p.id)} data-testid={`onglet-${p.slug}`}
+                  <Fragment key={p.id}>
+                    {premierEnPause ? <p data-testid="titre-en-pause" className="border-t border-bord/70 px-3 pb-0.5 pt-2 text-[11px] font-semibold uppercase tracking-wide text-attention">En pause ({tous.filter((x) => enPause(x)).length})</p> : null}
+                  <button type="button" role="option" aria-selected={actif} onClick={() => choisir(p.id)} data-testid={`onglet-${p.slug}`} data-pause={enPause(p) ? 'oui' : 'non'}
                     className={`flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left text-[15px] hover:bg-carte-2 ${actif ? 'font-semibold text-texte' : 'text-texte-2'} ${!p.actif ? 'opacity-60' : ''}`}>
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.couleur ?? '#888' }} />
                     <span className="min-w-0 flex-1 truncate">{p.nom}</span>
-                    {(pastilles.get(p.id)?.branche ?? estBranche(p, now)) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : <span data-testid="icone-non-branche" title="Pas branché : aucune vraie session n'a démarré ici ces dernières 24 h. Ouvre le projet pour voir pourquoi et comment le brancher." className="shrink-0 text-[11px] text-attention">pas branché</span>}
+                    {enPause(p) ? <span data-testid="icone-pause" title="En pause : Claude ne travaille pas sur ce projet" className="text-attention"><Pause size={15} aria-label="en pause" /></span>
+                      : (pastilles.get(p.id)?.branche ?? estBranche(p, now)) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : <span data-testid="icone-non-branche" title="Pas branché : aucune vraie session n'a démarré ici ces dernières 24 h. Ouvre le projet pour voir pourquoi et comment le brancher." className="shrink-0 text-[11px] text-attention">pas branché</span>}
                     <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
                   </button>
+                  </Fragment>
                 )
               })}
             </div>

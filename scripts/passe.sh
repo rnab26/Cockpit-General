@@ -17,6 +17,10 @@ PROJET="${COCKPIT_PROJET:-${1:-}}"
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 # Si CE projet a une chef (0014, 0019), un réveil ne prend rien lui-même : c'est
 # la passe de la chef du projet (elle seule lance des agents, sur ce projet seulement).
+# Projet EN PAUSE (0093) : aucune passe, aucune revue. Avant la migration la colonne manque : la lecture échoue = pas en pause.
+if [ "$("$SQL" "select en_pause as p from projets where slug = '$(q "$PROJET")'" 2>/dev/null | jq -r '.rows[0].p // false')" = "true" ]; then
+  echo "RIEN — le projet $PROJET est EN PAUSE (réglage de Raphaël). Termine ta réponse en une ligne, sans rien faire d'autre."; exit 0
+fi
 if [ "$("$SQL" "select chef_existe('$(q "$PROJET")') as e" 2>/dev/null | jq -r '.rows[0].e // false')" = "true" ]; then
   COCKPIT_PROJET="$PROJET" exec bash "$RACINE/scripts/chef.sh"
 fi

@@ -52,6 +52,11 @@ export interface Projet {
   /** Rapprochement GitHub → chantiers (0080) : passage automatique des hooks allumé (défaut) ; date du dernier passage. */
   rapprochement_auto?: boolean
   rapproche_at?: string | null
+  /** Interrupteur « Branché / En pause » (0093) : en pause = aucune session ni agent ne travaille dessus ; rien n'est supprimé. Absent avant 0093. */
+  en_pause?: boolean
+  pause_at?: string | null
+  pause_par?: string | null
+  pause_raison?: string | null
 }
 
 export interface Section {

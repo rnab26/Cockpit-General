@@ -38,6 +38,7 @@ import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
 import { depuisParChantier, ordrePourToi } from '../lib/epuration.ts'
 import { EpurationProjet, LigneRetireesSeules } from './CartesRetireesSeules.tsx'
+import { PauseProjet } from './PauseProjet.tsx'
 import { sansPourcentage } from '../lib/presence.ts'
 import { apercuDe, bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
 import { basculerRepli, comptesAToi, pastillesVisibles, filtreEffectif, filtrerAToi, lireRepliees, LIBELLE_FILTRE_A_TOI, PREF_FILTRE_A_TOI, PREF_REPLIEES, toutBasculer, toutEstReplie, type SectionAccueil } from '../lib/repli.ts'
@@ -840,6 +841,8 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
 
   return (
     <>
+      {/* Branché / En pause (0093) : en tête des réglages, hors du repli. */}
+      {g.admin ? <PauseProjet projet={p} /> : null}
       {/* L'interrupteur du mode autonome reste visible, hors du repli : un toucher (chantier 79ec70d6). */}
       {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
       {g.admin ? <FiletSecurite projet={p} onJeton={versJeton} /> : null}

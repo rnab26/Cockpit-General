@@ -180,11 +180,19 @@ Si TU as les outils Gmail (mcp__…Gmail…), fais-la maintenant : une recherche
 "
 fi
 
+# PROJET EN PAUSE (0093) : réglage de Raphaël. Avant la migration la colonne manque : la lecture échoue, aucun bandeau.
+bandeau_pause=""
+if [ "$(un "select en_pause as p from projets where slug = $P" | jq -r '.p // false')" = "true" ]; then
+  bandeau_pause="⏸ PROJET EN PAUSE (réglage de Raphaël) : aucune session ni agent ne travaille automatiquement sur ce projet. Ne deviens pas chef, ne lance ni agent ni renfort, ne prends aucun chantier tout seul, n'enchaîne rien. Si Raphaël t'écrit ici, réponds-lui normalement (c'est lui qui demande). Il rallume d'un toucher dans les Réglages du projet (ou scripts/chef.sh --pause non).
+
+"
+fi
+
 sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 [ -n "$sid" ] && [ -n "$debut_lecture" ] && printf '%s\n' "$debut_lecture" > "${TMPDIR:-/tmp}/cockpit-rep-$sid" 2>/dev/null
 
 emettre "$(cat <<FIN
-# Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
+${bandeau_pause}# Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
 
 RÉPONSES COURTES : à Raphaël, réponds simple, court, net et précis (la réponse d'abord, pas de pavé).
 
