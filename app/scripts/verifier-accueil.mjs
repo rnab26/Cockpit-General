@@ -174,6 +174,26 @@ try {
   await page.getByTestId('accueil-a-tester-libelle').waitFor({ timeout: 15000 })
   verifie('… et la ligne « 3 livrés à tester » est revenue', (await page.getByTestId('accueil-a-tester-libelle').innerText()) === '3 livrés à tester')
 
+  // --- 2 ter. Un chantier ARCHIVÉ resté « à vérifier » (classé sans test, ou doublon fusionné) ne propose PAS « Ça ne marche pas » :
+  //     le serveur refuse (« ce chantier n'est pas « à vérifier » »), Raphaël ne pouvait pas signaler (chantier bcc277d9). Le fil dit pourquoi et offre « Désarchiver ».
+  const elTest = page.locator(`[data-testid="element-a-toi"][data-type="a_verifier"][data-element-chantier="${chTests[0]}"]`)
+  if (await elTest.count() === 0) await page.getByTestId('accueil-a-tester-repli').click()
+  await elTest.waitFor({ timeout: 8000 })
+  await elTest.click()
+  await page.getByTestId('bloc-validation').waitFor({ timeout: 10000 })
+  verifie('chantier « à vérifier » ouvert (non archivé) : « Ça ne marche pas » est proposé', await page.getByTestId('btn-ne-marche-pas').count() === 1 && await page.getByTestId('bulle-archive').count() === 0)
+  sql(`update chantiers set archived_at = now() where id = '${chTests[0]}'`)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByTestId('bulle-archive').waitFor({ timeout: 15000 })
+  verifie('même chantier archivé (état toujours « à vérifier ») : plus de « Ça ne marche pas » ni de bloc de validation, une explication à la place',
+    await page.getByTestId('btn-ne-marche-pas').count() === 0 && await page.getByTestId('bloc-validation').count() === 0 && (await page.getByTestId('texte-archive').innerText()).includes('classé sans test'))
+  await page.screenshot({ path: `${CAPTURES}/fil-archive.png` })
+  await page.getByTestId('desarchiver-chantier').click()
+  await page.getByTestId('bloc-validation').waitFor({ timeout: 15000 })
+  verifie('« Désarchiver » : le bloc « Ça marche / Ça ne marche pas » revient, et l’archivage est levé en base',
+    await page.getByTestId('btn-ne-marche-pas').count() === 1 && sql(`select archived_at is null as ok from chantiers where id = '${chTests[0]}'`)[0].ok === true)
+  await page.goto(BASE + `#projet=${SLUG}`, { waitUntil: 'domcontentloaded' })
+
   // --- 3. vue détaillée : l'ancien accueil, tuile « à tester » comprise ; le choix survit au rechargement
   await page.getByTestId('vue-detaillee').click()
   await page.getByTestId('detail-par-ligne').waitFor({ timeout: 10000 })

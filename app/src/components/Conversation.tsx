@@ -612,6 +612,11 @@ function FilChantier({ chantierId }: { chantierId: string }) {
     if (error) { toast.erreur(messageErreur(error)); return }
     toast.succes(`« ${c.titre} » relancé : il passe dans « Prêt à lancer ».`); await recharger()
   }
+  const desarchiver = async () => {
+    const { error } = await supabase.from('chantiers').update({ archived_at: null }).eq('id', c.id)
+    if (error) { toast.erreur(messageErreur(error)); return }
+    toast.succes(`« ${c.titre} » désarchivé.`); await recharger()
+  }
   const teinte = presence.code === 'travaille' ? 'text-ok' : presence.teinte === 'alerte' ? 'text-alerte' : presence.teinte === 'attention' ? 'text-attention' : presence.teinte === 'info' ? 'text-info' : 'text-texte-2'
 
   return (
@@ -673,6 +678,16 @@ function FilChantier({ chantierId }: { chantierId: string }) {
           <Bulle cote="gauche" auteur={c.archived_at ? 'Abandonné' : c.reporte_jusqu_a ? 'Reporté' : 'Mis de côté'} testId="bulle-reporte">
             <p className="text-sm" data-testid="texte-reporte">{texteReporte(c, now) ?? presence.tonAction}</p>
             {admin ? <Button taille="sm" className="mt-2" onClick={relancer} data-testid="relancer-maintenant"><Play size={15} aria-hidden />Relancer maintenant</Button> : null}
+          </Bulle>
+        ) : null}
+        {c.archived_at && c.etat !== 'valide' && c.etat !== 'reporte' ? (
+          <Bulle cote="gauche" auteur="Archivé" testId="bulle-archive">
+            <p className="text-sm" data-testid="texte-archive">
+              {c.doublon_de ? 'Ce chantier a été fusionné dans un autre : rien à faire ici.'
+                : c.etat === 'a_verifier' ? 'Ce chantier est classé sans test : il n’y a plus rien à valider. Désarchive-le si tu veux le tester ou signaler un problème.'
+                : 'Ce chantier est archivé.'}
+            </p>
+            {admin && !c.doublon_de ? <Button taille="sm" className="mt-2" onClick={desarchiver} data-testid="desarchiver-chantier"><ArchiveRestore size={15} aria-hidden />Désarchiver</Button> : null}
           </Bulle>
         ) : null}
         {c.etat === 'valide' ? (
