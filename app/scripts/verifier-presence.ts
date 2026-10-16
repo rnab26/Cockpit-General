@@ -3,7 +3,7 @@
 // reprises d'un visuel, badge « En cours », personne dessus.
 import { verifie, bilan } from './_assert.ts'
 import { presenceDe } from '../src/lib/entonnoir.ts'
-import { presenceChantier, sessionsActives, consigneClaude, preuveDeVie, silenceMsDe, derniereDemandeOuCaEnEst, MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
+import { avecSigneDeSession, presenceChantier, sessionsActives, consigneClaude, preuveDeVie, silenceMsDe, derniereDemandeOuCaEnEst, MESSAGE_OU_CA_EN_EST } from '../src/lib/presence.ts'
 
 const now = new Date('2026-09-29T01:04:00Z')
 const il = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
@@ -98,7 +98,26 @@ verifie('silence : un réglage à 5 min fait passer 6 min de silence en « silen
   verifie('agent signalé il y a 3 min sur le chantier → « 🟢 Un agent y travaille »', p.code === 'travaille' && p.libelle.includes('Un agent'), p)
   verifie('sans agent, le même chantier reste « Personne dessus »', presenceDe(c, [], new Set(), now, 15 * 60_000, []).presence.code === 'personne')
 }
-// 13. (0087) Tour fini (hook Stop) : la session attend SON message — ni « silencieuse » ni « personne dessus ».
+// 13. Le cas du 14/10 : session vivante (signe il y a 2 min), dernière étape il y a 2 h -> « travaille », pas « silencieux ».
+{
+  const c = { ...ch('en_cours', 'claude/x', dans(60)), id: 'c1' }
+  const a = { ...act('en_cours', 135), projet_id: 'p', id: 'a1' } as never
+  const s = (vu: number, fin: string | null = null) => ({ id: 's', projet_id: 'p', branche: 'claude/x', vu_at: il(vu), fin_at: fin }) as never
+  const sil = 15 * 60_000
+  const avec = (ss: never[]) => avecSigneDeSession([a], ss)
+  verifier13(avec([s(2)]))
+  function verifier13(acts: any[]) {
+    verifie('étape de 2 h + session vue il y a 2 min = « Claude y travaille »', presenceChantier(c, acts[0], false, now, sil).code === 'travaille')
+    verifie('…la date affichée reste celle de la vraie étape', acts[0].updated_at === il(135))
+  }
+  verifie('session muette depuis 40 min = toujours « silencieux »', presenceChantier(c, avec([s(40)])[0], false, now, sil).code === 'silencieux')
+  verifie('session finie = pas de preuve de vie', presenceChantier(c, avec([s(2, il(1))])[0], false, now, sil).code === 'silencieux')
+  verifie('autre session = pas de preuve de vie', preuveDeVie(avecSigneDeSession([a], [{ id: 's', projet_id: 'p', branche: 'autre', vu_at: il(1), fin_at: null } as never])[0], now, sil) === false)
+  const vieille = { ...act('en_cours', 600), projet_id: 'p', id: 'a0' } as never
+  verifie('une vieille barre « en cours » d’un autre chantier ne ressuscite pas (une chose à la fois)', preuveDeVie(avecSigneDeSession([vieille, a], [s(2)])[0], now, sil) === false)
+}
+
+// 14. (0087) Tour fini (hook Stop) : la session attend SON message — ni « silencieuse » ni « personne dessus ».
 {
   const pe = presenceChantier(ch('en_cours', 'claude/x', dans(60)), act('attente', 10), false, now)
   verifie('tour terminé récemment → « Claude attend ton message dans la session »', pe.libelle.includes('attend ton message') && pe.code === 'travaille' && !pe.barreVive, pe)

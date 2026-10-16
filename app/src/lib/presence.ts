@@ -13,7 +13,7 @@
 // progression.sh depuis moins de `silenceMs`). La colonne `etat` ne suffit
 // jamais à dire que quelqu'un travaille : elle dit où en est le chantier, pas
 // qui est dessus.
-import type { Activite, Chantier } from './types.ts'
+import type { Activite, Chantier, SessionClaude } from './types.ts'
 import { dateRelative } from './dates.ts'
 
 export const SILENCE_DEFAUT_MIN = 15
@@ -57,18 +57,52 @@ export interface Presence {
 }
 
 type C = Pick<Chantier, 'etat' | 'pris_par' | 'pris_jusqu_a' | 'archived_at' | 'verif_demandee_at'>
-type A = Pick<Activite, 'statut' | 'updated_at' | 'session' | 'pourcentage' | 'etape'>
+type A = Pick<Activite, 'statut' | 'updated_at' | 'session' | 'pourcentage' | 'etape'> & { signe_session_at?: string | null }
 
 const ms = (iso: string | null | undefined) => {
   const t = iso ? new Date(iso).getTime() : NaN
   return Number.isNaN(t) ? null : t
 }
 
-/** Une ligne d'activité est une preuve de vie si elle est « en cours » et récente. */
+/**
+ * Une ligne d'activité est une preuve de vie si elle est « en cours » et que
+ * SON étape OU le signe de vie de sa session est récent. Même règle que la base
+ * (sans_signe_de_vie : fiche, activité, agent, session). Raphaël, 14 oct. : une
+ * session vivante (limite d'usage puis redémarrage) mais sans nouvelle étape
+ * depuis 2 h paraissait « sans nouvelles » parce que l'écran ne lisait que les étapes.
+ */
 export function preuveDeVie(a: A | null | undefined, now: Date, silenceMs: number): boolean {
   if (!a || a.statut !== 'en_cours') return false
-  const t = ms(a.updated_at)
-  return t !== null && now.getTime() - t < silenceMs
+  const t = Math.max(ms(a.updated_at) ?? -Infinity, ms(a.signe_session_at) ?? -Infinity)
+  return Number.isFinite(t) && now.getTime() - t < silenceMs
+}
+
+/**
+ * Joint aux barres « en cours » le dernier signe de vie de leur session (sessions.vu_at, session non finie).
+ * Seule la barre la plus récente de chaque session le reçoit : une session fait UNE chose à la fois,
+ * une vieille barre restée « en cours » d'un autre chantier ne doit pas ressusciter. Les dates affichées
+ * (updated_at) ne changent pas : on ne prétend jamais qu'une étape est récente.
+ */
+export function avecSigneDeSession<T extends Activite>(activites: readonly T[], sessions: readonly SessionClaude[]): T[] {
+  const vu = new Map<string, string>()
+  for (const s of sessions) {
+    if (!s.branche || s.fin_at) continue
+    const k = `${s.projet_id}|${s.branche}`
+    const d = vu.get(k)
+    if (!d || s.vu_at > d) vu.set(k, s.vu_at)
+  }
+  if (vu.size === 0) return activites as T[]
+  const derniere = new Map<string, T>()
+  for (const a of activites) {
+    if (a.statut !== 'en_cours') continue
+    const k = `${a.projet_id}|${a.session}`
+    const d = derniere.get(k)
+    if (!d || a.updated_at > d.updated_at) derniere.set(k, a)
+  }
+  return activites.map((a) => {
+    const v = vu.get(`${a.projet_id}|${a.session}`)
+    return v && derniere.get(`${a.projet_id}|${a.session}`) === a && v > a.updated_at ? { ...a, signe_session_at: v } : a
+  })
 }
 
 /**
