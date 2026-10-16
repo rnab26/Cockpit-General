@@ -1,6 +1,6 @@
 // Déplacer un chantier vers un autre projet (src/lib/deplacer.ts, 0036).
 import { verifie, bilan } from './_assert.ts'
-import { projetsCibles, texteConfirmationDeplacement } from '../src/lib/deplacer.ts'
+import { projetsPourCreation, projetsCibles, texteConfirmationDeplacement } from '../src/lib/deplacer.ts'
 
 console.log('verifier-deplacer')
 const ps = [
@@ -13,4 +13,6 @@ verifie('aucun autre projet : liste vide', projetsCibles([ps[0]], '1').length ==
 const t = texteConfirmationDeplacement('Bouton trop petit', 'FacePro', 'Cockpit', 3, 'Correctifs')
 verifie('confirmation : titre, départ, arrivée, messages, section', /Bouton trop petit/.test(t) && /FacePro/.test(t) && /3 messages/.test(t) && /« Correctifs »/.test(t))
 verifie('confirmation : sans message ni section', /pas encore de message/.test(texteConfirmationDeplacement('x', 'A', 'B', 0, null)) && /sans section/.test(texteConfirmationDeplacement('x', 'A', 'B', 0, null)))
+const pc = projetsPourCreation(ps, '4')
+verifie('création : actifs hors test + le projet regardé (même éteint), triés', pc.map((p) => p.slug).join() === 'alpha,cockpit,facepro,vieux', pc)
 bilan('verifier-deplacer')

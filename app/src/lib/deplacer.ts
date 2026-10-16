@@ -16,3 +16,10 @@ export function texteConfirmationDeplacement(titre: string, depart: string, cibl
   const sec = section ? `Il est rangé dans « ${section} » de « ${cible} » (section créée si besoin).` : 'Il arrive sans section.'
   return `« ${titre} » quitte « ${depart} » pour « ${cible} ». ${msgs} ${sec} Sa réservation par une session est libérée.`
 }
+
+/** Où créer un chantier : tous les projets actifs hors test, plus celui qu'on regarde (même éteint), dans l'ordre alphabétique. */
+export function projetsPourCreation<P extends ProjetCible>(projets: readonly P[], projetIdActuel: string): P[] {
+  return projets
+    .filter((p) => p.id === projetIdActuel || (p.actif !== false && !estProjetDeTest(p.slug)))
+    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'))
+}
