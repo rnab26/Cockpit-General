@@ -606,7 +606,7 @@ function FilChantier({ chantierId }: { chantierId: string }) {
       <Corps chantierId={c.id} placeholder={PLACEHOLDER[presence.code] ?? 'Écrire à Claude…'} cle={cle} nbActions={nbActions} faites={faites}
         liens={liensAFaire(cartes, c.etat === 'a_verifier' ? c.comment_verifier : null)}
         actions={<>
-          {c.etat === 'a_verifier' ? <AFaire><BlocValidation chantier={c} onQuestionsAffichees={setQuestionsDansValidation} /></AFaire> : null}
+          {c.etat === 'a_verifier' && !c.archived_at ? <AFaire><BlocValidation chantier={c} onQuestionsAffichees={setQuestionsDansValidation} /></AFaire> : null}
           {c.etat === 'a_cadrer' ? <AFaire><BlocCadrer chantier={c} /></AFaire> : null}
           {c.etat === 'bloque' ? <AFaire><BlocBloque chantier={c} blocage={dernierBlocage} /></AFaire> : null}
           {cartes.map((m) => m.kind === 'fusion'
