@@ -1,6 +1,6 @@
 import { DescriptifChantier } from './DescriptifChantier.tsx'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Ban, Check, Clock, ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2 } from 'lucide-react'
+import { Ban, Check, Clock, ArrowDownUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronRight, CirclePause, MessageSquareText, Rocket, Settings2, UsersRound } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { marcheDe } from '../lib/marche.ts'
@@ -28,7 +28,8 @@ import { ouEnEstVisible } from '../lib/ouEnEst.ts'
 import { BlocSession } from './QuiTravaille.tsx'
 import { IconeAToi, PointProjet } from './Icones.tsx'
 import { useFlash } from './Vivant.tsx'
-import { Renforts, RenfortsTout } from './Renforts.tsx'
+import { Renforts } from './Renforts.tsx'
+import { ToutLancer } from './ToutLancer.tsx'
 import { ReveilImmediat } from './ReveilImmediat.tsx'
 import { FiletSecurite } from './FiletSecurite.tsx'
 import { RapprochementGithub } from './RapprochementGithub.tsx'
@@ -87,6 +88,8 @@ export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { pr
       {/* Vue d'un projet : les trois icônes (travail, réglages, coûts) viennent juste sous les chiffres, puis la discussion. */}
       {entre}
       {seulementTuiles ? null : <>
+      {/* UN seul, en haut : bouton « Tout lancer » (16 oct. 2026) : le détail des renforts est dans Réglages du projet. */}
+      <ToutLancer projetId={projetId} />
       {projetId ? <EcrireAuProjet projetId={projetId} /> : null}
       <div className="-mb-3 flex items-center justify-between">
         <Button taille="sm" variante="discret" onClick={() => poserVue('simple')} data-testid="vue-simple">Vue simple</Button>
@@ -97,8 +100,6 @@ export function TableauDeBord({ projetId, entre, seulementTuiles = false }: { pr
       <SectionCaAvance t={t} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} {...repli('ca-avance')} />
       <SectionAToi elements={t.aToi} avecProjet={!projetId && g.projets.length > 1} {...repli('a-toi')} />
       <SectionATester elements={t.aTester} avecProjet={!projetId && g.projets.length > 1} projetId={projetId} />
-      {/* Renforts (0024, D-10) : au-dessus de ce qui attend, bien distinct. */}
-      {projetId ? <Renforts projetId={projetId} /> : <RenfortsTout />}
       <SectionPretALancer lignes={t.pretALancer} avecProjet={!projetId && g.projets.length > 1} {...repli('a-lancer')} />
       </>}
     </div>
@@ -845,11 +846,13 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
       {g.admin ? <PauseProjet projet={p} /> : null}
       {/* L'interrupteur du mode autonome reste visible, hors du repli : un toucher (chantier 79ec70d6). */}
       {g.admin ? <section className="rounded-2xl border border-bord bg-carte px-3 py-2.5" data-testid="autonome-projet"><ModeAutonome projet={p} /></section> : null}
+      {/* Le détail des renforts (liste, relance, réglages, historique) : plus sur l'écran principal, replié ici. */}
+      {g.admin ? <Repliable testId="renforts-details" titre={<span className="flex items-center gap-2 text-[15px] font-medium"><UsersRound size={17} className="text-texte-2" aria-hidden />Renforts (détails)</span>}><Renforts projetId={p.id} /></Repliable> : null}
       {g.admin ? <FiletSecurite projet={p} onJeton={versJeton} /> : null}
       {g.admin ? <RapprochementGithub projet={p} /> : null}
       {g.admin ? <EpurationProjet projet={p} /> : null}
       <Repliable testId="reglages-projet" ouvert={reglagesOuverts} onToggle={setReglagesOuverts} titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
-        <BarreProjet projet={p} nu sansAutonome />
+        <BarreProjet projet={p} nu />
         <div className="mt-3 space-y-2">
           <label className="flex items-center gap-2">
             <input

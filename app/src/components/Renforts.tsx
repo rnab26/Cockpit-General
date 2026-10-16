@@ -17,8 +17,8 @@ const SONDAGE_MS = 30_000
 const TEINTE: Record<CodeLigne, string> = { demande: 'text-info', en_route: 'text-ok', termine: 'text-texte-2', erreur: 'text-alerte' }
 
 /**
- * « Lancer des renforts » (0024, D-10) : au-dessus de « Pour Claude », bien
- * distinct, un bloc par projet. Un clic demande une session par SECTION en
+ * Détail des renforts (0024, D-10) : depuis le 16 oct. 2026 il vit dans Réglages du projet › « Renforts (détails) » ;
+ * l'écran principal n'a que le bouton « Tout lancer » (ToutLancer.tsx). Un clic demande une session par SECTION en
  * attente ; la session chef du projet les ouvre. Admin seulement (la base le
  * vérifie aussi). L'état vient de etat_renforts : ce que la base comptera.
  */
@@ -27,13 +27,6 @@ export function Renforts({ projetId, avecNom = false }: { projetId: string; avec
   const p = g.projets.find((x) => x.id === projetId)
   if (!g.admin || !p || !p.actif) return null
   return <BlocRenforts projet={p} avecNom={avecNom} toujours={!avecNom} />
-}
-
-/** « Tout » : un bloc par projet où quelque chose attend ou avance. */
-export function RenfortsTout() {
-  const g = useGlobal()
-  if (!g.admin) return null
-  return <>{g.projets.filter((p) => p.actif).map((p) => <BlocRenforts key={p.id} projet={p} avecNom toujours={false} />)}</>
 }
 
 function BlocRenforts({ projet, avecNom, toujours }: { projet: Projet; avecNom: boolean; toujours: boolean }) {
