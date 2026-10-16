@@ -268,6 +268,11 @@ try {
   verifie('le hook a démarré mais seulement une session de 0 s (préchauffage) : l’icône « branché » reste ÉTEINTE', await iconeBranche() === 0)
   sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at, fin_at) values ('${randomUUID()}', '${ids.projet}', 'claude/test-accueil', now() - interval '20 minutes', now(), null)`)
   verifie('une vraie session vivante : l’icône « branché » s’allume', await iconeBranche() === 1)
+  // Le moteur, 16 oct. : la colonne `branchement_vu_at` lue par l'écran était périmée (> 24 h) alors que des sessions vivaient.
+  sql(`update projets set branchement_vu_at = now() - interval '3 days' where id = '${ids.projet}'`)
+  verifie('colonne de démarrage périmée mais une vraie session vivante : l’icône « branché » reste allumée', await iconeBranche() === 1)
+  sql(`update sessions set fin_at = now() - interval '1 minute', vu_at = now() - interval '3 days', demarre_at = now() - interval '3 days' where projet_id = '${ids.projet}'`)
+  verifie('colonne périmée et plus aucune session récente : l’icône s’éteint', await iconeBranche() === 0)
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++

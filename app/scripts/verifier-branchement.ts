@@ -40,7 +40,10 @@ console.log('verifier-branchement')
   verifie('estBranche avec les sessions : le préchauffage seul (0 s) n’allume PAS l’icône', !estBranche(preuve, now, [S(3, 3, 3)]))
   verifie('estBranche avec les sessions : une vraie session l’allume', estBranche(preuve, now, [S(3, 3, 3), S(40, 1, null)]))
   verifie('estBranche sans la liste des sessions (membre) : la règle d’avant', estBranche(preuve, now))
-  verifie('estBranche : sans démarrage récent, une session vivante ne suffit pas (la preuve du hook manque)', !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(40, 1, null)]))
+  verifie('estBranche : colonne périmée MAIS vraie session vivante lue en direct → allumée (cas du moteur, 16 oct.)', estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(40, 1, null)]))
+  verifie('estBranche : colonne périmée et seul un démarrage de 0 s → éteinte', !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(3, 3, 3)]))
+  verifie('estBranche : colonne absente (jamais posée) et vraie session vivante → allumée', estBranche({}, now, [S(40, 1, null)]))
+  verifie('estBranche : colonne périmée, sessions toutes finies depuis plus de 24 h → éteinte', !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(5 * 24 * 60, 4 * 24 * 60, null)]))
   verifie('estBranche : aucune session du tout → éteinte', !estBranche(preuve, now, []))
 }
 // 14 oct. 2026 (Melissa Nabet, Trieur) : l'écran doit dire POURQUOI la prise est éteinte, avec la cause lue sur le dépôt.
@@ -104,5 +107,13 @@ console.log('verifier-branchement')
     const l = etatBranchement({}, 0, now, { surMain: 'absent' })
     verifie('jamais branché + cockpit absent de main : les deux lignes', /Aucune session/.test(l[0].texte) && /pas installé sur la branche principale/.test(l[1].texte), l)
   }
+}
+// Le moteur le 16 oct. 2026 : colonne lue à l'ouverture de l'écran (vieille de 30 h), quatre sessions vivantes arrivées en direct.
+{
+  const S = (demarreIl: number, vuIl: number, finIl: number | null) => ({ demarre_at: il(demarreIl), vu_at: il(vuIl), fin_at: finIl === null ? null : il(finIl) })
+  const moteur = { branchement_vu_at: il(30 * 60) }
+  const vives = [S(12, 1, null), S(10, 2, null), S(8, 4, null), S(2, 1, null)]
+  verifie('moteur : icône et ligne des réglages disent la même chose (branché)', estBranche(moteur, now, vives) && /Sessions branchées/.test(etatBranchement(moteur, 4, now, { sessions: vives })[0].texte))
+  verifie('moteur : même sans aucune session, la colonne périmée garde l’état « éteint » des deux côtés', !estBranche(moteur, now, []) && /Plus aucune session/.test(etatBranchement(moteur, 0, now, { sessions: [] })[0].texte))
 }
 bilan('verifier-branchement')

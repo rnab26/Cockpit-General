@@ -63,12 +63,13 @@ export interface ContexteBranchement {
 export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: number, now: Date = new Date(), ctx: ContexteBranchement = {}): LigneBranchement[] {
   const lignes: LigneBranchement[] = []
   const t = (iso?: string | null) => (iso ? new Date(iso).getTime() : NaN)
-  const vu = t(p.branchement_vu_at)
+  const preuve = dernierDemarrage(p, ctx.sessions, now)
+  const vu = t(preuve)
   let branche = false
   if (Number.isNaN(vu)) {
     lignes.push({ texte: 'Aucune session Claude n’a encore démarré avec le cockpit dans ce projet', teinte: 'attention' })
   } else {
-    const quand = dateRelative(p.branchement_vu_at!, now) || 'à l’instant'
+    const quand = dateRelative(preuve!, now) || 'à l’instant'
     const recent = now.getTime() - vu < JOUR
     // La MÊME règle que l'icône « branché » : un démarrage récent du hook ne suffit pas, il faut une vraie session (13 oct. 2026).
     const reelle = ctx.sessions === undefined || ctx.sessions.some((s) => sessionReelle(s, now))
@@ -101,12 +102,32 @@ export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: numb
 }
 
 /**
+ * Le dernier démarrage prouvé : le plus récent entre la colonne `projets.branchement_vu_at` et le démarrage d'une VRAIE session du
+ * projet. 16 oct. 2026 (chantier 0d30414d, Raphaël : « le moteur n'apparaît pas branché ») : en base la colonne ET les sessions
+ * étaient à jour (démarrage il y a 7 min, 4 sessions vivantes), mais l'écran gardait la copie de `projets` lue à son ouverture :
+ * la table `projets` n'est pas dans le direct (seules les sessions y sont) et un écran ouvert sans action ne la relit que
+ * rarement ; au bout de 24 h la copie périmée disait « Plus aucune session » pendant que les sessions, elles, arrivaient en direct.
+ * Les sessions suivant le direct, elles font foi dès qu'elles sont lues ; sans liste (membre), la colonne seule comme avant.
+ */
+export function dernierDemarrage(p: PreuvesBranchement, sessions: readonly Pick<SessionClaude, 'demarre_at' | 'vu_at' | 'fin_at'>[] | undefined, now: Date): string | null {
+  let meilleur = p.branchement_vu_at ?? null
+  let t = meilleur ? new Date(meilleur).getTime() : NaN
+  for (const s of sessions ?? []) {
+    if (!sessionReelle(s, now)) continue
+    const d = new Date(s.demarre_at).getTime()
+    if (!Number.isNaN(d) && (Number.isNaN(t) || d > t)) { t = d; meilleur = s.demarre_at }
+  }
+  return meilleur
+}
+
+/**
  * Icône « branché » de la liste des projets : vrai seulement sur une PREUVE
  * récente (une session a démarré avec le hook dans les 24 h), jamais supposé.
  * Même seuil que la ligne « Sessions branchées » d'etatBranchement.
  */
 export function estBranche(p: PreuvesBranchement, now: Date = new Date(), sessions?: readonly Pick<SessionClaude, 'demarre_at' | 'vu_at' | 'fin_at'>[]): boolean {
-  const vu = p.branchement_vu_at ? new Date(p.branchement_vu_at).getTime() : NaN
+  const preuve = dernierDemarrage(p, sessions, now)
+  const vu = preuve ? new Date(preuve).getTime() : NaN
   if (Number.isNaN(vu) || now.getTime() - vu >= JOUR) return false
   // Avec la liste des sessions du projet (admin) : il faut AUSSI une vraie session. Le 13 oct. 2026, trois « démarrages »
   // de 0 s (préchauffage du conteneur, branche main, déduit) posaient `branchement_vu_at` : l'icône restait verte
