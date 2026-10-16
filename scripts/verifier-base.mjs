@@ -1178,7 +1178,7 @@ const P3 = randomUUID(), P4 = randomUUID();
 const SLUG_C = `test-verif-${rand}-c`, SLUG_D = `test-verif-${rand}-d`;
 async function controle19_chef_par_projet() {
   section("19. Un chef PAR PROJET (0019) : chaque projet dans sa propre session, jamais un chantier d'un autre projet");
-  await sql(`insert into projets (id, slug, nom, autonome_toujours) values (${q(P3)}, ${q(SLUG_C)}, 'Projet de test C', true), (${q(P4)}, ${q(SLUG_D)}, 'Projet de test D', true)`);
+  await sql(`insert into projets (id, slug, nom, autonome_toujours, delai_sans_signe_min) values (${q(P3)}, ${q(SLUG_C)}, 'Projet de test C', true, 3), (${q(P4)}, ${q(SLUG_D)}, 'Projet de test D', true, 3)`);
   const prendre = (slug, s) => une(`select prendre_chef(${q(slug)}, ${q(s)}, 'agent/test', '') as r`);
   const estChef = async (slug, s) => (await une(`select est_chef(${q(slug)}, ${q(s)}) as c`)).c;
   await prendre(SLUG_C, "chef-c");
@@ -1260,7 +1260,7 @@ const P6 = randomUUID();
 const SLUG_F = `test-verif-${rand}-f`;
 async function controle25_renforts() {
   section("25. Renforts (0024) : une session par section, exclusivité par section, jamais deux renforts sur un chantier, projets de test jamais servis");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P6)}, ${q(SLUG_F)}, 'Projet de test F', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P6)}, ${q(SLUG_F)}, 'Projet de test F', 'rnab26/test-inexistant', 3)`);
   const S1 = randomUUID(), S2 = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P6)}, 'Écran', 1), (${q(S2)}, ${q(P6)}, 'Base', 2)`);
   const enSection = async (sec, titre, etat = "libre") => { const id = await creerChantier(P6, { titre, etat, demande: `travail ${titre}` }); if (sec) await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
@@ -1443,7 +1443,7 @@ async function controle25_renforts() {
 const P5 = randomUUID(), SLUG_E = `test-verif-${rand}-e`;
 async function controle23_a_toi_a_jour() {
   section("23. « À toi » à jour (0022) : sans objet retiré seul, revue des vieux et des dépassés, vrais scripts");
-  await sql(`insert into projets (id, slug, nom) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(P5)}, ${q(SLUG_E)}, 'Projet de test E', 3)`);
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
   const env = { ...process.env, COCKPIT_PROJET: SLUG_E, COCKPIT_SESSION: "verifier-base" };
   const lancer = (script, args) => {
@@ -1587,7 +1587,7 @@ async function controle22_correctifs() {
 const P7 = randomUUID(), SLUG_G = `test-verif-${rand}-g`;
 async function controle27_question_gardee() {
   section("27. Certifier garde une question ouverte (0026) ; sa réponse est reprise sans rouvrir le certifié");
-  await sql(`insert into projets (id, slug, nom) values (${q(P7)}, ${q(SLUG_G)}, 'Projet de test G')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(P7)}, ${q(SLUG_G)}, 'Projet de test G', 3)`);
   const message = (id) => une(`select chantier_id, answered_at, reponse from messages where id = ${q(id)}`);
   const cc = await creerChantier(P7, { titre: "Fil en discussion", etat: "a_verifier" });
   const cAutre = await creerChantier(P7, { titre: "Même sujet ailleurs", etat: "libre" });
@@ -1744,7 +1744,7 @@ const P8 = randomUUID(), SLUG_H = `test-verif-${rand}-h`;
 const RACINE_DEPOT = dirname(dirname(fileURLToPath(import.meta.url)));
 async function controle29_synchro() {
   section("29. Session et cockpit synchronisés (0028) : de côté / reporter / abandonner, chef relais, réveil immédiat");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P8)}, ${q(SLUG_H)}, 'Projet de test H', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P8)}, ${q(SLUG_H)}, 'Projet de test H', 'rnab26/test-inexistant', 3)`);
   const message = (id) => une(`select * from messages where id = ${q(id)}`);
   // --- de côté, reporter, abandonner
   const c1 = await creerChantier(P8, { titre: "À mettre de côté", etat: "en_cours" });
@@ -1934,7 +1934,7 @@ const P10 = randomUUID(), SLUG_J = `test-verif-${rand}-j`;
 async function controle37_pr_a_fusionner() {
   section("37. PR à fusionner : une carte par numéro de PR (lien + 2 gestes), sans doublon, retirée quand la PR est fusionnée, gardée si elle reste ouverte");
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant', 3)`);
   const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
   const lancer = (args) => {
     try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
@@ -1986,7 +1986,7 @@ async function controle37_pr_a_fusionner() {
 async function controle38_pr_propre() {
   section("38. PR propre seulement : conflit / CI en cours / CI en échec / brouillon = pas de carte ; carte existante devenue en conflit = retirée ; reposée quand la PR redevient propre");
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant', 3) on conflict (id) do nothing`);
   const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
   const lancer = (args) => {
     try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
@@ -2030,7 +2030,7 @@ async function controle38_pr_propre() {
 async function controle44_pr_conflit_visible() {
   section("44. PR en conflit : une carte d'état visible, retirée seule ; ses réponses automatiques ne sont jamais servies à la chef (0059)");
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant', 3) on conflict (id) do nothing`);
   const env = { ...process.env, COCKPIT_PROJET: SLUG_J, COCKPIT_SESSION: "verifier-base" };
   const lancer = (args) => {
     try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/pr-a-fusionner.sh"), ...args], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }) }; }
@@ -2086,7 +2086,7 @@ async function controle47_index_cles_etrangeres() {
 }
 async function controle46_fait_carte_pr() {
   section("46. « Fait » sur une carte PR : pas servie (même avec un fichier posé à côté) ; « Ça bloque », un texte ou un fichier de la carte : servie (0060)");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant') on conflict (id) do nothing`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P10)}, ${q(SLUG_J)}, 'Projet de test J', 'rnab26/test-inexistant', 3) on conflict (id) do nothing`);
   const c = await creerChantier(P10, { titre: "Chantier où la carte PR est rangée", etat: "libre" });
   const marche = JSON.stringify({ liens: [{ url: "https://github.com/rnab26/test-inexistant/pull/401", libelle: "Ouvrir la PR #401" }], etapes: ["Touche « Merge pull request »"] });
   const servis = async () => (await sql(`select message_id from reponses_sans_suite(${q(P10)})`)).map((r) => r.message_id);
@@ -2273,9 +2273,9 @@ async function controle39_delai_sans_signe() {
   const ts = (await import("node:fs")).readFileSync(join(racine, "app/src/lib/silence.ts"), "utf8");
   const mts = ts.match(/DELAI_ABANDON_MIN = (\d+)/);
   const col = await une(`select column_default as d from information_schema.columns where table_schema = 'cockpit' and table_name = 'projets' and column_name = 'delai_sans_signe_min'`);
-  verifie("défaut de l'écran (DELAI_ABANDON_MIN) = défaut de la colonne (3)", !!mts && String(col?.d) === mts[1] && mts[1] === "3", { app: mts?.[1], base: col?.d });
+  verifie("défaut de l'écran (DELAI_ABANDON_MIN) = défaut de la colonne (60)", !!mts && String(col?.d) === mts[1] && mts[1] === "60", { app: mts?.[1], base: col?.d });
   const inconnu = await une(`select extract(epoch from cockpit.delai_signe(null))::int as s`);
-  verifie("projet inconnu : le repli est le même défaut (3 min)", inconnu.s === 180, inconnu);
+  verifie("projet inconnu : le repli est le même défaut (60 min)", inconnu.s === 3600, inconnu);
   const restes = await sql(`select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'cockpit' and p.proname in ('sans_signe_de_vie','renfort_vivant','messages_sans_reponse','reponses_sans_suite','ou_en_est_sans_suite','prendre_ou_en_est','constater_autonome','reveiller_chef','relais_a_servir','filet_vivant') and pg_get_functiondef(p.oid) ilike '%30 minutes%'`);
   verifie("aucune de ces règles n'écrit encore « 30 minutes » en dur", restes.length === 0, restes);
 
@@ -2283,8 +2283,9 @@ async function controle39_delai_sans_signe() {
   verifie("regler_sans_signe refuse 0 et 121, accepte 1 et 120",
     !!(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 0)`)) && !!(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 121)`))
       && !(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 1)`)) && !(await erreurDe(`select regler_sans_signe(${q(SLUG_I)}, 120)`)));
-  await regler(3);
-  verifie("le projet garde son défaut (3) une fois remis", (await une(`select delai_sans_signe_min as m from projets where id = ${q(P9)}`)).m === 3);
+  await regler(60);
+  verifie("le projet garde son défaut (60) une fois remis", (await une(`select delai_sans_signe_min as m from projets where id = ${q(P9)}`)).m === 60);
+  await regler(3);   // les scénarios ci-dessous testent le délai COURT explicitement
   verifie("delai_signe : refusé à un membre connecté (règle interne)", (await rpcUtilisateur("delai_signe", { p_projet: P9 }, jwt)).status >= 400);
 
   // La règle avec 3 puis 10 min. Vivant = la session (branche du chantier) a un signe récent ; mort = rien depuis le délai.
@@ -2401,7 +2402,7 @@ const P9 = randomUUID(), SLUG_I = `test-verif-${rand}-i`;
 const P11E = randomUUID(), SLUG_KE = `test-verif-${rand}-ke`;
 async function controle38_renforts_echecs() {
   section("38. Renforts en échec (0044) : pause 30 min, 3 h après 2 échecs de suite, une seule ligne claire ; usage inconnu sans effet sur les modèles");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P11E)}, ${q(SLUG_KE)}, 'Projet de test K', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P11E)}, ${q(SLUG_KE)}, 'Projet de test K', 'rnab26/test-inexistant', 3)`);
   const S1 = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P11E)}, 'Objets', 1)`);
   for (const t of ["PAUSE 1", "PAUSE 2", "PAUSE 3"]) { const id = await creerChantier(P11E, { titre: t, etat: "libre", demande: `travail ${t}` }); await sql(`update chantiers set section_id = ${q(S1)} where id = ${q(id)}`); }
@@ -2445,7 +2446,7 @@ async function controle38_renforts_echecs() {
 
 async function controle35_renforts_auto() {
   section("35. Renforts ouverts tout seuls (0040) : une seule règle, seuil réglable, interrupteur, frein, maximum, jamais un projet de test, origine visible");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(P9)}, ${q(SLUG_I)}, 'Projet de test I', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(P9)}, ${q(SLUG_I)}, 'Projet de test I', 'rnab26/test-inexistant', 3)`);
   const S1 = randomUUID(), S2 = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S1)}, ${q(P9)}, 'Écran', 1), (${q(S2)}, ${q(P9)}, 'Base', 2)`);
   const enSection = async (sec, titre, etat = "libre") => { const id = await creerChantier(P9, { titre, etat, demande: `travail ${titre}` }); await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
@@ -2739,7 +2740,7 @@ async function controle34_fermeture_sessions() {
   // Pas de réveil (session neuve) quand il n'y a rien à servir.
   const vide = `test-ferm-${rand}`;
   const pv = randomUUID();
-  await sql(`insert into projets (id, slug, nom) values (${q(pv)}, ${q(vide)}, 'Projet de test fermeture')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(pv)}, ${q(vide)}, 'Projet de test fermeture', 3)`);
   const r1 = (await une(`select reveiller_chef(${q(pv)}, null, 'message') as r`)).r;
   verifie("réveil immédiat sans message ni réponse à servir : aucune session ouverte (rien_a_servir)", r1 === "rien_a_servir", r1);
   await sql(`delete from projets where id = ${q(pv)}`);
@@ -2748,7 +2749,7 @@ async function controle34_fermeture_sessions() {
 const P11 = randomUUID(), SLUG_K = `test-verif-${rand}-k`;
 async function controle38_filet_securite() {
   section("38. Filet de sécurité (0044) : du travail attend + personne de vivant = un réveil journalisé ; sinon rien");
-  await sql(`insert into projets (id, slug, nom) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test filet')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test filet', 3)`);
   const passe = async (test = true, simuler = true) => (await une(`select filet_passe(${q(SLUG_K)}, ${simuler}, ${test}) as r`)).r[0]?.resultat;
   const journal = async () => (await une(`select count(*)::int as n from filet_reveils where projet_id = ${q(P11)}`)).n;
   const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
@@ -2837,7 +2838,7 @@ async function controle38_filet_securite() {
 const PLB = randomUUID(), SLUG_LB = `test-verif-${rand}-lb`;
 async function controle40_liberation_auto() {
   section("40. Libération automatique (0050) : pg_cron toutes les 3 min libère le chantier d'une session morte, une seule règle");
-  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération', 3)`);
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-liberation-auto'`).catch(() => null);
   verifie("pg_cron : le job cockpit-liberation-auto existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.liberation_passe(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.liberer_silencieux_coeur(text)', 'execute') as coeur, has_function_privilege('service_role', 'cockpit.liberation_passe(text,boolean)', 'execute') as srv`);
@@ -2864,7 +2865,7 @@ async function controle40_liberation_auto() {
 const PAF = randomUUID(), SLUG_AF = `test-verif-${rand}-af`;
 async function controle47_agents_finis() {
   section("47. Agents finis (0061) : tache_morte fermée par pg_cron, jamais un agent vivant, une session vivante ni un projet test");
-  await sql(`insert into projets (id, slug, nom) values (${q(PAF)}, ${q(SLUG_AF)}, 'Projet de test agents finis')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PAF)}, ${q(SLUG_AF)}, 'Projet de test agents finis', 3)`);
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-taches-mortes'`).catch(() => null);
   verifie("pg_cron : le job cockpit-taches-mortes existe, actif, toutes les 3 minutes", cron?.active === true && /^([0-2]-59|\*)\/3 \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.tache_morte(cockpit.taches)', 'execute') as regle, has_function_privilege('service_role', 'cockpit.clore_taches_mortes(text,boolean)', 'execute') as srv`);
@@ -2904,7 +2905,7 @@ async function controle47_agents_finis() {
 const PRE = randomUUID(), SLUG_RE = `test-verif-${rand}-re`;
 async function controle45_renforts_frein_erreurs() {
   section("45. Renforts et frein d'usage (0053) : demande retenue sans erreur, 3 h comptées après la levée, erreurs effaçables seules ou d'un geste, relance");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRE)}, ${q(SLUG_RE)}, 'Projet de test renforts', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(PRE)}, ${q(SLUG_RE)}, 'Projet de test renforts', 'rnab26/test-inexistant', 3)`);
   const S = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRE)}, 'Écran', 1)`);
   const c1 = await creerChantier(PRE, { titre: "FREIN Chantier un", etat: "libre", demande: "travail" });
@@ -2968,7 +2969,7 @@ async function controle45_renforts_frein_erreurs() {
 async function controle42_agent_vivant_garde() {
   section("42. Un agent vivant garde son chantier (0054) : ni reprise, ni libération, ni changement de pris_par");
   const sid = `test-vivant-${rand}`;
-  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération') on conflict (id) do nothing`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération', 3) on conflict (id) do nothing`);
   await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(PLB)}, 'claude/chef-vivant', now() - interval '6 minutes')`);
   const vivant = await creerChantier(PLB, { titre: "VIVANT Agent qui signale toutes les 10 min", etat: "en_cours" });
   const mort = await creerChantier(PLB, { titre: "VIVANT Agent muet depuis 40 min", etat: "en_cours" });
@@ -3006,7 +3007,7 @@ async function controle42_agent_vivant_garde() {
 const PRV = randomUUID(), SLUG_RV = `test-verif-${rand}-rv`;
 async function controle42_renfort_session_vivante() {
   section("42. Renfort vivant (0057) : la session liée (hooks) compte, une seule règle renfort_vivant");
-  await sql(`insert into projets (id, slug, nom) values (${q(PRV)}, ${q(SLUG_RV)}, 'Projet de test renfort vivant')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PRV)}, ${q(SLUG_RV)}, 'Projet de test renfort vivant', 3)`);
   const S = randomUUID(), R = randomUUID(), SID = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRV)}, 'RV Section', 10)`);
   await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, vu_at, created_at) values (${q(R)}, ${q(PRV)}, ${q(S)}, 'renfort/tt0057', 'actif', now() - interval '30 minutes', now() - interval '40 minutes')`);
@@ -3030,7 +3031,7 @@ async function controle42_renfort_session_vivante() {
 const PRF = randomUUID(), SLUG_RF = `test-verif-${rand}-rf`;
 async function controle48_renfort_fini_pas_erreur() {
   section("48. Renfort muet : « fini » s'il n'a plus rien à faire, « erreur » honnête (avec le reste) sinon (0062)");
-  await sql(`insert into projets (id, slug, nom) values (${q(PRF)}, ${q(SLUG_RF)}, 'Projet de test renfort fini')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PRF)}, ${q(SLUG_RF)}, 'Projet de test renfort fini', 3)`);
   const S = randomUUID(), R1 = randomUUID(), R2 = randomUUID(), S2 = randomUUID(), C = randomUUID();
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S)}, ${q(PRF)}, 'RF livrée', 10), (${q(S2)}, ${q(PRF)}, 'RF restante', 20)`);
   await sql(`insert into renforts (id, projet_id, section_id, prefixe, statut, faits, vu_at, created_at) values (${q(R1)}, ${q(PRF)}, ${q(S)}, 'renfort/tt0062a', 'actif', 3, now() - interval '4 hours', now() - interval '5 hours'), (${q(R2)}, ${q(PRF)}, ${q(S2)}, 'renfort/tt0062b', 'actif', 1, now() - interval '4 hours', now() - interval '5 hours')`);
@@ -3167,7 +3168,7 @@ const PEP = randomUUID(), SLUG_EP = `test-verif-${rand}-ep`;
 const PEQ = randomUUID(), SLUG_EQ = `test-verif-${rand}-eq`;
 async function controle59_epuration_cartes() {
   section("59. Cartes dépassées retirées seules (0092) : preuve par le travail du projet, délai réglable, jamais une carte gardée vivante, remise d'un toucher");
-  await sql(`insert into projets (id, slug, nom) values (${q(PEP)}, ${q(SLUG_EP)}, 'Projet de test épuration'), (${q(PEQ)}, ${q(SLUG_EQ)}, 'Projet de test épuration sans preuve')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PEP)}, ${q(SLUG_EP)}, 'Projet de test épuration', 3), (${q(PEQ)}, ${q(SLUG_EQ)}, 'Projet de test épuration sans preuve', 3)`);
   // Tout chantier du banc est « muet » (une fiche créée il y a 1 s compterait comme une session vivante) sauf celui qu'on veut vivant.
   const muet = async (projet, titre) => { const id = await creerChantier(projet, { titre, etat: "en_cours" }); await sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '1 hour' where id = ${q(id)}`); return id; };
   const carte = async (projet, chantierId, { kind = "question", heures = 30, confirmee = null, retour = false, exclue = false, repondue = false } = {}) => {
@@ -3312,7 +3313,7 @@ async function controle59_epuration_cartes() {
 
 async function controle49_passe_sans_perte() {
   section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
-  await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte', 3)`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.consignes_passe_a_relire(text)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.noter_consigne_passe(text,uuid,text,text,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.consignes_passe_a_relire(text)', 'execute') as srv`);
   verifie("consignes de la passe : réservées au service", !droits.anon && !droits.auth && droits.srv, droits);
   const a = await creerChantier(PPS, { titre: "Passe : sans agent", etat: "libre" });
@@ -3356,7 +3357,7 @@ async function controle49_passe_sans_perte() {
 const PRM = randomUUID(), SLUG_RM = `test-verif-${rand}-rm`;
 async function controle52_mesure_reaction() {
   section("52. Mesure du délai de réponse (0072) : délai message → réponse mesuré, filet à 3 min, relève qui sert les chantiers prenables");
-  await sql(`insert into projets (id, slug, nom) values (${q(PRM)}, ${q(SLUG_RM)}, 'Projet de test réactivité')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PRM)}, ${q(SLUG_RM)}, 'Projet de test réactivité', 3)`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.etat_reaction(text,int)', 'execute') as anon, has_function_privilege('service_role', 'cockpit.etat_reaction(text,int)', 'execute') as srv`);
   verifie("etat_reaction : ni anon, mais le service", !droits.anon && droits.srv, droits);
   verifie("filet_delai_min : 3 min par défaut (avant : 10)", (await une(`select filet_delai_min as d from projets where id = ${q(PRM)}`)).d === 3);
@@ -3381,7 +3382,7 @@ async function controle52_mesure_reaction() {
 const PGF = randomUUID(), SLUG_GF = `test-verif-${rand}-gf`;
 async function controle45_regroupement() {
   section("45. Regroupement (0055) : groupes_possibles, regrouper_chantiers, « Livré avec » dans les deux fils");
-  await sql(`insert into projets (id, slug, nom) values (${q(PGF)}, ${q(SLUG_GF)}, 'Projet de test regroupement')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PGF)}, ${q(SLUG_GF)}, 'Projet de test regroupement', 3)`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.groupes_possibles(text,uuid[])', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as auth, has_function_privilege('service_role', 'cockpit.regrouper_chantiers(uuid,uuid,text,text)', 'execute') as srv`);
   verifie("groupes_possibles / regrouper_chantiers : réservés au service", !droits.anon && !droits.auth && droits.srv, droits);
   const a = await creerChantier(PGF, { titre: "Bouton valider trop petit sur téléphone", etat: "libre" });
@@ -3417,7 +3418,7 @@ const PRC = randomUUID(), SLUG_RC = `test-verif-${rand}-rc`;
 const PPQ = randomUUID(), SLUG_PQ = `test-verif-${rand}-pq`;
 async function controle53_reveil_chantier() {
   section("53. Un chantier qui arrive réveille la chef tout de suite (0074) : mêmes sûretés que le message");
-  await sql(`insert into projets (id, slug, nom) values (${q(PRC)}, ${q(SLUG_RC)}, 'Projet de test réveil chantier')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PRC)}, ${q(SLUG_RC)}, 'Projet de test réveil chantier', 3)`);
   const rien = async () => (await une(`select rien_a_servir(${q(PRC)}, 'chantier') as r`)).r;
   const trig = await une(`select count(*)::int as n from pg_trigger where tgrelid = 'cockpit.chantiers'::regclass and tgname = 'reveil_sur_chantier' and not tgisinternal`);
   verifie("le déclencheur reveil_sur_chantier existe", trig.n === 1, trig);
@@ -3435,7 +3436,7 @@ async function controle53_reveil_chantier() {
 }
 async function controle54_paquets_de_cinq() {
   section("54. Paquets de 5 (0076) : 5 chantiers = une session, toutes sections confondues ; ce qui attend Raphaël n'ouvre rien ; pas de boucle");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(PPQ)}, ${q(SLUG_PQ)}, 'Projet de test paquets', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(PPQ)}, ${q(SLUG_PQ)}, 'Projet de test paquets', 'rnab26/test-inexistant', 3)`);
   const S = [randomUUID(), randomUUID(), randomUUID()];
   await sql(`insert into sections (id, projet_id, nom, position) values (${q(S[0])}, ${q(PPQ)}, 'A', 1), (${q(S[1])}, ${q(PPQ)}, 'B', 2), (${q(S[2])}, ${q(PPQ)}, 'C', 3)`);
   const nouveau = async (sec, titre) => { const id = await creerChantier(PPQ, { titre, etat: "libre", demande: `travail ${titre}` }); await sql(`update chantiers set section_id = ${q(sec)} where id = ${q(id)}`); return id; };
@@ -3491,7 +3492,7 @@ async function controle54_paquets_de_cinq() {
 const PRH = randomUUID(), SLUG_RH = `test-verif-${rand}-rh`;
 async function controle55_reveil_horaire() {
   section("55. Réveil horaire réglable (0078) : oui par défaut ; non = aucune consigne d'en créer un à la prise de poste, aucun « prochain passage » annoncé");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRH)}, ${q(SLUG_RH)}, 'Projet de test réveil horaire', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(PRH)}, ${q(SLUG_RH)}, 'Projet de test réveil horaire', 'rnab26/test-inexistant', 3)`);
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
   const chef = (args, sid = "chef-rh-1") => {
     try { return { code: 0, sortie: execFileSync("bash", [join(racine, "scripts/chef.sh"), ...args], { encoding: "utf8", env: { ...process.env, COCKPIT_PROJET: SLUG_RH, CLAUDE_CODE_SESSION_ID: sid }, stdio: ["ignore", "pipe", "pipe"] }) }; }
@@ -3528,7 +3529,7 @@ async function controle55_reveil_horaire() {
 const PCL = randomUUID(), SLUG_CL = `test-verif-${rand}-cl`;
 async function controle56_classer_livres() {
   section("56. Classer sans test (0079) : la règle « livré sans retour », le geste groupé, le classement automatique — jamais « certifié », jamais un projet réel sans réglage");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(PCL)}, ${q(SLUG_CL)}, 'Projet de test classer les livrés', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(PCL)}, ${q(SLUG_CL)}, 'Projet de test classer les livrés', 'rnab26/test-inexistant', 3)`);
   const ch = async (titre, colonneEnPlus = "", valeurEnPlus = "", etat = "a_verifier", livre = "now() - interval '10 days'") => {
     const id = randomUUID();
     await sql(`insert into chantiers (id, projet_id, titre, demande, etat${etat === "a_verifier" ? ", livre_at" : ""}${colonneEnPlus}) values (${q(id)}, ${q(PCL)}, ${q(titre)}, 'Test.', ${q(etat)}${etat === "a_verifier" ? `, ${livre}` : ""}${valeurEnPlus})`);
@@ -3597,7 +3598,7 @@ async function controle56_classer_livres() {
 }
 async function controle51_reactivite() {
   section("51. Réactivité (0071) : chef muette relevée, filet, délai de réponse mesuré, réglages visibles");
-  await sql(`insert into projets (id, slug, nom, filet_delai_min) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité', 1)`);
+  await sql(`insert into projets (id, slug, nom, filet_delai_min, delai_sans_signe_min) values (${q(PRX)}, ${q(SLUG_RX)}, 'Projet de test réactivité', 1, 3)`);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.chef_repond(uuid)', 'execute') as anon, has_function_privilege('authenticated', 'cockpit.chef_repond(uuid)', 'execute') as auth,
     has_function_privilege('authenticated', 'cockpit.regler_cadence(int)', 'execute') as auth2, has_function_privilege('service_role', 'cockpit.chef_repond(uuid)', 'execute') as srv`);
   verifie("chef_repond : réservé au service ; regler_cadence réservé aux admins connectés", !droits.anon && !droits.auth && droits.auth2 && droits.srv, droits);
@@ -3675,7 +3676,7 @@ async function controle51_reactivite() {
 const PFC = randomUUID(), SLUG_FC = `test-verif-${rand}-fc`;
 async function controle46_fusion_a_la_creation() {
   section("46. Créer près d'un chantier existant (0060) : la fusion garde les DEUX demandes, chantiers_proches = la règle de la fusion suggérée, compléter");
-  await sql(`insert into projets (id, slug, nom) values (${q(PFC)}, ${q(SLUG_FC)}, 'Projet de test fusion à la création')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PFC)}, ${q(SLUG_FC)}, 'Projet de test fusion à la création', 3)`);
   const A = "Je veux que le bouton Envoyer soit plus grand sur téléphone.";
   const B = "Et il est décalé à droite quand le clavier est ouvert.\nSecond paragraphe.";
   const garde = await creerChantier(PFC, { titre: "Ouverture de session et agents de renfort", etat: "libre", demande: A });
@@ -3866,7 +3867,7 @@ async function controle41_reglages_notifications() {
 // 42. « Les 3 correctifs » (0051, chantier 72d09c69) : Terminé sort de « bloqué », un chantier déjà livré n'est pas repris, les réservations expirées sont rendues.
 async function controle42_deja_livre_rien_repris() {
   section("41. Rien n'est repris à tort (0051) : Terminé sort de « bloqué », déjà livré = pas repris, réservation expirée rendue");
-  await sql(`insert into projets (id, slug, nom) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération') on conflict do nothing`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(PLB)}, ${q(SLUG_LB)}, 'Projet de test libération', 3) on conflict do nothing`);
   const racine = join(dirname(fileURLToPath(import.meta.url)), "..");
   const env = { ...process.env, COCKPIT_PROJET: SLUG_LB, COCKPIT_SESSION: "verifier-base-41" };
   const lancer = (script, args) => {
@@ -3900,7 +3901,7 @@ async function controle42_deja_livre_rien_repris() {
 const PRG = randomUUID(), SLUG_RG = `test-verif-${rand}-rg`;
 async function controle57_rapprochement_github() {
   section("57. Rapprochement GitHub (0080) : un chantier ouvert que personne ne tient, dont l'ACHÈVEMENT est prouvé dans main, passe « livré, à vérifier » — jamais sur une simple mention, jamais « validé », jamais un chantier tenu ou qui attend Raphaël");
-  await sql(`insert into projets (id, slug, nom, depot) values (${q(PRG)}, ${q(SLUG_RG)}, 'Projet de test rapprochement GitHub', 'rnab26/test-inexistant')`);
+  await sql(`insert into projets (id, slug, nom, depot, delai_sans_signe_min) values (${q(PRG)}, ${q(SLUG_RG)}, 'Projet de test rapprochement GitHub', 'rnab26/test-inexistant', 3)`);
   const il = (h) => new Date(Date.now() - h * 3600_000).toISOString();
   // Un chantier « mort » : créé il y a 3 jours, dernière trace 2 jours 23 h avant maintenant ; rien ne l'a touché depuis (updated_at vieux).
   const ch = async (titre, o = {}) => {
@@ -4117,7 +4118,7 @@ async function controle58_cles_import() {
 
 try {
   await purgerRestesDePassesPrecedentes();
-  await sql(`insert into projets (id, slug, nom) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A'), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B')`);
+  await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(P1)}, ${q(SLUG_A)}, 'Projet de test A', 3), (${q(P2)}, ${q(SLUG_B)}, 'Projet de test B', 3)`);
   userId = await creerCompte(EMAIL, MOT_DE_PASSE);
   jwt = await connecter(EMAIL, MOT_DE_PASSE);
   await sql(`insert into membres (projet_id, user_id) values (${q(P1)}, ${q(userId)})`);

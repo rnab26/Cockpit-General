@@ -16,7 +16,7 @@ import { nomQui } from './enAttente.ts'
  * UNE règle en base (`delai_signe`) ; l'écran la reçoit en `abandonMin`. Ce défaut n'est que le repli quand la
  * ligne du projet ne la porte pas ; `verifier-base` le compare au défaut de la colonne.
  */
-export const DELAI_ABANDON_MIN = 3
+export const DELAI_ABANDON_MIN = 60
 /** Mêmes bornes que `regler_sans_signe` (0046). */
 export const DELAI_ABANDON_MIN_BORNES = { min: 1, max: 120 } as const
 
