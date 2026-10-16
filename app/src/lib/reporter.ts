@@ -4,7 +4,7 @@
 // l'abandonner ou le reporter ».
 //   - Mettre de côté : état « reporte », sans date (« Relancer maintenant » le rouvre).
 //   - Reporter : « reporte » jusqu'à une date ; ce jour-là il revient tout seul
-//     dans « Prêt à lancer » (reveiller_reportes, passe de la chef et l'app).
+//     dans « Pour Claude » (reveiller_reportes, passe de la chef et l'app).
 //   - Abandonner : archivé (Désarchiver le rend), une ligne dans le fil.
 // Pur, vérifié par scripts/verifier-reporter.ts.
 import type { Chantier } from './types.ts'
@@ -41,7 +41,7 @@ const JOUR = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' })
 export function quandDeCote(c: Pick<Chantier, 'reporte_jusqu_a'>, now: Date): string {
   const t = c.reporte_jusqu_a ? Date.parse(c.reporte_jusqu_a) : NaN
   if (Number.isNaN(t)) return 'Mis de côté, sans date'
-  return t > now.getTime() ? `Reporté au ${JOUR.format(new Date(t))}` : 'Report échu : revient dans « Prêt à lancer »'
+  return t > now.getTime() ? `Reporté au ${JOUR.format(new Date(t))}` : 'Report échu : revient dans « Pour Claude »'
 }
 
 /** Ce que dit la bulle d'un chantier mis de côté ou reporté. */
@@ -50,8 +50,8 @@ export function texteReporte(c: Pick<Chantier, 'etat' | 'reporte_jusqu_a' | 'arc
   if (c.archived_at) return 'Abandonné. « Désarchiver » dans le menu le rend, puis « Relancer maintenant ».'
   if (c.reporte_jusqu_a) {
     const t = Date.parse(c.reporte_jusqu_a)
-    if (t > now.getTime()) return `Reporté au ${JOUR.format(new Date(t))} : ce jour-là, il revient tout seul dans « Prêt à lancer ».`
-    return 'La date de report est passée : il revient dans « Prêt à lancer » au prochain passage de Claude.'
+    if (t > now.getTime()) return `Reporté au ${JOUR.format(new Date(t))} : ce jour-là, il revient tout seul dans « Pour Claude ».`
+    return 'La date de report est passée : il revient dans « Pour Claude » au prochain passage de Claude.'
   }
   return 'Mis de côté exprès. Rien à faire de ta part, sauf si tu veux le relancer.'
 }

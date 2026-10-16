@@ -3,7 +3,7 @@
 // 29 sept. 2026 : FacePro avec des barres « attente » à 85 %, personne dessus.
 import { verifie, bilan } from './_assert.ts'
 import { estAction, separerChat } from '../src/lib/discussion.ts'
-import { estNouveau, nouveauxDabord, ouApparait, enCeMoment, aToi, demandesDe, aTesterDe, estDemande, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
+import { estNouveau, nouveauxDabord, ouApparait, estCorrectionDemandee, enCeMoment, aToi, demandesDe, aTesterDe, estDemande, trierAToi, attenteAToi, GRACE_AVANCE_MS, grouperAToi, aLancer, enCoursSansNouvelles, estEnCoursSansNouvelles, compteursPresence, pastillesProjet, legendeVoyants, trierParPresence, presenceDe, caAvanceToutSeul, LIBELLE_COURT_PRESENCE, presenceEnMots, repriseReponse, PREFIXE_REPRISE, questionsOuvertesDe } from '../src/lib/entonnoir.ts'
 import { tableauDeBord } from '../src/lib/tableauDeBord.ts'
 import { MESSAGE_OU_CA_EN_EST, etatVerification } from '../src/lib/presence.ts'
 
@@ -333,7 +333,7 @@ console.log('verifier-entonnoir')
   verifie('nouveau : déjà en cours / archivé → non', !estNouveau(n('a', 'en_cours', 5), now) && !estNouveau(n('a', 'libre', 5, { archived_at: il(1) }), now))
   const l = nouveauxDabord([{ c: n('vieux', 'libre', 3000) }, { c: n('n1', 'libre', 60) }, { c: n('n2', 'a_trier', 10) }], now)
   verifie('nouveau : les nouveaux en tête, le plus récent d’abord', l.map((x) => x.c.id).join(',') === 'n2,n1,vieux', l.map((x) => x.c.id))
-  verifie('nouveau : on dit où il apparaît', ouApparait('libre').includes('Prêt à lancer') && ouApparait('a_cadrer').includes('À toi'))
+  verifie('nouveau : on dit où il apparaît', ouApparait('libre').includes('Pour Claude') && ouApparait('a_cadrer').includes('À toi'))
 }
 
 bilan('verifier-entonnoir')

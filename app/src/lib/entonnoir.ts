@@ -224,6 +224,14 @@ export interface LigneALancer {
   activite: Activite | null
   /** Quand « Demander où ça en est » a été envoyé pour la dernière fois (ISO), ou null. */
   demandeLe: string | null
+  /** « Ça ne marche pas » dit par un humain, pas encore repris : Claude doit corriger (14 oct. 2026, Raphaël). */
+  correction: boolean
+}
+
+/** Une correction demandée attend Claude : le dernier constat « Ça ne marche pas » du fil, sur un chantier rendu (libre / en cours). */
+export function estCorrectionDemandee(c: Pick<Chantier, 'id' | 'etat'>, messages: readonly Pick<Message, 'chantier_id' | 'kind' | 'corps'>[]): boolean {
+  if (c.etat !== 'libre' && c.etat !== 'en_cours') return false
+  return messages.some((m) => m.chantier_id === c.id && m.kind === 'constat' && /^Ça ne marche pas/.test(m.corps))
 }
 
 /**
@@ -256,7 +264,7 @@ function sansPersonne(
     // « Où ça en est ? » en attente (0023) : il est reparti, il se suit dans « Ça avance tout seul ».
     if (ouEnEstVisible(etatOuEnEst(c, messages, false, now), now)) continue
     const demande = derniereDemandeOuCaEnEst(messages.filter((m) => m.chantier_id === c.id))
-    const l = { c, presence, activite, demandeLe: demande?.created_at ?? null }
+    const l = { c, presence, activite, demandeLe: demande?.created_at ?? null, correction: estCorrectionDemandee(c, messages) }
     if (garder(l)) lignes.push(l)
   }
   const triees = trierParPresence(lignes)
@@ -298,7 +306,7 @@ export function nouveauxDabord<T extends { c: Pick<Chantier, 'etat' | 'created_a
 /** Où apparaît un chantier qu'on vient de créer : la phrase dite après « Créer » (une seule règle). */
 export function ouApparait(etat: string): string {
   if (etat === 'a_cadrer' || etat === 'bloque') return 'Il apparaît dans « À toi de jouer ».'
-  if (etat === 'a_trier' || etat === 'libre') return 'Il apparaît en haut de « Prêt à lancer », marqué « Nouveau ».'
+  if (etat === 'a_trier' || etat === 'libre') return 'Il apparaît en haut de « Pour Claude », marqué « Nouveau ».'
   return 'Il apparaît dans la liste du projet.'
 }
 
