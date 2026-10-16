@@ -3151,6 +3151,154 @@ async function controle58_verdict_dit_en_session() {
   verifie("droits : relayer_verdict réservé aux sessions (service)", !droits.auth && !droits.anon && droits.srv, droits);
 }
 
+// 59. Les cartes déjà traitées se retirent seules (0092) : UNE règle (carte_depassee), UNE passe (epuration_passe, pg_cron), un retour d'un toucher.
+const PEP = randomUUID(), SLUG_EP = `test-verif-${rand}-ep`;
+const PEQ = randomUUID(), SLUG_EQ = `test-verif-${rand}-eq`;
+async function controle59_epuration_cartes() {
+  section("59. Cartes dépassées retirées seules (0092) : preuve par le travail du projet, délai réglable, jamais une carte gardée vivante, remise d'un toucher");
+  await sql(`insert into projets (id, slug, nom) values (${q(PEP)}, ${q(SLUG_EP)}, 'Projet de test épuration'), (${q(PEQ)}, ${q(SLUG_EQ)}, 'Projet de test épuration sans preuve')`);
+  // Tout chantier du banc est « muet » (une fiche créée il y a 1 s compterait comme une session vivante) sauf celui qu'on veut vivant.
+  const muet = async (projet, titre) => { const id = await creerChantier(projet, { titre, etat: "en_cours" }); await sql(`set local session_replication_role = replica; update chantiers set updated_at = now() - interval '1 hour' where id = ${q(id)}`); return id; };
+  const carte = async (projet, chantierId, { kind = "question", heures = 30, confirmee = null, retour = false, exclue = false, repondue = false } = {}) => {
+    const id = randomUUID();
+    await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, pourquoi, created_at, confirmee_at, retour_at, epuration_exclue, answered_at)
+               values (${q(id)}, ${q(projet)}, ${chantierId ? q(chantierId) : "null"}, 'banc', 'session', ${q(kind)}, 'Je lance un test ?', 'Parce que.',
+                       now() - interval '${heures} hours', ${confirmee ? `now() - interval '${confirmee} hours'` : "null"}, ${retour ? "now()" : "null"}, ${exclue}, ${repondue ? "now()" : "null"})`);
+    return id;
+  };
+  const livraison = (projet, chantierId, heures, nom) => sql(`insert into activite (projet_id, chantier_id, session, etape, statut, updated_at) values (${q(projet)}, ${q(chantierId)}, ${q(nom)}, 'Livré', 'termine', now() - interval '${heures} hours')`);
+  const sesMots = (projet, heures) => sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(projet)}, null, 'Raphaël', 'proprietaire', 'info', 'je réponds dans la session', now() - interval '${heures} hours')`);
+  const lire = (id) => une(`select answered_at, answered_by, reponse, retiree_seule_at, epuration_exclue, confirmee_at from messages where id = ${q(id)}`);
+  const ouverte = async (id) => (await lire(id)).answered_at === null;
+  const passe = (slug, essai = false, test = true) => une(`select epuration_passe(${q(slug)}, ${essai}, ${test}) as r`).then((x) => x.r);
+
+  // ---- Projet AVEC preuve : un autre chantier livré (20 h) et ses mots (20 h), les deux APRÈS les cartes de 30 h.
+  const autre = await muet(PEP, "59 Autre chantier");
+  await livraison(PEP, autre, 20, "banc-ep-autre");
+  await sesMots(PEP, 20);
+  const cB = await muet(PEP, "59 B"), cA = await muet(PEP, "59 A"), cVivant = await creerChantier(PEP, { titre: "59 Tenu par une session vivante", etat: "en_cours" });
+  await sql(`update chantiers set pris_par = 'agent/ep-vivant', pris_jusqu_a = now() + interval '1 hour' where id = ${q(cVivant)}`);
+  // Un agent qui travaille dessus (étape « en cours » récente) : vivant 20 min, de quoi tenir tout le banc.
+  await sql(`insert into activite (projet_id, chantier_id, session, etape, statut) values (${q(PEP)}, ${q(cVivant)}, 'agent/ep-vivant', 'Au travail', 'en_cours')`);
+  const cL = await muet(PEP, "59 Livré depuis"), cT = await muet(PEP, "59 Travail depuis");
+  await livraison(PEP, cL, 10, "banc-ep-livre");
+  await sql(`insert into messages (projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(PEP)}, ${q(cT)}, 'session', 'session', 'info', 'Je continue sur ce chantier', now() - interval '10 hours')`);
+  const k = {
+    jeune: await carte(PEP, cA, { heures: 10 }),
+    e3: await carte(PEP, cB),
+    projet: await carte(PEP, null),
+    confirmeeRecente: await carte(PEP, cA, { confirmee: 2 }),
+    confirmeeAncienne: await carte(PEP, cA, { confirmee: 26 }),
+    action30: await carte(PEP, cA, { kind: "action", heures: 30 }),
+    action200: await carte(PEP, cA, { kind: "action", heures: 200 }),
+    exclue: await carte(PEP, cA, { exclue: true }),
+    retour: await carte(PEP, cA, { retour: true }),
+    vivant: await carte(PEP, cVivant),
+    livre: await carte(PEP, cL),
+    travail: await carte(PEP, cT),
+    repondue: await carte(PEP, cA, { repondue: true }),
+  };
+  const fusion = randomUUID();
+  await sql(`insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, created_at) values (${q(fusion)}, ${q(PEP)}, ${q(cA)}, 'banc', 'session', 'fusion', 'Fusion ?', now() - interval '30 hours')`);
+
+  // 0. Un projet de test n'est JAMAIS touché par la passe de tous les projets (le job ne vise que les vrais).
+  const sansTest = await passe(SLUG_EP, false, false);
+  verifie("projet de test : la passe sans le mode test n'y touche pas", sansTest.retirees.length === 0 && (await ouverte(k.e3)), sansTest);
+  // 1. Essai à blanc : dit ce qui serait retiré, n'écrit rien.
+  const essai = await passe(SLUG_EP, true);
+  const idsEssai = new Set(essai.retirees.map((x) => x.id));
+  verifie("essai à blanc : retirerait exactement preuve par le projet, livré depuis, travail depuis, question du projet, confirmée il y a 26 h, action de 200 h",
+    ["e3", "projet", "confirmeeAncienne", "action200", "livre", "travail"].every((n) => idsEssai.has(k[n])) && idsEssai.size === 6, { essai });
+  verifie("essai à blanc : rien n'est écrit", (await ouverte(k.e3)) && (await ouverte(k.livre)), essai);
+  // 2. La vraie passe.
+  const r = await passe(SLUG_EP);
+  const raison = (id) => r.retirees.find((x) => x.id === id)?.raison ?? "";
+  verifie("question de 30 h, le projet a avancé sans elle (2 livraisons + ses mots) : retirée, raison en mots simples",
+    !(await ouverte(k.e3)) && /^restée 30 h sans réponse pendant que le projet avançait \(2 livraisons depuis\)\.$/.test(raison(k.e3)), raison(k.e3));
+  const e3 = await lire(k.e3);
+  verifie("elle garde sa raison (« Retirée automatiquement : … »), sa date, et JAMAIS answered_by (aucun réveil de chef, jamais « à reprendre »)",
+    e3.reponse.startsWith("Retirée automatiquement : restée 30 h") && e3.retiree_seule_at !== null && e3.answered_by === null, e3);
+  verifie("une question du PROJET (sans chantier) est retirée de la même façon", !(await ouverte(k.projet)));
+  verifie("le chantier a été livré depuis : retirée, avec sa raison propre", !(await ouverte(k.livre)) && /le chantier a été livré depuis/.test(raison(k.livre)), raison(k.livre));
+  verifie("une session a travaillé sur ce chantier depuis : retirée, avec sa raison propre", !(await ouverte(k.travail)) && /le travail a continué sur ce chantier sans elle/.test(raison(k.travail)), raison(k.travail));
+  verifie("confirmée par une session il y a 26 h (plus de 24 h) : retirée ; confirmée il y a 2 h : gardée (--confirmer fait repartir le délai)",
+    !(await ouverte(k.confirmeeAncienne)) && (await ouverte(k.confirmeeRecente)));
+  verifie("trop jeune (10 h) : gardée", await ouverte(k.jeune));
+  verifie("une ACTION attend 7 fois plus : 30 h gardée, 200 h retirée", (await ouverte(k.action30)) && !(await ouverte(k.action200)));
+  verifie("remise par lui (epuration_exclue) : jamais retirée", await ouverte(k.exclue));
+  verifie("son retour (« Ça bloque ») attend Claude : jamais retirée", await ouverte(k.retour));
+  verifie("chantier tenu par une session ou un agent VIVANT : jamais retirée (c'est à elle de la garder à jour)", await ouverte(k.vivant));
+  verifie("déjà répondue, ou une suggestion de fusion : intactes", (await lire(k.repondue)).reponse === null && (await ouverte(fusion)));
+  verifie("la passe rend le compte (retirées, gardées)", r.retirees.length === 6 && r.gardees === 3 && r.global === true, { n: r.retirees.length, gardees: r.gardees });
+  verifie("la passe est rejouable : la 2e ne retire plus rien", (await passe(SLUG_EP)).retirees.length === 0);
+  // Une carte retirée seule n'est jamais « une réponse de Raphaël à reprendre » (la chef n'ouvre aucun chantier parasite) et ne réveille personne.
+  const aReprendre = (await sql(`select message_id from reponses_sans_suite(${q(PEP)})`)).map((x) => x.message_id);
+  verifie("une carte retirée seule n'est jamais « à reprendre » (aucun chantier parasite, aucun réveil de chef)", ![k.e3, k.projet, k.confirmeeAncienne, k.action200, k.livre, k.travail].some((id) => aReprendre.includes(id)), aReprendre);
+
+  // 3. Sans preuve, rien n'est retiré, même vieux ; la preuve vient des DEUX : une livraison ET ses mots.
+  const aq = await muet(PEQ, "59 Q");
+  const kq = await carte(PEQ, aq);
+  verifie("vieille de 30 h mais le projet n'a rien fait depuis : gardée", (await passe(SLUG_EQ)).retirees.length === 0 && (await ouverte(kq)));
+  await livraison(PEQ, await muet(PEQ, "59 Q2"), 20, "banc-eq-1");
+  verifie("une livraison SANS un mot de lui : gardée (il n'était peut-être pas là)", (await passe(SLUG_EQ)).retirees.length === 0 && (await ouverte(kq)));
+  await sesMots(PEQ, 20);
+  verifie("la livraison ET ses mots : retirée", (await passe(SLUG_EQ)).retirees.length === 1 && !(await ouverte(kq)));
+  const kq2 = await carte(PEQ, null, { heures: 40 });
+  await sql(`delete from activite where projet_id = ${q(PEQ)}`);
+  verifie("ses mots SANS livraison : gardée", (await passe(SLUG_EQ)).retirees.length === 0 && (await ouverte(kq2)));
+
+  // 4. Le délai se règle par projet (0 = jamais) ; une valeur hors bornes est refusée.
+  const k72 = await carte(PEP, null, { heures: 30 }), k80 = await carte(PEP, null, { heures: 80 });
+  await sql(`select regler_epuration(${q(SLUG_EP)}, 72, null)`);
+  const r72 = await passe(SLUG_EP);
+  verifie("délai 72 h : la carte de 30 h est gardée, celle de 80 h retirée", (await ouverte(k72)) && !(await ouverte(k80)) && r72.retirees.length === 1, r72);
+  await sql(`select regler_epuration(${q(SLUG_EP)}, 0, null)`);
+  verifie("délai 0 (jamais) : plus rien n'est retiré, même une carte de 30 h avec preuve", (await passe(SLUG_EP)).retirees.length === 0 && (await ouverte(k72)));
+  const hors = await sql(`select regler_epuration(${q(SLUG_EP)}, 721, null)`).then(() => "accepté", (e) => String(e.message ?? e));
+  verifie("721 h : refusé (de 0 à 720)", /0 \(jamais\) à 720/.test(hors), hors);
+  await sql(`select regler_epuration(${q(SLUG_EP)}, 24, null)`);
+  verifie("remis à 24 h : la carte de 30 h est retirée de nouveau", (await passe(SLUG_EP)).retirees.length === 1 && !(await ouverte(k72)));
+
+  // 5. Il remet une carte retirée seule : ouverte, jamais retirée seule de nouveau, son âge repart.
+  const refus = await rpcUtilisateur("restaurer_carte", { p_id: k.e3 }, jwt);
+  verifie("restaurer_carte : un non-membre est refusé", refus.status >= 400, refus);
+  const refusReglage = await rpcUtilisateur("regler_epuration", { p_projet: SLUG_EP, p_heures: 5 }, jwt);
+  verifie("regler_epuration : réservé à l'admin (le compte de test, simple membre ailleurs, est refusé)", refusReglage.status >= 400 && (await une(`select epuration_delai_h as h from projets where id = ${q(PEP)}`)).h === 24, refusReglage);
+  await sql(`insert into admins (user_id) values (${q(userId)}) on conflict do nothing`);
+  try {
+    const ok = await rpcUtilisateur("restaurer_carte", { p_id: k.e3 }, jwt);
+    const e = await lire(k.e3);
+    verifie("restaurer_carte (admin) : la carte est de nouveau ouverte, sans raison, remise à neuf", ok.status < 300 && e.answered_at === null && e.reponse === null && e.retiree_seule_at === null && e.epuration_exclue === true && e.confirmee_at !== null, { ok, e });
+    verifie("remise : la passe suivante ne la retire plus jamais", (await passe(SLUG_EP)).retirees.length === 0 && (await ouverte(k.e3)));
+    const pasRetiree = await rpcUtilisateur("restaurer_carte", { p_id: k.jeune }, jwt);
+    verifie("restaurer_carte : une carte pas retirée toute seule est refusée", pasRetiree.status >= 400, pasRetiree);
+    const reglage = await rpcUtilisateur("regler_epuration", { p_projet: SLUG_EP, p_heures: 48 }, jwt);
+    verifie("regler_epuration (admin) : accepté, lu par la base", reglage.status < 300 && (await une(`select epuration_delai_h as h from projets where id = ${q(PEP)}`)).h === 48, reglage);
+  } finally { await sql(`delete from admins where user_id = ${q(userId)}`); }
+
+  // 6. La tâche automatique existe, et ses droits sont réservés.
+  const job = await une(`select count(*)::int as n, max(schedule) as horaire, bool_and(active) as actif from cron.job where jobname = 'cockpit-epuration'`);
+  verifie("pg_cron : la tâche « cockpit-epuration » tourne toutes les 3 minutes", job.n === 1 && job.horaire === "*/3 * * * *" && job.actif === true, job);
+  const droits = await une(`select has_function_privilege('anon', 'cockpit.epuration_passe(text,boolean,boolean)', 'execute') as anon_passe,
+      has_function_privilege('authenticated', 'cockpit.epuration_passe(text,boolean,boolean)', 'execute') as auth_passe,
+      has_function_privilege('authenticated', 'cockpit.carte_depassee(cockpit.messages)', 'execute') as auth_regle,
+      has_function_privilege('anon', 'cockpit.restaurer_carte(uuid)', 'execute') as anon_restaurer,
+      has_function_privilege('authenticated', 'cockpit.restaurer_carte(uuid)', 'execute') as auth_restaurer,
+      has_function_privilege('anon', 'cockpit.regler_epuration(text,integer,boolean)', 'execute') as anon_regler`);
+  verifie("droits : la passe et la règle réservées au service ; restaurer et régler pour les connectés (jamais anon)",
+    !droits.anon_passe && !droits.auth_passe && !droits.auth_regle && droits.auth_restaurer && !droits.anon_restaurer && !droits.anon_regler, droits);
+  // 7. Un seul défaut : celui de l'app (lib/epuration.ts) = celui de la colonne.
+  const racine = dirname(dirname(fileURLToPath(import.meta.url)));
+  const ts = readFileSync(join(racine, "app/src/lib/epuration.ts"), "utf8");
+  const defautApp = Number(ts.match(/DELAI_EPURATION_DEFAUT_H = (\d+)/)?.[1]);
+  const defautBase = Number((await une(`select column_default as d from information_schema.columns where table_schema = 'cockpit' and table_name = 'projets' and column_name = 'epuration_delai_h'`)).d);
+  verifie("délai par défaut : celui de l'app (DELAI_EPURATION_DEFAUT_H) = celui de la base (colonne epuration_delai_h)", defautApp === defautBase && defautBase === 24, { defautApp, defautBase });
+  // 8. Les vrais projets : l'essai (jamais d'écriture) tourne sans erreur et dit son compte.
+  const reel = await une(`select cockpit.epuration_passe(null, true, false) as r`).then((x) => x.r);
+  verifie("sur tous les vrais projets, l'essai à blanc tourne sans erreur (rien n'est écrit)", reel.erreur === undefined && Array.isArray(reel.retirees) && typeof reel.gardees === "number", reel);
+}
+
+
 async function controle49_passe_sans_perte() {
   section("49. Passe du chef sans perte : consigne relisible, chantier rendu sans agent, relais sans redemande (0069)");
   await sql(`insert into projets (id, slug, nom) values (${q(PPS)}, ${q(SLUG_PS)}, 'Projet de test passe sans perte')`);
@@ -3204,8 +3352,12 @@ async function controle52_mesure_reaction() {
   const vide = (await une(`select etat_reaction(${q(SLUG_RM)}) as r`)).r;
   verifie("aucun message : 0 mesuré, médiane vide", vide.messages === 0 && vide.mediane_s === null, vide);
   const m1 = randomUUID(), m2 = randomUUID();
-  await sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(m1)}, ${q(PRM)}, 'Raphaël', 'proprietaire', 'info', 'question un', now() - interval '30 minutes'), (${q(m2)}, ${q(PRM)}, 'Raphaël', 'proprietaire', 'info', 'question deux', now() - interval '20 minutes')`);
-  await sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, repond_a, created_at) values (${q(PRM)}, 'session', 'session', 'info', 'réponse un', ${q(m1)}, now() - interval '30 minutes' + interval '90 seconds')`);
+  // UN SEUL INSERT : les trois lignes partagent le même now(). Deux appels séparés donnaient 90 s + le temps écoulé entre eux (91 s quand la
+  // base était un peu lente, le 16 oct. 2026) : le contrôle était tantôt vert tantôt rouge sans que rien n'ait changé.
+  await sql(`insert into messages (id, projet_id, auteur, auteur_type, kind, corps, repond_a, created_at) values
+    (${q(m1)}, ${q(PRM)}, 'Raphaël', 'proprietaire', 'info', 'question un', null, now() - interval '30 minutes'),
+    (${q(m2)}, ${q(PRM)}, 'Raphaël', 'proprietaire', 'info', 'question deux', null, now() - interval '20 minutes'),
+    (${q(randomUUID())}, ${q(PRM)}, 'session', 'session', 'info', 'réponse un', ${q(m1)}, now() - interval '30 minutes' + interval '90 seconds')`);
   const r = (await une(`select etat_reaction(${q(SLUG_RM)}, 7) as r`)).r;
   verifie("un message répondu en 90 s, un sans réponse depuis 20 min : médiane 90 s, 1 sans réponse", r.messages === 2 && r.repondus === 1 && r.mediane_s === 90 && r.dernier_s === 90 && r.sans_reponse === 1 && !!r.plus_ancien_sans_reponse, r);
   const chef = readFileSync(new URL("./chef.sh", import.meta.url), "utf8");
@@ -4033,6 +4185,7 @@ const etapes = [
     controle56_classer_livres,
     controle57_rapprochement_github,
     controle58_cles_import,
+    controle59_epuration_cartes,
   ];
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
@@ -4044,7 +4197,7 @@ const etapes = [
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
-  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH, PCL, PRG, P11E, PAF]); } catch (e) { problemes.push(`projets : ${e.message}`); }
+  try { await purgerProjetsDeTest([P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, PLB, PRE, PGF, PRV, PRF, PFC, PPS, PRX, PRM, PRC, PPQ, PRH, PCL, PRG, P11E, PAF, PEP, PEQ]); } catch (e) { problemes.push(`projets : ${e.message}`); }
   // Les médias de test (0013) : le stockage n'est pas en cascade des projets.
   try {
     const noms = (await sql(`select coalesce(jsonb_agg(name), '[]'::jsonb) as noms from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`))[0]?.noms ?? [];
@@ -4052,7 +4205,7 @@ const etapes = [
     const reste = (await une(`select count(*)::int as n from storage.objects where bucket_id = 'cockpit-medias' and (name like ${q(P1 + '/%')} or name like ${q(P2 + '/%')})`)).n;
     if (reste) problemes.push(`${reste} média(s) de test non supprimé(s)`);
   } catch (e) { problemes.push(`médias : ${e.message}`); }
-  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}, ${q(PRF)}, ${q(PRG)}, ${q(P11E)}, ${q(PAF)}))::int as projets,
+  const restes = await une(`select (select count(*) from projets where id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}, ${q(PRF)}, ${q(PRG)}, ${q(P11E)}, ${q(PAF)}, ${q(PEP)}, ${q(PEQ)}))::int as projets,
                                    (select count(*) from supprimes where projet_id in (${q(P1)}, ${q(P2)}, ${q(P3)}, ${q(P4)}, ${q(P5)}, ${q(P6)}, ${q(P7)}, ${q(P8)}, ${q(P9)}, ${q(P10)}, ${q(P11)}, ${q(PLB)}, ${q(PRE)}, ${q(PRV)}))::int as supprimes,
                                    (select count(*) from visites where user_id = ${q(userId)})::int as visites`).catch(() => null);
   const compte = await authAdmin(`admin/users?per_page=10&filter=${encodeURIComponent(EMAIL)}`).catch(() => null);

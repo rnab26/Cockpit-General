@@ -479,9 +479,15 @@ try {
       await page.getByTestId('personne-ne-travaille').count() === 1 && /Personne ne travaille/.test(await page.getByTestId('personne-ne-travaille').textContent()) && /Lancer/.test(await page.getByTestId('personne-ne-travaille').textContent()))
   } else {
     console.log(`    (${vivants.sessions} session(s) suivie(s) et ${vivants.barres} barre(s) vivante(s) en base à l’instant)`)
-    await page.getByTestId('detail-sessions').click()
-    verifie('détail « Qui travaille » : autant de conversations actives qu’en base', await page.getByTestId('session-active').count() === vivants.sessions, { ecran: await page.getByTestId('session-active').count(), base: vivants.sessions })
-    await page.getByTestId('detail-sessions').click()
+    if (await page.getByTestId('detail-sessions').count()) {
+      await page.getByTestId('detail-sessions').click()
+      verifie('détail « Qui travaille » : autant de conversations actives qu’en base', await page.getByTestId('session-active').count() === vivants.sessions, { ecran: await page.getByTestId('session-active').count(), base: vivants.sessions })
+      await page.getByTestId('detail-sessions').click()
+    } else {
+      // Ce qui vit n'est pas une conversation (une vérification demandée à Claude, une barre sans session) : le détail « Qui travaille »
+      // n'existe pas (16 oct. 2026 : quatre « vérifie pour moi » de Melissa sans aucune session ont fait attendre ce clic 30 s, puis le banc a planté).
+      verifie('aucune conversation active en base → pas de détail « Qui travaille » à ouvrir', vivants.sessions === 0, vivants)
+    }
   }
   verifie('« Tout » : aucune barre VIVE hors de « Ça avance tout seul »', await page.locator('[data-testid="vue-tout"] [data-vive="oui"]').count() === await page.locator('[data-testid="en-ce-moment"] [data-vive="oui"]').count())
   verifie('aucune ligne vivante sans preuve : chaque barre vive est sur une ligne « vivant »', await page.locator('[data-testid="ligne-en-ce-moment"][data-vivant="non"] [data-vive="oui"]').count() === 0)
