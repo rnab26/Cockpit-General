@@ -72,13 +72,15 @@ export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: numb
     const recent = now.getTime() - vu < JOUR
     // La MÊME règle que l'icône « branché » : un démarrage récent du hook ne suffit pas, il faut une vraie session (13 oct. 2026).
     const reelle = ctx.sessions === undefined || ctx.sessions.some((s) => sessionReelle(s, now))
-    branche = recent && reelle
-    if (recent && !reelle) {
+    // Une vraie session vivante prouve le branchement même si le dernier DÉMARRAGE date de plus de 24 h (Mélissa : 2 sessions vivantes, démarrées il y a 3 j).
+    const vivante = ctx.sessions !== undefined && ctx.sessions.some((s) => sessionReelle(s, now))
+    branche = (recent && reelle) || vivante
+    if (recent && !reelle && !vivante) {
       lignes.push({ texte: `Le cockpit a répondu ${quand}, mais aucune vraie session n’a encore tourné dans ce projet (un essai à la main ne compte pas)`, teinte: 'attention' })
     } else {
       lignes.push({
-        texte: `${recent ? 'Sessions branchées' : 'Plus aucune session depuis'} — dernier démarrage ${quand} · ${chantiersDeSessions} chantier${chantiersDeSessions > 1 ? 's' : ''} ouvert${chantiersDeSessions > 1 ? 's' : ''} depuis les sessions`,
-        teinte: recent ? 'ok' : 'attention',
+        texte: `${recent || vivante ? 'Sessions branchées' : 'Plus aucune session depuis'} — dernier démarrage ${quand} · ${chantiersDeSessions} chantier${chantiersDeSessions > 1 ? 's' : ''} ouvert${chantiersDeSessions > 1 ? 's' : ''} depuis les sessions`,
+        teinte: recent || vivante ? 'ok' : 'attention',
       })
     }
   }
@@ -111,6 +113,7 @@ export function etatBranchement(p: PreuvesBranchement, chantiersDeSessions: numb
  */
 export function estBranche(p: PreuvesBranchement, now: Date = new Date(), sessions?: readonly Pick<SessionClaude, 'demarre_at' | 'vu_at' | 'fin_at'>[]): boolean {
   const vu = p.branchement_vu_at ? new Date(p.branchement_vu_at).getTime() : NaN
+  if (sessions !== undefined && sessions.some((s) => sessionReelle(s, now))) return true
   if (Number.isNaN(vu) || now.getTime() - vu >= JOUR) return false
   // Avec la liste des sessions du projet (admin) : il faut AUSSI une vraie session. Le 13 oct. 2026, trois « démarrages »
   // de 0 s (préchauffage du conteneur, branche main, déduit) posaient `branchement_vu_at` : l'icône restait verte
