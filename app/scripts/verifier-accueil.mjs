@@ -260,11 +260,13 @@ try {
     return n
   }
   await page.goto(BASE + `#projet=${SLUG}`, { waitUntil: 'domcontentloaded' })
-  sql(`update projets set branchement_vu_at = now() where id = '${ids.projet}'`)
-  sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at, fin_at) values ('${randomUUID()}', '${ids.projet}', 'main', now(), now(), now())`)
-  verifie('le hook a démarré mais seulement une session de 0 s (préchauffage) : l’icône « branché » reste ÉTEINTE', await iconeBranche() === 0)
-  sql(`insert into sessions (id, projet_id, branche, demarre_at, vu_at, fin_at) values ('${randomUUID()}', '${ids.projet}', 'claude/test-accueil', now() - interval '20 minutes', now(), null)`)
-  verifie('une vraie session vivante : l’icône « branché » s’allume', await iconeBranche() === 1)
+  // 19 oct. 2026 : la prise = le réglage « Branché / En pause » (UNE règle, projets.en_pause), plus « une session a démarré il y a moins de 24 h »
+  // (Mélissa : 2 sessions vivantes, dernier démarrage > 3 j, affichée à tort « pas branché »).
+  sql(`update projets set branchement_vu_at = now() - interval '5 days', en_pause = false where id = '${ids.projet}'`)
+  verifie('projet pas en pause, dernier démarrage il y a 5 jours : la prise « branché » est allumée', await iconeBranche() === 1)
+  sql(`update projets set en_pause = true where id = '${ids.projet}'`)
+  verifie('projet en pause : plus de prise « branché »', await iconeBranche() === 0)
+  sql(`update projets set en_pause = false where id = '${ids.projet}'`)
   verifie('aucune erreur JavaScript', erreurs.length === 0, erreurs)
 } catch (e) {
   echecs++; total++
