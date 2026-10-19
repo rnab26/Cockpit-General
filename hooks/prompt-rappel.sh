@@ -89,6 +89,9 @@ if [ -x "$SQL" ]; then
   fi
 fi
 # RAPPROCHEMENT GITHUB (0080) : en tâche de fond, au plus une fois toutes les 20 min par projet (voir hooks/session-start.sh).
+# CARTES DE PR (0099) : une carte « Fusionne la PR » dont la PR est déjà fusionnée ou fermée se retire seule (au plus toutes les 3 min).
+prcartes="$(dirname "$SQL")/pr-cartes.sh"
+[ -f "$prcartes" ] && ( COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 120 bash "$prcartes" >/dev/null 2>&1 & ) >/dev/null 2>&1
 rapprocher="${COCKPIT_RAPPROCHER:-$(dirname "$SQL")/rapprocher.py}"
 if [ -n "$sid" ] && [ "${COCKPIT_RAPPROCHEMENT:-1}" != 0 ] && [ -f "$rapprocher" ] && command -v python3 >/dev/null 2>&1; then
   ( cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null; COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 170 python3 "$rapprocher" --projet "$PROJET" --si-ancien 20 --silencieux >/dev/null 2>&1 & ) >/dev/null 2>&1
