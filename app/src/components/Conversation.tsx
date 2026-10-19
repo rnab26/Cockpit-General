@@ -498,7 +498,8 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
           {item(<History size={17} className={ic} />, 'Historique', onHistorique, 'ouvrir-historique')}
           {!chantier.doublon_de ? item(<Copy size={17} className={ic} />, 'Fusionner avec…', () => ouvrirDoublonDe(chantier), 'doublon-de') : null}
           {chantier.pris_par ? item(<LockOpen size={17} className={ic} />, 'Libérer la réservation', liberer, 'liberer') : null}
-          {chantier.etat !== 'reporte' || chantier.reporte_jusqu_a ? item(<CirclePause size={17} className={ic} />, 'Mettre de côté', () => void deCote(null), 'mettre-de-cote') : null}
+          {chantier.etat !== 'reporte' || chantier.reporte_jusqu_a ? item(<CirclePause size={17} className={ic} />, 'Mettre de côté', () => void deCote(null), 'mettre-de-cote')
+            : !chantier.archived_at ? item(<CirclePause size={17} className={ic} />, 'Déjà de côté : remettre en route', () => void maj({ etat: 'libre', reporte_jusqu_a: null }, `« ${chantier.titre} » remis en route : il passe dans « Prêt à lancer ».`), 'remettre-en-route') : null}
           {item(<CalendarClock size={17} className={ic} />, chantier.reporte_jusqu_a ? 'Changer la date de report…' : 'Reporter…', () => setReporter(true), 'reporter')}
           {item(<FolderInput size={17} className={ic} />, 'Déplacer vers un autre projet…', () => setDeplacer(true), 'deplacer')}
           {!chantier.archived_at ? item(<Ban size={17} className={ic} />, 'Abandonner', () => void abandonner(), 'abandonner') : null}
