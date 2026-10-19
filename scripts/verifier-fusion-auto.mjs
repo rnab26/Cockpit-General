@@ -27,9 +27,12 @@ const cas = [
   ['écran + documentation + banc', ['app/src/lib/a.ts', 'docs/REPRISE.md', 'scripts/verifier-fusion.mjs', 'app/scripts/verifier-web.mjs'], 'renfort/5ec870/f31537', 'oui', 'auto'],
   ['branche claude/', ['docs/historique/x.md'], 'claude/abc', 'oui', 'auto'],
   ['branche worktree-', ['docs/historique/x.md'], 'worktree-agent-1', 'oui', 'auto'],
-  ['un fichier sensible parmi des sûrs', ['app/src/a.tsx', 'supabase/migrations/0103_x.sql'], 'agent/x', 'oui', 'carte'],
-  ['base', ['supabase/migrations/0103_x.sql'], 'agent/x', 'oui', 'carte'],
-  ['hooks', ['hooks/suivi.sh'], 'agent/x', 'oui', 'carte'],
+  ['un fichier sensible parmi des sûrs', ['app/src/a.tsx', 'supabase/config.toml'], 'agent/x', 'oui', 'carte'],
+  ['migration seule = auto (choix de Raphaël 19 oct.)', ['supabase/migrations/0103_x.sql'], 'agent/x', 'oui', 'auto'],
+  ['hook seul = auto (choix de Raphaël 19 oct.)', ['hooks/suivi.sh'], 'agent/x', 'oui', 'auto'],
+  ['fonction serveur Supabase = carte', ['supabase/functions/x/index.ts'], 'agent/x', 'oui', 'carte'],
+  ['config Supabase = carte', ['supabase/config.toml'], 'agent/x', 'oui', 'carte'],
+  ['fichier non .sh dans hooks = carte', ['hooks/x.json'], 'agent/x', 'oui', 'carte'],
   ['réglages de Claude', ['.claude/settings.json'], 'agent/x', 'oui', 'carte'],
   ['workflow', ['.github/workflows/deploy.yml'], 'agent/x', 'oui', 'carte'],
   ['outil shell', ['scripts/progression.sh'], 'agent/x', 'oui', 'carte'],
@@ -43,14 +46,14 @@ const cas = [
   ['fichier hors liste (banc non « verifier- »)', ['scripts/bancs.mjs'], 'agent/x', 'oui', 'carte'],
   ['fichier à la racine', ['README.md'], 'agent/x', 'oui', 'carte'],
   ['sensible en sous-dossier d’outils (hors liste blanche)', ['scripts/sous/dossier/x.sh'], 'agent/x', 'oui', 'carte'],
-  ['renommage depuis un fichier sensible (l’ancien nom compte)', ['docs/x.md', 'hooks/suivi.sh'], 'agent/x', 'oui', 'carte'],
+  ['renommage depuis un fichier sensible (l’ancien nom compte)', ['docs/x.md', '.claude/settings.json'], 'agent/x', 'oui', 'carte'],
   ['fork', ['docs/x.md'], 'agent/x', 'non', 'carte'],
   ['branche inconnue', ['docs/x.md'], 'feature/x', 'oui', 'carte'],
   ['branche vide', ['docs/x.md'], '', 'oui', 'carte'],
   ['branche « agent/ » sans nom', ['docs/x.md'], 'agent/', 'oui', 'carte'],
   ['aucune branche en « main »', ['docs/x.md'], 'main', 'oui', 'carte'],
   ['liste vide', [], 'agent/x', 'oui', 'carte'],
-  ['chemin remontant', ['docs/../hooks/suivi.sh'], 'agent/x', 'oui', 'carte'],
+  ['chemin remontant', ['docs/../.claude/x'], 'agent/x', 'oui', 'carte'],
   ['chemin absolu', ['/etc/passwd'], 'agent/x', 'oui', 'carte'],
   ['majuscules (autre dossier)', ['Hooks/suivi.sh', 'APP/x.tsx'], 'agent/x', 'oui', 'carte'],
   ['dossier qui commence comme app (« app-secret/ »)', ['app-secret/x.txt'], 'agent/x', 'oui', 'carte'],
@@ -131,8 +134,8 @@ printf '%s\\n' "$*" >> "${dossier}/dem.log"
   const sureAvecCarte = lance(['502', ...base, '--fichiers', 'app/src/a.tsx'], 1)
   verifie('PR sûre qui avait déjà une carte : la carte est retirée (réponse automatique, answered_by vide), rien n’est reposé',
     sureAvecCarte.code === 0 && sureAvecCarte.dem === '' && /answered_by = null/.test(sureAvecCarte.sql) && /se fusionne seule/.test(sureAvecCarte.sql) && /Carte PR #502 retirée/.test(sureAvecCarte.sortie), sureAvecCarte)
-  const sensible = lance(['503', ...base, '--fichiers', 'app/src/a.tsx,supabase/migrations/0103_x.sql'])
-  verifie('PR sensible : la carte « Fusionne la PR » est posée, avec la raison en mots simples', sensible.code === 0 && /--question Fusionne la PR #503 : Un titre/.test(sensible.dem) && /touche la base de données : elle ne se fusionne pas seule/.test(sensible.dem), sensible)
+  const sensible = lance(['503', ...base, '--fichiers', 'app/src/a.tsx,supabase/config.toml'])
+  verifie('PR sensible : la carte « Fusionne la PR » est posée, avec la raison en mots simples', sensible.code === 0 && /--question Fusionne la PR #503 : Un titre/.test(sensible.dem) && /touche la base de données \(hors simple mise à jour\) : elle ne se fusionne pas seule/.test(sensible.dem), sensible)
   const outils = lance(['504', ...base, '--fichiers', 'scripts/progression.sh'])
   verifie('PR qui touche les outils : carte avec sa raison', /touche les outils du cockpit/.test(outils.dem), outils)
   const hors = lance(['505', ...base, '--fichiers', 'scripts/bancs.mjs'])

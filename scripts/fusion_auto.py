@@ -26,8 +26,8 @@ DELAI_REPLI_MIN = 20
 
 # SENSIBLE : toujours une carte (testé AVANT la liste blanche). (motif complet du chemin, ce que Raphaël lit)
 SENSIBLE = [
-    (r"supabase/.*", "touche la base de données"),
-    (r"hooks/.*", "touche les réglages automatiques des sessions"),
+    (r"supabase/(?!migrations/[^/]+\.sql$).*", "touche la base de données (hors simple mise à jour)"),
+    (r"hooks/(?![^/]+\.sh$).*", "touche les réglages automatiques des sessions"),
     (r"\.claude/.*", "touche les réglages de Claude"),
     (r"\.github/.*", "touche la mise en ligne et les contrôles automatiques"),
     (r"scripts/[^/]+\.(sh|py)", "touche les outils du cockpit"),
@@ -42,6 +42,10 @@ BLANCHE = [
     r"app/.*",
     r"docs/.*",
     r"scripts/verifier-[^/]+\.mjs",
+    # 19 oct. 2026, Raphaël : « oui » aux hooks et migrations seuls en automatique. La fusion n'applique PAS la
+    # migration (la session l'applique avec sql.sh avant la PR) ; les bancs ne tournent pas dans la CI.
+    r"supabase/migrations/[^/]+\.sql",
+    r"hooks/[^/]+\.sh",
 ]
 
 # Ce que la mise en ligne (deploy.yml, bloc « paths ») sert : une fusion qui y touche relance le déploiement,
@@ -84,7 +88,7 @@ def decider(fichiers, branche="", meme_depot=False):
     hors = [f for f in fichiers if not _ok(BLANCHE, f)]
     if hors:
         return r("carte", "elle touche un fichier que le cockpit ne classe pas comme sûr", hors[0])
-    return r("auto", "seulement l'écran, la documentation et les contrôles : sûr")
+    return r("auto", "seulement l'écran, la documentation, les contrôles, les réglages de sessions et les mises à jour de la base : accepté")
 
 
 def main(argv):
