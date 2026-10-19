@@ -83,23 +83,30 @@ case "${1:-}" in
       esac; shift 2
     done
     [ -n "$projet" ] || { echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2; }
-    [ -n "$chantier" ] || { echo "--chantier <id|titre> manque." >&2; exit 2; }
+    [ -n "$chantier" ] || { echo "--chantier <id|titre|projet> manque (« projet » = fil du projet, hors chantier)." >&2; exit 2; }
     [ ${#images[@]} -ge 1 ] || { echo "--image <fichier> manque." >&2; exit 2; }
     nt=$(printf '%s' "$texte" | python3 -c 'import sys; print(len(sys.stdin.read()))')
     [ "$nt" -le 280 ] || { echo "Refusé (règle de clarté) : --texte fait $nt caractères, 280 au plus : dis ce que montre l'image, en une ou deux phrases." >&2; exit 2; }
     "$ICI/media.sh" --verifier-images "${images[@]}"
     q() { printf '%s' "$1" | sed "s/'/''/g"; }
+    if [ "$chantier" = "projet" ]; then
+      # Fil du projet (hors chantier) : message sans chantier_id.
+      pid=$("$SQL" "select id from projets where slug = '$(q "$projet")'" | jq -r '.rows[0].id // empty')
+      [ -n "$pid" ] || { echo "Projet introuvable : $projet." >&2; exit 1; }
+      cid="projet"; cidsql="null"
+    else
     resol=$("$SQL" "select c.id, c.projet_id, c.titre from chantiers c join projets p on p.id = c.projet_id where p.slug = '$(q "$projet")' and c.archived_at is null and (c.id::text = '$(q "$chantier")' or c.titre ilike '%' || '$(q "$chantier")' || '%') order by (c.id::text = '$(q "$chantier")') desc limit 3" | jq -c '.rows // []')
     n=$(jq 'length' <<< "$resol")
     [ "$n" -ge 1 ] || { echo "Aucun chantier ne correspond à « $chantier » dans le projet $projet." >&2; exit 1; }
     if [ "$n" -gt 1 ] && [ "$(jq -r '.[0].id' <<< "$resol")" != "$chantier" ]; then
       echo "Plusieurs chantiers correspondent :" >&2; jq -r '.[] | "  \(.id)  \(.titre)"' <<< "$resol" >&2; exit 1
     fi
-    cid=$(jq -r '.[0].id' <<< "$resol"); pid=$(jq -r '.[0].projet_id' <<< "$resol")
+    cid=$(jq -r '.[0].id' <<< "$resol"); pid=$(jq -r '.[0].projet_id' <<< "$resol"); cidsql="'$cid'"
+    fi
     medias=$("$ICI/media.sh" --deposer "$pid" "$cid" "${images[@]}")
     [ -n "$texte" ] || texte="Image jointe par Claude"
     id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-    "$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, medias) values ('$id', '$pid', '$cid', '$(q "$auteur")', 'session', 'info', '$(q "$texte")', '$(q "$medias")'::jsonb)" >/dev/null
+    "$SQL" "insert into messages (id, projet_id, chantier_id, auteur, auteur_type, kind, corps, medias) values ('$id', '$pid', $cidsql, '$(q "$auteur")', 'session', 'info', '$(q "$texte")', '$(q "$medias")'::jsonb)" >/dev/null
     relu=$("$SQL" "select jsonb_array_length(medias) as n from messages where id = '$id'" | jq -r '.rows[0].n // empty')
     [ "$relu" = "${#images[@]}" ] || { echo "Le message n'a pas été enregistré (relecture : ${relu:-rien})." >&2; exit 1; }
     echo "Image(s) envoyée(s) dans le fil (message $id) : Raphaël les voit en miniature, un toucher les ouvre en grand."
