@@ -21,6 +21,7 @@ import { AideInstallation, useLancerInstallation } from './InstallerAppli.tsx'
 import { AvecProjet } from './AvecProjet.tsx'
 import { TableauDeBord, ReglagesProjet, ReglagesProjets } from './TableauDeBord.tsx'
 import { AccueilSimple } from './AccueilSimple.tsx'
+import { LigneIncident } from './Autocontrole.tsx'
 import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { lireLienFil } from '../lib/lienNotification.ts'
 import { chargerEtatEcran, etatCoherent, sauverEtatEcran } from '../lib/etatEcran.ts'
@@ -307,6 +308,8 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         {entete}
         <main className="mx-auto max-w-3xl lg:max-w-5xl space-y-3 px-3 pt-4">
           {d.erreur ? <Erreur texte={d.erreur} onReessayer={() => void d.recharger(false, true)} /> : null}
+          {/* UNE ligne en tête de l'écran principal : ce que le cockpit a repéré seul (0105). Rien quand tout va bien. */}
+          {pretAffichage ? <LigneIncident projetId={vueTout || !d.projet ? null : d.projet.id} /> : null}
           {!pretAffichage ? <Chargement /> : vueTout || !d.projet ? (
             <div className="space-y-5" data-testid="vue-tout">
               {accueilSimple ? <AccueilSimple projetId={null} /> : <><TableauDeBord projetId={null} /><ReglagesProjets /></>}
