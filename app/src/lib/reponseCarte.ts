@@ -94,6 +94,34 @@ export function retourCarte(m: Message, fil: readonly Pick<Message, 'chantier_id
   return { etat: lu ? 'lu' : 'attend', depuis: m.retour_at }
 }
 
+/** Le début du message que la base écrit quand la chef reprend une réponse (0017, reprendre_reponse). */
+export const PREFIXE_REPRISE = 'Claude reprend ta réponse'
+
+/**
+ * Le retour sur une carte d'action est-il OUVERT ? Même règle que `est_retour_carte` (0070) : « Ça bloque », ou « Pas encore »
+ * avec un mot ou un fichier. La carte reste ouverte en base (la session la ferme), mais c'est à CLAUDE d'agir.
+ */
+export function estRetourOuvert(m: Pick<Message, 'kind' | 'answered_at' | 'retour_at' | 'etat' | 'precision' | 'medias'>): boolean {
+  if (m.kind !== 'action' || m.answered_at || !m.retour_at) return false
+  const mot = !!(m.precision ?? '').trim() || (Array.isArray(m.medias) && m.medias.length > 0)
+  return m.etat === 'bloque' || (m.etat === 'pas_encore' && mot)
+}
+
+/**
+ * C'est le tour de CLAUDE (chantier fa297cc4, 19 oct. 2026) : Raphaël a dit « Ça bloque » (ou « Pas encore » avec un mot), aucune session n'a
+ * encore écrit dans le fil depuis, ou seulement « Claude reprend ta réponse ». La carte quitte alors « pour toi » et le chantier
+ * passe dans « ça avance » (« Ta réponse est reçue : Claude va la reprendre ») : le compteur bouge comme après « Fait ».
+ * Dès que Claude écrit autre chose, la balle revient à Raphaël (la carte, encore ouverte, redevient « pour toi »).
+ */
+export function retourPrisEnCharge(
+  m: Pick<Message, 'kind' | 'answered_at' | 'retour_at' | 'etat' | 'precision' | 'medias' | 'chantier_id'>,
+  fil: readonly Pick<Message, 'chantier_id' | 'auteur_type' | 'kind' | 'corps' | 'created_at'>[],
+): boolean {
+  if (!estRetourOuvert(m) || !m.chantier_id) return false
+  return !fil.some((x) => x.chantier_id === m.chantier_id && x.auteur_type === 'session' && x.created_at > m.retour_at!
+    && !(x.kind === 'info' && x.corps.startsWith(PREFIXE_REPRISE)))
+}
+
 /** La phrase affichée sous la carte pour ce retour. */
 export function phraseRetourCarte(r: RetourCarte): string {
   return r.etat === 'lu'

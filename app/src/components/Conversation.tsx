@@ -44,6 +44,7 @@ import { PointTravaille } from './Vivant.tsx'
 import { DescriptifChantier } from './DescriptifChantier.tsx'
 import { IconePresence, PointProjet } from './Icones.tsx'
 import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
+import { apresAbandon, apresMiseDeCote, apresRelance } from '../lib/statuts.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, deposerMedia, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 
 /**
@@ -428,7 +429,7 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
 
 /** Le menu ⋯ d'un chantier (admin) : les gestes rares, avec confirmation avant toute suppression. */
 function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantier; nMessages: number; onHistorique: () => void }) {
-  const { recharger, ouvrirModifier, ouvrirDoublonDe } = useCockpit()
+  const { recharger, ouvrirModifier, ouvrirDoublonDe, chantiersLocal } = useCockpit()
   const toast = useToast()
   const confirmer = useConfirmer()
   const fermeture = useContext(FermetureCtx)
@@ -440,8 +441,10 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
   useMenuQuiSeFerme(ouvert, ref, () => setOuvert(false))
   // Mettre de côté / reporter / abandonner (0028) : une fonction de la base, une ligne dans le fil.
   const deCote = async (jusqua: Date | null) => {
+    chantiersLocal.poser(apresMiseDeCote(chantier, jusqua ? jusqua.toISOString() : null))
     const { error } = await supabase.rpc('mettre_de_cote', { p_id: chantier.id, p_jusqu_a: jusqua ? jusqua.toISOString() : null, p_raison: null })
-    if (error) { toast.erreur(messageErreur(error)); return false }
+    if (error) { chantiersLocal.annuler(chantier); toast.erreur(messageErreur(error)); return false }
+    chantiersLocal.confirmer(chantier.id)
     toast.succes(jusqua ? `Reporté au ${jusqua.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} : il reviendra tout seul dans « Pour Claude ».` : 'Mis de côté. « Relancer maintenant » le rouvre.')
     await recharger(); return true
   }
@@ -449,8 +452,10 @@ function MenuChantier({ chantier, nMessages, onHistorique }: { chantier: Chantie
     const ok = await confirmer({ titre: 'Abandonner ce chantier ?', libelleOk: 'Abandonner',
       texte: <p>« <b>{chantier.titre}</b> » est archivé, avec une ligne « Abandonné » dans son fil. Rien n’est supprimé : « Désarchiver » le rend.</p> })
     if (!ok) return
+    chantiersLocal.poser(apresAbandon(chantier, new Date().toISOString()))
     const { error } = await supabase.rpc('abandonner_chantier', { p_id: chantier.id, p_raison: null })
-    if (error) { toast.erreur(messageErreur(error)); return }
+    if (error) { chantiersLocal.annuler(chantier); toast.erreur(messageErreur(error)); return }
+    chantiersLocal.confirmer(chantier.id)
     toast.succes(`« ${chantier.titre} » abandonné (archivé).`); await recharger()
   }
   const maj = async (valeurs: Partial<Chantier>, succes: string) => {
@@ -568,7 +573,7 @@ function DialogueReporter({ ouvert, onFermer, onChoisir }: { ouvert: boolean; on
 }
 
 function FilChantier({ chantierId }: { chantierId: string }) {
-  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser, sessions } = useCockpit()
+  const { admin, messages, chantiers, activites, taches, enAttente, now, silenceMs, sections, recharger, prefs, poser, sessions, chantiersLocal } = useCockpit()
   const { projets } = useGlobal()
   const toast = useToast()
   const [signalHistorique, setSignalHistorique] = useState(0)
@@ -609,8 +614,10 @@ function FilChantier({ chantierId }: { chantierId: string }) {
   const derniere = derniereAction(c.id, messages, activites, taches)
   const dernierBlocage = [...fil].reverse().find((m) => m.kind === 'blocage') ?? null
   const relancer = async () => {
+    chantiersLocal.poser(apresRelance(c))
     const { error } = await supabase.from('chantiers').update({ etat: 'libre', reporte_jusqu_a: null, archived_at: null }).eq('id', c.id)
-    if (error) { toast.erreur(messageErreur(error)); return }
+    if (error) { chantiersLocal.annuler(c); toast.erreur(messageErreur(error)); return }
+    chantiersLocal.confirmer(c.id)
     toast.succes(`« ${c.titre} » relancé : il passe dans « Pour Claude ».`); await recharger()
   }
   const teinte = presence.code === 'travaille' ? 'text-ok' : presence.teinte === 'alerte' ? 'text-alerte' : presence.teinte === 'attention' ? 'text-attention' : presence.teinte === 'info' ? 'text-info' : 'text-texte-2'

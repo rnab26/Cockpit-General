@@ -13,6 +13,7 @@ import { FriseMiseEnLigne, PhraseMiseEnLigne } from './MiseEnLigne.tsx'
 import { ChoisirMedias, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 import { BlocQuestion } from './BlocQuestion.tsx'
 import { questionsOuvertesDe } from '../lib/entonnoir.ts'
+import { apresCertification, apresVerificationDemandee } from '../lib/statuts.ts'
 
 /**
  * Chantier « à vérifier » : « Ça marche » (certifie), « Ça ne marche pas » ou « Je ne
@@ -23,7 +24,7 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
   /** Le fil cache ses propres cartes de question pendant qu'elles s'affichent ici (pas de doublon à l'écran). */
   onQuestionsAffichees?: (affichees: boolean) => void
 }) {
-  const { par, admin, projet, recharger, now, messages } = useCockpit()
+  const { par, admin, projet, recharger, now, messages, chantiersLocal } = useCockpit()
   const toast = useToast()
   const [modeChoisi, setMode] = useState<'choix' | 'questions' | 'certifier' | 'probleme' | 'verifier'>('choix')
   // Certifier ne ferme pas une question ouverte (migration 0026) : « Ça marche »
@@ -46,8 +47,11 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
   const certifier = async () => {
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     setEnCours(true)
+    // Le chantier quitte « à tester » et entre dans « fini » TOUT DE SUITE (lib/statuts.ts) ; l'écriture le confirme, ou il revient.
+    chantiersLocal.poser(apresCertification(chantier, par, new Date().toISOString()))
     const { error } = await supabase.rpc('certifier_chantier', { p_id: chantier.id, p_par: par, p_mots: mots.trim() || null })
-    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    if (error) { chantiersLocal.annuler(chantier); setEnCours(false); toast.erreur(`Pas certifié, il est revenu dans « à tester » : ${messageErreur(error)}`); return }
+    chantiersLocal.confirmer(chantier.id)
     const ok = await joindre('Capture jointe à la certification')
     setEnCours(false)
     if (ok) toast.succes(`« ${chantier.titre} » certifié. Il passe dans « Fini ».`)
@@ -58,8 +62,10 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
   const signalerProbleme = async () => {
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     setEnCours(true)
+    chantiersLocal.poser(apresVerificationDemandee(chantier, new Date().toISOString()))
     const { error } = await supabase.rpc('signaler_ne_marche_pas', { p_id: chantier.id, p_par: par, p_mots: mots.trim() || null })
-    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    if (error) { chantiersLocal.annuler(chantier); setEnCours(false); toast.erreur(`Pas enregistré, il est revenu dans « à tester » : ${messageErreur(error)}`); return }
+    chantiersLocal.confirmer(chantier.id)
     const ok = await joindre('Ce qui ne marche pas, en image')
     setEnCours(false)
     if (ok) toast.succes('Noté : Claude vérifie ce qui ne marche pas et te dit ce qu’il trouve.')
@@ -72,8 +78,10 @@ export function BlocValidation({ chantier, sansEntete = false, onQuestionsAffich
   const demanderVerification = async () => {
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     setEnCours(true)
+    chantiersLocal.poser(apresVerificationDemandee(chantier, new Date().toISOString()))
     const { error } = await supabase.rpc('demander_verification', { p_id: chantier.id, p_par: par, p_mots: mots.trim() || null })
-    if (error) { setEnCours(false); toast.erreur(messageErreur(error)); return }
+    if (error) { chantiersLocal.annuler(chantier); setEnCours(false); toast.erreur(`Pas enregistré, il est revenu dans « à tester » : ${messageErreur(error)}`); return }
+    chantiersLocal.confirmer(chantier.id)
     const ok = await joindre('Ce que j’ai vu, en image')
     setEnCours(false)
     if (ok) toast.succes('C’est noté : Claude vérifie pour toi et te dit si c’est bon.')
