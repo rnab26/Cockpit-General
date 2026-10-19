@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, CloudOff, Copy, Ellipsis, ExternalLink, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowLeft, Ban, CalendarClock, Check, CheckCheck, ChevronDown, CircleCheck, CirclePause, Clock, CloudOff, Copy, Ellipsis, ExternalLink, FolderInput, History, LockOpen, MessageSquare, Pencil, Play, Reply, SendHorizontal, Trash2, X } from 'lucide-react'
 import type { Chantier, Message } from '../lib/types.ts'
 import { useCockpit, useGlobal } from '../contexte.ts'
 import { useMarquerLu } from './PastilleReponse.tsx'
@@ -22,8 +22,8 @@ import { situationSilence, phraseLiberee, DELAI_ABANDON_MIN } from '../lib/silen
 import { phraseAttente, projetAutonome } from '../lib/enAttente.ts'
 import { nomCourtSession } from '../lib/texte.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
-import { auteurDe, sujetDe } from '../lib/bulleAide.ts'
 import { raisonRetrait } from '../lib/epuration.ts'
+import { auteurDe, avecCitation, citationDe, citer, sujetDe } from '../lib/bulleAide.ts'
 import { attenteReponse, derniereAction, filLie, ordreDuFil, separerChat, type AttenteReponse } from '../lib/discussion.ts'
 import { CHOIX_REPORT, dateDeReport, dateSaisie, texteReporte } from '../lib/reporter.ts'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -164,12 +164,12 @@ function EnTete({ titre, sousTitre, menu }: { titre: ReactNode; sousTitre?: Reac
 }
 
 /** Une bulle du fil : Claude à gauche (fond carte), toi à droite (fond neutre plus soutenu). Jamais de pavé teinté. */
-function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, repondre = false, enAttente }: {
-  cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null; repondre?: boolean; enAttente?: { texte: string; refuse: boolean } | null
+function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, repondre = false, enAttente, messageId, citable }: {
+  messageId?: string; citable?: string | null; cote: 'gauche' | 'droite'; auteur?: string; quand?: string | null; children: ReactNode; testId?: string; aFaire?: boolean; sujet?: string | null; repondre?: boolean; enAttente?: { texte: string; refuse: boolean } | null
 }) {
   const { now } = useCockpit()
   return (
-    <div className={`flex ${cote === 'droite' ? 'justify-end' : 'justify-start'}`} data-zone-libre="oui" data-testid={testId} data-cote={cote} data-a-faire={aFaire ? 'oui' : undefined}>
+    <div className={`flex ${cote === 'droite' ? 'justify-end' : 'justify-start'}`} data-zone-libre="oui" data-testid={testId} data-cote={cote} data-message-id={messageId} data-a-faire={aFaire ? 'oui' : undefined}>
       <div className={`max-w-[88%] rounded-2xl border border-bord px-3 py-2 ${cote === 'droite' ? 'rounded-br-md bg-carte-2' : 'rounded-bl-md bg-carte'}`}>
         {auteur || quand ? (
           <p className="mb-0.5 flex items-baseline justify-between gap-3 text-[11px] text-texte-2">
@@ -186,13 +186,33 @@ function Bulle({ cote, auteur, quand, children, testId, aFaire = false, sujet, r
           </p>
         ) : null}
         {repondre ? (
-          <button type="button" data-testid="repondre-bulle" onClick={() => window.dispatchEvent(new CustomEvent('cockpit:repondre', { detail: { sujet: sujet ?? null } }))}
+          <button type="button" data-testid="repondre-bulle" onClick={() => window.dispatchEvent(new CustomEvent('cockpit:repondre', { detail: { sujet: sujet ?? null, id: messageId ?? null, corps: citable ?? null, quand: quand ?? null } }))}
             className="mt-1.5 -mb-0.5 inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-xs font-medium text-accent hover:bg-carte-2">
             <Reply size={14} aria-hidden />Répondre
           </button>
         ) : null}
       </div>
     </div>
+  )
+}
+
+/** La citation d'une réponse : encart avec l'auteur et l'heure du message visé ; toucher = aller à ce message. */
+function Citation({ texte, versId }: { texte: string; versId: string | null }) {
+  const toast = useToast()
+  const { now, messages } = useCockpit()
+  const cible = versId ? messages.find((x) => x.id === versId) : undefined
+  const aller = () => {
+    const el = versId ? document.querySelector<HTMLElement>(`[data-message-id="${versId}"]`) : null
+    if (!el) { toast.info('Ce message est plus haut, ou déjà rangé dans « Actions déjà faites ».'); return }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('ring-2', 'ring-accent', 'rounded-2xl')
+    window.setTimeout(() => el.classList.remove('ring-2', 'ring-accent', 'rounded-2xl'), 1800)
+  }
+  return (
+    <button type="button" onClick={aller} data-testid="citation-reponse" className="mb-1 block w-full rounded-lg border-l-4 border-accent bg-carte px-2 py-1 text-left text-sm hover:bg-carte-2">
+      <span className="flex items-center gap-1 text-[11px] font-medium text-accent"><Reply size={11} aria-hidden />En réponse à Claude{cible ? ` · ${dateRelative(cible.created_at, now)}` : ''} · voir</span>
+      <span className="line-clamp-3 break-words text-texte-2">{texte}</span>
+    </button>
   )
 }
 
@@ -233,11 +253,13 @@ function BulleMessage({ m }: { m: Message }) {
     await recharger()
     return null
   }
-  const { sujet, reste } = sujetDe(m.corps)
+  const { citation, reste: sansCitation } = citationDe(m.corps)
+  const { sujet, reste } = sujetDe(sansCitation)
   const titre = m.kind === 'blocage' ? 'Ce qui bloque' : m.kind === 'question' || m.kind === 'action' ? 'Question' : m.kind === 'fusion' ? 'Fusion proposée' : m.via_session ? 'Dans la session Claude' : null
   return (
-    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet} repondre={m.auteur_type === 'session'}
+    <Bulle cote={coteDe(m)} auteur={`${auteurDe(m, admin)}${titre ? ` · ${titre.toLowerCase()}` : ''}`} quand={m.created_at} testId="bulle" sujet={sujet} repondre={m.auteur_type === 'session'} messageId={m.id} citable={`${sujet ? sujet + ' : ' : ''}${reste ?? ''}`}
       enAttente={m.en_attente_envoi ? { texte: phraseMessageEnAttente(m), refuse: !!m.envoi_refuse } : null}>
+      {citation ? <Citation texte={citation} versId={m.repond_a} /> : null}
       {reste ? <TexteLong texte={reste} /> : null}
       {m.pourquoi ? <TexteLong texte={m.pourquoi} petit /> : null}
       {retireeSeule ? (
@@ -378,12 +400,13 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
   const enCours = envoi.occupe
   const pj = useMediasAJoindre(projet.id, chantierId)
   const zone = useRef<HTMLTextAreaElement>(null)
+  const [cible, setCible] = useState<{ id: string | null; corps: string; quand: string | null } | null>(null)
   const vide = !texte.trim() && !pj.medias.length
   // « Répondre » sous un message de Claude : le curseur va dans la zone, avec le sujet rappelé si elle est vide.
   useEffect(() => {
     const ecoute = (e: Event) => {
-      const sujet = (e as CustomEvent<{ sujet: string | null }>).detail?.sujet
-      if (sujet) setTexte((t) => (t.trim() ? t : `Re : ${sujet}\n`))
+      const d = (e as CustomEvent<{ sujet: string | null; id: string | null; corps: string | null; quand: string | null }>).detail
+      if (d?.corps) setCible({ id: d.id, corps: citer(d.corps), quand: d.quand })
       window.setTimeout(() => { const z = zone.current; if (z) { z.focus(); z.setSelectionRange(z.value.length, z.value.length) } }, 0)
     }
     window.addEventListener('cockpit:repondre', ecoute)
@@ -397,10 +420,10 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
     if (pj.enCours) { toast.info('Un fichier est encore en cours d’envoi : un instant.'); return }
     await envoi.lancer(async () => {
       // Le message apparaît tout de suite dans le fil ; le texte n'est vidé qu'une fois l'envoi réussi (rien de perdu si ça échoue).
-      const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId, par, admin, corps: texte.trim() || resumeMedias(pj.medias), medias: pj.medias, local: messagesLocal })
+      const erreur = await ecrireAvecMedias({ projetId: projet.id, chantierId, par, admin, corps: avecCitation(cible?.corps ?? null, texte.trim() || resumeMedias(pj.medias)), repondA: cible?.id ?? null, medias: pj.medias, local: messagesLocal })
       if (erreur) { toast.erreur(`Le message n’est pas parti : ${erreur}`); return false }
       toast.succes('Message envoyé ✓ Claude te répondra ici, dans ce fil.')
-      setTexte('')
+      setTexte(''); setCible(null)
       pj.vider()
       onEnvoye()
       return true
@@ -409,6 +432,12 @@ function Saisie({ chantierId, placeholder, onEnvoye }: { chantierId: string | nu
 
   return (
     <div data-testid="ecrire-a-claude" className="border-t border-bord bg-carte px-2 pt-2 pb-[max(env(safe-area-inset-bottom),8px)]">
+      {cible ? (
+        <div data-testid="saisie-cible" className="mx-1 mb-2 flex items-start gap-2 rounded-xl border-l-4 border-accent bg-carte-2 px-3 py-1.5 text-sm">
+          <p className="min-w-0 flex-1 break-words text-texte-2"><span className="font-medium text-texte">Tu réponds à Claude{cible.quand ? ` · ${dateLongue(cible.quand)}` : ''} : </span><span className="line-clamp-3">{cible.corps}</span></p>
+          <button type="button" onClick={() => setCible(null)} aria-label="Ne plus répondre à ce message" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-texte-2 hover:bg-carte"><X size={15} /></button>
+        </div>
+      ) : null}
       {pj.pieces.length ? <div className="px-1 pb-2"><VignettesPieces ctrl={pj} /></div> : null}
       <div className="flex items-end gap-1">
         <BoutonJoindre ctrl={pj} icone />
