@@ -176,6 +176,8 @@ export function aToi(chantiers: readonly ChantierE[], messages: readonly Message
     .filter((m) => estQuestionOuverte(m) && dansProjet(m.projet_id))
     // Un certifié est aussi archivé (« Fini ») : sa question gardée reste ici (0026). Un archivé l'a fermée en base.
     .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && (!c.archived_at || c.etat === 'valide')) })
+    // Un chantier mis de côté ne compte pas dans « Pour toi » (19 oct. 2026) : sa question reste visible dans son fil, sans pousser le compteur.
+    .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !(c && c.etat === 'reporte') })
     .map((m) => {
       const depuis = plusTard(m.created_at, m.confirmee_at)
       return { type: estAction(m) ? 'action' as const : 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis, avanceDepuis: avance(m.chantier_id, depuis) }
