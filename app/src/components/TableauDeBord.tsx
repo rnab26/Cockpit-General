@@ -8,6 +8,7 @@ import { MarcheASuivre } from './MarcheASuivre.tsx'
 import { useGlobal } from '../contexte.ts'
 import { tableauDeBord, classesDe, type TableauDeBord as Tableau } from '../lib/tableauDeBord.ts'
 import { demandesDe, estNouveau, trierAToi, VERBE_A_TOI, type ElementAToi, type TriAToi, type TypeAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from '../lib/entonnoir.ts'
+import { reglagesParProjet } from '../lib/sessions.ts'
 import { ordreListe, ouJenSuis, quandFini, type LigneOuJenSuis, type QuatreNombres } from '../lib/ouJenSuis.ts'
 import { estFenetre, FENETRES, FENETRE_DEFAUT, type Fenetre } from '../lib/fenetre.ts'
 import { infoEtat } from '../lib/etats.ts'
@@ -64,10 +65,11 @@ export function useTableauDeBord(projetId: string | null): { t: Tableau; fenetre
   const g = useGlobal()
   const fenetre: Fenetre = estFenetre(g.prefs.fenetre_livre) ? g.prefs.fenetre_livre : FENETRE_DEFAUT
   const ordre = useMemo(() => g.projets.map((p) => p.id), [g.projets])
+  const reglages = useMemo(() => reglagesParProjet(g.projets), [g.projets])
   const t = useMemo(() => tableauDeBord(
     { chantiers: g.chantiers, messages: g.messages, activites: g.activites, sessions: g.sessions, taches: g.taches },
-    g.now, g.silenceMs, fenetre, ordre, projetId,
-  ), [g.chantiers, g.messages, g.activites, g.sessions, g.taches, g.now, g.silenceMs, fenetre, ordre, projetId])
+    g.now, g.silenceMs, fenetre, ordre, projetId, reglages,
+  ), [g.chantiers, g.messages, g.activites, g.sessions, g.taches, g.now, g.silenceMs, fenetre, ordre, projetId, reglages])
   return { t, fenetre }
 }
 

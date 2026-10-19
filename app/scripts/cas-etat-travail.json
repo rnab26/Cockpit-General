@@ -1,0 +1,23 @@
+{
+  "_": "Table de cas de la règle « travail réel » (0104). Lue par app/scripts/verifier-sessions.ts (TypeScript, hors ligne) ET par scripts/verifier-etat-travail.mjs (la base, transaction annulée) : les deux doivent rendre la MÊME réponse. Minutes = il y a N min. Réglages par défaut : repli 60, tour 12, fond 120, ouverture 5, machine 6.",
+  "reglages": { "repliMin": 60, "tourMin": 12, "fondMin": 120, "ouvertureMin": 5, "machineMin": 6 },
+  "cas": [
+    { "nom": "ouverte à l'instant, rien d'autre : elle arrive", "s": { "demarre": 1, "vu": 1 }, "attendu": "au_travail" },
+    { "nom": "tour en cours, battement d'il y a 1 min", "s": { "demarre": 90, "vu": 1, "tour": true }, "attendu": "au_travail" },
+    { "nom": "tour en cours, battement d'il y a 11 min (dans la limite)", "s": { "demarre": 90, "vu": 11, "tour": true }, "attendu": "au_travail" },
+    { "nom": "tour en cours, battement d'il y a 13 min : plus de preuve, sans nouvelles", "s": { "demarre": 90, "vu": 13, "tour": true }, "attendu": "sans_nouvelles" },
+    { "nom": "tour en cours, plus rien depuis 70 min (repli 60) : absente", "s": { "demarre": 120, "vu": 70, "tour": true }, "attendu": "absente" },
+    { "nom": "session qui attend ton message, vue il y a 20 min : en veille", "s": { "demarre": 90, "vu": 20 }, "attendu": "en_veille" },
+    { "nom": "en veille mais vue il y a 65 min : absente", "s": { "demarre": 120, "vu": 65 }, "attendu": "absente" },
+    { "nom": "ouverte il y a 40 min, jamais un signe depuis (vu = ouverture) : sans nouvelles", "s": { "demarre": 40, "vu": 40 }, "attendu": "sans_nouvelles" },
+    { "nom": "commande en arrière-plan, vue en cours il y a 90 min, session muette depuis 90 min : au travail (plafond 120)", "s": { "demarre": 200, "vu": 90 }, "taches": [{ "vu": 90 }], "attendu": "au_travail" },
+    { "nom": "même tâche, vue il y a 130 min : plus de preuve, absente", "s": { "demarre": 300, "vu": 130 }, "taches": [{ "vu": 130 }], "attendu": "absente" },
+    { "nom": "tâche en cours, session vue il y a 30 min, tâche vue il y a 130 min : sans nouvelles", "s": { "demarre": 300, "vu": 30 }, "taches": [{ "vu": 130 }], "attendu": "sans_nouvelles" },
+    { "nom": "agent qui a signalé une étape il y a 10 min, sa session muette depuis 80 min : au travail", "s": { "demarre": 200, "vu": 80 }, "taches": [{ "vu": 80, "progres": 10 }], "attendu": "au_travail" },
+    { "nom": "tâche terminée : ne prouve rien", "s": { "demarre": 200, "vu": 90 }, "taches": [{ "vu": 5, "statut": "termine" }], "attendu": "absente" },
+    { "nom": "tâche en cours d'une AUTRE session : ne prouve rien", "s": { "demarre": 200, "vu": 90 }, "taches": [{ "vu": 5, "autre": true }], "attendu": "absente" },
+    { "nom": "calcul mesuré sur la machine il y a 3 min, session muette depuis 90 min : au travail", "s": { "demarre": 200, "vu": 90, "machine": 3 }, "attendu": "au_travail" },
+    { "nom": "calcul mesuré il y a 8 min (limite 6) : plus de preuve", "s": { "demarre": 200, "vu": 90, "machine": 8 }, "attendu": "absente" },
+    { "nom": "session finie : fermée, même avec un tour en cours", "s": { "demarre": 90, "vu": 1, "tour": true, "fin": 1 }, "attendu": "fermee" }
+  ]
+}

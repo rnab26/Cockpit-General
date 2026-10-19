@@ -15,7 +15,7 @@
 import type { Activite, Chantier, Message, SessionClaude, Tache } from './types.ts'
 import { aToi, aLancer, aTesterDe, caAvanceToutSeul, demandesDe, horsChantier, type ElementAToi, type LigneALancer, type LigneCaAvance, type LigneHorsChantier } from './entonnoir.ts'
 import { estFiniDans } from './ouJenSuis.ts'
-import { quiTravaille, resumeTravail, type QuiTravaille, type Resume } from './sessions.ts'
+import { quiTravaille, resumeTravail, type QuiTravaille, type ReglagesParProjet, type Resume } from './sessions.ts'
 import type { Fenetre } from './fenetre.ts'
 
 export interface Donnees {
@@ -47,6 +47,7 @@ export interface TableauDeBord {
 
 export function tableauDeBord(
   d: Donnees, now: Date, silenceMs: number, fenetre: Fenetre, ordreProjets: readonly string[], projetId: string | null = null,
+  reglages?: ReglagesParProjet,
 ): TableauDeBord {
   const tous = aToi(d.chantiers, d.messages, projetId, d.activites, d.taches)
   const elements = demandesDe(tous)
@@ -54,7 +55,7 @@ export function tableauDeBord(
   const lignes = caAvanceToutSeul(d.chantiers, d.activites, d.messages, d.sessions, d.taches, now, silenceMs, projetId)
   const caAvance = lignes.filter((l) => l.vivant)
   const sansSession = lignes.filter((l) => !l.vivant)
-  const travail = quiTravaille(d.sessions, d.taches, d.activites, d.chantiers, now, silenceMs, ordreProjets, projetId)
+  const travail = quiTravaille(d.sessions, d.taches, d.activites, d.chantiers, now, silenceMs, ordreProjets, projetId, reglages)
   const pretALancer = aLancer(d.chantiers, d.activites, d.messages, now, silenceMs, ordreProjets, projetId, d.taches).flatMap((g) => g.lignes)
   const fini = d.chantiers.filter((c) => (!projetId || c.projet_id === projetId) && estFiniDans(c, fenetre, now))
     .sort((a, b) => (b.valide_at ?? '').localeCompare(a.valide_at ?? ''))

@@ -160,8 +160,8 @@ export function ToutLancer({ projetId }: { projetId: string | null }) {
       ) : null}
       <ul className={`${avecBouton ? 'mt-3 border-t border-bord pt-2.5' : ''} space-y-2`} aria-label="Sessions ouvertes" data-testid="voyants-sessions">
         {voyants.map((v) => (
-          <li key={v.slug} data-testid="voyant-session" data-projet={v.slug} data-etat={v.etat} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span aria-hidden className={`h-3 w-3 shrink-0 rounded-full ${v.etat === 'vivante' ? 'bg-ok shadow-[0_0_0_3px_color-mix(in_srgb,var(--ok)_25%,transparent)]' : v.etat === 'pause' ? 'bg-attention' : v.etat === 'inconnu' ? 'bg-bord animate-pulse' : 'bg-texte-2/40'}`} />
+          <li key={v.slug} data-testid="voyant-session" data-projet={v.slug} data-etat={v.etat} data-signe={v.signe ?? ""} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span aria-hidden className={`h-3 w-3 shrink-0 rounded-full ${v.signe === 'travail' ? 'bg-ok shadow-[0_0_0_3px_color-mix(in_srgb,var(--ok)_25%,transparent)]' : v.signe === 'veille' ? 'bg-ok/50' : v.signe === 'sans_nouvelles' || v.etat === 'pause' ? 'bg-attention' : v.etat === 'inconnu' ? 'bg-bord animate-pulse' : 'bg-texte-2/40'}`} />
             <span className="min-w-0 flex-1 text-sm leading-snug" data-testid="voyant-texte">
               {projets.length > 1 ? <span className="font-medium">{v.nom} · </span> : null}{v.texte}
               {v.etat !== 'vivante' && v.etat !== 'pause' && v.etat !== 'inconnu' && v.attend ? <span className="text-texte-2"> · {v.attend} {v.nChantiers + v.nMessages + v.nDemandes > 1 ? 'attendent' : 'attend'}</span> : null}

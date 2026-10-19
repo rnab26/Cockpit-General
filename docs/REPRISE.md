@@ -10,6 +10,10 @@ Dernière mise à jour : 16 oct. 2026 (sections 0 terdecies et 0 duodecies ; ava
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
+## 0 quindecies. 19 oct. 2026 (soir) : « vivant » = du travail réel, arrière-plan compris (migration 0104, chantier a33cf882)
+
+Une règle, `cockpit.etat_session` (miroir `etatTravail`, table de cas commune base/écran) : **au travail / en veille / sans nouvelles** ; le délai de 60 min n'est plus que le repli. Seuils réglables (Réglages du projet › Renforts (détails)). Voyant et « Qui travaille » la lisent. **Battement machine** (`scripts/machine.py`, CPU des processus de la session, sans jetons) : ÉTEINT par défaut (`projets.machine_actif`), mesuré sur un vrai calcul (`verifier-machine.mjs`). Récit, mesures et limites : `docs/historique/chefs-agents-renforts.md`, « vivant = du travail réel ». **Pas fait** : réveils, filet, `chantiers_prenables` et `sans_signe_de_vie` gardent `delai_signe` seul (autre sujet, en attente de Raphaël) ; les hooks de FacePro (en retard) n'envoient rien, donc son cas ne se voit qu'une fois ses hooks à jour ET le battement allumé.
+
 ## 0 quaterdecies. 16 oct. 2026 : un seul bouton « Tout lancer » (chantier 876e2e4b)
 
 Écran principal : `ToutLancer.tsx` remplace le bloc Renforts et « Lancer une session autonome » ; le détail passe dans Réglages du projet › « Renforts (détails) ». Récit et limites : `docs/historique/chefs-agents-renforts.md`. Bancs : `verifier-tout-lancer.ts`, `verifier-accueil.mjs` (59/59), `verifier-web.mjs` § 7 ter adapté mais NON rejoué (quota Supabase) : à rejouer au prochain passage complet.

@@ -13,7 +13,7 @@ import type { Activite, Chantier, Message, Priorite, SessionClaude, Tache } from
 import { activiteDuChantier } from './activite.ts'
 import { chantiersEnAttente } from './ouJenSuis.ts'
 import { presenceChantier, preuveDeVie, derniereDemandeOuCaEnEst, type CodePresence, type Presence } from './presence.ts'
-import { activiteDeTache, agentsVivantsDuChantier, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, estSessionAutonome, type QuiTravaille } from './sessions.ts'
+import { activiteDeTache, agentsVivantsDuChantier, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, estSessionAutonome, type QuiTravaille, type ReglagesParProjet } from './sessions.ts'
 import { syntheseMiseEnLigne } from './jalons.ts'
 import { etatOuEnEst, chantierTenu, ouEnEstVisible, type EtatOuEnEst } from './ouEnEst.ts'
 import { extrait, nomCourtSession } from './texte.ts'
@@ -335,10 +335,11 @@ export function enCoursSansNouvelles(
 export function pastillesProjet(
   chantiers: readonly ChantierE[], messages: readonly MessageE[], activites: readonly Activite[],
   sessions: readonly SessionClaude[], taches: readonly Tache[], now: Date, silenceMs: number, projetId: string | null,
+  reglages?: ReglagesParProjet,
 ): { travaillent: number; sessions: number; aToi: number } {
   return {
     travaillent: caAvanceToutSeul(chantiers, activites, messages, sessions, taches, now, silenceMs, projetId).filter((l) => l.vivant).length,
-    sessions: resumeTravail(quiTravaille(sessions, taches, activites, chantiers, now, silenceMs, [], projetId)).sessions,
+    sessions: resumeTravail(quiTravaille(sessions, taches, activites, chantiers, now, silenceMs, [], projetId, reglages)).sessions,
     // Le rouge d'un onglet = ce qui demande une réponse ; les chantiers à tester n'y sont plus (estDemande).
     aToi: demandesDe(aToi(chantiers, messages, projetId)).length,
   }
@@ -596,9 +597,11 @@ export function horsChantier(groupes: readonly QuiTravaille[], now: Date = new D
       const texte = vs.pause ? `Claude (« ${nom} ») ${vs.pause.charAt(0).toLowerCase()}${vs.pause.slice(1)}`
         : action ? `Claude (« ${nom} ») travaille : ${action}`
         : vs.repond ? `Claude travaille sur autre chose (« ${nom} »)`
+        : vs.travail === 'au_travail' ? `Claude travaille en arrière-plan (« ${nom} ») : un agent ou un calcul tourne`
+        : vs.travail === 'sans_nouvelles' ? `Conversation « ${nom} » : sans nouvelles, plus aucun signe`
         : estSessionAutonome(vs.session) ? 'Claude en autonomie : en veille, se réveille tout seul chaque heure'
         : `Conversation « ${nom} » ouverte : attend ton message`
-      r.push({ cle: `s-${vs.session.id}`, projetId: g.projetId, texte, pause: !!vs.pause, enDirect: !!action || (vs.repond && !vs.pause) })
+      r.push({ cle: `s-${vs.session.id}`, projetId: g.projetId, texte, pause: !!vs.pause, enDirect: !!action || ((vs.repond || vs.travail === 'au_travail') && !vs.pause) })
     }
     for (const a of g.activitesSeules) {
       if (a.chantier_id) continue

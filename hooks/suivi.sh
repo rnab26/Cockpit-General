@@ -275,6 +275,32 @@ battement_tour() {
 }
 fin_battement() { rm -f "${TMPDIR:-/tmp}/cockpit-tour-vie-$sid" 2>/dev/null; }
 
+# BATTEMENT MACHINE (0104, chantier a33cf882 ; Raphaël, 19 oct. : « des choses progressent par des agents ou des calculs en arrière-plan
+# (CPU) : la session n'est pas en mode actif mais le travail avance »). Le battement du tour s'arrête à la fin du tour ; un calcul lancé
+# en arrière-plan, lui, continue : un petit processus DÉTACHÉ (scripts/machine.py) mesure le CPU des processus de la session dans /proc
+# et le remonte (signaler_machine) tant qu'il y en a, puis s'arrête seul. Sans jetons. ÉTEINT par défaut (réglage du projet) : la
+# première mesure reçoit « eteint » et le processus s'arrête, le hook ne le relance pas avant COCKPIT_MACHINE_ETEINT_S ; quand rien ne
+# tourne, une tentative au plus toutes les COCKPIT_MACHINE_RETENTE_S. Jamais depuis un agent, jamais bloquant, sans python3 : rien.
+battement_machine() {
+  [ -z "$agent" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  local prog pidf="${TMPDIR:-/tmp}/cockpit-machine-pid-$sid" essai="${TMPDIR:-/tmp}/cockpit-machine-essai-$sid" eteint="${TMPDIR:-/tmp}/cockpit-machine-eteint-$sid" ici
+  ici=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd) || return 0
+  prog="${COCKPIT_MACHINE:-$ici/scripts/machine.py}"
+  [ -f "$prog" ] || return 0
+  if [ -s "$pidf" ] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then return 0; fi
+  local now; now=$(date +%s)
+  if [ -f "$eteint" ] && [ $(( now - $(stat -c %Y "$eteint" 2>/dev/null || echo 0) )) -lt "${COCKPIT_MACHINE_ETEINT_S:-600}" ]; then return 0; fi
+  if [ -f "$essai" ] && [ $(( now - $(stat -c %Y "$essai" 2>/dev/null || echo 0) )) -lt "${COCKPIT_MACHINE_RETENTE_S:-120}" ]; then return 0; fi
+  touch "$essai" 2>/dev/null
+  ( setsid python3 "$prog" --projet "$PROJET" --session "$sid" --sql "$SQL" --claude-pid "${COCKPIT_MACHINE_CLAUDE_PID:-$PPID}" --marque-eteint "$eteint" >/dev/null 2>&1 & echo $! > "$pidf" ) >/dev/null 2>&1
+}
+fin_machine() {
+  local pidf="${TMPDIR:-/tmp}/cockpit-machine-pid-$sid"
+  [ -s "$pidf" ] && kill "$(cat "$pidf" 2>/dev/null)" 2>/dev/null
+  rm -f "$pidf" "${TMPDIR:-/tmp}/cockpit-machine-essai-$sid" "${TMPDIR:-/tmp}/cockpit-machine-eteint-$sid" 2>/dev/null
+}
+
 # BATTEMENT d'un outil long (0046, Raphaël 30 sept. : « ZÉRO chantier tenu pour
 # rien », délai « sans signe de vie » de 3 min). Mesuré : le signe de vie d'une
 # session ne part qu'AU RETOUR d'un outil (PostToolUse, au plus 1 fois/minute) ; or
@@ -336,6 +362,7 @@ case "$ev" in
     action_live
     travail_signal
     battement_tour
+    battement_machine
     emettre
     # Un lancement en arrière-plan (agent, commande) : on le dit tout de suite,
     # avec sa description. Sinon, un simple signe de vie, au plus 1 fois/minute.
@@ -364,6 +391,7 @@ case "$ev" in
     reponses_fraiches UserPromptSubmit maintenant
     consigner_message
     battement_tour
+    battement_machine
     emettre
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, prompt: ((.prompt // "") | .[0:200])}') ;;
   StopFailure)
@@ -373,6 +401,7 @@ case "$ev" in
   Stop|SubagentStop|SubagentStart|SessionEnd)
     [ "$ev" = "Stop" ] && signaler_jetons
     if [ "$ev" = "Stop" ] || [ "$ev" = "SessionEnd" ]; then fin_battement; fi
+    [ "$ev" = "SessionEnd" ] && fin_machine
     if [ "$ev" = "SubagentStop" ] && [ -n "$agent" ]; then rm -f "${TMPDIR:-/tmp}/cockpit-tour-vie-$sid-$agent" "${TMPDIR:-/tmp}/cockpit-vie-$sid-$agent" 2>/dev/null; fi
     [ "$ev" = "Stop" ] && fin_de_tour
     charge=$(printf '%s' "$entree" | jq -c --arg b "$branche" '{session_id, hook_event_name, branche: $b, agent_id, agent_type, background_tasks}') ;;

@@ -22,18 +22,55 @@ import type { Activite, Chantier, SessionClaude, Tache } from './types.ts'
 import { preuveDeVie, type Presence } from './presence.ts'
 import { dateRelative, etaLisible } from './dates.ts'
 
-/** Un tour de réponse sans nouvelle depuis plus longtemps que ça n'est plus « en train de répondre ». */
-export const TOUR_MAX_MS = 30 * 60_000
-/** Une tâche en cours vue depuis moins que ça garde sa session active. */
-export const TACHE_VIVANTE_MS = 2 * 3600_000
+/**
+ * LES RÉGLAGES DE LA RÈGLE « travail réel » (0104) : par projet, jamais en dur ailleurs. Les défauts ci-dessous ne sont que le repli quand
+ * la ligne du projet ne les porte pas ; `verifier-etat-travail.mjs` les compare aux défauts des colonnes de la base.
+ */
+export interface ReglagesTravail {
+  /** Repli : combien de temps une session muette reste affichée (« en veille » / « sans nouvelles ») avant de disparaître (`delai_sans_signe_min`). */
+  repliMin: number
+  /** (a) Un tour en cours est « au travail » tant que le battement des hooks a moins de ça (`tour_silence_min`). */
+  tourMin: number
+  /** (b) Une tâche d'arrière-plan en cours reste une preuve de travail ce temps après sa dernière preuve (`fond_plafond_min`). */
+  fondMin: number
+  /** (c) Une session ouverte depuis moins de ça compte : elle arrive (`reveil_ecart_min`). */
+  ouvertureMin: number
+  /** (b) Un calcul mesuré sur la machine compte ce temps après la dernière mesure active (`machine_fraicheur_min`). */
+  machineMin: number
+}
+export const REGLAGES_TRAVAIL_DEFAUT: ReglagesTravail = { repliMin: 60, tourMin: 12, fondMin: 120, ouvertureMin: 5, machineMin: 6 }
+type ProjetReglable = {
+  delai_sans_signe_min?: number | null; tour_silence_min?: number | null; fond_plafond_min?: number | null
+  reveil_ecart_min?: number | null; machine_fraicheur_min?: number | null
+}
+/** Les réglages d'un projet (champs absents = défauts) ; `repliMs` force le repli (appels qui ne passent que le silence). */
+export function reglagesTravailDe(p: ProjetReglable | null | undefined, repliMs?: number): ReglagesTravail {
+  const d = REGLAGES_TRAVAIL_DEFAUT
+  return {
+    repliMin: repliMs !== undefined ? repliMs / 60_000 : p?.delai_sans_signe_min ?? d.repliMin,
+    tourMin: p?.tour_silence_min ?? d.tourMin, fondMin: p?.fond_plafond_min ?? d.fondMin,
+    ouvertureMin: p?.reveil_ecart_min ?? d.ouvertureMin, machineMin: p?.machine_fraicheur_min ?? d.machineMin,
+  }
+}
+/** Les réglages de chaque projet, par identifiant. */
+export type ReglagesParProjet = ReadonlyMap<string, ReglagesTravail>
+export function reglagesParProjet(projets: readonly (ProjetReglable & { id: string })[]): ReglagesParProjet {
+  return new Map(projets.map((p) => [p.id, reglagesTravailDe(p)]))
+}
+
+/** Le plafond par défaut de la preuve d'une tâche d'arrière-plan (celui de la base) : repli de `tacheEnCoursVivante`. */
+export const TACHE_VIVANTE_MS = REGLAGES_TRAVAIL_DEFAUT.fondMin * 60_000
 /** Une tâche finie reste visible (repliée) ce temps-là, puis disparaît. */
 export const FINI_RECENT_MS = 10 * 60_000
 
 const t = (iso: string | null | undefined) => { const x = iso ? Date.parse(iso) : NaN; return Number.isNaN(x) ? null : x }
 const depuis = (iso: string | null | undefined, now: Date) => { const x = t(iso); return x === null ? Infinity : now.getTime() - x }
 
-export function tacheEnCoursVivante(tc: Pick<Tache, 'statut' | 'vu_at'>, now: Date): boolean {
-  return tc.statut === 'en_cours' && depuis(tc.vu_at, now) < TACHE_VIVANTE_MS
+/** La dernière preuve PROPRE d'une tâche : étape signalée, ou vue « en cours » par Claude Code (arrêt du tour, battement de l'agent). */
+const preuveTache = (tc: Pick<Tache, 'vu_at' | 'progres_at'>, now: Date) => Math.min(depuis(tc.progres_at, now), depuis(tc.vu_at, now))
+
+export function tacheEnCoursVivante(tc: Pick<Tache, 'statut' | 'vu_at'> & { progres_at?: string | null }, now: Date, fondMs: number = TACHE_VIVANTE_MS): boolean {
+  return tc.statut === 'en_cours' && preuveTache({ vu_at: tc.vu_at, progres_at: tc.progres_at ?? null }, now) < fondMs
 }
 
 /** Une session arrêtée sur une limite reste affichée (en pause) ce temps-là : une limite d'usage se lève en quelques heures. */
@@ -59,14 +96,43 @@ export function sessionEnPause(s: Pick<SessionClaude, 'pause_raison' | 'pause_at
   return !s.fin_at && !!s.pause_raison && depuis(s.pause_at, now) < PAUSE_VISIBLE_MS
 }
 
-/** Une session est active : pas finie, ET (en pause récente, OU répond depuis peu, OU signe récent, OU une tâche en cours vue < 2 h). */
-export function sessionActive(s: SessionClaude, taches: readonly Tache[], now: Date, silenceMs: number): boolean {
+export type EtatTravail = 'au_travail' | 'en_veille' | 'sans_nouvelles' | 'absente' | 'fermee'
+
+/**
+ * LA règle « travail réel » (0104), miroir EXACT de `cockpit.etat_session` (même ordre, mêmes seuils réglés par projet) :
+ *   au_travail     (c) elle vient de s'ouvrir, OU (a) un tour est en cours et le battement est récent, OU (b) un calcul mesuré sur la
+ *                  machine, OU une tâche d'arrière-plan en cours avec une preuve propre dans le plafond ;
+ *   en_veille      ouverte, un signe après son ouverture, rien ne tourne ;
+ *   sans_nouvelles elle devait travailler (tour ou tâche en cours, ou jamais un signe) et plus rien ne le prouve ;
+ *   absente        plus rien depuis le repli : plus affichée.
+ * `scripts/verifier-etat-travail.mjs` rejoue une même table de cas dans la base ET ici : les deux rendent la même réponse.
+ */
+export function etatTravail(s: SessionClaude, taches: readonly Tache[], now: Date, r: ReglagesTravail = REGLAGES_TRAVAIL_DEFAUT): EtatTravail {
+  if (s.fin_at) return 'fermee'
+  const ms = (min: number) => min * 60_000
+  if (depuis(s.demarre_at, now) < ms(r.ouvertureMin)) return 'au_travail'
+  if (s.tour_en_cours && depuis(s.vu_at, now) < ms(r.tourMin)) return 'au_travail'
+  if (depuis(s.machine_actif_at, now) < ms(r.machineMin)) return 'au_travail'
+  const siennes = taches.filter((x) => x.session_id === s.id && x.statut === 'en_cours')
+  if (siennes.some((x) => preuveTache(x, now) < ms(r.fondMin))) return 'au_travail'
+  if (depuis(s.vu_at, now) >= ms(r.repliMin)) return 'absente'
+  const devait = s.tour_en_cours || (t(s.vu_at) ?? 0) <= (t(s.demarre_at) ?? 0) || siennes.length > 0
+  return devait ? 'sans_nouvelles' : 'en_veille'
+}
+
+/** Les mots de l'écran pour chaque état (les mêmes dans le voyant et dans la liste). */
+export const MOT_ETAT_TRAVAIL = {
+  au_travail: 'au travail',
+  en_veille: 'en veille : ouverte, rien ne tourne',
+  sans_nouvelles: 'sans nouvelles : plus aucun signe',
+} as const
+
+/** Une session est affichée : pas finie, ET (en pause récente, OU au travail, OU en veille, OU sans nouvelles depuis moins du repli). */
+export function sessionActive(s: SessionClaude, taches: readonly Tache[], now: Date, silenceMs: number, r: ReglagesTravail = reglagesTravailDe(null, silenceMs)): boolean {
   if (s.fin_at) return false
   if (sessionEnPause(s, now)) return true
-  const vu = depuis(s.vu_at, now)
-  if (s.tour_en_cours && vu < TOUR_MAX_MS) return true
-  if (vu < silenceMs) return true
-  return taches.some((x) => x.session_id === s.id && tacheEnCoursVivante(x, now))
+  const e = etatTravail(s, taches, now, r)
+  return e !== 'absente' && e !== 'fermee'
 }
 
 /** Le temps restant d'une tâche, recalculé depuis son dernier signalement ; null si inconnu ou dépassé. */
@@ -123,7 +189,9 @@ export interface VueSession {
   /** « Session <sujet ou branche> » */
   titre: string
   repond: boolean
-  /** « répond en ce moment » / « attend ton prochain message » / « En pause — … » */
+  /** Les trois états lisibles (0104) ; 'pause' = arrêtée sur une limite (rien ne tourne, rien ne s'anime). */
+  travail: 'au_travail' | 'en_veille' | 'sans_nouvelles' | 'pause'
+  /** « répond en ce moment » / « travaille en arrière-plan » / « en veille… » / « sans nouvelles… » / « En pause — … » */
   etat: string
   /** Arrêtée sur une limite : le libellé de la pause (rien ne s'anime), et le détail donné par Claude Code. */
   pause: string | null
@@ -172,16 +240,18 @@ export interface QuiTravaille {
   activitesSeules: Activite[]
 }
 
-/** `sessions` = celles qui travaillent (hors pause) ; `enPause` à part : une session en pause ne travaille pas. */
-export interface Resume { sessions: number; agents: number; commandes: number; autres: number; enPause: number; texte: string }
+/** `sessions` = celles AU TRAVAIL (preuve de travail réel, 0104) ; `enPause`, `enVeille` et `sansNouvelles` à part : elles ne travaillent pas. */
+export interface Resume { sessions: number; agents: number; commandes: number; autres: number; enPause: number; enVeille: number; sansNouvelles: number; texte: string }
 
 const pl = (n: number, un: string, plus = `${un}s`) => `${n} ${n > 1 ? plus : un}`
 
 export function resumeTravail(groupes: readonly QuiTravaille[]): Resume {
-  let sessions = 0, agents = 0, commandes = 0, autres = 0, enPause = 0
+  let sessions = 0, agents = 0, commandes = 0, autres = 0, enPause = 0, enVeille = 0, sansNouvelles = 0
   for (const g of groupes) {
-    sessions += g.sessions.filter((s) => !s.pause).length + new Set(g.activitesSeules.map((a) => a.session)).size
+    sessions += g.sessions.filter((s) => s.travail === 'au_travail').length + new Set(g.activitesSeules.map((a) => a.session)).size
     enPause += g.sessions.filter((s) => s.pause).length
+    enVeille += g.sessions.filter((s) => s.travail === 'en_veille').length
+    sansNouvelles += g.sessions.filter((s) => s.travail === 'sans_nouvelles').length
     for (const s of g.sessions) for (const v of s.pause ? [] : s.taches) {
       if (v.tache.type === 'agent') agents++; else if (v.tache.type === 'commande') commandes++; else autres++
     }
@@ -190,8 +260,8 @@ export function resumeTravail(groupes: readonly QuiTravaille[]): Resume {
   if (agents) morceaux.push(pl(agents, 'agent'))
   if (commandes) morceaux.push(pl(commandes, 'commande'))
   if (autres) morceaux.push(pl(autres, 'tâche'))
-  const texte = `${morceaux.join(' · ')} en cours${enPause ? ` · ${enPause} en pause` : ''}`
-  return { sessions, agents, commandes, autres, enPause, texte }
+  const texte = `${morceaux.join(' · ')} en cours${enVeille ? ` · ${enVeille} en veille` : ''}${sansNouvelles ? ` · ${sansNouvelles} sans nouvelles` : ''}${enPause ? ` · ${enPause} en pause` : ''}`
+  return { sessions, agents, commandes, autres, enPause, enVeille, sansNouvelles, texte }
 }
 
 /**
@@ -201,11 +271,14 @@ export function resumeTravail(groupes: readonly QuiTravaille[]): Resume {
  */
 export function quiTravaille(
   sessions: readonly SessionClaude[], taches: readonly Tache[], activites: readonly Activite[], chantiers: readonly Chantier[],
-  now: Date, silenceMs: number, ordreProjets: readonly string[], projetId: string | null = null,
+  now: Date, silenceMs: number, ordreProjets: readonly string[], projetId: string | null = null, reglages?: ReglagesParProjet,
 ): QuiTravaille[] {
+  // Les seuils de chaque projet (0104) ; sans eux (anciens appels), le silence passé sert de repli et le reste suit les défauts de la base.
+  const reglesDe = (pid: string) => reglages?.get(pid) ?? reglagesTravailDe(null, silenceMs)
+  const rang_ = (s: SessionClaude) => ({ au_travail: 0, sans_nouvelles: 1, en_veille: 2 }[etatTravail(s, taches, now, reglesDe(s.projet_id)) as 'au_travail'] ?? 3)
   const actives = sessions
-    .filter((s) => (!projetId || s.projet_id === projetId) && sessionActive(s, taches, now, silenceMs))
-    .sort((a, b) => Number(b.tour_en_cours) - Number(a.tour_en_cours) || b.vu_at.localeCompare(a.vu_at))
+    .filter((s) => (!projetId || s.projet_id === projetId) && sessionActive(s, taches, now, silenceMs, reglesDe(s.projet_id)))
+    .sort((a, b) => rang_(a) - rang_(b) || Number(b.tour_en_cours) - Number(a.tour_en_cours) || b.vu_at.localeCompare(a.vu_at))
   // Une barre vivante par session de progression.sh (la plus récente).
   const barres = new Map<string, Activite>()
   for (const a of activites) {
@@ -220,19 +293,23 @@ export function quiTravaille(
 
   for (const s of actives) {
     const siennes = taches.filter((x) => x.session_id === s.id)
-    const enCours = siennes.filter((x) => tacheEnCoursVivante(x, now))
+    const regles = reglesDe(s.projet_id)
+    const enCours = siennes.filter((x) => tacheEnCoursVivante(x, now, regles.fondMin * 60_000))
       .sort((a, b) => Number(!!b.progres_at) - Number(!!a.progres_at) || a.demarre_at.localeCompare(b.demarre_at))
     const finies = siennes.filter((x) => x.statut !== 'en_cours' && depuis(x.fini_at, now) < FINI_RECENT_MS)
       .sort((a, b) => (b.fini_at ?? '').localeCompare(a.fini_at ?? ''))
     const acts: Activite[] = []
     if (s.branche) for (const [k, a] of barres) if (a.projet_id === s.projet_id && a.session === s.branche) { acts.push(a); rattachees.add(k) }
     const pause = sessionEnPause(s, now) ? libellePause(s.pause_raison!) : null
-    const repond = !pause && s.tour_en_cours && depuis(s.vu_at, now) < TOUR_MAX_MS
+    const repond = !pause && s.tour_en_cours && depuis(s.vu_at, now) < regles.tourMin * 60_000
+    const etatReel = etatTravail(s, taches, now, regles)
+    const travail = pause ? 'pause' : etatReel === 'en_veille' || etatReel === 'sans_nouvelles' ? etatReel : 'au_travail'
     groupe(s.projet_id).sessions.push({
       session: s,
       titre: titreSession(s),
       repond,
-      etat: pause ?? (repond ? 'répond en ce moment' : 'attend ton prochain message'),
+      travail,
+      etat: pause ?? (repond ? 'répond en ce moment' : travail === 'au_travail' ? 'travaille en arrière-plan' : travail === 'en_veille' ? 'attend ton prochain message' : MOT_ETAT_TRAVAIL.sans_nouvelles),
       pause, pauseDetail: pause ? (s.pause_detail?.trim() || null) : null,
       dernierSigne: dateRelative(s.vu_at, now) || 'à l’instant',
       taches: enCours.map((x) => vueTache(x, chantiers, now)),

@@ -15,13 +15,15 @@ const verifie = (nom, cond, detail = '') => { if (cond) { ok++; console.log('  �
 
 const mig = readFileSync(join(RACINE, 'supabase/migrations/0102_voyant_activer_session.sql'), 'utf8')
 const mig3 = readFileSync(join(RACINE, 'supabase/migrations/0103_sessions_au_travail.sql'), 'utf8')
-if (mig.includes('$mig$') || mig.includes('$t$') || mig3.includes('$mig$') || mig3.includes('$t$')) throw new Error('la migration contient un délimiteur du banc')
+const mig4 = readFileSync(join(RACINE, 'supabase/migrations/0104_travail_reel.sql'), 'utf8')
+if (mig.includes('$mig$') || mig.includes('$t$') || mig3.includes('$mig$') || mig3.includes('$t$') || mig4.includes('$mig$') || mig4.includes('$t$')) throw new Error('la migration contient un délimiteur du banc')
 const essai = `
 do $t$
 declare pid uuid; slug text; r jsonb := '{}'::jsonb; e jsonb;
 begin
   execute $mig$${mig}$mig$;
   execute $mig$${mig3}$mig$;
+  execute $mig$${mig4}$mig$;
   slug := 'test-voyant-' || substr(md5(random()::text), 1, 6);
   insert into cockpit.projets (slug, nom, depot) values (slug, 'T', 'rnab26/test-voyant') returning id into pid;
   -- 1. projet vide : aucune session, rien n'attend
@@ -38,7 +40,7 @@ begin
   r := r || jsonb_build_object('trop_tot', cockpit.activer_session(slug)->>'resultat', 'etat_reveil', cockpit.etat_sessions(slug)->'reveil_possible');
   -- 5. une session vivante : le voyant la compte, on ne réveille pas
   insert into cockpit.sessions (id, projet_id, vu_at) values ('banc-vivante', pid, now());
-  insert into cockpit.sessions (id, projet_id, vu_at) values ('banc-ancienne', pid, now() - interval '90 minutes');
+  insert into cockpit.sessions (id, projet_id, demarre_at, vu_at) values ('banc-ancienne', pid, now() - interval '100 minutes', now() - interval '90 minutes');
   insert into cockpit.sessions (id, projet_id, vu_at, fin_at) values ('banc-finie', pid, now(), now());
   r := r || jsonb_build_object('vivantes', cockpit.etat_sessions(slug)->'vivantes', 'avec_session', cockpit.activer_session(slug)->>'resultat');
   -- 6. la règle suit delai_signe (réglage du projet)
