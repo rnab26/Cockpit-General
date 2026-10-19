@@ -13,7 +13,7 @@ import type { Activite, Chantier, Message, Priorite, SessionClaude, Tache } from
 import { activiteDuChantier } from './activite.ts'
 import { chantiersEnAttente } from './ouJenSuis.ts'
 import { presenceChantier, preuveDeVie, derniereDemandeOuCaEnEst, type CodePresence, type Presence } from './presence.ts'
-import { activiteDeTache, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, tacheEnCoursVivante, estSessionAutonome, type QuiTravaille } from './sessions.ts'
+import { activiteDeTache, agentsVivantsDuChantier, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, estSessionAutonome, type QuiTravaille } from './sessions.ts'
 import { syntheseMiseEnLigne } from './jalons.ts'
 import { etatOuEnEst, chantierTenu, ouEnEstVisible, type EtatOuEnEst } from './ouEnEst.ts'
 import { extrait, nomCourtSession } from './texte.ts'
@@ -505,7 +505,7 @@ export function caAvanceToutSeul(
         etape: vivant ? (barre?.etape || agentVivant?.etape || null) : null, pourquoi: vivant ? null : 'Vérification demandée : en attente d’un assistant',
         demandeLe: null, ouEnEst: etatOuEnEst(c, messages, vivant, now, tenus) })
     } else if (presence.code === 'travaille') {
-      const agents = taches.filter((t) => t.chantier_id === c.id && t.type === 'agent' && tacheEnCoursVivante(t, now)).length
+      const agents = agentsVivantsDuChantier(taches, c.id, now, silenceMs).length
       const morceaux: string[] = []
       if (parSession) {
         const s = sessions.find((x) => x.projet_id === c.projet_id && x.branche === parSession.session)
