@@ -126,6 +126,9 @@ export type EtatVoyant = 'vivante' | 'aucune' | 'pause' | 'inconnu'
 /** Phrase quand le réveil automatique n'est pas réglé : pas de bouton (il ne ferait rien), on dit quoi faire. */
 export const SANS_REVEIL = 'Réveil automatique non réglé : ouvre Claude Code sur ce projet.'
 
+/** « Aucune session » est un constat sur les sessions que le cockpit SUIT (hooks) : une session ouverte sans hooks (dossier hors dépôt) ne se voit pas. On ne l'affirme donc pas plus qu'on ne le sait. */
+export const NOTE_NON_SUIVIE = 'Une session ouverte sans le suivi du cockpit n’apparaît pas ici : si tu en as une qui travaille, ne clique pas.'
+
 export interface Voyant {
   slug: string
   nom: string
@@ -146,6 +149,8 @@ export interface Voyant {
   dejaDemande: boolean
   /** Pourquoi pas de bouton, quand une session manque (null sinon). */
   raison: string | null
+  /** Précision sur ce que « aucune session » veut dire (NOTE_NON_SUIVIE), vide sinon. */
+  note: string
 }
 
 const minutesDepuis = (iso: string | null | undefined, now: Date): number | null => {
@@ -163,7 +168,7 @@ export function voyantDe(e: EntreeLancer, now: Date): Voyant {
   const nDemandes = e.etat ? e.etat.renforts.filter((r) => r.statut === 'demande' && r.vivant).length : 0
   const attend = [nChantiers ? pl(nChantiers, 'chantier', 'chantiers') : '', nMessages ? pl(nMessages, 'message', 'messages') : '',
     nDemandes ? pl(nDemandes, 'renfort demandé', 'renforts demandés') : ''].filter(Boolean).join(' · ')
-  const base = { slug: e.slug, nom: e.nom, attend, nChantiers, nMessages, nDemandes, peutActiver: false, dejaDemande: false, raison: null as string | null, signe: null as Voyant['signe'] }
+  const base = { slug: e.slug, nom: e.nom, attend, nChantiers, nMessages, nDemandes, peutActiver: false, dejaDemande: false, raison: null as string | null, note: '', signe: null as Voyant['signe'] }
   if (e.enPause || e.sessions?.en_pause) return { ...base, etat: 'pause', texte: 'en pause', raison: 'En pause : rien ne démarre.' }
   const s = e.sessions
   if (!s) return { ...base, etat: 'inconnu', texte: e.erreur ? 'état illisible' : 'lecture en cours…', raison: e.erreur }
@@ -174,7 +179,7 @@ export function voyantDe(e: EntreeLancer, now: Date): Voyant {
     return { ...base, etat: 'vivante', signe: 'veille', texte: s.vivantes > 1 ? `${s.vivantes} sessions ouvertes, en veille` : 'session ouverte, en veille : rien ne tourne' }
   }
   const muette = (s.etats?.sans_nouvelles ?? 0) > 0
-  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session ne répond plus' : 'aucune session', signe: muette ? 'sans_nouvelles' as const : null }
+  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session ne répond plus' : 'aucune session suivie', note: muette ? '' : NOTE_NON_SUIVIE, signe: muette ? 'sans_nouvelles' as const : null }
   const min = minutesDepuis(s.reveil_at, now)
   const dejaDemande = min !== null && min < s.reveil_ecart_min
   if (!attend) return { ...base, ...aucune, raison: 'Rien n’attend : pas besoin de session.' }
