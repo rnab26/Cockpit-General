@@ -309,12 +309,12 @@ export function MediasMessage({ medias, petit = false, onAnnote, apercu = false,
  * d'une réponse, d'une correction ou d'un constat (les RPC de réponse ne
  * portent pas de fichiers : les médias arrivent juste en dessous, dans le fil).
  */
-export async function ecrireAvecMedias(o: { projetId: string; chantierId: string | null; par: string; admin: boolean; corps: string; medias: Media[]; local?: MessagesLocal }): Promise<string | null> {
+export async function ecrireAvecMedias(o: { projetId: string; chantierId: string | null; par: string; admin: boolean; corps: string; medias: Media[]; local?: MessagesLocal; repondA?: string | null }): Promise<string | null> {
   // L'identifiant est fixé ICI : le message apparaît tout de suite à l'écran (lib/reponseCarte.ts), est relu seul après
   // l'écriture, et un renvoi ne peut pas le doubler. Échec : on le retire, le message n'a jamais existé.
   const ligne = {
     id: crypto.randomUUID(), projet_id: o.projetId, chantier_id: o.chantierId, auteur: o.par,
-    auteur_type: o.admin ? 'proprietaire' as const : 'utilisateur' as const, kind: 'info' as const, corps: o.corps, medias: o.medias,
+    auteur_type: o.admin ? 'proprietaire' as const : 'utilisateur' as const, kind: 'info' as const, corps: o.corps, medias: o.medias, ...(o.repondA ? { repond_a: o.repondA } : {}),
   }
   o.local?.poser({ pourquoi: null, options: null, reponse: null, precision: null, repond_a: null, etat: null, answered_at: null, answered_by: null, created_at: new Date().toISOString(), ...ligne })
   const { error } = await supabase.from('messages').insert(ligne)
