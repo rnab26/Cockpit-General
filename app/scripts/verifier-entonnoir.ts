@@ -336,4 +336,31 @@ console.log('verifier-entonnoir')
   verifie('nouveau : on dit où il apparaît', ouApparait('libre').includes('Pour Claude') && ouApparait('a_cadrer').includes('À toi'))
 }
 
+// 19 oct. 2026 (chantier 520ea5fb) : « Ça avance » ne montre pas du vivant qui ne l'est pas.
+{
+  const S60 = 60 * 60_000
+  const tache = (id: string, chantier: string, minVu: number, extra: Record<string, unknown> = {}) => ({
+    id, projet_id: 'tr', chantier_id: chantier, type: 'agent', statut: 'en_cours', session_id: 's-' + id, vu_at: il(minVu), progres_at: il(minVu),
+    pourcentage: 50, etape: 'Lecture du README via GitHub', description: 'lecture', ...extra,
+  }) as never
+  const cs = [C('tr-readme', 'tr', 'en_cours', { pris_par: 'renfort/55f4fe/d2e7fd', pris_jusqu_a: dans(120) })]
+  // Le compte « N assistants » suit la MÊME règle que la ligne (silence réglé), jamais les 2 h de tacheEnCoursVivante.
+  const un = caAvanceToutSeul(cs, [], [], [], [tache('a1', 'tr-readme', 53), tache('a2', 'tr-readme', 90)], now, S60)
+  verifie('un assistant vu il y a 53 min et un autre il y a 90 min, silence 60 min : « 1 assistant » (pas 2)',
+    un.length === 1 && un[0].vivant && un[0].qui === '1 assistant de Claude', un.map((x) => x.qui))
+  const deux = caAvanceToutSeul(cs, [], [], [], [tache('a1', 'tr-readme', 53), tache('a2', 'tr-readme', 40)], now, S60)
+  verifie('deux assistants vus récemment : « 2 assistants »', deux[0]?.qui === '2 assistants de Claude', deux.map((x) => x.qui))
+  const mort = caAvanceToutSeul(cs, [], [], [], [tache('a1', 'tr-readme', 53)], now, 15 * 60_000)
+  verifie('silence réglé à 15 min : l’assistant de 53 min n’est plus « vivant » (ni barre, ni « assistant »)',
+    mort.length === 1 && !mort[0].vivant && mort[0].qui === '' && !mort[0].activite, mort.map((x) => [x.vivant, x.qui]))
+  // FacePro « Correctif bouche… » : mis de côté (reporte) mais une conversation y écrit encore : le travail réel se montre (29 sept., voulu).
+  const rep = [C('fp-reporte', 'fp', 'reporte')]
+  const ses = [{ id: 'sx', projet_id: 'fp', branche: 'claude/face-pro-chantiers-azd1gl', sujet: 'face-pro-chantiers', fin_at: null, vu_at: il(48) }] as never
+  const vivante = caAvanceToutSeul(rep, [A('r1', 'fp', 'fp-reporte', 'en_cours', 48, 'claude/face-pro-chantiers-azd1gl', 5)], [], ses, [], now, S60)
+  verifie('reporté + conversation qui a signalé il y a 48 min (silence 60) : reste dans « Ça avance » (voulu, le travail réel se montre)',
+    vivante.length === 1 && vivante[0].vivant && vivante[0].qui.startsWith('Claude (conversation'), vivante.map((x) => x.qui))
+  const eteinte = caAvanceToutSeul(rep, [A('r1', 'fp', 'fp-reporte', 'en_cours', 70, 'claude/face-pro-chantiers-azd1gl', 5)], [], ses, [], now, S60)
+  verifie('reporté, dernier signe il y a 70 min : plus dans « Ça avance » (il retombe dès que le signe vieillit)', eteinte.length === 0, eteinte.map((x) => x.qui))
+}
+
 bilan('verifier-entonnoir')

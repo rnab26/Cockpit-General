@@ -14,12 +14,14 @@ let ok = 0, ko = 0
 const verifie = (nom, cond, detail = '') => { if (cond) { ok++; console.log('  ✓ ' + nom) } else { ko++; console.log('  ✗ ' + nom + (detail ? ' — ' + detail : '')) } }
 
 const mig = readFileSync(join(RACINE, 'supabase/migrations/0102_voyant_activer_session.sql'), 'utf8')
-if (mig.includes('$mig$') || mig.includes('$t$')) throw new Error('la migration contient un délimiteur du banc')
+const mig3 = readFileSync(join(RACINE, 'supabase/migrations/0103_sessions_au_travail.sql'), 'utf8')
+if (mig.includes('$mig$') || mig.includes('$t$') || mig3.includes('$mig$') || mig3.includes('$t$')) throw new Error('la migration contient un délimiteur du banc')
 const essai = `
 do $t$
 declare pid uuid; slug text; r jsonb := '{}'::jsonb; e jsonb;
 begin
   execute $mig$${mig}$mig$;
+  execute $mig$${mig3}$mig$;
   slug := 'test-voyant-' || substr(md5(random()::text), 1, 6);
   insert into cockpit.projets (slug, nom, depot) values (slug, 'T', 'rnab26/test-voyant') returning id into pid;
   -- 1. projet vide : aucune session, rien n'attend
@@ -43,6 +45,22 @@ begin
   update cockpit.projets set delai_sans_signe_min = 120 where id = pid;
   r := r || jsonb_build_object('vivantes_120', cockpit.etat_sessions(slug)->'vivantes');
   update cockpit.projets set delai_sans_signe_min = 60 where id = pid;
+  -- 6 bis (0103, 19 oct.) : une session ouverte il y a 40 min qui n'a JAMAIS donné de signe depuis (vu_at = demarre_at) n'est pas « au travail »
+  update cockpit.sessions set fin_at = now() where projet_id = pid;
+  insert into cockpit.sessions (id, projet_id, demarre_at, vu_at) values ('banc-muette', pid, now() - interval '40 minutes', now() - interval '40 minutes');
+  r := r || jsonb_build_object('muette_seule', cockpit.etat_sessions(slug)->'vivantes', 'muette_activer', cockpit.activer_session(slug)->>'resultat');
+  -- ... la même, mais qui a battu depuis son ouverture (vu_at > demarre_at) : au travail ; et une ouverte à l'instant : au travail (elle arrive)
+  insert into cockpit.sessions (id, projet_id, demarre_at, vu_at) values ('banc-bat', pid, now() - interval '40 minutes', now() - interval '2 minutes');
+  r := r || jsonb_build_object('bat', cockpit.etat_sessions(slug)->'vivantes', 'bat_activer', cockpit.activer_session(slug)->>'resultat');
+  update cockpit.sessions set fin_at = now() where id = 'banc-bat';
+  insert into cockpit.sessions (id, projet_id, demarre_at, vu_at) values ('banc-neuve', pid, now() - interval '1 minute', now() - interval '1 minute');
+  r := r || jsonb_build_object('neuve', cockpit.etat_sessions(slug)->'vivantes');
+  update cockpit.sessions set fin_at = now() where id = 'banc-neuve';
+  update cockpit.projets set reveil_ecart_min = 30 where id = pid;
+  update cockpit.sessions set fin_at = null where id = 'banc-muette';
+  update cockpit.sessions set demarre_at = now() - interval '20 minutes', vu_at = now() - interval '20 minutes' where id = 'banc-muette';
+  r := r || jsonb_build_object('ecart_30', cockpit.etat_sessions(slug)->'vivantes');   -- la fenêtre « vient de s'ouvrir » suit reveil_ecart_min, pas un seuil de plus
+  update cockpit.projets set reveil_ecart_min = 5 where id = pid;
   -- 7. pause : voyant « en pause », aucun réveil
   perform cockpit.regler_pause_projet(slug, true, 'banc');
   update cockpit.sessions set fin_at = now() where projet_id = pid;
@@ -77,6 +95,11 @@ else {
   verifie('le voyant compte seulement les sessions vues récemment et non finies', res.vivantes === 1, res.vivantes)
   verifie('session vivante : activer ne réveille pas', res.avec_session === 'session_vivante', res.avec_session)
   verifie('la règle suit delai_signe : à 120 min la session de 90 min est vivante', res.vivantes_120 === 2, res.vivantes_120)
+  verifie('0103 : une session ouverte il y a 40 min, jamais revue depuis son ouverture, n’est pas « au travail » (voyant gris)', res.muette_seule === 0, res.muette_seule)
+  verifie('0103 : et « Activer » la remplace au lieu de dire « une session est déjà ouverte »', res.muette_activer !== 'session_vivante', res.muette_activer)
+  verifie('0103 : la même session, qui a battu depuis son ouverture, est au travail ; activer ne réveille pas', res.bat === 1 && res.bat_activer === 'session_vivante', JSON.stringify([res.bat, res.bat_activer]))
+  verifie('0103 : une session ouverte à l’instant compte (elle arrive)', res.neuve === 1, res.neuve)
+  verifie('0103 : la fenêtre « vient de s’ouvrir » est reveil_ecart_min (30 min : une session de 20 min compte)', res.ecart_30 === 1, res.ecart_30)
   verifie('en pause : voyant « en pause » et aucun réveil', res.pause_etat === true && res.pause_activer === 'projet_en_pause', JSON.stringify([res.pause_etat, res.pause_activer]))
   verifie('le texte du réveil « activer » est posé', res.texte === true)
   verifie('droits : ni public ni anon', res.droits?.etat_public === false && res.droits?.etat_anon === false && res.droits?.activer_public === false && res.droits?.activer_anon === false, JSON.stringify(res.droits))
