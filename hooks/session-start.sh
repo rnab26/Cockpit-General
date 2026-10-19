@@ -197,7 +197,7 @@ sid=$(printf '%s' "$entree" | jq -r '.session_id // empty' 2>/dev/null)
 emettre "$(cat <<FIN
 ${bandeau_pause}# Cockpit — projet « $test » ($PROJET), état au démarrage de cette session
 
-RÉPONSES COURTES : à Raphaël, réponds simple, court, net et précis (la réponse d'abord, pas de pavé).
+FORME DE TA RÉPONSE À RAPHAËL (règle absolue, il lit sur téléphone) : 1) la réponse en UNE phrase d’abord ; 2) puis 5 puces courtes au plus, mot clé en gras ; 3) jamais de tableau, de long récit, de détail technique non demandé ni de rappel de ce qu’il sait déjà ; 4) fin : « À faire de ton côté : … » ou « Rien à faire » ; 5) 10 lignes au plus. Le détail va dans le fil du cockpit, pas ici.
 
 RÈGLE DE CLARTÉ : tout ce que Raphaël lit ici (questions, constats, « comment vérifier ») se
 comprend d'un coup d'œil par quelqu'un qui ne code pas : le sujet, ce qu'il y a à faire, des
