@@ -42,7 +42,7 @@ console.log('verifier-branchement')
   verifie('estBranche avec les sessions : le préchauffage seul (0 s) n’allume PAS l’icône', !estBranche(preuve, now, [S(3, 3, 3)]))
   verifie('estBranche avec les sessions : une vraie session l’allume', estBranche(preuve, now, [S(3, 3, 3), S(40, 1, null)]))
   verifie('estBranche sans la liste des sessions (membre) : la règle d’avant', estBranche(preuve, now))
-  verifie('estBranche : sans démarrage récent, une session vivante ne suffit pas (la preuve du hook manque)', !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(40, 1, null)]))
+  verifie('estBranche : sans démarrage récent, une session vivante suffit (19 oct. : elle est elle-même la preuve ; sans session, rien)', estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, [S(40, 1, null)]) && !estBranche({ branchement_vu_at: il(3 * 24 * 60) }, now, []))
   verifie('estBranche : aucune session du tout → éteinte', !estBranche(preuve, now, []))
 }
 // 14 oct. 2026 (Melissa Nabet, Trieur) : l'écran doit dire POURQUOI la prise est éteinte, avec la cause lue sur le dépôt.
@@ -116,6 +116,9 @@ console.log('verifier-branchement')
     verifie('moteur : même verdict dans les réglages (même règle)', /Sessions branchées/.test(l[0].texte) && l[0].teinte === 'ok', l[0])
     const longue = [S(300, 200, 100)]
     verifie('moteur : une session longue terminée vue dans les 24 h → branché', estBranche(p, now, longue))
+    const vieux3j = { branchement_vu_at: il(72) }
+    verifie('Mélissa : 2 sessions vivantes, dernier démarrage > 3 j → branché (icône ET réglages)',
+      estBranche(vieux3j, now, [S(2, 1, null), S(1, 1, null)]) && etatBranchement(vieux3j, 0, now, { sessions: [S(2, 1, null)] })[0].teinte === 'ok')
     verifie('moteur : seulement des agents de quelques secondes → pas branché, sur l’icône ET les réglages',
       !estBranche(p, now, [S(40, 39.9, 39.9)]) && !etatBranchement(p, 0, now, { sessions: [S(40, 39.9, 39.9)] })[0].texte.startsWith('Sessions branchées'))
   }

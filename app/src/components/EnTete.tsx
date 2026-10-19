@@ -5,8 +5,6 @@ import { VUE_TOUT, type EtatDirect } from '../hooks/useDonnees.ts'
 import { Button } from '../ui/Button.tsx'
 import { dateRelative } from '../lib/dates.ts'
 import { useMenuQuiSeFerme } from '../ui/Modale.ts'
-import { useGlobal } from '../contexte.ts'
-import { estBranche } from '../lib/branchement.ts'
 import { enPause, groupesPause } from '../lib/pause.ts'
 import { legendeVoyants } from '../lib/entonnoir.ts'
 import { BarreRecherche, BoutonLoupe } from './Recherche.tsx'
@@ -72,7 +70,6 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
   // Liste déroulante des projets (30 sept. : « on ne voit pas tous les projets » avec la rangée qui défile).
   const liste = useRef<HTMLDivElement>(null)
   const [ouvert, setOuvert] = useState(false)
-  const { now } = useGlobal()
   useMenuQuiSeFerme(ouvert, liste, () => setOuvert(false))
   const choisir = (id: string) => { setOuvert(false); choisirVue(id) }
   useMenuQuiSeFerme(menu, ref, () => setMenu(false))
@@ -88,7 +85,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
             {vueTout ? <Layers size={15} className="shrink-0 text-texte-2" aria-hidden /> : <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: projet?.couleur ?? '#888' }} />}
             <span className="min-w-0 flex-1 truncate">{vueTout ? 'Tout' : projet?.nom ?? 'Projets'}</span>
             {!vueTout && projet && enPause(projet) ? <span data-testid="icone-pause" title="En pause : Claude ne travaille pas sur ce projet" className="flex shrink-0 items-center gap-1 text-xs font-medium text-attention"><Pause size={14} aria-label="en pause" />pause</span> : null}
-            {!vueTout && projet && !enPause(projet) && (pastilles.get(projet.id)?.branche ?? estBranche(projet, now)) ? <span title="Projet branché au cockpit : une session a démarré ici ces dernières 24 h" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
+            {!vueTout && projet && !enPause(projet) ? <span title="Branché : Claude travaille sur ce projet (pas en pause)" className="shrink-0 text-ok"><Plug size={14} aria-label="branché" /></span> : null}
             <PastillesOnglet p={pastilles.get(vueTout ? VUE_TOUT : projet?.id ?? '')} legende />
             <ChevronDown size={16} className={`shrink-0 text-texte-2 transition ${ouvert ? 'rotate-180' : ''}`} aria-hidden />
           </button>
@@ -114,7 +111,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.couleur ?? '#888' }} />
                     <span className="min-w-0 flex-1 truncate">{p.nom}</span>
                     {enPause(p) ? <span data-testid="icone-pause" title="En pause : Claude ne travaille pas sur ce projet" className="text-attention"><Pause size={15} aria-label="en pause" /></span>
-                      : (pastilles.get(p.id)?.branche ?? estBranche(p, now)) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : null}
+                      : <span data-testid="icone-branche" title="Branché : Claude travaille sur ce projet (pas en pause)" className="text-ok"><Plug size={15} aria-label="branché" /></span>}
                     <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
                   </button>
                   </Fragment>
