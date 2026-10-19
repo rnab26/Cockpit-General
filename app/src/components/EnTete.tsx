@@ -114,7 +114,7 @@ export function EnTete({ projets, projet, vueTout, choisirVue, pastilles, admin,
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.couleur ?? '#888' }} />
                     <span className="min-w-0 flex-1 truncate">{p.nom}</span>
                     {enPause(p) ? <span data-testid="icone-pause" title="En pause : Claude ne travaille pas sur ce projet" className="text-attention"><Pause size={15} aria-label="en pause" /></span>
-                      : (pastilles.get(p.id)?.branche ?? estBranche(p, now)) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : <span data-testid="icone-non-branche" title="Pas branché : aucune vraie session n'a démarré ici ces dernières 24 h. Ouvre le projet pour voir pourquoi et comment le brancher." className="shrink-0 text-[11px] text-attention">pas branché</span>}
+                      : (pastilles.get(p.id)?.branche ?? estBranche(p, now)) ? <span data-testid="icone-branche" title="Branché : une session a démarré avec le cockpit dans les dernières 24 h" className="text-ok"><Plug size={15} aria-label="branché" /></span> : null}
                     <PastillesOnglet p={pastilles.get(p.id)} actif={actif} />
                   </button>
                   </Fragment>
