@@ -42,6 +42,7 @@ import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
 import { depuisParChantier, ordrePourToi } from '../lib/epuration.ts'
 import { EpurationProjet, LigneRetireesSeules } from './CartesRetireesSeules.tsx'
+import { AutocontroleProjet } from './Autocontrole.tsx'
 import { PauseProjet } from './PauseProjet.tsx'
 import { sansPourcentage } from '../lib/presence.ts'
 import { apercuDe, bulleActive, cleBulle, detailDeCarte, sujetEtDetail } from '../lib/bulleAide.ts'
@@ -879,6 +880,7 @@ export function ReglagesProjet({ projetId }: { projetId: string }) {
       {g.admin ? <FiletSecurite projet={p} onJeton={versJeton} /> : null}
       {g.admin ? <RapprochementGithub projet={p} /> : null}
       {g.admin ? <EpurationProjet projet={p} /> : null}
+      {g.admin ? <AutocontroleProjet projet={p} /> : null}
       <Repliable testId="reglages-projet" ouvert={reglagesOuverts} onToggle={setReglagesOuverts} titre={<span className="flex items-center gap-2 text-[15px] font-medium"><Settings2 size={17} className="text-texte-2" aria-hidden />Réglages du projet</span>}>
         <BarreProjet projet={p} nu />
         <div className="mt-3 space-y-2">

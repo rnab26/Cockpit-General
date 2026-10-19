@@ -50,6 +50,10 @@ export interface Projet {
   reveil_ecart_min?: number
   /** Une carte restée sans réponse N heures pendant que le travail continue se retire toute seule (0092 ; 0 = jamais, 24 par défaut ; une action : 7 fois plus). */
   epuration_delai_h?: number
+  /** Autocontrôle (0105) : minutes d'attente avant d'alerter (5-1440, 20) ; minutes avant de fermer une demande de session sans suite (0 = jamais, 10-1440, 60) ; heures pendant lesquelles une erreur de session reste signalée (1-168, 6). */
+  autocontrole_delai_min?: number
+  autocontrole_nettoyage_min?: number
+  autocontrole_garde_h?: number
   /** Premier passage qui n'a rien trouvé à prendre (0031), null dès qu'il y a du travail. */
   autonome_vide_depuis?: string | null
   /** Quand il s'est éteint tout seul (0031), null s'il a été réglé à la main depuis. */
