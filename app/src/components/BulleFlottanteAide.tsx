@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, CloudOff, FlaskConical, HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
+import { CloudOff, HelpCircle, Mic, MicOff, Reply, Send, X } from 'lucide-react'
 import { useGlobal } from '../contexte.ts'
 import { PastilleReponse, useMarquerLu } from './PastilleReponse.tsx'
 import { cleFil } from '../lib/lecture.ts'
@@ -9,16 +9,11 @@ import { Dialog } from '../ui/Dialog.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
 import { phraseMessageEnAttente } from '../lib/fileAttente.ts'
 import { BoutonJoindre, MediasMessage, VignettesPieces, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
-import { aCiter, auteurDe, avecCitation, bulleActive, cartesAFaire, citationDe, detailDeCarte, constructeurVoix, notifsChat, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, sujetEtDetail, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
+import { aCiter, auteurDe, avecCitation, bulleActive, cartesAFaire, citationDe, constructeurVoix, notifsChat, filDeLaBulle, messageVoix, projetDeLaBulle, sujetDe, VOIX_NON_SUPPORTEE } from '../lib/bulleAide.ts'
 import { mediasDe, resumeMedias } from '../lib/medias.ts'
 import { heureLisible } from '../lib/dates.ts'
 import type { Message } from '../lib/types.ts'
-import { aToi, aTesterDe, demandesDe, VERBE_A_TOI, type ElementAToi } from '../lib/entonnoir.ts'
-import { IconeAToi } from './Icones.tsx'
-import { AvecProjet } from './AvecProjet.tsx'
-import { BlocQuestion } from './BlocQuestion.tsx'
-import { BlocValidation } from './BlocValidation.tsx'
-import { BlocCadrer, BlocFusion } from './BlocsAToi.tsx'
+import { aToi } from '../lib/entonnoir.ts'
 
 /**
  * Bulle flottante d'aide (allumée par défaut ; l'extinction est dans « Réglages
@@ -162,7 +157,6 @@ export function BulleFlottanteAide({ projetOuvertId, onFermer, sansBouton = fals
             </div>
           ) : fil.map((m) => <MessageBulle key={m.id} m={m} admin={g.admin} now={g.now} onRepondre={repondreA} />)}
           {attend ? <p className="text-center text-xs text-texte-2" data-testid="bulle-aide-attente">Claude n’a pas encore répondu : la réponse arrivera ici.</p> : null}
-          <AFaireIci projetId={projet.id} />
           <div ref={fin} />
         </div>
       </Dialog> : null}
@@ -261,92 +255,5 @@ export function ListeDiscussions({ ouvert, onFermer, onChoisir }: { ouvert: bool
         })}
       </div>
     </Dialog>
-  )
-}
-
-/**
- * Ce que Claude attend de toi sur ce projet, répondable ICI (Raphaël, 6 oct. : « autant me faire faire
- * directement ce qu'il y a à faire dans son message, plutôt que je quitte la discussion »). Mêmes cartes
- * et même règle que « À toi de jouer » (`aToi`) : question, action, vérification, cadrage, fusion.
- * En dernier dans la discussion, comme les cartes d'un fil ; rien d'affiché quand il n'y a rien à faire.
- *
- * 13 oct. 2026 (Raphaël : « j'ai 30 actions à faire avant de voir l'historique du chat ») : l'historique reste en
- * premier ; ici UNE ligne par chose (le SUJET d'abord, puis le geste attendu), une seule carte dépliée à la fois
- * (la seule demande, d'emblée), cinq lignes au plus puis « Voir les N autres » ; les chantiers à tester ne sont
- * plus des cartes ouvertes mais une ligne repliée « N livrés à tester ».
- */
-export const DEMANDES_VISIBLES_CHAT = 5
-
-function AFaireIci({ projetId }: { projetId: string }) {
-  const g = useGlobal()
-  const cartes = cartesAFaire(aToi(g.chantiers, g.messages, projetId, g.activites, g.taches))
-  const demandes = demandesDe(cartes)
-  const tests = aTesterDe(cartes)
-  // undefined = pas encore choisi : la seule demande s'ouvre d'elle-même ; sinon tout est replié, une carte à la fois.
-  const [choix, setChoix] = useState<string | null | undefined>(undefined)
-  const [toutes, setToutes] = useState(false)
-  const [testsOuverts, setTestsOuverts] = useState(false)
-  if (!cartes.length) return null
-  const ouverte = choix === undefined ? (demandes.length === 1 ? demandes[0].cle : null) : choix
-  const basculer = (cle: string) => setChoix(ouverte === cle ? null : cle)
-  const visibles = toutes ? demandes : demandes.slice(0, DEMANDES_VISIBLES_CHAT)
-  return (
-    <section className="space-y-1 border-t border-bord pt-2" data-testid="bulle-a-faire" aria-label="À faire ici">
-      <AvecProjet projetId={projetId}>
-        {demandes.length ? (
-          <>
-            <p className="px-1 text-xs font-semibold text-accent" data-testid="bulle-a-faire-titre">À faire ici ({demandes.length})</p>
-            <ul className="space-y-0.5">
-              {visibles.map((e) => <LigneCarte key={e.cle} e={e} now={g.now} ouverte={ouverte === e.cle} onToggle={() => basculer(e.cle)} />)}
-            </ul>
-            {demandes.length > visibles.length ? (
-              <button type="button" onClick={() => setToutes(true)} data-testid="bulle-a-faire-plus" className="w-full py-1.5 text-center text-sm font-medium text-accent">Voir les {demandes.length - visibles.length} autres</button>
-            ) : null}
-          </>
-        ) : null}
-        {tests.length ? (
-          <div className={demandes.length ? 'pt-1' : ''}>
-            <button type="button" onClick={() => setTestsOuverts(!testsOuverts)} aria-expanded={testsOuverts} data-testid="bulle-a-tester-repli"
-              className="flex min-h-10 w-full items-center gap-2 rounded-xl px-1.5 text-left text-sm text-texte-2 hover:bg-carte-2">
-              <FlaskConical size={16} className="shrink-0 text-attention" aria-hidden />
-              <span className="flex-1">{tests.length} livré{tests.length > 1 ? 's' : ''} à tester<span className="text-xs"> · sans urgence</span></span>
-              <ChevronDown size={16} className={`shrink-0 transition ${testsOuverts ? 'rotate-180' : ''}`} aria-hidden />
-            </button>
-            {testsOuverts ? (
-              <ul className="space-y-0.5" data-testid="bulle-a-tester-liste">
-                {tests.map((e) => <LigneCarte key={e.cle} e={e} now={g.now} ouverte={ouverte === e.cle} onToggle={() => basculer(e.cle)} />)}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
-      </AvecProjet>
-    </section>
-  )
-}
-
-/** Une chose à faire : le sujet en gros, le geste attendu en petit ; la carte (réponse, test, décision) s'ouvre dessous. */
-function LigneCarte({ e, now, ouverte, onToggle }: { e: ElementAToi; now: Date; ouverte: boolean; onToggle: () => void }) {
-  const { sujet } = sujetEtDetail(e)
-  return (
-    <li data-testid="bulle-a-faire-carte" data-type={e.type} data-ouverte={ouverte ? '1' : ''}>
-      <button type="button" onClick={onToggle} aria-expanded={ouverte} data-testid="bulle-a-faire-ligne"
-        className="flex min-h-12 w-full items-center gap-2.5 rounded-xl px-1.5 py-1.5 text-left hover:bg-carte-2 active:bg-carte-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-bord"><IconeAToi type={e.type} taille={16} /></span>
-        <span className="min-w-0 flex-1">
-          <span className="line-clamp-2 text-[15px] font-medium leading-snug" data-testid="bulle-a-faire-sujet">{sujet}</span>
-          <span className="line-clamp-2 text-[13px] leading-snug text-texte-2" data-testid="bulle-a-faire-detail">{detailDeCarte(e, now)}</span>
-        </span>
-        <span className="shrink-0 text-xs font-medium text-accent">{VERBE_A_TOI[e.type]}</span>
-        <ChevronDown size={16} className={`shrink-0 text-texte-2 transition ${ouverte ? 'rotate-180' : ''}`} aria-hidden />
-      </button>
-      {ouverte ? (
-        <div className="pb-2 pt-1" data-testid="bulle-a-faire-contenu">
-          {e.type === 'a_verifier' ? <BlocValidation chantier={e.chantier!} />
-            : e.type === 'a_cadrer' ? <BlocCadrer chantier={e.chantier!} />
-            : e.type === 'fusion' ? <BlocFusion message={e.message!} />
-            : <BlocQuestion message={e.message!} />}
-        </div>
-      ) : null}
-    </li>
   )
 }

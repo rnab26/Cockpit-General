@@ -391,3 +391,10 @@ Liens : une adresse https écrite dans une carte « À toi » ou dans « Comment
 
 **Discussions : pastilles réparties par chat** (6 oct. 2026, chantier 3b2bf53d ; Raphaël : « les notifications ne sont pas réparties dans les différents chats »). Cause prouvée : la pastille de l'onglet « Discussions » comptait TOUTES les réponses non lues (fils de chantiers compris) alors que chaque ligne de chat ne comptait que la discussion libre, et les cartes « À faire ici » n'étaient comptées nulle part. UNE règle (`lib/bulleAide.ts` : `cartesAFaire`, `notifsChat`) : un chat = réponses non lues de sa discussion + cartes à faire (même liste que celle affichée en ouvrant le chat) ; l'onglet = la somme des chats ; la liste met en haut les chats qui attendent. Le sondage de 10 s de la bulle relit en silence (`recharger(true)`, plus de voyant de chargement ni d'erreur à l'écran). `verifier-bulle.mjs` (cartes répondues dans le chat, clavier ouvert, total = somme), `verifier-bulle-aide.ts`. Non vérifié : vrai téléphone (clavier réel).
 
+
+**La liste « À faire ici » et « N livrés à tester » sont retirées du chat** (19 oct. 2026). Raphaël, capture du chat FacePro (5 lignes dont deux fois « GPU de secours »
+et deux « Claude a travaillé dessus… il vérifie ») : « ça encombre pour rien et surtout je pense que ce n'est pas à jour ; je veux plus de choses comme ça à l'avenir, des cartes
+intempestives et pas actualisées dans le chat ». Le chat de la bulle d'aide est une DISCUSSION : l'historique, la saisie, rien d'autre. Les cartes (questions, actions,
+vérifications, à tester) vivent dans « À toi » de l'accueil, une seule fois. Retiré : `AFaireIci` et `LigneCarte` (`BulleFlottanteAide.tsx`). Gardé tel quel : les pastilles
+« à faire » de la liste des discussions et de la barre du bas (`cartesAFaire`, `notifsChat`) : elles disent qu'une chose attend, l'accueil la montre. Règle pour la suite : on ne remet
+pas de liste de cartes dans le chat ; une carte nouvelle se pose dans « À toi ». Bancs : `verifier-bulle.mjs` (41/41) et `verifier-accueil.mjs` (50/50) vérifient qu'il n'y a plus de bloc.
