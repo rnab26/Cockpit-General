@@ -49,3 +49,4 @@ scripts/deployer-fonction.sh
 scripts/rapprocher.py
 scripts/machine.py
 scripts/fusion_auto.py
+hooks/utilisateur.sh
