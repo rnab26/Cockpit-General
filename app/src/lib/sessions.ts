@@ -246,8 +246,13 @@ export function quiTravaille(
   return [...groupes.values()].sort((a, b) => rang(a.projetId) - rang(b.projetId))
 }
 
-/** L'agent vivant d'un chantier : en cours, lié au chantier, et qui a signalé son avancement depuis moins que le délai de silence. */
-export function agentVivantDuChantier(taches: readonly Tache[], chantierId: string, now: Date, silenceMs: number): Tache | null {
+/**
+ * Les agents vivants d'un chantier, le plus récent d'abord : en cours, liés au chantier, et qui ont signalé une étape OU dont la session
+ * a battu depuis moins que le délai de silence. UNE règle : « combien d'assistants » (ligne de « Ça avance ») et « y en a-t-il un »
+ * (présence) la lisent toutes deux ici — jamais deux seuils (19 oct. : « 1 assistant » comptait avec les 2 h de `tacheEnCoursVivante`
+ * pendant que la ligne vivait avec le silence réglé).
+ */
+export function agentsVivantsDuChantier(taches: readonly Tache[], chantierId: string, now: Date, silenceMs: number): Tache[] {
   return taches
     // Vivant : il a signalé une étape récemment, OU sa session vit encore et
     // Claude Code le liste en cours (0015 : vu_at suit la session). FacePro,
@@ -255,7 +260,12 @@ export function agentVivantDuChantier(taches: readonly Tache[], chantierId: stri
     // passait pour arrêté.
     .filter((x) => x.chantier_id === chantierId && x.statut === 'en_cours' && x.type === 'agent'
       && (depuis(x.progres_at, now) < silenceMs || depuis(x.vu_at, now) < silenceMs))
-    .sort((a, b) => (b.progres_at ?? b.vu_at ?? '').localeCompare(a.progres_at ?? a.vu_at ?? ''))[0] ?? null
+    .sort((a, b) => (b.progres_at ?? b.vu_at ?? '').localeCompare(a.progres_at ?? a.vu_at ?? ''))
+}
+
+/** L'agent vivant d'un chantier (le plus récent), ou null. */
+export function agentVivantDuChantier(taches: readonly Tache[], chantierId: string, now: Date, silenceMs: number): Tache | null {
+  return agentsVivantsDuChantier(taches, chantierId, now, silenceMs)[0] ?? null
 }
 
 /**

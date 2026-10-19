@@ -17,7 +17,7 @@ export interface EntreeLancer {
   sessions?: EtatSessions | null
 }
 
-/** Ce que rend `etat_sessions` (0102). « Vivante » = la règle de la base (delai_signe), jamais recalculée ici. */
+/** Ce que rend `etat_sessions` (0102). « vivantes » = sessions au travail, règle de la base (sessions_au_travail, 0103), jamais recalculée ici. */
 export interface EtatSessions {
   projet: string
   en_pause: boolean
@@ -116,7 +116,7 @@ export function messageApresLancer(rs: ResultatLancer[], now: Date): { ok: boole
 // ---- Voyant des sessions et « Activer une session » (19 oct. 2026, chantier cb3d17df, migration 0102) ----
 // Raphaël : « Un voyant pour voir s'il y a des sessions actives directement. S'il n'y a pas de session active, appuyer pour activer
 // une session. […] Même sans chantier à lancer, si j'ai répondu et que j'attends des réponses, un interrupteur. » AUCUNE règle
-// nouvelle : « vivante » vient de la base (etat_sessions, delai_signe), le réveil de activer_session (reveiller_chef).
+// nouvelle : « au travail » vient de la base (etat_sessions → sessions_au_travail, 0103 : delai_signe ET un signe après l’ouverture), le réveil de activer_session (reveiller_chef).
 
 export type EtatVoyant = 'vivante' | 'aucune' | 'pause' | 'inconnu'
 
