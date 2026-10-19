@@ -110,6 +110,9 @@ fi
 # RAPPROCHEMENT GITHUB (0080, 13 oct. 2026) : les chantiers ouverts que plus personne ne tient et dont le travail est PROUVÉ dans main
 # passent « livré, à vérifier » tout seuls (Raphaël : « mes chantiers ne sont pas à jour »). En tâche de fond, au plus une fois toutes
 # les 20 min par projet, jamais bloquant ; éteint par COCKPIT_RAPPROCHEMENT=0 ou par le réglage du projet (écran « Chantiers et GitHub »).
+# CARTES DE PR (0099) : une carte « Fusionne la PR » dont la PR est déjà fusionnée ou fermée se retire seule (au plus toutes les 3 min).
+prcartes="$(dirname "$SQL")/pr-cartes.sh"
+[ -f "$prcartes" ] && ( COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 120 bash "$prcartes" >/dev/null 2>&1 & ) >/dev/null 2>&1
 rapprocher="${COCKPIT_RAPPROCHER:-$(dirname "$SQL")/rapprocher.py}"
 if [ "${COCKPIT_RAPPROCHEMENT:-1}" != 0 ] && [ -f "$rapprocher" ] && command -v python3 >/dev/null 2>&1; then
   ( cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null; COCKPIT_PROJET="$PROJET" COCKPIT_SQL="$SQL" nohup timeout 170 python3 "$rapprocher" --projet "$PROJET" --si-ancien 20 --silencieux >/dev/null 2>&1 & ) >/dev/null 2>&1
