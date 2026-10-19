@@ -209,6 +209,7 @@ consigner_message() {
 
 # CE QUE LA SESSION FAIT MAINTENANT (0087) : la barre du chantier qu'elle tient montre l'action en cours,
 # sans que le modèle ait rien à signaler. Au plus une fois toutes les 15 s, détaché, jamais bloquant.
+# 19 oct. 2026 (Raphaël : « c'est du superflu ») : jamais la commande brute (chemins, && sed…) : sa description, sinon « une commande ».
 action_live() {
   [ -z "$agent" ] && [ -n "$branche" ] || return 0
   est_renfort && return 0
@@ -221,7 +222,7 @@ action_live() {
       if   ($t == "Edit" or $t == "Write" or $t == "MultiEdit" or $t == "NotebookEdit") then "Modifie " + base
       elif $t == "Read" then "Lit " + base
       elif ($t == "Grep" or $t == "Glob") then "Cherche dans le code"
-      elif $t == "Bash" then "Lance : " + (($in.description // $in.command // "une commande") | tostring | gsub("\\s+"; " ") | .[0:90])
+      elif $t == "Bash" then "Lance : " + (($in.description // "une commande") | tostring | gsub("\\s+"; " ") | .[0:90])
       elif ($t == "Agent" or $t == "Task") then "Délègue : " + (($in.description // "une tâche") | tostring | .[0:90])
       elif ($t == "WebFetch" or $t == "WebSearch") then "Cherche sur le web"
       elif ($t | startswith("mcp__")) then "Utilise " + ($t | split("__") | last)
