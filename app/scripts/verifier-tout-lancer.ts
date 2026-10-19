@@ -1,6 +1,6 @@
 // « Tout lancer » (lib/toutLancer.ts, 16 oct. 2026, chantier 876e2e4b) : ce que dit l'unique bouton et sa ligne d'état.
 import { verifie, bilan } from './_assert.ts'
-import { decisionToutLancer, messageApresLancer, type EntreeLancer } from '../src/lib/toutLancer.ts'
+import { aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, SANS_REVEIL, voyantDe, voyantsDe, type EntreeLancer, type EtatSessions } from '../src/lib/toutLancer.ts'
 import type { EtatRenforts, Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-tout-lancer')
@@ -42,4 +42,41 @@ verifie('erreur technique : visible, « Réessayer » proposé', (() => { const 
 verifie('erreur sur un projet, succès sur l’autre : les deux sont dits', (() => { const m = messageApresLancer([{ nom: 'A', resultat: dem(1), erreur: null, sansChef: false }, { nom: 'B', resultat: null, erreur: 'boum', sansChef: false }], now); return !m.ok && m.reessayer && /B : boum/.test(m.texte) && /1 projet lancé quand même/.test(m.texte) })())
 verifie('la base répond « rien n’attend » : message de la base, pas de « Réessayer »', (() => { const m = messageApresLancer([{ nom: 'A', resultat: { demandes: [], vivants: 0, max: 2, agents: 3, raison: 'rien_en_attente' }, erreur: null, sansChef: false }], now); return !m.ok && !m.reessayer && /Rien n’attend/.test(m.texte) })())
 verifie('la base répond « plein » : dit combien tournent', (() => { const m = messageApresLancer([{ nom: 'A', resultat: { demandes: [], vivants: 2, max: 2, agents: 3, raison: 'plein' }, erreur: null, sansChef: false }], now); return !m.ok && /Déjà 2 renforts en route/.test(m.texte) })())
+
+// ---- Voyant des sessions et « Activer une session » (0102)
+console.log('voyant des sessions')
+const ss = (x: Partial<EtatSessions>): EtatSessions => ({ projet: 'A', en_pause: false, vivantes: 0, chef: false, messages: 0, reveil_possible: true, reveil_at: null, reveil_ecart_min: 5, ...x })
+const maintenant = new Date('2026-10-19T12:00:00Z')
+const il = (min: number) => new Date(maintenant.getTime() - min * 60_000).toISOString()
+verifie('session vivante : vert, « session ouverte », pas de bouton', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({ vivantes: 1 }) }), maintenant); return v.etat === 'vivante' && v.texte === 'session ouverte' && !v.peutActiver })())
+verifie('plusieurs sessions : le nombre est dit', voyantDe(e('a', { etat: etat({}), sessions: ss({ vivantes: 3 }) }), maintenant).texte === '3 sessions ouvertes')
+verifie('une chef vivante sans autre session compte comme session ouverte', voyantDe(e('a', { etat: etat({}), sessions: ss({ chef: true }) }), maintenant).etat === 'vivante')
+verifie('aucune session + un chantier qui attend : gris, bouton « Activer »', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 2)] }), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && v.peutActiver && v.attend === '2 chantiers' })())
+verifie('aucune session + AUCUN chantier mais des messages qui attendent : le bouton reste', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({ messages: 2 }) }), maintenant); return v.peutActiver && v.attend === '2 messages' })())
+verifie('chantiers et messages : les deux sont dits', voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ messages: 1 }) }), maintenant).attend === '1 chantier · 1 message')
+verifie('aucune session et rien n’attend : pas de bouton (une session coûte des jetons pour rien), dit pourquoi', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && !v.peutActiver && /Rien n’attend/.test(v.raison ?? '') })())
+verifie('réveil demandé il y a 2 min : pas de bouton (jamais de doublon), « elle arrive »', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ reveil_at: il(2) }) }), maintenant); return v.dejaDemande && !v.peutActiver && /il y a 2 min/.test(v.raison ?? '') })())
+verifie('réveil demandé il y a 6 min (écart 5) : le bouton revient', voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ reveil_at: il(6) }) }), maintenant).peutActiver)
+verifie('réveil automatique non réglé : pas de bouton, dit quoi faire', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ reveil_possible: false }) }), maintenant); return !v.peutActiver && v.raison === SANS_REVEIL })())
+verifie('projet en pause : voyant « en pause », jamais de bouton', (() => { const v = voyantDe(e('a', { enPause: true, etat: etat({ attente: [att('A', 4)] }), sessions: ss({ messages: 2 }) }), maintenant); return v.etat === 'pause' && !v.peutActiver && v.texte === 'en pause' })())
+verifie('pause lue par la base (en_pause) : même chose', voyantDe(e('a', { etat: etat({}), sessions: ss({ en_pause: true }) }), maintenant).etat === 'pause')
+verifie('lecture en cours : état inconnu, pas de bouton', (() => { const v = voyantDe(e('a', {}), maintenant); return v.etat === 'inconnu' && !v.peutActiver && v.texte === 'lecture en cours…' })())
+verifie('lecture en échec : « état illisible » avec la cause', (() => { const v = voyantDe(e('a', { erreur: 'réseau coupé' }), maintenant); return v.etat === 'inconnu' && v.texte === 'état illisible' && v.raison === 'réseau coupé' })())
+verifie('un renfort demandé attend une session : le voyant ne dit pas « rien n’attend », le bouton est là', (() => { const v = voyantDe(e('a', { etat: etat({ renforts: [r({ statut: 'demande' })] }), sessions: ss({}) }), maintenant); return v.peutActiver && v.attend === '1 renfort demandé' })())
+verifie('un voyant par projet', voyantsDe([e('a', { etat: etat({}), sessions: ss({ vivantes: 1 }) }), e('b', { etat: etat({}), sessions: ss({}) })], maintenant).map((v) => v.etat).join() === 'vivante,aucune')
+verifie('Tout lancer active une session seulement pour les projets lancés sans session', (() => {
+  const vs = voyantsDe([e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({}) }), e('b', { etat: etat({ attente: [att('B', 1)] }), sessions: ss({ vivantes: 1 }) }), e('c', { etat: etat({ attente: [att('C', 1)] }), sessions: ss({ reveil_possible: false }) })], maintenant)
+  return aActiverAvecLancer(['a', 'b', 'c'], vs).join() === 'a'
+})())
+verifie('Tout lancer : un réveil déjà parti n’empêche pas l’appel (la base ne tire jamais deux fois)', aActiverAvecLancer(['a'], voyantsDe([e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ reveil_at: il(1) }) })], maintenant)).join() === 'a')
+
+const ra = (resultat: string | null, extra: object = {}) => ({ nom: 'A', resultat, erreur: null, ...extra })
+verifie('activée : « session demandée à HH:MM »', (() => { const m = messageApresActivation([ra('envoye')], new Date(2026, 9, 19, 14, 5)); return m.ok && /^Session demandée à 14:05 : elle s’ouvre/.test(m.texte) && !m.reessayer })())
+verifie('déjà demandée : bon résultat, dit depuis quand', (() => { const m = messageApresActivation([ra('deja_demande', { reveil_at: il(3) })], maintenant); return m.ok && m.texte === 'Session déjà demandée il y a 3 min : elle arrive.' })())
+verifie('déjà une session ouverte : bon résultat', messageApresActivation([ra('session_vivante')], maintenant).ok)
+verifie('pas de réveil réglé : échec visible, sans « Réessayer » (réessayer ne changerait rien)', (() => { const m = messageApresActivation([ra('pas_configure')], maintenant); return !m.ok && !m.reessayer && /^Pas activée : le réveil automatique n’est pas réglé/.test(m.texte) })())
+verifie('projet en pause : échec dit', /en pause/.test(messageApresActivation([ra('projet_en_pause')], maintenant).texte))
+verifie('erreur technique : visible avec la cause, « Réessayer » proposé', (() => { const m = messageApresActivation([ra(null, { erreur: 'boum' })], maintenant); return !m.ok && m.reessayer && m.texte === 'Pas activée : boum' })())
+verifie('plusieurs projets : chaque phrase porte son nom', (() => { const m = messageApresActivation([ra('envoye'), ra('pas_configure', { nom: 'B' })], maintenant); return !m.ok && /A : session demandée/.test(m.texte) && /B : le réveil automatique/.test(m.texte) })())
+verifie('réponse inattendue : dite, jamais un faux succès', !messageApresActivation([ra('truc')], maintenant).ok)
 bilan()

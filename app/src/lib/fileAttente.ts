@@ -60,7 +60,7 @@ const RPC_SECRETES = new Set(['regler_reveil_immediat'])
  * clair : comme `inviter`, elle n'a aucun préfixe d'écriture, donc jamais gardée.) De même `regler_pause_projet` (0093) : un projet qu'on croirait
  * en pause alors que l'ordre est resté sur l'appareil laisserait Claude travailler dessus.
  */
-const RPC_EN_DIRECT = new Set(['revoquer_cle_import', 'regler_pause_projet'])
+const RPC_EN_DIRECT = new Set(['revoquer_cle_import', 'regler_pause_projet', 'activer_session'])
 /** Tables sans valeur à rejouer (appareil, préférence jetable). */
 const TABLES_IGNOREES = new Set(['push_abonnements'])
 

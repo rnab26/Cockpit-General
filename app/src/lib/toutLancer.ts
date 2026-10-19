@@ -13,6 +13,22 @@ export interface EntreeLancer {
   /** null = pas encore lu (ou illisible : voir `erreur`). */
   etat: EtatRenforts | null
   erreur: string | null
+  /** 0102 : sessions vivantes et messages qui attendent (null = pas encore lu ou illisible : le voyant dit « état inconnu »). */
+  sessions?: EtatSessions | null
+}
+
+/** Ce que rend `etat_sessions` (0102). « Vivante » = la règle de la base (delai_signe), jamais recalculée ici. */
+export interface EtatSessions {
+  projet: string
+  en_pause: boolean
+  vivantes: number
+  chef: boolean
+  /** Messages de Raphaël qui attendent une réponse + réponses sans suite. */
+  messages: number
+  /** La routine de réveil est configurée (sinon : ouvrir Claude Code à la main). */
+  reveil_possible: boolean
+  reveil_at: string | null
+  reveil_ecart_min: number
 }
 
 export interface DecisionLancer {
@@ -95,4 +111,94 @@ export function messageApresLancer(rs: ResultatLancer[], now: Date): { ok: boole
   const sans = lances.filter((r) => r.sansChef).map((r) => r.nom)
   const aide = sans.length ? ` Aucune session n’est ouverte pour ${sans.join(', ')} : ouvre Claude Code sur ${sans.length > 1 ? 'ces projets' : 'ce projet'} pour que ça démarre.` : ''
   return { ok: true, reessayer: false, texte: `Demandé à ${hhmm(now)} : ${pl(n, 'chantier', 'chantiers')}. Ils passent dans « ça avance » dès qu’une session les prend.${aide}` }
+}
+
+// ---- Voyant des sessions et « Activer une session » (19 oct. 2026, chantier cb3d17df, migration 0102) ----
+// Raphaël : « Un voyant pour voir s'il y a des sessions actives directement. S'il n'y a pas de session active, appuyer pour activer
+// une session. […] Même sans chantier à lancer, si j'ai répondu et que j'attends des réponses, un interrupteur. » AUCUNE règle
+// nouvelle : « vivante » vient de la base (etat_sessions, delai_signe), le réveil de activer_session (reveiller_chef).
+
+export type EtatVoyant = 'vivante' | 'aucune' | 'pause' | 'inconnu'
+
+/** Phrase quand le réveil automatique n'est pas réglé : pas de bouton (il ne ferait rien), on dit quoi faire. */
+export const SANS_REVEIL = 'Réveil automatique non réglé : ouvre Claude Code sur ce projet.'
+
+export interface Voyant {
+  slug: string
+  nom: string
+  etat: EtatVoyant
+  /** Mots simples : « session ouverte », « aucune session », « en pause »… */
+  texte: string
+  /** Ce qui attend, en une phrase (« 2 chantiers · 1 message ») ; vide si rien. */
+  attend: string
+  nChantiers: number
+  nMessages: number
+  /** Renforts demandés qui attendent qu'une session les prenne. */
+  nDemandes: number
+  /** Le bouton « Activer une session » est proposé. */
+  peutActiver: boolean
+  /** Un réveil est déjà parti il y a peu : on le dit, pas de bouton (jamais de doublon). */
+  dejaDemande: boolean
+  /** Pourquoi pas de bouton, quand une session manque (null sinon). */
+  raison: string | null
+}
+
+const minutesDepuis = (iso: string | null | undefined, now: Date): number | null => {
+  const t = iso ? Date.parse(iso) : NaN
+  return Number.isNaN(t) ? null : Math.max(0, Math.floor((now.getTime() - t) / 60_000))
+}
+
+/** « il y a 3 min » / « à l’instant ». */
+export const ilYA = (min: number): string => (min < 1 ? 'à l’instant' : `il y a ${min} min`)
+
+export function voyantDe(e: EntreeLancer, now: Date): Voyant {
+  const nChantiers = e.etat ? e.etat.attente.reduce((s, a) => s + a.n, 0) : 0
+  const nMessages = e.sessions?.messages ?? 0
+  // Un renfort DEMANDÉ attend lui aussi une session (« Tout lancer » vient de le poser) : sans ça le voyant dirait « rien n'attend ».
+  const nDemandes = e.etat ? e.etat.renforts.filter((r) => r.statut === 'demande' && r.vivant).length : 0
+  const attend = [nChantiers ? pl(nChantiers, 'chantier', 'chantiers') : '', nMessages ? pl(nMessages, 'message', 'messages') : '',
+    nDemandes ? pl(nDemandes, 'renfort demandé', 'renforts demandés') : ''].filter(Boolean).join(' · ')
+  const base = { slug: e.slug, nom: e.nom, attend, nChantiers, nMessages, nDemandes, peutActiver: false, dejaDemande: false, raison: null as string | null }
+  if (e.enPause || e.sessions?.en_pause) return { ...base, etat: 'pause', texte: 'en pause', raison: 'En pause : rien ne démarre.' }
+  const s = e.sessions
+  if (!s) return { ...base, etat: 'inconnu', texte: e.erreur ? 'état illisible' : 'lecture en cours…', raison: e.erreur }
+  if (s.vivantes > 0 || s.chef) return { ...base, etat: 'vivante', texte: s.vivantes > 1 ? `${s.vivantes} sessions ouvertes` : 'session ouverte' }
+  const min = minutesDepuis(s.reveil_at, now)
+  const dejaDemande = min !== null && min < s.reveil_ecart_min
+  if (!attend) return { ...base, etat: 'aucune', texte: 'aucune session', raison: 'Rien n’attend : pas besoin de session.' }
+  if (!s.reveil_possible) return { ...base, etat: 'aucune', texte: 'aucune session', raison: SANS_REVEIL }
+  if (dejaDemande) return { ...base, etat: 'aucune', texte: 'aucune session', dejaDemande: true, raison: `Session demandée ${ilYA(min!)} : elle arrive.` }
+  return { ...base, etat: 'aucune', texte: 'aucune session', peutActiver: true }
+}
+
+export const voyantsDe = (entrees: EntreeLancer[], now: Date): Voyant[] => entrees.map((e) => voyantDe(e, now))
+
+/**
+ * « Tout lancer » active lui-même une session pour chaque projet lancé qui n'en a aucune. On ne filtre PAS sur « déjà demandé »
+ * ni sur « rien n'attend » : la demande de renforts vient de poser du travail, et la base ne tire jamais deux fois (activer_session).
+ */
+export const aActiverAvecLancer = (aLancer: string[], voyants: Voyant[]): string[] =>
+  aLancer.filter((slug) => { const v = voyants.find((x) => x.slug === slug); return !!v && v.etat === 'aucune' && v.raison !== SANS_REVEIL })
+
+export interface ResultatActivation { nom: string; resultat: string | null; reveil_at?: string | null; erreur: string | null }
+
+/** Phrase après « Activer une session » (un ou plusieurs projets) : réussi, déjà fait, ou échec visible. `reessayer` = vraie panne. */
+export function messageApresActivation(rs: ResultatActivation[], now: Date): { ok: boolean; texte: string; reessayer: boolean } {
+  const nom = (r: ResultatActivation) => (rs.length > 1 ? `${r.nom} : ` : '')
+  const maj = (t: string) => (rs.length > 1 ? t : t.charAt(0).toUpperCase() + t.slice(1))
+  const dits = (r: ResultatActivation): { ok: boolean; texte: string } => {
+    if (r.erreur) return { ok: false, texte: `${nom(r)}${r.erreur}` }
+    switch (r.resultat) {
+      case 'envoye': return { ok: true, texte: `${nom(r)}session demandée à ${hhmm(now)} : elle s’ouvre dans une ou deux minutes.` }
+      case 'deja_demande': { const m = minutesDepuis(r.reveil_at, now); return { ok: true, texte: `${nom(r)}session déjà demandée${m === null ? '' : ` ${ilYA(m)}`} : elle arrive.` } }
+      case 'session_vivante': return { ok: true, texte: `${nom(r)}une session est déjà ouverte.` }
+      case 'projet_en_pause': return { ok: false, texte: `${nom(r)}projet en pause : rallume-le dans Réglages du projet.` }
+      case 'pas_configure': return { ok: false, texte: `${nom(r)}le réveil automatique n’est pas réglé : ouvre Claude Code sur ce projet.` }
+      case 'aucune_chef': return { ok: false, texte: `${nom(r)}aucun réveil automatique actif : ouvre Claude Code sur ce projet.` }
+      default: return { ok: false, texte: `${nom(r)}réponse inattendue (${r.resultat ?? 'vide'}).` }
+    }
+  }
+  const lignes = rs.map(dits)
+  const ok = lignes.every((l) => l.ok)
+  return { ok, reessayer: rs.some((r) => r.erreur), texte: ok ? lignes.map((l) => maj(l.texte)).join(' · ') : 'Pas activée : ' + lignes.map((l) => l.texte).join(' · ') }
 }

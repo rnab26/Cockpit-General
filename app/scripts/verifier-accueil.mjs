@@ -109,7 +109,7 @@ try {
   verifie('par défaut : « À toi de jouer » et « Prêt à lancer » sont là', await page.getByTestId('a-toi').count() === 1 && await page.getByTestId('a-lancer').count() === 1)
   await page.screenshot({ path: `${CAPTURES}/accueil-par-defaut.png` })
   // Chantier 876e2e4b (16 oct. 2026) : UN seul bouton « Tout lancer » ; plus de bloc Renforts, de « session autonome », de mode autonome ni de pause.
-  verifie('écran principal : rien à lancer = aucun bloc « Tout lancer » (ni bouton éteint, ni « Rien n’attend »)', await page.getByTestId('tout-lancer').count() === 0 && await page.getByTestId('tout-lancer-bouton').count() === 0 && await page.getByTestId('reservations-expirees').count() === 0)
+  verifie('écran principal : rien à lancer = pas de bouton « Tout lancer » (ni éteint, ni « Rien n’attend »), seulement le voyant des sessions', await page.getByTestId('tout-lancer-bouton').count() === 0 && await page.getByTestId('tout-lancer-ligne').count() === 0 && await page.getByTestId('voyants-sessions').count() === 1 && await page.getByTestId('reservations-expirees').count() === 0)
   verifie('écran principal : plus de bloc Renforts, de « Lancer une session autonome », de mode autonome ni de pause', await page.getByTestId('renforts').count() === 0 && await page.getByTestId('lancer-renforts').count() === 0
     && await page.getByTestId('traiter').count() === 0 && await page.getByTestId('autonome-projet').count() === 0 && await page.getByTestId('pause-projet').count() === 0)
   // Ce projet de test n'a aucun chantier « sans personne » (les 4 demandes attendent Raphaël) : l'état vide doit être dit, bouton éteint AVEC sa raison.
