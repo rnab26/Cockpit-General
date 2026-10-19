@@ -112,3 +112,28 @@ export function phraseLiberee(
   const reprise = passage !== null ? `repris seul vers ${heureLisible(new Date(passage).toISOString(), ctx.now)}` : 'repris seul à la prochaine passe de la chef'
   return `Pris par ${qui}, sans signe de vie depuis ${c.libere_apres_min ?? DELAI_ABANDON_MIN} min : libéré à ${heureLisible(c.libere_at!, ctx.now)}, ${reprise}. Rien à faire de ton côté.`
 }
+
+// ---- « Travail réel » (0104, chantier a33cf882) : les seuils de la règle `etat_session`, réglables par projet ----
+// « Vivant » ne dépend plus d'un délai seul : un tour en cours, une tâche d'arrière-plan avec preuve, un calcul mesuré, ou l'ouverture
+// récente. Le délai « sans signe de vie » ci-dessus devient le REPLI (combien de temps une session muette reste affichée).
+// Mêmes bornes que `regler_travail_reel` (0104) et que les contraintes des colonnes.
+export const BORNES_TRAVAIL = {
+  tourMin: { min: 1, max: 120 }, fondMin: { min: 1, max: 1440 }, machineMin: { min: 2, max: 60 }, seuilPct: { min: 1, max: 400 }, pasS: { min: 30, max: 600 },
+} as const
+
+export interface ReglageTravail { tourMin: number; fondMin: number; machineMin: number; seuilPct: number; pasS: number }
+/** Défauts du battement machine (ceux des colonnes de la base ; `verifier-etat-travail.mjs` les compare). */
+export const MACHINE_DEFAUT = { seuilPct: 5, pasS: 120 } as const
+
+/** Message d'erreur des réglages « travail réel », ou null s'ils sont valables (mêmes règles que la base : jamais un envoi refusé). */
+export function erreurTravailReel(r: ReglageTravail): string | null {
+  const b = BORNES_TRAVAIL
+  const ok = (n: number, { min, max }: { min: number; max: number }) => Number.isInteger(n) && n >= min && n <= max
+  if (!ok(r.tourMin, b.tourMin)) return `Tour en cours : de ${b.tourMin.min} à ${b.tourMin.max} minutes.`
+  if (!ok(r.fondMin, b.fondMin)) return `Preuve d’une tâche en arrière-plan : de ${b.fondMin.min} à ${b.fondMin.max} minutes.`
+  if (!ok(r.machineMin, b.machineMin)) return `Calcul récent : de ${b.machineMin.min} à ${b.machineMin.max} minutes.`
+  if (!ok(r.seuilPct, b.seuilPct)) return `Seuil de calcul : de ${b.seuilPct.min} à ${b.seuilPct.max} %.`
+  if (!ok(r.pasS, b.pasS)) return `Mesure de la machine : toutes les ${b.pasS.min} à ${b.pasS.max} secondes.`
+  if (r.machineMin * 60 < 2 * r.pasS) return `Calcul récent : au moins deux mesures (${r.pasS} s) doivent tenir dans ${r.machineMin} min.`
+  return null
+}

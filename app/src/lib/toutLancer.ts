@@ -21,7 +21,10 @@ export interface EntreeLancer {
 export interface EtatSessions {
   projet: string
   en_pause: boolean
+  /** Sessions ouvertes = au travail + en veille (même sens que depuis 0102). */
   vivantes: number
+  /** 0104 : le détail, de la règle unique etat_session (jamais recalculé ici). Absent d'une base d'avant 0104. */
+  etats?: { au_travail: number; en_veille: number; sans_nouvelles: number }
   chef: boolean
   /** Messages de Raphaël qui attendent une réponse + réponses sans suite. */
   messages: number
@@ -116,7 +119,7 @@ export function messageApresLancer(rs: ResultatLancer[], now: Date): { ok: boole
 // ---- Voyant des sessions et « Activer une session » (19 oct. 2026, chantier cb3d17df, migration 0102) ----
 // Raphaël : « Un voyant pour voir s'il y a des sessions actives directement. S'il n'y a pas de session active, appuyer pour activer
 // une session. […] Même sans chantier à lancer, si j'ai répondu et que j'attends des réponses, un interrupteur. » AUCUNE règle
-// nouvelle : « au travail » vient de la base (etat_sessions → sessions_au_travail, 0103 : delai_signe ET un signe après l’ouverture), le réveil de activer_session (reveiller_chef).
+// nouvelle : les états viennent de la base (etat_sessions → etat_session, 0104 : travail réel, jamais un délai seul), le réveil de activer_session (reveiller_chef).
 
 export type EtatVoyant = 'vivante' | 'aucune' | 'pause' | 'inconnu'
 
@@ -127,6 +130,8 @@ export interface Voyant {
   slug: string
   nom: string
   etat: EtatVoyant
+  /** 0104 : ce que fait la session ouverte (au travail / en veille) ou « sans nouvelles » ; null sinon. */
+  signe: 'travail' | 'veille' | 'sans_nouvelles' | null
   /** Mots simples : « session ouverte », « aucune session », « en pause »… */
   texte: string
   /** Ce qui attend, en une phrase (« 2 chantiers · 1 message ») ; vide si rien. */
@@ -158,17 +163,24 @@ export function voyantDe(e: EntreeLancer, now: Date): Voyant {
   const nDemandes = e.etat ? e.etat.renforts.filter((r) => r.statut === 'demande' && r.vivant).length : 0
   const attend = [nChantiers ? pl(nChantiers, 'chantier', 'chantiers') : '', nMessages ? pl(nMessages, 'message', 'messages') : '',
     nDemandes ? pl(nDemandes, 'renfort demandé', 'renforts demandés') : ''].filter(Boolean).join(' · ')
-  const base = { slug: e.slug, nom: e.nom, attend, nChantiers, nMessages, nDemandes, peutActiver: false, dejaDemande: false, raison: null as string | null }
+  const base = { slug: e.slug, nom: e.nom, attend, nChantiers, nMessages, nDemandes, peutActiver: false, dejaDemande: false, raison: null as string | null, signe: null as Voyant['signe'] }
   if (e.enPause || e.sessions?.en_pause) return { ...base, etat: 'pause', texte: 'en pause', raison: 'En pause : rien ne démarre.' }
   const s = e.sessions
   if (!s) return { ...base, etat: 'inconnu', texte: e.erreur ? 'état illisible' : 'lecture en cours…', raison: e.erreur }
-  if (s.vivantes > 0 || s.chef) return { ...base, etat: 'vivante', texte: s.vivantes > 1 ? `${s.vivantes} sessions ouvertes` : 'session ouverte' }
+  const travaillent = s.etats?.au_travail ?? 0
+  if (s.vivantes > 0 || s.chef) {
+    // 0104 : trois états lisibles. « au travail » = une preuve de travail réel (tour en cours, calcul ou agent en arrière-plan) ; sinon « en veille ».
+    if (travaillent > 0) return { ...base, etat: 'vivante', signe: 'travail', texte: travaillent > 1 ? `${travaillent} sessions au travail` : 'session au travail' }
+    return { ...base, etat: 'vivante', signe: 'veille', texte: s.vivantes > 1 ? `${s.vivantes} sessions ouvertes, en veille` : 'session ouverte, en veille : rien ne tourne' }
+  }
+  const muette = (s.etats?.sans_nouvelles ?? 0) > 0
+  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session ne répond plus' : 'aucune session', signe: muette ? 'sans_nouvelles' as const : null }
   const min = minutesDepuis(s.reveil_at, now)
   const dejaDemande = min !== null && min < s.reveil_ecart_min
-  if (!attend) return { ...base, etat: 'aucune', texte: 'aucune session', raison: 'Rien n’attend : pas besoin de session.' }
-  if (!s.reveil_possible) return { ...base, etat: 'aucune', texte: 'aucune session', raison: SANS_REVEIL }
-  if (dejaDemande) return { ...base, etat: 'aucune', texte: 'aucune session', dejaDemande: true, raison: `Session demandée ${ilYA(min!)} : elle arrive.` }
-  return { ...base, etat: 'aucune', texte: 'aucune session', peutActiver: true }
+  if (!attend) return { ...base, ...aucune, raison: 'Rien n’attend : pas besoin de session.' }
+  if (!s.reveil_possible) return { ...base, ...aucune, raison: SANS_REVEIL }
+  if (dejaDemande) return { ...base, ...aucune, dejaDemande: true, raison: `Session demandée ${ilYA(min!)} : elle arrive.` }
+  return { ...base, ...aucune, peutActiver: true }
 }
 
 export const voyantsDe = (entrees: EntreeLancer[], now: Date): Voyant[] => entrees.map((e) => voyantDe(e, now))

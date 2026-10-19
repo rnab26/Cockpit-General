@@ -10,6 +10,7 @@ import { chantiersEnAttente } from '../lib/ouJenSuis.ts'
 import { CLE_PREF_SILENCE, silenceMsDe } from '../lib/presence.ts'
 import { PREF_LU_DEPUIS, PREF_LU_FILS, lireLus, reponsesNonLues, totalNonLus } from '../lib/lecture.ts'
 import { aToi, pastillesProjet } from '../lib/entonnoir.ts'
+import { reglagesParProjet } from '../lib/sessions.ts'
 import { estBranche } from '../lib/branchement.ts'
 import { bulleActive, cartesAFaire, notifsChat } from '../lib/bulleAide.ts'
 import { autonomeActif, chantiersPrenables, etatAutonome, travailEnCours } from '../lib/autonome.ts'
@@ -220,7 +221,8 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
 
   const pastilles = useMemo(() => {
     const m = new Map<string, Pastilles>()
-    m.set(VUE_TOUT, pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, null))
+    const reglagesProjets = reglagesParProjet(d.projets)
+    m.set(VUE_TOUT, pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, null, reglagesProjets))
     for (const p of d.projets) {
       // Le mode autonome se voit sur chaque onglet (0031) ; ambre s'il tourne sans rien à prendre.
       const auto = admin && autonomeActif(p, now)
@@ -228,7 +230,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
         : null
       // « Branché » = un démarrage avec le hook ET une vraie session (l'admin lit toutes les sessions ; un membre garde la règle d'avant).
       const branche = admin ? estBranche(p, now, d.sessions.filter((x) => x.projet_id === p.id)) : undefined
-      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id), autonome: auto, branche })
+      m.set(p.id, { ...pastillesProjet(d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, p.id, reglagesProjets), autonome: auto, branche })
     }
     return m
   }, [d.projets, d.chantiers, d.messages, d.activites, d.sessions, d.taches, now, silenceMs, admin, prenables])

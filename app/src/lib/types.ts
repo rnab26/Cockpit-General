@@ -38,6 +38,16 @@ export interface Projet {
   autonome_arret_vide_h?: number
   /** Minutes sans signe de vie après lesquelles une réservation est libérée (1-120, défaut 3 depuis 0046). */
   delai_sans_signe_min?: number
+  /** « Travail réel » (0104) : un tour en cours compte tant que son battement a moins de N min (1-120, 12). */
+  tour_silence_min?: number
+  /** Une tâche d'arrière-plan en cours reste une preuve de travail N min après sa dernière preuve (1-1440, 120). */
+  fond_plafond_min?: number
+  /** Battement machine (0104, ÉTEINT par défaut) : mesure le CPU des processus de la session et le remonte ; durée de validité d'une mesure active, seuil (% de CPU) et pas (s). */
+  machine_actif?: boolean
+  machine_fraicheur_min?: number
+  machine_seuil_pct?: number
+  machine_pas_s?: number
+  reveil_ecart_min?: number
   /** Une carte restée sans réponse N heures pendant que le travail continue se retire toute seule (0092 ; 0 = jamais, 24 par défaut ; une action : 7 fois plus). */
   epuration_delai_h?: number
   /** Premier passage qui n'a rien trouvé à prendre (0031), null dès qu'il y a du travail. */
@@ -244,6 +254,11 @@ export interface SessionClaude {
   /** Ce que la session fait à l'instant (0091), relevé par le hook ; vide hors d'un tour. Sert à une session SANS chantier. */
   action_live?: string | null
   action_live_at?: string | null
+  /** Battement machine (0104) : dernière mesure reçue, dernière mesure où un calcul tournait, CPU et nombre de processus de la dernière mesure. */
+  machine_vu_at?: string | null
+  machine_actif_at?: string | null
+  machine_cpu_pct?: number | null
+  machine_procs?: number | null
 }
 
 export type TypeTache = 'agent' | 'commande' | 'autre'
