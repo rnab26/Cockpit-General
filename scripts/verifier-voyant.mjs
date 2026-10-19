@@ -51,6 +51,10 @@ begin
   update cockpit.sessions set fin_at = now() where projet_id = pid;
   insert into cockpit.sessions (id, projet_id, demarre_at, vu_at) values ('banc-muette', pid, now() - interval '40 minutes', now() - interval '40 minutes');
   r := r || jsonb_build_object('muette_seule', cockpit.etat_sessions(slug)->'vivantes', 'muette_activer', cockpit.activer_session(slug)->>'resultat');
+  -- 0106 : la muette est « sans nouvelles » ; si elle DÉCLARE sa fin, elle n'est plus comptée du tout (ni sans nouvelles, ni ouverte)
+  r := r || jsonb_build_object('muette_avant', cockpit.etat_sessions(slug)->'etats'->'sans_nouvelles');
+  r := r || jsonb_build_object('fin_ok', cockpit.declarer_fin_session(slug, 'banc-muette')->>'etat', 'fin_bis', cockpit.declarer_fin_session(slug, 'banc-muette')->>'etat', 'fin_inconnue', cockpit.declarer_fin_session(slug, 'banc-nexiste-pas')->>'etat');
+  r := r || jsonb_build_object('muette_apres', cockpit.etat_sessions(slug)->'etats'->'sans_nouvelles');
   -- ... la même, mais qui a battu depuis son ouverture (vu_at > demarre_at) : au travail ; et une ouverte à l'instant : au travail (elle arrive)
   insert into cockpit.sessions (id, projet_id, demarre_at, vu_at) values ('banc-bat', pid, now() - interval '40 minutes', now() - interval '2 minutes');
   r := r || jsonb_build_object('bat', cockpit.etat_sessions(slug)->'vivantes', 'bat_activer', cockpit.activer_session(slug)->>'resultat');
@@ -99,6 +103,7 @@ else {
   verifie('la règle suit delai_signe : à 120 min la session de 90 min est vivante', res.vivantes_120 === 2, res.vivantes_120)
   verifie('0103 : une session ouverte il y a 40 min, jamais revue depuis son ouverture, n’est pas « au travail » (voyant gris)', res.muette_seule === 0, res.muette_seule)
   verifie('0103 : et « Activer » la remplace au lieu de dire « une session est déjà ouverte »', res.muette_activer !== 'session_vivante', res.muette_activer)
+  verifie('0106 : une session muette est « sans nouvelles » ; après --fin-session elle n’est plus comptée (ni sans nouvelles ni ouverte), rejeu sans effet, session inconnue dite', res.muette_avant === 1 && res.fin_ok === 'ok' && res.fin_bis === 'deja_finie' && res.fin_inconnue === 'session_inconnue' && res.muette_apres === 0, JSON.stringify([res.muette_avant, res.fin_ok, res.fin_bis, res.fin_inconnue, res.muette_apres]))
   verifie('0103 : la même session, qui a battu depuis son ouverture, est au travail ; activer ne réveille pas', res.bat === 1 && res.bat_activer === 'session_vivante', JSON.stringify([res.bat, res.bat_activer]))
   verifie('0103 : une session ouverte à l’instant compte (elle arrive)', res.neuve === 1, res.neuve)
   verifie('0103 : la fenêtre « vient de s’ouvrir » est reveil_ecart_min (30 min : une session de 20 min compte)', res.ecart_30 === 1, res.ecart_30)
