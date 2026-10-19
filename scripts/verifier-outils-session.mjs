@@ -66,6 +66,7 @@ try {
   verifie("relais : plus aucun create_session ni archive_session listé", !/create_session\(|archive_session\(/.test(s), s);
   verifie("relais : sans create_session, le renfort d'un autre projet est traité par la session elle-même (renfort.sh --suivant), pas laissé en attente", /Tu ES le renfort.* : lance .*--suivant [0-9a-f-]{36}/.test(s), s);
   verifie("relais : le dépôt de l'autre projet s'ajoute à la session (add_repo) avant le travail", /add_repo, clone .*register_repo_root.*COCKPIT_PROJET=autre/.test(s), s);
+  verifie("relais : sans create_session, un message sans réponse d'un autre projet se traite depuis la session (connecter.sh --projet, progression.sh --point), pas laissé en attente", /ne peux pas en ouvrir.*connecter\.sh --projet autre.*COCKPIT_PROJET=autre scripts\/progression\.sh/.test(s), s);
   r = chef(["--sans-outil", "rm_rf"]);
   verifie("nom inconnu refusé", r.status === 2, r.texte);
 
