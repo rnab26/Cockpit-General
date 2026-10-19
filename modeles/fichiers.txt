@@ -48,3 +48,4 @@ scripts/prochaine-migration.sh
 scripts/deployer-fonction.sh
 scripts/rapprocher.py
 scripts/machine.py
+scripts/fusion_auto.py

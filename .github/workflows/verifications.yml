@@ -18,6 +18,9 @@ jobs:
       # Les reçus : le lecteur Python (sessions) et son port TypeScript (fonction cockpit-recus) lisent pareil, au caractère près (14 oct. 2026).
       - name: Reçus Claude, lecteur Python = lecteur TypeScript
         run: node --experimental-strip-types scripts/verifier-recus-parite.mjs
+      # Fusion automatique des PR sûres (19 oct. 2026) : la règle d'éligibilité sur une table de cas, le workflow, pr-a-fusionner.sh sur une base simulée.
+      - name: Fusion automatique, règle et garde-fous
+        run: node scripts/verifier-fusion-auto.mjs
       # Réglages illisibles = Claude Code ignore TOUS les hooks du projet (30 sept. 2026).
       - name: .claude/settings.json est du JSON valide
         run: for f in .claude/settings*.json; do [ -f "$f" ] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f"; done
