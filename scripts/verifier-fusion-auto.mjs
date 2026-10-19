@@ -125,7 +125,7 @@ printf '%s\\n' "$*" >> "${dossier}/dem.log"
     const lire = (f) => (existsSync(join(dossier, f)) ? readFileSync(join(dossier, f), 'utf8') : '')
     return { code: r.status, sortie: r.stdout + r.stderr, dem: lire('dem.log'), sql: lire('sql.log') }
   }
-  const base = ['--etat', 'open', '--merge-state', 'clean', '--branche', 'agent/x', '--meme-depot', 'oui', '--titre', 'Un titre']
+  const base = ['--etat', 'open', '--merge-state', 'clean', '--branche', 'agent/x', '--meme-depot', 'oui', '--fusion-presente', 'oui', '--titre', 'Un titre']
   const sure = lance(['501', ...base, '--fichiers', 'app/src/a.tsx,docs/x.md'])
   verifie('PR sûre : AUCUNE carte posée, le script dit qu’elle se fusionne seule', sure.code === 0 && sure.dem === '' && /AUTO : PR #501 se fusionne seule/.test(sure.sortie), sure)
   const sureAvecCarte = lance(['502', ...base, '--fichiers', 'app/src/a.tsx'], 1)
@@ -149,6 +149,12 @@ printf '%s\\n' "$*" >> "${dossier}/dem.log"
   verifie('contrôles en cours : rien n’est changé, aucune carte (le comportement d’avant)', enCours.dem === '' && /PAS PRÊTE/.test(enCours.sortie) && !/AUTO/.test(enCours.sortie), enCours)
   const fermee = lance(['511', '--fermee'])
   verifie('PR fermée : toujours retirée comme avant', fermee.code === 0 && /aucune carte à retirer/.test(fermee.sortie), fermee)
+  const sansWorkflow = lance(['513', ...base, '--fusion-presente', 'non', '--fichiers', 'docs/x.md'])
+  verifie('dépôt SANS le workflow de fusion (FacePro, Melissa, Trieur) : PR « sûre » = carte posée, jamais retirée en silence', sansWorkflow.code === 0 && /--question Fusionne la PR #513/.test(sansWorkflow.dem) && /n'a pas la fusion automatique/.test(sansWorkflow.dem) && !/AUTO/.test(sansWorkflow.sortie), sansWorkflow)
+  const sansWorkflowAvecCarte = lance(['514', ...base, '--fusion-presente', 'non', '--fichiers', 'app/src/a.tsx'], 1)
+  verifie('dépôt sans le workflow : une carte déjà posée n\'est PAS retirée', !/answered_by = null/.test(sansWorkflowAvecCarte.sql) && !/AUTO/.test(sansWorkflowAvecCarte.sortie), sansWorkflowAvecCarte)
+  const presenteInvalide = lance(['515', '--fusion-presente', 'peutetre'])
+  verifie('--fusion-presente invalide refusé', presenteInvalide.code === 2, presenteInvalide)
   const mauvais = lance(['512', '--meme-depot', 'peutetre'])
   verifie('--meme-depot invalide refusé', mauvais.code === 2, mauvais)
 } finally { rmSync(dossier, { recursive: true, force: true }) }

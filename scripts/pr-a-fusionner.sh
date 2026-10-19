@@ -51,7 +51,7 @@ RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"; DEM="${COCKPIT_DEM:-$RACINE/scripts/demander.sh}"   # chemins absolus : marche aussi depuis le cache d'un projet branché (COCKPIT_SQL / COCKPIT_DEM : base simulée des bancs)
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 
-projet="${COCKPIT_PROJET:-}"; n=""; fermee=0; etat=""; titre=""; mstate=""; ci=""; fichiers_donnes=""; branche_donnee=""; meme_donne=""; age_donne=""
+projet="${COCKPIT_PROJET:-}"; n=""; fermee=0; etat=""; titre=""; mstate=""; ci=""; fichiers_donnes=""; branche_donnee=""; meme_donne=""; age_donne=""; fusion_presente=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --projet) projet="${2:-}"; shift 2 ;;
@@ -64,6 +64,7 @@ while [ $# -gt 0 ]; do
     --branche)    branche_donnee="${2:-}"; shift 2 ;;
     --meme-depot) meme_donne="${2:-}"; shift 2 ;;
     --age-min)    age_donne="${2:-}"; shift 2 ;;
+    --fusion-presente) fusion_presente="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
     -*) echo "Argument inconnu : $1" >&2; exit 2 ;;
     *) n="$1"; shift ;;
@@ -72,6 +73,7 @@ done
 [[ "$n" =~ ^[0-9]+$ ]] || { echo "Usage : $0 <numéro de PR> [--fermee] [--etat open|closed|merged] [--titre \"…\"]" >&2; exit 2; }
 case "$etat" in ""|open|closed|merged) ;; *) echo "--etat : open, closed ou merged." >&2; exit 2 ;; esac
 case "$meme_donne" in ""|oui|non) ;; *) echo "--meme-depot : oui ou non." >&2; exit 2 ;; esac
+case "$fusion_presente" in ""|oui|non) ;; *) echo "--fusion-presente : oui ou non." >&2; exit 2 ;; esac
 [[ "$age_donne" =~ ^[0-9]*$ ]] || { echo "--age-min : un nombre de minutes." >&2; exit 2; }
 case "$ci" in ""|ok|echec|cours) ;; *) echo "--ci : ok, echec ou cours." >&2; exit 2 ;; esac
 [ -n "$projet" ] || { echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2; }
@@ -220,6 +222,20 @@ if [ "$etat" = "open" ] || [ -z "$etat" ]; then
   decision=$(printf '%s' "$verdict" | jq -r '.decision // "carte"' 2>/dev/null || echo carte)
   raison=$(printf '%s' "$verdict" | jq -r '.raison // ""' 2>/dev/null || echo "")
   delai=$(printf '%s' "$verdict" | jq -r '.delai_repli_min // 20' 2>/dev/null || echo 20)
+  # Cette règle ne vaut QUE pour un dépôt qui porte le workflow de fusion (.github/workflows/fusion-auto.yml). Sans lui, personne
+  # ne fusionne : la carte disparaîtrait pour rien (constaté le 19 oct. : FacePro, Melissa, Trieur n'ont pas ce workflow).
+  # Illisible (dépôt privé sans jeton, réseau) = absent = carte : on ne promet jamais une fusion qu'on n'a pas vue.
+  if [ "$decision" = "auto" ]; then
+    presente="$fusion_presente"
+    if [ -z "$presente" ]; then
+      code_wf=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$depot/contents/.github/workflows/fusion-auto.yml" 2>/dev/null || echo "000")
+      if [ "$code_wf" = "200" ]; then presente=oui; else presente=non; fi
+    fi
+    if [ "$presente" != "oui" ]; then
+      decision=carte; raison=""
+      pourquoi_carte="Ce projet n'a pas la fusion automatique : la fusion est à toi."
+    fi
+  fi
   if [ "$decision" = "auto" ]; then
     age="$age_donne"
     [ -n "$age" ] || age=$(printf '%s' "$info" | jq -r 'if .updated_at then ((now - (.updated_at | fromdate)) / 60 | floor) else "" end' 2>/dev/null || echo "")

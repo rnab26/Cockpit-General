@@ -121,12 +121,29 @@ try {
   await page.waitForFunction(() => /[Ss]ession demandée à/.test(document.querySelector('[data-testid="activer-resultat"]')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {})
   verifie('« Réessayer » marche : session demandée', /[Ss]ession demandée à \d\d:\d\d/.test(await page.getByTestId('activer-resultat').innerText()) && appels.length === 3, appels.length)
 
-  // --- 4. une session vivante en base : voyant vert, plus de bouton
+  // --- 4. une session vivante en base : voyant vert, plus de bouton (0104 : trois états lisibles)
   sql(`insert into sessions (id, projet_id, vu_at) values (${q('banc-voyant-' + randomUUID().slice(0, 6))}, ${q(P)}, now())`)
   await ouvrir()
-  verifie('session vivante : voyant vert « session ouverte »', (await voyant().getAttribute('data-etat')) === 'vivante' && /session ouverte/.test(await voyant().innerText()), await voyant().innerText())
+  verifie('session ouverte à l’instant : voyant vert « session au travail » (elle arrive)', (await voyant().getAttribute('data-etat')) === 'vivante' && (await voyant().getAttribute('data-signe')) === 'travail' && /session au travail/.test(await voyant().innerText()), await voyant().innerText())
   verifie('session vivante : plus de bouton « Activer »', await page.getByTestId('activer-session').count() === 0)
   await page.screenshot({ path: `${CAPTURES}/voyant-vivante.png` })
+  // en veille : ouverte depuis longtemps, un signe récent, aucun tour ni tâche
+  sql(`update sessions set demarre_at = now() - interval '100 minutes', vu_at = now() - interval '10 minutes' where projet_id = ${q(P)}`)
+  await ouvrir()
+  verifie('session ouverte qui attend : voyant « en veille : rien ne tourne », verte pâle, pas de bouton', (await voyant().getAttribute('data-signe')) === 'veille' && /en veille/.test(await voyant().innerText()) && await page.getByTestId('activer-session').count() === 0, await voyant().innerText())
+  await page.screenshot({ path: `${CAPTURES}/voyant-veille.png` })
+  // au travail par un agent en arrière-plan : session muette depuis 30 min, une tâche en cours vue il y a 5 min
+  sql(`insert into taches (session_id, projet_id, tache_id, type, statut, vu_at) select id, projet_id, 'banc-agent', 'agent', 'en_cours', now() - interval '5 minutes' from sessions where projet_id = ${q(P)}`)
+  sql(`update sessions set vu_at = now() - interval '30 minutes' where projet_id = ${q(P)}`)
+  await ouvrir()
+  verifie('agent en arrière-plan avec preuve : « session au travail » alors que la session est muette depuis 30 min', (await voyant().getAttribute('data-signe')) === 'travail' && /session au travail/.test(await voyant().innerText()), await voyant().innerText())
+  sql(`delete from taches where projet_id = ${q(P)}`)
+  // sans nouvelles : ouverte il y a 40 min, jamais un signe depuis, rien n'attend d'autre : gris attention, le bouton « Activer » reste
+  sql(`update sessions set demarre_at = now() - interval '40 minutes', vu_at = now() - interval '40 minutes' where projet_id = ${q(P)}`)
+  sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps) values (${q(P)}, 'Raphaël', 'proprietaire', 'info', 'une question sans réponse')`)
+  await ouvrir()
+  verifie('session sans nouvelles : voyant « sans nouvelles », le bouton « Activer une session » revient', (await voyant().getAttribute('data-signe')) === 'sans_nouvelles' && /sans nouvelles/.test(await voyant().innerText()) && await page.getByTestId('activer-session').count() === 1, await voyant().innerText())
+  await page.screenshot({ path: `${CAPTURES}/voyant-sans-nouvelles.png` })
 
   // --- 5. un chantier attend, session finie : « Tout lancer » active lui-même une session
   sql(`update sessions set fin_at = now() where projet_id = ${q(P)}`)

@@ -1,8 +1,9 @@
 // « Qui travaille » : sessions Claude Code et leurs tâches (agents, commandes),
 // src/lib/sessions.ts, migration 0008. La règle d'or : une barre seulement
 // quand l'agent a signalé son avancement ; jamais un chiffre inventé.
+import { readFileSync } from 'node:fs'
 import { verifie, bilan } from './_assert.ts'
-import { sessionActive, quiTravaille, titreSession, libellePause, resumeTravail, resteTache, vueTache, agentVivantDuChantier, presenceAvecAgent, dureeLisible, libelleTache } from '../src/lib/sessions.ts'
+import { sessionActive, etatTravail, reglagesTravailDe, REGLAGES_TRAVAIL_DEFAUT, quiTravaille, titreSession, libellePause, resumeTravail, resteTache, vueTache, agentVivantDuChantier, presenceAvecAgent, dureeLisible, libelleTache } from '../src/lib/sessions.ts'
 import { presenceDe } from '../src/lib/entonnoir.ts'
 import { presenceChantier } from '../src/lib/presence.ts'
 
@@ -31,7 +32,8 @@ console.log('verifier-sessions')
   verifie('signe récent (1 min) → active', sessionActive(S('s', 'p'), t, now, SILENCE))
   verifie('finie (fin_at) → jamais active', !sessionActive(S('s', 'p', { fin_at: il(1) }), t, now, SILENCE))
   verifie('silence de 40 min, pas de tour, pas de tâche → inactive', !sessionActive(S('s', 'p', { vu_at: il(40) }), t, now, SILENCE))
-  verifie('répond depuis 25 min (tour en cours) → active', sessionActive(S('s', 'p', { vu_at: il(25), tour_en_cours: true }), t, now, SILENCE))
+  verifie('répond, battement d’il y a 5 min (tour en cours) → active', sessionActive(S('s', 'p', { vu_at: il(5), tour_en_cours: true }), t, now, SILENCE))
+  verifie('tour en cours dont le battement a 25 min (repli 15 min) → plus affichée', !sessionActive(S('s', 'p', { vu_at: il(25), tour_en_cours: true }), t, now, SILENCE))
   verifie('« tour en cours » figé depuis 45 min → plus active', !sessionActive(S('s', 'p', { vu_at: il(45), tour_en_cours: true }), t, now, SILENCE))
   verifie('muette 40 min mais un agent en cours vu il y a 20 min → active', sessionActive(S('s', 'p', { vu_at: il(40) }), [T('t', 's', 'p', { vu_at: il(20) })], now, SILENCE))
   verifie('…mais pas si la tâche n’a pas été vue depuis 3 h', !sessionActive(S('s', 'p', { vu_at: il(40) }), [T('t', 's', 'p', { vu_at: il(180) })], now, SILENCE))
@@ -85,7 +87,7 @@ console.log('verifier-sessions')
   verifie('p2 : la barre vivante sans session suivie reste visible à part ; la vieille (2 h) non',
     p2.activitesSeules.length === 1 && p2.activitesSeules[0].session === 'claude/seule')
   const r = resumeTravail(q)
-  verifie('résumé : « 3 sessions · 2 agents · 1 commande en cours »', r.texte === '3 sessions · 2 agents · 1 commande en cours', r.texte)
+  verifie('résumé : « 2 sessions · 2 agents · 1 commande en cours · 1 en veille » (la session ouverte sans rien qui tourne n’est plus comptée « en cours »)', r.texte === '2 sessions · 2 agents · 1 commande en cours · 1 en veille' && r.enVeille === 1 && r.sansNouvelles === 0, r.texte)
   verifie('session du mode autonome : « 🤖 Session autonome », pas sa longue consigne', titreSession({ id: 'x', sujet: 'Tu es la SESSION AUTONOME du projet cockpit…', branche: null }) === 'Session autonome')
   verifie('session sans sujet ni branche : « Session sans nom (…) », jamais l’id nu', titreSession({ id: '26486ea7-9936-5198', sujet: null, branche: null }) === 'Session sans nom (26486ea7)')
   verifie('filtré sur un projet', quiTravaille(sessions, taches, activites, [], now, SILENCE, [], 'p1').length === 1)
@@ -121,5 +123,31 @@ console.log('verifier-sessions')
   verifie('…avec le détail en petit', v.pauseDetail === 'resets 4am')
   verifie('…et pas comptée « au travail » (ni ses agents)', resumeTravail(q).sessions === 0 && resumeTravail(q).agents === 0 && resumeTravail(q).enPause === 1 && /1 en pause/.test(resumeTravail(q).texte), resumeTravail(q))
   verifie('raison inconnue : dite quand même', libellePause('quota_bizarre') === 'En pause — arrêt (quota_bizarre)' && libellePause('overloaded').includes('surchargés'))
+}
+// 6. « Travail réel » (0104, chantier a33cf882) : LA règle, sur la table de cas partagée avec la base (scripts/verifier-etat-travail.mjs).
+{
+  const table = JSON.parse(readFileSync(new URL('./cas-etat-travail.json', import.meta.url), 'utf8')) as {
+    reglages: Record<string, number>
+    cas: { nom: string; s: { demarre: number; vu: number; tour?: boolean; fin?: number; machine?: number }; taches?: { vu: number; progres?: number; statut?: string; autre?: boolean }[]; attendu: string }[]
+  }
+  verifie('les défauts de l’écran sont ceux de la table (et donc de la base)', JSON.stringify(REGLAGES_TRAVAIL_DEFAUT) === JSON.stringify(table.reglages), JSON.stringify(REGLAGES_TRAVAIL_DEFAUT))
+  for (const c of table.cas) {
+    const s = S('sc', 'p', { demarre_at: il(c.s.demarre), vu_at: il(c.s.vu), tour_en_cours: !!c.s.tour, fin_at: c.s.fin ? il(c.s.fin) : null, machine_actif_at: c.s.machine ? il(c.s.machine) : null })
+    const taches = (c.taches ?? []).map((x, i) => T(`tc${i}`, x.autre ? 'autre' : 'sc', 'p', { vu_at: il(x.vu), progres_at: x.progres ? il(x.progres) : null, statut: x.statut ?? 'en_cours' }))
+    const e = etatTravail(s, taches, now, table.reglages as never)
+    verifie(`${c.nom} → ${c.attendu}`, e === c.attendu, e)
+  }
+  // Les seuils se règlent par projet : rien n'est en dur.
+  const s = S('sr', 'p', { demarre_at: il(300), vu_at: il(30), tour_en_cours: true })
+  verifie('tour de 30 min de battement : sans nouvelles à 12 min, au travail si le réglage passe à 45', etatTravail(s, [], now, reglagesTravailDe({ tour_silence_min: 12 })) === 'sans_nouvelles' && etatTravail(s, [], now, reglagesTravailDe({ tour_silence_min: 45 })) === 'au_travail')
+  verifie('le repli est le réglage (delai_sans_signe_min) : 20 min → absente, 120 min → en veille', etatTravail(S('sv', 'p', { demarre_at: il(300), vu_at: il(30) }), [], now, reglagesTravailDe({ delai_sans_signe_min: 20 })) === 'absente' && etatTravail(S('sv', 'p', { demarre_at: il(300), vu_at: il(30) }), [], now, reglagesTravailDe({ delai_sans_signe_min: 120 })) === 'en_veille')
+  // L'écran : trois états lisibles, une session « au travail » se compte, les deux autres s'annoncent à part.
+  const sessions = [S('t1', 'p', { tour_en_cours: true, vu_at: il(1) }), S('t2', 'p', { demarre_at: il(300), vu_at: il(30) }), S('t3', 'p', { demarre_at: il(40), vu_at: il(40) }), S('t4', 'p', { demarre_at: il(300), vu_at: il(100) })]
+  const q = quiTravaille(sessions, [T('x', 't4', 'p', { vu_at: il(100) })], [], [], now, 60 * 60_000, [])
+  const r = resumeTravail(q)
+  const etats = q[0].sessions.map((v) => `${v.session.id}:${v.travail}`).join(' ')
+  verifie('liste : au travail d’abord (t1 tour, t4 tâche), puis sans nouvelles (t3), puis en veille (t2)', etats === 't1:au_travail t4:au_travail t3:sans_nouvelles t2:en_veille', etats)
+  verifie('résumé : 2 en cours, 1 en veille, 1 sans nouvelles, dits en mots simples', r.sessions === 2 && r.enVeille === 1 && r.sansNouvelles === 1 && r.texte.includes('1 en veille') && r.texte.includes('1 sans nouvelles'), r.texte)
+  verifie('mots simples : « travaille en arrière-plan » / « sans nouvelles »', q[0].sessions[1].etat === 'travaille en arrière-plan' && q[0].sessions[2].etat.startsWith('sans nouvelles'), q[0].sessions.map((v) => v.etat).join(' | '))
 }
 bilan('verifier-sessions')

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Bot, CircleCheck, Terminal } from 'lucide-react'
 import { useCockpit, useGlobal } from '../contexte.ts'
-import { vueTache, tacheEnCoursVivante, activiteDeTache, type VueSession, type VueTache } from '../lib/sessions.ts'
+import { vueTache, tacheEnCoursVivante, reglagesTravailDe, activiteDeTache, type VueSession, type VueTache } from '../lib/sessions.ts'
 import { actionDeLActivite } from '../lib/entonnoir.ts'
 import type { Activite } from '../lib/types.ts'
 import { Progression } from './Progression.tsx'
@@ -31,7 +31,7 @@ export function BlocSession({ vs, projetId }: { vs: VueSession; projetId: string
         </div>
       ) : (
         <p className="truncate text-xs text-texte-2">
-          <span className={vs.repond ? 'font-medium text-ok' : ''} data-testid="etat-session">{vs.repond ? 'répond en ce moment' : vs.titre.startsWith('Session autonome') ? 'en veille — se réveille toute seule chaque heure' : 'attend ton prochain message'}</span>
+          <span className={vs.travail === 'au_travail' ? 'font-medium text-ok' : vs.travail === 'sans_nouvelles' ? 'font-medium text-attention' : ''} data-testid="etat-session" data-travail={vs.travail}>{vs.travail === 'en_veille' && vs.titre.startsWith('Session autonome') ? 'en veille — se réveille toute seule chaque heure' : vs.etat}</span>
           {' · '}{vs.dernierSigne}
         </p>
       )}
@@ -100,7 +100,7 @@ export function LigneTache({ v, projetId, sansChantier = false, enPause = false 
 /** Dans la conversation d'un chantier : les assistants et commandes en cours qui y travaillent. */
 export function TachesDuChantier({ chantierId }: { chantierId: string }) {
   const { taches, chantiers, now, projet } = useCockpit()
-  const liste = taches.filter((t) => t.chantier_id === chantierId && tacheEnCoursVivante(t, now))
+  const liste = taches.filter((t) => t.chantier_id === chantierId && tacheEnCoursVivante(t, now, reglagesTravailDe(projet).fondMin * 60_000))
   if (!liste.length) return null
   return (
     <div className="space-y-1.5" data-testid="taches-du-chantier">

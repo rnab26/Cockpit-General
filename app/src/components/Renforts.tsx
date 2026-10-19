@@ -4,7 +4,8 @@ import type { Projet } from '../lib/types.ts'
 import { useGlobal } from '../contexte.ts'
 import { supabase, messageErreur } from '../lib/supabase.ts'
 import { useToast } from '../ui/Toast.tsx'
-import { DELAI_ABANDON_MIN, DELAI_ABANDON_MIN_BORNES, erreurDelaiSansSigne } from '../lib/silence.ts'
+import { BORNES_TRAVAIL, DELAI_ABANDON_MIN, DELAI_ABANDON_MIN_BORNES, MACHINE_DEFAUT, erreurDelaiSansSigne, erreurTravailReel } from '../lib/silence.ts'
+import { REGLAGES_TRAVAIL_DEFAUT } from '../lib/sessions.ts'
 import { Button } from '../ui/Button.tsx'
 import { PointProjet } from './Icones.tsx'
 import { LIBELLE_LANCER, LIEN_CLAUDE_CODE, etapesTraiter, etatTraiter, phraseTraiter } from '../lib/traiter.ts'
@@ -381,6 +382,18 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   const { rechargerProjets } = useGlobal()
   const [sansSigne, setSansSigne] = useState(projet.delai_sans_signe_min ?? DELAI_ABANDON_MIN)
   useEffect(() => { setSansSigne(projet.delai_sans_signe_min ?? DELAI_ABANDON_MIN) }, [projet.delai_sans_signe_min])
+  // « Travail réel » (0104) : ce qui prouve qu'une session travaille vraiment. Valeurs de la ligne du projet, sinon défauts de la base.
+  const [tourMin, setTourMin] = useState(projet.tour_silence_min ?? REGLAGES_TRAVAIL_DEFAUT.tourMin)
+  const [fondMin, setFondMin] = useState(projet.fond_plafond_min ?? REGLAGES_TRAVAIL_DEFAUT.fondMin)
+  const [machineOn, setMachineOn] = useState(projet.machine_actif ?? false)
+  const [machineMin, setMachineMin] = useState(projet.machine_fraicheur_min ?? REGLAGES_TRAVAIL_DEFAUT.machineMin)
+  const [seuilPct, setSeuilPct] = useState(projet.machine_seuil_pct ?? MACHINE_DEFAUT.seuilPct)
+  const [pasS, setPasS] = useState(projet.machine_pas_s ?? MACHINE_DEFAUT.pasS)
+  useEffect(() => {
+    setTourMin(projet.tour_silence_min ?? REGLAGES_TRAVAIL_DEFAUT.tourMin); setFondMin(projet.fond_plafond_min ?? REGLAGES_TRAVAIL_DEFAUT.fondMin)
+    setMachineOn(projet.machine_actif ?? false); setMachineMin(projet.machine_fraicheur_min ?? REGLAGES_TRAVAIL_DEFAUT.machineMin)
+    setSeuilPct(projet.machine_seuil_pct ?? MACHINE_DEFAUT.seuilPct); setPasS(projet.machine_pas_s ?? MACHINE_DEFAUT.pasS)
+  }, [projet.tour_silence_min, projet.fond_plafond_min, projet.machine_actif, projet.machine_fraicheur_min, projet.machine_seuil_pct, projet.machine_pas_s])
   const [envoi, setEnvoi] = useState(false)
   const lire = useCallback(async () => {
     const { data, error } = await supabase.rpc('etat_modeles', { p_projet: projet.slug })
@@ -393,18 +406,21 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   }, [projet.slug])
   useEffect(() => { void lire() }, [lire])
   const enregistrer = async () => {
-    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin) ?? erreurSeuilBascule(seuil) ?? erreurDelaiSansSigne(sansSigne)
+    const pb = erreurReglageModeles(agents, revueH) ?? erreurReglageFermeture(fermMin) ?? erreurSeuilBascule(seuil) ?? erreurDelaiSansSigne(sansSigne) ?? erreurTravailReel({ tourMin, fondMin, machineMin, seuilPct, pasS })
     if (pb) { toast.erreur(pb); return }
     setEnvoi(true)
     const { error } = await supabase.rpc('regler_modeles', { p_projet: projet.slug, p_code: code, p_leger: leger, p_effort: effort, p_agents: agents, p_revue_h: revueH })
     const rb = error ? null : await supabase.rpc('regler_bascule_seuils', { p_projet: projet.slug, p_seuil: seuil, p_haiku: haikuOk })
     const rf = error || rb?.error ? null : await supabase.rpc('regler_fermeture', { p_projet: projet.slug, p_auto: fermAuto, p_delai_min: fermMin })
     const rs = error || rb?.error || rf?.error ? null : await supabase.rpc('regler_sans_signe', { p_projet: projet.slug, p_min: sansSigne })
+    const rt = error || rb?.error || rf?.error || rs?.error ? null
+      : await supabase.rpc('regler_travail_reel', { p_projet: projet.slug, p_tour_min: tourMin, p_fond_min: fondMin, p_machine: machineOn, p_machine_min: machineMin, p_seuil_pct: seuilPct, p_pas_s: pasS })
     setEnvoi(false)
     if (error) { toast.erreur(`Modèles non enregistrés : ${messageErreur(error)}`); return }
     if (rb?.error) { toast.erreur(`Bascule non enregistrée : ${messageErreur(rb.error)}`); return }
     if (rf?.error) { toast.erreur(`Fermeture des sessions non enregistrée : ${messageErreur(rf.error)}`); return }
     if (rs?.error) { toast.erreur(`Délai sans signe de vie non enregistré : ${messageErreur(rs.error)}`); return }
+    if (rt?.error) { toast.erreur(`Réglages « au travail » non enregistrés : ${messageErreur(rt.error)}`); return }
     void rechargerProjets()
     toast.succes(`Réglages enregistrés : les modèles servent aux prochains agents lancés ; une réservation sans signe de vie depuis ${sansSigne} min est libérée.`)
     void lire()
@@ -483,10 +499,44 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
         </label>
       </div>
       <div data-testid="sans-signe-reglage">
-        <label className="text-xs text-texte-2">Libérer un chantier réservé sans signe de vie depuis (minutes, {DELAI_ABANDON_MIN_BORNES.min} à {DELAI_ABANDON_MIN_BORNES.max})
+        <label className="text-xs text-texte-2">Libérer un chantier réservé sans signe de vie depuis (minutes, {DELAI_ABANDON_MIN_BORNES.min} à {DELAI_ABANDON_MIN_BORNES.max}) ; c’est aussi combien de temps une session muette reste affichée
           <input type="number" inputMode="numeric" min={DELAI_ABANDON_MIN_BORNES.min} max={DELAI_ABANDON_MIN_BORNES.max} value={sansSigne} onChange={(e) => setSansSigne(Number(e.target.value))}
             className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="sans-signe-delai" />
         </label>
+      </div>
+      <div className="space-y-2 rounded-lg border border-bord p-2" data-testid="travail-reel-reglages">
+        <p className="text-xs font-medium">Une session « au travail », c’est quoi ?</p>
+        <p className="text-xs leading-snug text-texte-2">Au travail = un tour en cours, ou un agent / une commande en arrière-plan qui donne des signes, ou un calcul mesuré sur la machine. Sinon : « en veille » (ouverte, rien ne tourne) ou « sans nouvelles » (plus aucun signe).</p>
+        <div className="flex flex-wrap gap-3">
+          <label className="text-xs text-texte-2">Un tour en cours compte (minutes, {BORNES_TRAVAIL.tourMin.min} à {BORNES_TRAVAIL.tourMin.max})
+            <input type="number" inputMode="numeric" min={BORNES_TRAVAIL.tourMin.min} max={BORNES_TRAVAIL.tourMin.max} value={tourMin} onChange={(e) => setTourMin(Number(e.target.value))}
+              className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="travail-tour" />
+          </label>
+          <label className="text-xs text-texte-2">Un agent ou une commande en arrière-plan compte (minutes, {BORNES_TRAVAIL.fondMin.min} à {BORNES_TRAVAIL.fondMin.max})
+            <input type="number" inputMode="numeric" min={BORNES_TRAVAIL.fondMin.min} max={BORNES_TRAVAIL.fondMin.max} value={fondMin} onChange={(e) => setFondMin(Number(e.target.value))}
+              className="ml-2 h-9 w-20 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="travail-fond" />
+          </label>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-texte-2">
+          <input type="checkbox" checked={machineOn} onChange={(e) => setMachineOn(e.target.checked)} className="h-5 w-5" data-testid="travail-machine" />
+          Mesurer les calculs sur la machine de la session (essai, éteint par défaut)
+        </label>
+        {machineOn ? (
+          <div className="flex flex-wrap gap-3" data-testid="travail-machine-details">
+            <label className="text-xs text-texte-2">Un calcul mesuré compte (minutes, {BORNES_TRAVAIL.machineMin.min} à {BORNES_TRAVAIL.machineMin.max})
+              <input type="number" inputMode="numeric" min={BORNES_TRAVAIL.machineMin.min} max={BORNES_TRAVAIL.machineMin.max} value={machineMin} onChange={(e) => setMachineMin(Number(e.target.value))}
+                className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="travail-machine-min" />
+            </label>
+            <label className="text-xs text-texte-2">à partir de (% de processeur, {BORNES_TRAVAIL.seuilPct.min} à {BORNES_TRAVAIL.seuilPct.max})
+              <input type="number" inputMode="numeric" min={BORNES_TRAVAIL.seuilPct.min} max={BORNES_TRAVAIL.seuilPct.max} value={seuilPct} onChange={(e) => setSeuilPct(Number(e.target.value))}
+                className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="travail-machine-seuil" />
+            </label>
+            <label className="text-xs text-texte-2">mesure toutes les (secondes, {BORNES_TRAVAIL.pasS.min} à {BORNES_TRAVAIL.pasS.max})
+              <input type="number" inputMode="numeric" min={BORNES_TRAVAIL.pasS.min} max={BORNES_TRAVAIL.pasS.max} value={pasS} onChange={(e) => setPasS(Number(e.target.value))}
+                className="ml-2 h-9 w-16 rounded-lg border border-bord bg-carte px-2 text-sm tabular-nums" data-testid="travail-machine-pas" />
+            </label>
+          </div>
+        ) : null}
       </div>
       <p className={`text-xs leading-snug ${etat.frein.actif ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-frein">{libelleFrein(etat.frein)}</p>
       <p className={`text-xs leading-snug ${(etat.palier ?? 0) > 0 && etat.bascule_auto !== false ? 'text-alerte' : 'text-texte-2'}`} data-testid="modeles-bascule">{libelleBascule(etat)}</p>
