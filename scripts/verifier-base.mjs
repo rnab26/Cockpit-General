@@ -2777,7 +2777,19 @@ async function controle38_filet_securite() {
   verifie("projet de test sans p_test : jamais réveillé", await passe(false, true) === "projet_de_test" && await journal() === 0);
   const sid = `test-filet-${rand}`;
   await sql(`insert into sessions (id, projet_id, branche, vu_at) values (${q(sid)}, ${q(P11)}, 'claude/vivante-filet', now())`);
-  verifie("travail en attente + session vivante : aucun réveil", await passe() === "session_vivante" && await journal() === 0);
+  // 0101 : une session « vivante » qui n'a PAS reçu le message ne le lira jamais (elle travaille sur autre chose) : le filet réveille.
+  verifie("message sans lecteur + session vivante ailleurs : réveil (0101)", await passe() === "simule" && await journal() === 1);
+  await sql(`delete from filet_reveils where projet_id = ${q(P11)}`);
+  // Un message qu'une session ouverte a reçu EN DIRECT (recu_at) a son lecteur : rien à réveiller.
+  await sql(`update messages set recu_at = now(), recu_par = 'session-test' where projet_id = ${q(P11)}`);
+  verifie("message reçu en direct par la session vivante : aucun réveil", await passe() === "rien_en_attente" && await journal() === 0);
+  await sql(`update messages set recu_at = null, recu_par = null where projet_id = ${q(P11)}`);
+  // 0100 : une carte ou une ligne automatique de session n'est PAS une réponse à son message.
+  await sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps) values (${q(P11)}, 'renfort/x', 'session', 'action', 'Fusionne la PR #1 : test')`);
+  verifie("une carte de session après son message ne le fait pas passer pour répondu (0100)", (await une(`select count(*)::int as n from messages_sans_reponse(${q(P11)})`)).n === 1);
+  await sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps) values (${q(P11)}, 'claude/x', 'session', 'info', 'Vu, je regarde.')`);
+  verifie("une vraie réponse écrite par une session le fait passer pour répondu", (await une(`select count(*)::int as n from messages_sans_reponse(${q(P11)})`)).n === 0);
+  await sql(`delete from messages where projet_id = ${q(P11)} and auteur_type = 'session'`);
   await sql(`delete from sessions where id = ${q(sid)}`);
   await sql(`update projets set filet_actif = false where id = ${q(P11)}`);
   verifie("interrupteur du projet éteint : aucun réveil", await passe() === "eteint" && await journal() === 0);
