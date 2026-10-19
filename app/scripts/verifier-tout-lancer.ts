@@ -1,6 +1,6 @@
 // « Tout lancer » (lib/toutLancer.ts, 16 oct. 2026, chantier 876e2e4b) : ce que dit l'unique bouton et sa ligne d'état.
 import { verifie, bilan } from './_assert.ts'
-import { aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, SANS_REVEIL, voyantDe, voyantsDe, type EntreeLancer, type EtatSessions } from '../src/lib/toutLancer.ts'
+import { aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, NOTE_NON_SUIVIE, noteNonSuivie, SANS_REVEIL, voyantDe, voyantsDe, type EntreeLancer, type EtatSessions } from '../src/lib/toutLancer.ts'
 import type { EtatRenforts, Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-tout-lancer')
@@ -58,8 +58,8 @@ verifie('une chef vivante sans autre session compte comme session ouverte', voya
 verifie('aucune session + un chantier qui attend : gris, bouton « Activer »', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 2)] }), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && v.peutActiver && v.attend === '2 chantiers' })())
 verifie('aucune session + AUCUN chantier mais des messages qui attendent : le bouton reste', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({ messages: 2 }) }), maintenant); return v.peutActiver && v.attend === '2 messages' })())
 verifie('chantiers et messages : les deux sont dits', voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ messages: 1 }) }), maintenant).attend === '1 chantier · 1 message')
-verifie('aucune session et rien n’attend : pas de bouton (une session coûte des jetons pour rien), dit pourquoi', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && !v.peutActiver && /Rien n’attend/.test(v.raison ?? '') })())
-verifie('aucune session : ne l’affirme pas (« suivie » + note sur les sessions sans suivi), même avec le bouton', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({}) }), maintenant); return v.texte === 'aucune session suivie' && /sans le suivi du cockpit/.test(v.note) && v.peutActiver })())
+verifie('aucune session et rien n’attend : pas de bouton (une session coûte des jetons pour rien), et AUCUN texte en plus (épuré le 19 oct.)', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && !v.peutActiver && v.raison === null && v.note === '' })())
+verifie('aucune session : ne l’affirme pas (« suivie »), la précision n’est dite qu’UNE fois et seulement quand un bouton existe', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({}) }), maintenant); return v.texte === 'aucune session suivie' && v.note === '' && noteNonSuivie([v]) === NOTE_NON_SUIVIE && noteNonSuivie([{ peutActiver: false }]) === '' && v.peutActiver })())
 verifie('session vivante ou en pause : aucune note', (() => { const a = voyantDe(e('a', { etat: etat({}), sessions: ss({ vivantes: 1, etats: { au_travail: 1, en_veille: 0, sans_nouvelles: 0 } }) }), maintenant); const b = voyantDe(e('a', { etat: etat({}), enPause: true }), maintenant); return a.note === '' && b.note === '' })())
 verifie('réveil demandé il y a 2 min : pas de bouton (jamais de doublon), « elle arrive »', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ reveil_at: il(2) }) }), maintenant); return v.dejaDemande && !v.peutActiver && /il y a 2 min/.test(v.raison ?? '') })())
 verifie('réveil demandé il y a 6 min (écart 5) : le bouton revient', voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ reveil_at: il(6) }) }), maintenant).peutActiver)

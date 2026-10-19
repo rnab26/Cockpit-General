@@ -7,7 +7,7 @@ import { Button } from '../ui/Button.tsx'
 import { enPause } from '../lib/pause.ts'
 import type { EtatRenforts, ResultatDemande } from '../lib/renforts.ts'
 import {
-  aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, voyantsDe,
+  aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, noteNonSuivie, voyantsDe,
   type EntreeLancer, type EtatSessions, type ResultatActivation, type ResultatLancer,
 } from '../lib/toutLancer.ts'
 
@@ -171,11 +171,11 @@ export function ToutLancer({ projetId }: { projetId: string | null }) {
                 <Power size={15} aria-hidden />Activer une session
               </Button>
             ) : null}
-            {v.note ? <p className="basis-full pl-5 text-xs leading-snug text-texte-2" data-testid="voyant-note">{v.note}</p> : null}
             {!v.peutActiver && v.raison && v.etat !== 'vivante' ? <p className="basis-full pl-5 text-xs leading-snug text-texte-2" data-testid="voyant-raison">{v.raison}</p> : null}
           </li>
         ))}
       </ul>
+      {noteNonSuivie(voyants) ? <p className="mt-1.5 text-xs leading-snug text-texte-2" data-testid="voyant-note">{noteNonSuivie(voyants)}</p> : null}
       {retour ? (
         <div className={`mt-2 text-xs leading-snug ${retour.ok ? 'text-ok' : 'text-alerte'}`} role="status" data-testid="activer-resultat">
           <p>{retour.texte}</p>
