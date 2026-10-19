@@ -269,7 +269,7 @@ function BulleMessage({ m }: { m: Message }) {
         </div>
       ) : m.reponse ? (
         <p className="mt-1 border-t border-bord pt-1 text-sm" data-testid="reponse-donnee">
-          <span className="text-texte-2">{m.kind === 'fusion' ? 'Tranché : ' : 'Réponse : '}</span>{m.reponse}{m.precision ? ` — ${m.precision}` : ''}
+          <span className="text-texte-2">{m.kind === 'fusion' ? 'Tranché : ' : `Ta réponse${m.answered_at ? ` · ${dateLongue(m.answered_at)}` : ''} à cette question : `}</span>{m.reponse}{m.precision ? ` — ${m.precision}` : ''}
         </p>
       ) : null}
       {m.kind === 'action' && m.etat && !m.reponse ? <p className="mt-1 text-sm text-texte-2">État : {m.etat === 'pas_encore' ? 'pas encore' : m.etat}</p> : null}

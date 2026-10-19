@@ -7,7 +7,7 @@ import { useToast } from '../ui/Toast.tsx'
 import { Button } from '../ui/Button.tsx'
 import { Textarea } from '../ui/Champs.tsx'
 import { TexteLong } from '../ui/TexteLong.tsx'
-import { dateRelative } from '../lib/dates.ts'
+import { dateLongue, dateRelative } from '../lib/dates.ts'
 import { extrait } from '../lib/texte.ts'
 import { ChoisirMedias, MediasMessage, ecrireAvecMedias, useMediasAJoindre } from './Medias.tsx'
 import { mediasDe } from '../lib/medias.ts'
@@ -56,7 +56,7 @@ export function BlocQuestion({ message }: { message: Message }) {
       toast.succes(`${estAction ? 'État enregistré' : 'Réponse enregistrée'} ✓`)
       let erreurMedias: string | null = null
       if (pj.medias.length) {
-        erreurMedias = await ecrireAvecMedias({ projetId: projet.id, chantierId: message.chantier_id, par, admin, medias: pj.medias, local: messagesLocal,
+        erreurMedias = await ecrireAvecMedias({ projetId: projet.id, chantierId: message.chantier_id, par, admin, medias: pj.medias, local: messagesLocal, repondA: message.id,
           corps: `Pièces jointes à ma réponse « ${extrait(reponse, 60)} » à : ${extrait(message.corps, 80)}` })
         if (erreurMedias) toast.erreur(`Réponse enregistrée, mais les fichiers ne sont pas partis : ${erreurMedias}`)
         else toast.succes('Fichiers envoyés ✓')
@@ -104,8 +104,9 @@ export function BlocQuestion({ message }: { message: Message }) {
         </div>
       ) : (
         <>
+          <p data-testid="reponse-a-cette-question" className="mt-3 border-l-4 border-accent pl-2 text-xs text-texte-2">Ta réponse va à CETTE question, posée {dateLongue(message.created_at)}.</p>
           {options.length ? (
-            <div className="mt-3 flex flex-col gap-2" role="radiogroup">
+            <div className="mt-2 flex flex-col gap-2" role="radiogroup">
               {options.map((o) => (
                 <button key={o.libelle} type="button" role="radio" aria-checked={choix === o.libelle} onClick={() => setChoix(o.libelle)}
                   className={`min-h-12 rounded-xl border px-3 py-2.5 text-left transition ${choix === o.libelle ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-bord bg-carte hover:bg-carte-2'}`}>
@@ -125,6 +126,7 @@ export function BlocQuestion({ message }: { message: Message }) {
       {/* Un geste qui bloque (PR en conflit…) : on peut dire pourquoi, avec une pièce jointe ; le texte part avec « Fait / Pas encore / Ça bloque ». */}
       {estAction ? (
         <>
+          <p data-testid="reponse-a-cette-question" className="mt-2 border-l-4 border-accent pl-2 text-xs text-texte-2">Ton mot va à CETTE carte, posée {dateLongue(message.created_at)}.</p>
           <Textarea className="mt-2" rows={2} value={precision} onChange={(e) => setPrecision(e.target.value)}
             placeholder="Un mot pour Claude, si tu veux (ex. pourquoi ça bloque)" data-testid="precision-action" />
           <div className="mt-2"><ChoisirMedias ctrl={pj} testId="medias-reponse" /></div>
