@@ -171,6 +171,7 @@ export function ToutLancer({ projetId }: { projetId: string | null }) {
                 <Power size={15} aria-hidden />Activer une session
               </Button>
             ) : null}
+            {v.note ? <p className="basis-full pl-5 text-xs leading-snug text-texte-2" data-testid="voyant-note">{v.note}</p> : null}
             {!v.peutActiver && v.raison && v.etat !== 'vivante' ? <p className="basis-full pl-5 text-xs leading-snug text-texte-2" data-testid="voyant-raison">{v.raison}</p> : null}
           </li>
         ))}
