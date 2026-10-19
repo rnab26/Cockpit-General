@@ -129,6 +129,9 @@ export const SANS_REVEIL = 'Réveil automatique non réglé : ouvre Claude Code 
 /** « Aucune session » est un constat sur les sessions que le cockpit SUIT (hooks) : une session ouverte sans hooks (dossier hors dépôt) ne se voit pas. On ne l'affirme donc pas plus qu'on ne le sait. */
 export const NOTE_NON_SUIVIE = 'Une session ouverte sans le suivi du cockpit n’apparaît pas ici : si tu en as une qui travaille, ne clique pas.'
 
+/** 19 oct. 2026 (Raphaël : « c'est du superflu ») : cette précision ne s'écrit QU'UNE fois sous le bloc, et seulement quand un bouton « Activer » est proposé (c'est là qu'elle sert : ne pas doubler une session qui travaille sans suivi). */
+export const noteNonSuivie = (voyants: readonly { peutActiver: boolean }[]): string => (voyants.some((v) => v.peutActiver) ? NOTE_NON_SUIVIE : '')
+
 export interface Voyant {
   slug: string
   nom: string
@@ -179,10 +182,10 @@ export function voyantDe(e: EntreeLancer, now: Date): Voyant {
     return { ...base, etat: 'vivante', signe: 'veille', texte: s.vivantes > 1 ? `${s.vivantes} sessions ouvertes, en veille` : 'session ouverte, en veille : rien ne tourne' }
   }
   const muette = (s.etats?.sans_nouvelles ?? 0) > 0
-  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session n’a rien signalé (elle a peut-être fini)' : 'aucune session suivie', note: muette ? '' : NOTE_NON_SUIVIE, signe: muette ? 'sans_nouvelles' as const : null }
+  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session n’a rien signalé (elle a peut-être fini)' : 'aucune session suivie', note: '', signe: muette ? 'sans_nouvelles' as const : null }
   const min = minutesDepuis(s.reveil_at, now)
   const dejaDemande = min !== null && min < s.reveil_ecart_min
-  if (!attend) return { ...base, ...aucune, raison: 'Rien n’attend : pas besoin de session.' }
+  if (!attend) return { ...base, ...aucune, raison: null }
   if (!s.reveil_possible) return { ...base, ...aucune, raison: SANS_REVEIL }
   if (dejaDemande) return { ...base, ...aucune, dejaDemande: true, raison: `Session demandée ${ilYA(min!)} : elle arrive.` }
   return { ...base, ...aucune, peutActiver: true }
