@@ -10,6 +10,10 @@ Dernière mise à jour : 16 oct. 2026 (sections 0 terdecies et 0 duodecies ; ava
 suivantes datent du 29 sept. : pour l'état à jour, la base et le CLAUDE.md du
 dépôt font foi.
 
+## 0 sexdecies. 19 oct. 2026 (nuit) : session multi-dépôts branchée toute seule (chantier cff4fbb9)
+
+Le relais des verdicts dits en session existait déjà (0085, `chantier.sh --verdict-dit`, rappel `prompt-rappel.sh`) ; la demande restante était « une session FacePro tourne et n'apparaît pas dans Ça avance » (session sur plusieurs dépôts, démarre dans `/home/user`, aucun hook). Livré : `hooks/utilisateur.sh` (hook utilisateur qui rejoue les hooks du bon dépôt, choix sur signes, jamais de doublon), `connecter.sh --depot`, bloc de réglages `docs/hook-utilisateur-settings.json`, banc `verifier-utilisateur.mjs` 19/19. **Non vérifié** : que les sessions cloud chargent un `settings.json` venu des dotfiles (voir `docs/hook-utilisateur.md`) ; tant que le bloc n'est pas dans `rnab26/dotfiles` `.claude/settings.json` et essayé sur une session neuve, rien n'est branché automatiquement.
+
 ## 0 quindecies. 19 oct. 2026 (soir) : « vivant » = du travail réel, arrière-plan compris (migration 0104, chantier a33cf882)
 
 Une règle, `cockpit.etat_session` (miroir `etatTravail`, table de cas commune base/écran) : **au travail / en veille / sans nouvelles** ; le délai de 60 min n'est plus que le repli. Seuils réglables (Réglages du projet › Renforts (détails)). Voyant et « Qui travaille » la lisent. **Battement machine** (`scripts/machine.py`, CPU des processus de la session, sans jetons) : ÉTEINT par défaut (`projets.machine_actif`), mesuré sur un vrai calcul (`verifier-machine.mjs`). Récit, mesures et limites : `docs/historique/chefs-agents-renforts.md`, « vivant = du travail réel ». **Pas fait** : réveils, filet, `chantiers_prenables` et `sans_signe_de_vie` gardent `delai_signe` seul (autre sujet, en attente de Raphaël) ; les hooks de FacePro (en retard) n'envoient rien, donc son cas ne se voit qu'une fois ses hooks à jour ET le battement allumé.
