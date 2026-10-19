@@ -988,6 +988,7 @@ try {
   const pxQ = taillesQ.find((x) => x.t.includes('Quelle option'))?.px ?? 0, pxP = taillesQ.find((x) => x.t.includes('Pour vérifier'))?.px ?? 99
   verifie('la question en gros, le pourquoi en petit dessous, les réponses toutes prêtes, la recommandée marquée',
     pxQ > pxP && (await blocQ.textContent()).includes('recommandé') && await blocQ.getByRole('radio').count() === 2, { pxQ, pxP })
+  verifie('la carte dit à QUELLE question la réponse va (avec la date)', /posée /.test(await blocQ.getByTestId('reponse-a-cette-question').first().textContent()))
   await capture(page, 'question')
   await blocQ.getByRole('radio', { name: /Option A/ }).click()
   await blocQ.getByPlaceholder(/précision/i).fill('précision de test')
@@ -999,7 +1000,7 @@ try {
   await blocQ.getByTestId('valider-reponse').click()
   verifie('réponse : toast visible (au-dessus de la conversation)', await toastAuPremierPlan(/Réponse enregistrée/), { auPremierPlan: dernierDessus })
   await blocQ.waitFor({ state: 'detached', timeout: 10000 }).catch(() => {})
-  verifie('la question répondue devient une bulle « Réponse : Option A — précision de test »', await blocQ.count() === 0 && /Réponse : Option A — précision de test/.test(await conv().textContent()))
+  verifie('la question répondue devient une bulle « Réponse : Option A — précision de test »', await blocQ.count() === 0 && /Ta réponse.* à cette question : Option A — précision de test/.test(await conv().textContent()))
   const rep = sql(`select reponse, precision, answered_at from messages where corps like '${MARQUE}%'`)[0]
   verifie('la réponse est en base (option + précision + answered_at)', rep && rep.reponse === 'Option A' && rep.precision === 'précision de test' && !!rep.answered_at, rep)
   const pjQ = sql(`select corps, medias from messages where chantier_id = '${Q1.id}' and kind = 'info' and jsonb_array_length(medias) > 0`)
