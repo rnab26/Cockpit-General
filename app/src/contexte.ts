@@ -32,6 +32,8 @@ export interface Contexte {
   recharger: (silencieux?: boolean) => Promise<void>
   /** Écriture sans rechargement complet (lib/reponseCarte.ts) : une ligne posée à l'écran, puis relue seule en base. */
   messagesLocal: MessagesLocal
+  /** Même chose pour un chantier statué (lib/statuts.ts). */
+  chantiersLocal: ChantiersLocal
   prefs: Preferences
   poser: (cle: string, valeur: unknown) => Promise<void>
   selection: { actif: boolean; ids: Set<string>; basculer: (id: string) => void }
@@ -45,6 +47,16 @@ export interface MessagesLocal {
   poser: (m: Message) => void
   retirer: (id: string) => void
   relire: (id: string) => Promise<Message | null>
+}
+
+export interface ChantiersLocal {
+  /** Pose le chantier statué à l'écran, protégé d'une lecture qui porterait l'ancien état, jusqu'à `confirmer` ou `annuler`. */
+  poser: (c: Chantier) => void
+  /** L'écriture a échoué : la version d'avant revient. */
+  annuler: (c: Chantier) => void
+  /** L'écriture est faite : la vraie ligne peut remplacer celle de l'écran. */
+  confirmer: (id: string) => void
+  relire: (id: string) => Promise<Chantier | null>
 }
 
 export interface Global {
@@ -63,6 +75,9 @@ export interface Global {
   prefs: Preferences
   poser: (cle: string, valeur: unknown) => Promise<void>
   recharger: (silencieux?: boolean) => Promise<void>
+  /** Écritures sans attendre la relecture (cartes et chantiers statués depuis l'accueil). */
+  messagesLocal: MessagesLocal
+  chantiersLocal: ChantiersLocal
   /** Relit la liste des projets (mode autonome, dépôt…). */
   rechargerProjets: () => Promise<void>
   /** Compteur des relectures COMPLÈTES terminées (chargement, « Actualiser », passage de 5 min) : les blocs qui lisent ailleurs qu'ici s'y accrochent. */

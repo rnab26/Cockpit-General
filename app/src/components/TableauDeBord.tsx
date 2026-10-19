@@ -34,6 +34,8 @@ import { ReveilImmediat } from './ReveilImmediat.tsx'
 import { FiletSecurite } from './FiletSecurite.tsx'
 import { RapprochementGithub } from './RapprochementGithub.tsx'
 import { quandDeCote } from '../lib/reporter.ts'
+import { dejaRepondue, ligneRelueValable, reponseOptimiste } from '../lib/reponseCarte.ts'
+import { apresMiseDeCote } from '../lib/statuts.ts'
 import { PastilleReponse } from './PastilleReponse.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { cleFil } from '../lib/lecture.ts'
@@ -144,9 +146,16 @@ const TUILES: { cle: CleTuile; libelle: string; aide: string; couleur: (n: numbe
   { cle: 'deCote', libelle: 'de côté', aide: 'mis de côté ou reportés exprès : ils ne bougent pas tant que tu ne les relances pas', couleur: (n) => (n ? 'text-texte' : 'text-texte-2') },
   { cle: 'fini', libelle: 'fini', aide: 'certifié dans la période choisie', couleur: (n) => (n ? 'text-ok' : 'text-texte-2') },
 ]
-export interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; aTester?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string }
+/**
+ * Une liste ouverte derrière un nombre. `ids` et `n` sont ce qu'on voyait au toucher ; `cle` (une box) ou `ligne` (une case du tableau par
+ * section) disent D'OÙ ça vient : la liste se recalcule alors à chaque changement (un chantier statué en sort, un autre y entre), au lieu
+ * de rester figée sur ce qu'on voyait à l'ouverture (chantier fa297cc4, 19 oct. 2026).
+ */
+export interface Liste { titre: string; ids: string[]; n: number; fini?: boolean; pourToi?: boolean; aTester?: boolean; enAttente?: boolean; deCote?: boolean; aide?: string; cle?: CleTuile; ligne?: { cle: string; col: keyof QuatreNombres } }
+/** Ce que contient VRAIMENT une liste maintenant (null : liste sans source, on garde ce qu'elle avait à l'ouverture). */
+export type Vivante = (l: Liste) => { ids: string[]; n: number } | null
 
-function idsDe(t: Tableau, cle: CleTuile): string[] {
+export function idsDe(t: Tableau, cle: CleTuile): string[] {
   if (cle === 'pourToi') return [...new Set(t.aToi.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
   if (cle === 'aTester') return [...new Set(t.aTester.flatMap((e) => (e.chantier ? [e.chantier.id] : [])))]
   if (cle === 'caAvance') return t.caAvance.map((l) => l.c.id)
@@ -202,6 +211,12 @@ export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; 
     const i = FENETRES.findIndex((f) => f.valeur === fenetre)
     void g.poser('fenetre_livre', FENETRES[(i + 1) % FENETRES.length].valeur)
   }
+  const lignesDetail = useLignesDetail(t, projetId, fenetre, compact)
+  const vivante: Vivante = (l) => {
+    if (l.cle) return { ids: idsDe(t, l.cle), n: t.tuiles[l.cle] }
+    if (l.ligne) { const x = lignesDetail.find((d) => d.cle === l.ligne!.cle); return { ids: x?.ids[l.ligne.col] ?? [], n: x?.nombres[l.ligne.col] ?? 0 } }
+    return null
+  }
   return (
     <section aria-label="Où j’en suis" data-testid="ou-jen-suis">
       <div className="grid grid-cols-6 gap-1" data-testid="tuiles">
@@ -209,7 +224,7 @@ export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; 
           const n = t.tuiles[x.cle]
           return (
             <button key={x.cle} type="button" data-testid={`tuile-${x.cle}`} title={x.aide} aria-label={`${n} ${x.libelle} : ${x.aide}`}
-              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', aTester: x.cle === 'aTester', enAttente: x.cle === 'enPause', deCote: x.cle === 'deCote', aide: x.aide })}
+              onClick={() => setListe({ titre: x.cle === 'fini' ? `Fini ${libelleFenetre}` : x.libelle.charAt(0).toUpperCase() + x.libelle.slice(1), ids: idsDe(t, x.cle), n, cle: x.cle, fini: x.cle === 'fini', pourToi: x.cle === 'pourToi', aTester: x.cle === 'aTester', enAttente: x.cle === 'enPause', deCote: x.cle === 'deCote', aide: x.aide })}
               className="min-w-0 rounded-2xl border border-bord bg-carte px-0.5 pb-2 pt-2.5 text-center transition hover:bg-carte-2 active:scale-[.98]">
               <span className={`block text-2xl font-medium leading-none tabular-nums ${x.couleur(n)}`} data-testid="nombre-tuile">{n}</span>
               <span className="mt-1 block truncate text-[11px] text-texte-2">{x.libelle}</span>
@@ -225,9 +240,9 @@ export function Tuiles({ t, projetId, fenetre, compact = false }: { t: Tableau; 
             Détail par {projetId ? 'section' : 'projet'}<ChevronDown size={14} className={`transition ${detail ? 'rotate-180' : ''}`} aria-hidden />
           </button>
         </div>
-        {detail ? <TableauDetail t={t} projetId={projetId} fenetre={fenetre} ouvrir={setListe} /> : null}
+        {detail ? <TableauDetail lignes={lignesDetail} ouvrir={setListe} /> : null}
       </>}
-      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} />
+      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} vivante={vivante} />
     </section>
   )
 }
@@ -243,9 +258,10 @@ interface LigneDetail { cle: string; nom: string; couleur: string | null; nombre
  * ligne par section (vue projet) ou par projet (« Tout »), les MÊMES quatre
  * nombres que les tuiles (ouJenSuis + classesDe).
  */
-function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId: string | null; fenetre: Fenetre; ouvrir: (l: Liste) => void }) {
+function useLignesDetail(t: Tableau, projetId: string | null, fenetre: Fenetre, sauter = false): LigneDetail[] {
   const g = useGlobal()
-  const lignes = useMemo<LigneDetail[]>(() => {
+  return useMemo<LigneDetail[]>(() => {
+    if (sauter) return []
     const classes = classesDe(t)
     const resume = (pid: string) => ouJenSuis(g.sections.filter((s) => s.projet_id === pid), g.chantiers.filter((c) => c.projet_id === pid),
       g.messages.filter((m) => m.projet_id === pid), fenetre, g.now, classes)
@@ -256,7 +272,10 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
       for (const l of r.lignes) for (const k of Object.keys(ids) as (keyof typeof ids)[]) ids[k].push(...l.ids[k])
       return { cle: p.id, nom: p.nom, couleur: p.couleur ?? 'var(--accent)', nombres: r.total, ids }
     })
-  }, [t, g.sections, g.chantiers, g.messages, g.projets, g.now, fenetre, projetId])
+  }, [sauter, t, g.sections, g.chantiers, g.messages, g.projets, g.now, fenetre, projetId])
+}
+
+function TableauDetail({ lignes, ouvrir }: { lignes: LigneDetail[]; ouvrir: (l: Liste) => void }) {
   return (
     <div className="mt-2 rounded-2xl border border-bord bg-carte px-3 py-2" data-testid="detail-par-ligne">
       <div className="grid grid-cols-[1fr_repeat(4,3rem)] items-end gap-x-1 pb-1 text-[11px] text-texte-2">
@@ -269,7 +288,7 @@ function TableauDetail({ t, projetId, fenetre, ouvrir }: { t: Tableau; projetId:
             const n = l.nombres[c.cle]
             return n ? (
               <button key={c.cle} type="button" data-colonne={c.cle} aria-label={`${l.nom} : ${n} ${c.libelle}`}
-                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n, fini: c.cle === 'livre', pourToi: c.cle === 'pourToi' })}
+                onClick={() => ouvrir({ titre: `${l.nom} · ${c.libelle}`, ids: l.ids[c.cle], n, ligne: { cle: l.cle, col: c.cle }, fini: c.cle === 'livre', pourToi: c.cle === 'pourToi' })}
                 className={`h-8 rounded-lg text-center text-[15px] font-medium tabular-nums hover:bg-carte-2 ${TEINTE[c.cle]}`}>{n}</button>
             ) : <span key={c.cle} className="h-8 text-center leading-8 text-texte-2/40">·</span>
           })}
@@ -307,7 +326,7 @@ function LigneEnAttente({ c, onOuvrir }: { c: Chantier; onOuvrir: () => void }) 
 }
 
 /** La liste des chantiers derrière un nombre ; chacun ouvre sa conversation. */
-export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[]; aToi: readonly ElementAToi[] }) {
+export function ListeChantiers({ liste, onFermer, avance, aToi, vivante }: { liste: Liste | null; onFermer: () => void; avance: readonly LigneCaAvance[]; aToi: readonly ElementAToi[]; vivante?: Vivante }) {
   const g = useGlobal()
   // Le nombre « pour toi » compte les CHOSES à faire ; une ligne = un chantier : on dit combien il en porte.
   const nbParChantier = useMemo(() => {
@@ -320,16 +339,21 @@ export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste
   // Depuis quand ça t'attend (Raphaël, 16 oct. : « j'ai pas la date ni l'horaire de quand ça date ») : la MÊME date que « À toi de jouer »
   // (ElementAToi.depuis), le plus récent en haut. Seulement les listes de ce qui attend un geste : « pour toi » et « à tester ».
   const depuis = useMemo(() => depuisParChantier(liste?.pourToi ? demandesDe(aToi) : liste?.aTester ? aToi.filter((e) => e.type === 'a_verifier') : []), [aToi, liste?.pourToi, liste?.aTester])
+  // Ce que la liste contient MAINTENANT : un chantier statué pendant qu'elle est ouverte en sort, au lieu de rester figé.
+  const vif = liste && vivante ? vivante(liste) : null
+  const idsActuels = vif?.ids ?? liste?.ids ?? []
+  const nActuel = vif?.n ?? liste?.n ?? 0
+  const cleIds = idsActuels.join(',')
   const chantiers = useMemo(() => {
     if (!liste) return []
-    const ids = new Set(liste.ids)
+    const ids = new Set(cleIds ? cleIds.split(',') : [])
     const lignes = ordreListe(g.chantiers.filter((c) => ids.has(c.id)), !!liste.fini)
     return depuis.size ? ordrePourToi(lignes, depuis) : lignes
-  }, [liste, g.chantiers, depuis])
+  }, [liste, cleIds, g.chantiers, depuis])
   return (
-    <Dialog ouvert={!!liste} onFermer={onFermer} titre={`${liste?.titre ?? ''} (${liste?.n ?? 0})`}>
+    <Dialog ouvert={!!liste} onFermer={onFermer} titre={`${liste?.titre ?? ''} (${nActuel})`}>
       {liste?.aide ? <p className="mb-1 text-xs text-texte-2" data-testid="aide-liste">{liste.aide.charAt(0).toUpperCase() + liste.aide.slice(1)}.</p> : null}
-      {liste && liste.n > chantiers.length && !liste.deCote && !liste.enAttente ? (
+      {liste && nActuel > chantiers.length && !liste.deCote && !liste.enAttente ? (
         <p className="mb-1 text-xs text-texte-2" data-testid="note-liste">Un chantier peut porter plusieurs choses à faire, et une question sur le projet n’a pas de chantier : tout est dans « À toi de jouer ».</p>
       ) : null}
       <ul className="divide-y divide-bord" data-testid="liste-ou-jen-suis">
@@ -365,7 +389,7 @@ export function ListeChantiers({ liste, onFermer, avance, aToi }: { liste: Liste
           )
         })}
       </ul>
-      {!chantiers.length && !liste?.n ? <p className="py-2 text-sm text-texte-2">Rien ici pour l’instant.</p> : null}
+      {!chantiers.length && !nActuel ? <p className="py-2 text-sm text-texte-2">Rien ici pour l’instant.</p> : null}
     </Dialog>
   )
 }
@@ -492,12 +516,19 @@ function ActionDirecte({ message, onOuvrir }: { message: Message; onOuvrir: () =
   const [enCours, setEnCours] = useState<string | null>(null)
   const marche = marcheDe(message)
   const repondre = async (reponse: string, etat: 'fait' | 'pas_encore' | 'bloque') => {
+    // Même geste déjà enregistré : rien n'est reposé (un second toucher ne fait rien).
+    if (dejaRepondue(message, { reponse, etat })) { toast.info('C’est déjà enregistré : rien à refaire.'); return }
     setEnCours(etat)
+    // La carte bouge TOUT DE SUITE (comme dans le fil, lib/reponseCarte.ts) : « Fait » la retire de « pour toi », « Ça bloque » la passe
+    // à Claude. Avant, ce bouton attendait l'écriture ET la relecture complète : la ligne restait là, statique, plusieurs secondes.
+    const local = reponseOptimiste(message, { reponse, precision: null, etat, maintenant: new Date().toISOString() })
+    g.messagesLocal.poser(local)
     const { error } = await supabase.rpc('repondre_message', { p_id: message.id, p_par: g.par, p_reponse: reponse, p_precision: null, p_etat: etat })
-    if (error) { setEnCours(null); toast.erreur(`Action non enregistrée : ${messageErreur(error)}`); return }
-    toast.succes(etat === 'fait' ? 'Fait : Claude est prévenu.' : etat === 'pas_encore' ? 'Noté : pas encore.' : 'Noté : ça bloque.')
-    await g.recharger()
+    if (error) { g.messagesLocal.poser(message); setEnCours(null); toast.erreur(`Action non enregistrée, la carte est revenue : ${messageErreur(error)}`); return }
+    toast.succes(etat === 'fait' ? 'Fait : Claude est prévenu.' : etat === 'pas_encore' ? 'Noté : pas encore.' : 'Noté : ça bloque, Claude le reprend.')
     setEnCours(null)
+    // UNE ligne relue (pas tout l'écran) : la vraie remplace celle de l'écran seulement si elle porte bien la réponse.
+    void g.messagesLocal.relire(message.id).then((m) => { if (ligneRelueValable(local, m)) g.messagesLocal.poser(m) })
   }
   return (
     <div className="px-3 pb-2.5" data-testid="action-directe">
@@ -762,9 +793,11 @@ function LigneLancer({ l, avecProjet }: { l: LigneALancer; avecProjet: boolean }
   // Sortir la ligne de « Pour Claude » sans l’abandonner : même fonction de la base que le menu ⋯ du chantier.
   const deCote = async () => {
     setEnCours(true)
+    g.chantiersLocal.poser(apresMiseDeCote(l.c, null))
     const { error } = await supabase.rpc('mettre_de_cote', { p_id: l.c.id, p_jusqu_a: null, p_raison: null })
     setEnCours(false)
-    if (error) { toast.erreur(messageErreur(error)); return }
+    if (error) { g.chantiersLocal.annuler(l.c); toast.erreur(messageErreur(error)); return }
+    g.chantiersLocal.confirmer(l.c.id)
     toast.succes(`« ${l.c.titre} » mis de côté. « Relancer maintenant » le rouvre.`); await g.recharger()
   }
   const a = l.activite

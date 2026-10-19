@@ -6,7 +6,7 @@ import { chargerEtatEcran } from '../lib/etatEcran.ts'
 import { lignesVisibles, projetsVisibles } from '../lib/projetsDeTest.ts'
 import { abonner, etatFile } from '../lib/fetchResilient.ts'
 import { fusionnerEnAttente } from '../lib/fileAttente.ts'
-import { remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
+import { REPONSE_LOCALE, remplacerLigne, retirerLigne } from '../lib/reponseCarte.ts'
 import { avecSigneDeSession } from '../lib/presence.ts'
 import { appliquer, curseurDelta, filtreDelta, LotEvenements, ORDRES, pleinDu, TACHES_RECENTES_H, type Lot, type TableDonnees } from '../lib/deltaDonnees.ts'
 
@@ -88,6 +88,29 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     else if (table === 'sessions') setSessions(l)
     else setTaches(l)
   }, [])
+
+  // Une ligne posée à l'écran AVANT la réponse de la base (réponse à une carte, chantier statué) est protégée : une lecture ou un événement
+  // parti avant l'écriture porte l'ancien état et la ferait revenir en arrière une seconde (le compteur sauterait puis reviendrait).
+  // La protection tombe dès que l'écriture est confirmée ou annulée ; elle expire seule au bout de 30 s (jamais une ligne bloquée).
+  const proteges = useRef(new Map<string, number>())
+  const PROTECTION_MS = 30_000
+  const estProtege = useCallback((table: Table, id: string) => {
+    const cle = `${table}:${id}`
+    const fin = proteges.current.get(cle)
+    if (fin === undefined) return false
+    if (fin < Date.now()) { proteges.current.delete(cle); return false }
+    return true
+  }, [])
+  const proteger = useCallback((table: Table, id: string) => { proteges.current.set(`${table}:${id}`, Date.now() + PROTECTION_MS) }, [])
+  const liberer = useCallback((table: Table, id: string) => { proteges.current.delete(`${table}:${id}`) }, [])
+  /** Les lignes reçues, sans celles qu'on protège. */
+  const garder = useCallback((table: Table, recues: Ligne[]) => (proteges.current.size ? recues.filter((l) => !estProtege(table, l.id)) : recues), [estProtege])
+  /** Une lecture complète : les lignes protégées gardent leur version à l'écran. */
+  const substituer = useCallback((table: Table, lues: Ligne[]) => {
+    if (!proteges.current.size) return lues
+    const locales = new Map(lignes.current[table].map((l) => [l.id, l]))
+    return lues.map((l) => (estProtege(table, l.id) ? locales.get(l.id) ?? l : l))
+  }, [estProtege])
 
   const chargerProjets = useCallback(async () => {
     setChargementProjets(true)
@@ -179,10 +202,10 @@ export function useDonnees(pret: boolean, email: string | null = null) {
    */
   const lireDelta = useCallback(async (table: Table) => {
     const cur = curseurDelta(table, lignes.current[table])
-    if (!cur) { poserTable(table, await lireTable(table)); return }
+    if (!cur) { poserTable(table, substituer(table, await lireTable(table))); return }
     const { data, error } = await supabase.from(table).select('*').or(filtreDelta(table, cur)).limit(1000)
-    if (error) { poserTable(table, await lireTable(table)); return }
-    let liste = appliquer(lignes.current[table], (data ?? []) as Ligne[], [], ORDRES[table] as never)
+    if (error) { poserTable(table, substituer(table, await lireTable(table))); return }
+    let liste = appliquer(lignes.current[table], garder(table, (data ?? []) as Ligne[]), [], ORDRES[table] as never)
     if (table === 'chantiers') {
       const ids = await supabase.from('chantiers').select('id')
       if (!ids.error && Array.isArray(ids.data)) {
@@ -197,7 +220,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
       }
     }
     if (liste !== lignes.current[table]) poserTable(table, liste)
-  }, [lireTable, poserTable])
+  }, [lireTable, poserTable, substituer, garder])
 
   /** Relit les projets sans l'écran de chargement (mode autonome réglé ailleurs, dépôt modifié…). */
   const rechargerProjets = useCallback(async () => {
@@ -226,7 +249,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
           if (entier) {
             // Complet : toutes les tables lues d'un coup, puis posées (et le miroir du curseur avec).
             const lues = await Promise.all([...TABLES.map((t) => lireTable(t)), rechargerProjets()])
-            TABLES.forEach((t, i) => poserTable(t, lues[i] as Ligne[]))
+            TABLES.forEach((t, i) => poserTable(t, substituer(t, lues[i] as Ligne[])))
             dernierPlein.current = debut
             setPassagesComplets((n) => n + 1)
             setPassagesComplets((n) => n + 1)
@@ -259,7 +282,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     file.p = enCours.current.then(() => { suivant.current = null; return lancer(file.silencieux, file.complet) })
     suivant.current = file
     return file.p
-  }, [lireTable, lireDelta, poserTable, rechargerProjets])
+  }, [lireTable, lireDelta, poserTable, rechargerProjets, substituer])
 
   // Événements du direct : regroupés par rafale (800 ms de calme, 4 s au plus), puis APPLIQUÉS aux lignes concernées.
   // Un événement sans ligne exploitable (jamais vu en pratique) relit cette seule table en delta.
@@ -267,7 +290,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     for (const table of TABLES) {
       const t = lot[table]
       if (!t) continue
-      const liste = appliquer(lignes.current[table], [...t.lignes.values()] as Ligne[], t.suppressions, ORDRES[table] as never)
+      const liste = appliquer(lignes.current[table], garder(table, [...t.lignes.values()] as Ligne[]), t.suppressions, ORDRES[table] as never)
       if (liste !== lignes.current[table]) poserTable(table, liste)
       if (t.arelire) void lireDelta(table).catch(() => {})
       // Un chantier supprimé emporte ses messages (même règle que le passage delta).
@@ -277,7 +300,7 @@ export function useDonnees(pret: boolean, email: string | null = null) {
       }
     }
     setDerniereMaj(new Date())
-  }, [lireDelta, poserTable])
+  }, [lireDelta, poserTable, garder])
   const lotRef = useRef<LotEvenements | null>(null)
   useEffect(() => {
     const lot = new LotEvenements(appliquerLot)
@@ -331,11 +354,33 @@ export function useDonnees(pret: boolean, email: string | null = null) {
 
   // Écrire sans attendre un rechargement (lib/reponseCarte.ts) : poser/retirer UNE ligne de message à l'écran,
   // puis relire cette seule ligne en base. Le direct et le sondage la remplaceront de toute façon par la vraie.
-  const poserMessage = useCallback((m: Message) => poserTable('messages', remplacerLigne(lignes.current.messages as unknown as Message[], m) as unknown as Ligne[]), [poserTable])
+  const poserMessage = useCallback((m: Message) => {
+    // Une réponse pas encore confirmée par la base (answered_by « local », reponseCarte.ts) est protégée ; la ligne relue ou le retour arrière la libère.
+    if (m.answered_by === REPONSE_LOCALE) proteger('messages', m.id); else liberer('messages', m.id)
+    poserTable('messages', remplacerLigne(lignes.current.messages as unknown as Message[], m) as unknown as Ligne[])
+  }, [poserTable, proteger, liberer])
   const retirerMessage = useCallback((id: string) => poserTable('messages', retirerLigne(lignes.current.messages as unknown as Message[], id) as unknown as Ligne[]), [poserTable])
   const relireMessage = useCallback(async (id: string): Promise<Message | null> => {
     const { data, error } = await supabase.from('messages').select('*').eq('id', id).maybeSingle()
     return error ? null : (data as Message | null)
+  }, [])
+
+  // Même geste pour un chantier (lib/statuts.ts) : « Ça marche », « Ça ne marche pas », mettre de côté… bougent les compteurs sur-le-champ.
+  // Le chantier posé garde son `updated_at` (curseur du delta) ; la vraie ligne le remplace dès qu'elle arrive.
+  const poserChantier = useCallback((c: Chantier) => {
+    proteger('chantiers', c.id)
+    poserTable('chantiers', remplacerLigne(lignes.current.chantiers as unknown as Chantier[], c) as unknown as Ligne[])
+  }, [poserTable, proteger])
+  /** Retour arrière (l'écriture a échoué) : la ligne d'avant revient et n'est plus protégée. */
+  const annulerChantier = useCallback((c: Chantier) => {
+    liberer('chantiers', c.id)
+    poserTable('chantiers', remplacerLigne(lignes.current.chantiers as unknown as Chantier[], c) as unknown as Ligne[])
+  }, [poserTable, liberer])
+  /** L'écriture est faite : la vraie ligne (direct ou relecture) peut remplacer celle de l'écran. */
+  const confirmerChantier = useCallback((id: string) => { liberer('chantiers', id) }, [liberer])
+  const relireChantier = useCallback(async (id: string): Promise<Chantier | null> => {
+    const { data, error } = await supabase.from('chantiers').select('*').eq('id', id).maybeSingle()
+    return error ? null : (data as Chantier | null)
   }, [])
 
   // Les messages écrits hors ligne (gardés dans la file de l'appareil) se voient dans la bulle et le fil, marqués.
@@ -351,6 +396,6 @@ export function useDonnees(pret: boolean, email: string | null = null) {
     projets, projet, projetId, vue, choisirVue, chargerProjets,
     ...vis,
     chargementProjets, chargement, charge, erreur, direct, derniereMaj, rechargeDu, passagesComplets,
-    recharger, rechargerCible, rechargerProjets, poserMessage, retirerMessage, relireMessage,
+    recharger, rechargerCible, rechargerProjets, poserMessage, retirerMessage, relireMessage, poserChantier, annulerChantier, confirmerChantier, relireChantier,
   }
 }

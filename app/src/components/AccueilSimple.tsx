@@ -8,7 +8,7 @@ import { dateLongue } from '../lib/dates.ts'
 import { libelleATester, libelleEnAttente, phraseSansChantier, VISIBLES_ACCUEIL } from '../lib/vueAccueil.ts'
 import { useVueAccueil } from '../hooks/useVueAccueil.ts'
 import { Button } from '../ui/Button.tsx'
-import { EcrireAuProjet, LigneAToi, LigneAvance, LigneSession, ListeChantiers, ListeUl, Tuiles, VoirPlus, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
+import { EcrireAuProjet, LigneAToi, LigneAvance, LigneSession, ListeChantiers, ListeUl, Tuiles, VoirPlus, idsDe, useTableauDeBord, type Liste } from './TableauDeBord.tsx'
 import { ClasserLivres } from './ClasserLivres.tsx'
 import { LigneRetireesSeules } from './CartesRetireesSeules.tsx'
 import { PastilleReponse } from './PastilleReponse.tsx'
@@ -63,7 +63,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
         ) : null}
         {attente ? (
           <button type="button" data-testid="accueil-en-attente"
-            onClick={() => setListe({ titre: 'En attente d’une session', ids: [...t.pretALancer, ...t.sansSession].map((l) => l.c.id), n: attente, enAttente: true, aide: 'prêts à démarrer, ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris' })}
+            onClick={() => setListe({ titre: 'En attente d’une session', ids: [...t.pretALancer, ...t.sansSession].map((l) => l.c.id), n: attente, cle: 'enPause', enAttente: true, aide: 'prêts à démarrer, ou en cours sans session dessus : rien ne les bloque, personne ne les a encore pris' })}
             className="flex min-h-11 w-full items-center gap-2 rounded-2xl border border-bord bg-carte px-3 text-left text-[15px] transition hover:bg-carte-2 active:scale-[.99]">
             <Rocket size={16} className="shrink-0 text-texte-2" aria-hidden />
             <span className="flex-1">{libelleEnAttente(attente)}</span>
@@ -99,7 +99,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
               )
             })}
             <VoirPlus reste={t.fini.length - VISIBLES_ACCUEIL.livre} testId="accueil-voir-livre"
-              onClick={() => setListe({ titre: `Fini ${libelleFenetre}`, ids: t.fini.map((c) => c.id), n: t.fini.length, fini: true, aide: 'certifié dans la période choisie' })} />
+              onClick={() => setListe({ titre: `Fini ${libelleFenetre}`, ids: t.fini.map((c) => c.id), n: t.fini.length, cle: 'fini', fini: true, aide: 'certifié dans la période choisie' })} />
           </ListeUl>
         )}
       </Bloc>
@@ -107,7 +107,7 @@ export function AccueilSimple({ projetId, entre, seulementEntre = false }: { pro
       <div className="flex justify-center pt-1">
         <Button taille="sm" variante="discret" onClick={() => poserVue('detaillee')} data-testid="vue-detaillee">Vue détaillée</Button>
       </div>
-      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} />
+      <ListeChantiers liste={liste} onFermer={() => setListe(null)} avance={t.caAvance} aToi={t.aToi} vivante={(l) => (l.cle ? { ids: idsDe(t, l.cle), n: t.tuiles[l.cle] } : null)} />
     </div>
   )
 }

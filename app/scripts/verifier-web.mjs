@@ -463,7 +463,8 @@ try {
     verifie('« Tout déplier » : tout revient', await page.getByTestId('a-toi-total-repli').getAttribute('aria-expanded') === 'true'
       && await page.getByTestId('ca-avance-total-repli').getAttribute('aria-expanded') === 'true' && await page.getByTestId('a-lancer-total-repli').getAttribute('aria-expanded') === 'true')
   }
-  const ligne1 = page.getByTestId('element-a-toi').first()
+  // Une ligne d'ACTION (Fait / Pas encore / Ça bloque) n'a pas de bouton-verbe : on contrôle la première ligne qui en a un (19 oct. 2026 : une carte « Fusionne la PR » arrivée dans un vrai projet pendant la passe suffisait à la faire échouer).
+  const ligne1 = page.locator('[data-testid="element-a-toi"]:not([data-type="action"])').first()
   if (await ligne1.count()) {
     verifie('une ligne « À toi » : le sujet, ce qu’on attend en mots simples, UN bouton-verbe',
       (await ligne1.getByTestId('titre-a-toi').textContent()).length > 0 && (await ligne1.getByTestId('attente-a-toi').textContent()).length > 0
@@ -1044,6 +1045,8 @@ try {
     await elA2.getByTestId('action-fait').click()
     // La ligne part quand la réponse est enregistrée ET les données rechargées (plus lent que 1,5 s sur un réseau lent).
     await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC2.id}"]`).waitFor({ state: 'detached', timeout: 20000 }).catch(() => {})
+    // Depuis le 19 oct. (chantier fa297cc4) la ligne part AVANT l'écriture (la carte bouge tout de suite) : on attend la base.
+    for (let i = 0; i < 60; i++) { if (sql(`select answered_at is not null as repondu from messages where chantier_id = '${AC2.id}' and kind = 'action'`)[0]?.repondu) break; await page.waitForTimeout(250) }
     const repA = sql(`select answered_at is not null as repondu, etat from messages where chantier_id = '${AC2.id}' and kind = 'action'`)[0]
     verifie('action faite sur la ligne : réponse enregistrée (fait), sans fil ouvert, la ligne quitte « À toi »', repA?.repondu === true && repA?.etat === 'fait' && await page.locator('[data-testid="conversation"]').count() === 0 && await page.locator(`[data-testid="element-a-toi"][data-element-chantier="${AC2.id}"]`).count() === 0, repA)
   }
