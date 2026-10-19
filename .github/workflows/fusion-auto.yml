@@ -1,0 +1,83 @@
+# Fusion automatique des PR sûres (19 oct. 2026, chantier f4a4e3f3 ; Raphaël : « ça me soûle à chaque fois de cliquer »).
+# Son choix : « Auto sauf PR sensibles ». GitHub fusionne seul une PR quand les contrôles « Vérifications » sont verts ET que la règle
+# scripts/fusion_auto.py (UNE source, lue ici depuis la branche par défaut) dit « auto » ; une PR sensible reste une carte « Fusionne la PR ».
+#
+# ÉTEINDRE : variable de dépôt FUSION_AUTO = off (Settings > Secrets and variables > Actions > Variables), ou supprimer ce fichier.
+#   Rien d'autre à faire : au bout de 20 min, une PR propre qui ne s'est pas fusionnée redevient une carte (pr-a-fusionner.sh).
+#
+# SÉCURITÉ. `workflow_run` s'exécute avec un jeton en ÉCRITURE : ce fichier ne fait JAMAIS de checkout et n'exécute JAMAIS
+# de code venu d'une PR. Il ne lit de la PR que des NOMS de fichiers (API), passés par variables d'environnement, jamais collés dans
+# une commande. La règle est lue sur la branche par défaut. Fusion seulement si : PR ouverte, pas brouillon, tête dans le MÊME dépôt,
+# contrôles verts sur CE commit, état GitHub CLEAN, règle « auto ». `--match-head-commit` : un commit poussé entre-temps annule la fusion.
+# Limite assumée : « Vérifications » ne rejoue ni les parcours sur téléphone ni les bancs qui touchent la base ; seule la liste blanche
+# de scripts/fusion_auto.py limite le risque d'un défaut visible malgré des contrôles verts.
+name: Fusion automatique
+on:
+  workflow_run:
+    workflows: ["Vérifications"]
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+# Un seul passage à la fois : une file de PR se fusionne l'une après l'autre. Chaque passage balaie TOUTES les PR ouvertes
+# (GitHub ne garde qu'un passage en attente) : aucune PR n'est oubliée parce que son passage a été écarté.
+concurrency:
+  group: fusion-auto
+  cancel-in-progress: false
+jobs:
+  fusionner:
+    if: ${{ vars.FUSION_AUTO != 'off' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      CONTROLES: verifications.yml
+      DECLENCHEUR: ${{ github.event.workflow_run.name }} / ${{ github.event.workflow_run.conclusion }} / ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Balayer les PR ouvertes et fusionner celles qui sont sûres
+        shell: bash
+        run: |
+          set -uo pipefail
+          # La règle vient de la branche par défaut (jamais de la PR) ; aucun checkout.
+          regle="$RUNNER_TEMP/fusion_auto.py"
+          gh api -H "Accept: application/vnd.github.raw" "repos/$REPO/contents/scripts/fusion_auto.py?ref=$DEFAULT_BRANCH" > "$regle" \
+            || { echo "::error::règle fusion_auto.py illisible sur $DEFAULT_BRANCH : rien n'est fusionné"; exit 1; }
+          echo "Déclencheur : $DECLENCHEUR"
+          resume="$GITHUB_STEP_SUMMARY"
+          { echo "| PR | éligible | pourquoi | contrôles | état GitHub | résultat |"; echo "|---|---|---|---|---|---|"; } >> "$resume"
+          deploiement=0
+          nums=$(gh pr list --repo "$REPO" --state open --limit 50 --json number --jq '.[].number') || { echo "::error::liste des PR illisible"; exit 1; }
+          for n in $nums; do
+            ligne() { echo "PR #$n | éligible : $1 | $2 | contrôles : $3 | état : $4 | => $5"; echo "| #$n | $1 | $2 | $3 | $4 | $5 |" >> "$resume"; }
+            etat=""; for essai in 1 2 3; do
+              pr=$(gh pr view "$n" --repo "$REPO" --json state,isDraft,isCrossRepository,headRefName,headRefOid,mergeStateStatus) || pr=""
+              etat=$(printf '%s' "$pr" | jq -r '.mergeStateStatus // "?"')
+              [ "$etat" = "UNKNOWN" ] || [ "$etat" = "?" ] || break
+              sleep 10
+            done
+            [ -n "$pr" ] || { ligne "?" "PR illisible" "?" "?" "ignorée"; continue; }
+            sha=$(printf '%s' "$pr" | jq -r '.headRefOid'); branche=$(printf '%s' "$pr" | jq -r '.headRefName')
+            [ "$(printf '%s' "$pr" | jq -r '.isDraft')" = "false" ] || { ligne "-" "brouillon" "-" "$etat" "ignorée"; continue; }
+            if [ "$(printf '%s' "$pr" | jq -r '.isCrossRepository')" = "true" ]; then meme=non; else meme=oui; fi
+            # Les contrôles sur CE commit : au moins un passage, tous terminés, tous verts.
+            verts=$(gh api "repos/$REPO/actions/workflows/$CONTROLES/runs?head_sha=$sha&per_page=20" --jq '[.workflow_runs[]] | (length > 0) and all(.status == "completed" and .conclusion == "success")' 2>/dev/null || echo false)
+            fichiers=$(gh api --paginate "repos/$REPO/pulls/$n/files" --jq '.[] | .filename, (.previous_filename // empty)') || fichiers=""
+            verdict=$(printf '%s\n' "$fichiers" | python3 -I "$regle" --branche "$branche" --meme-depot "$meme") || verdict='{"decision":"carte","raison":"règle illisible"}'
+            decision=$(printf '%s' "$verdict" | jq -r '.decision'); raison=$(printf '%s' "$verdict" | jq -r '.raison')
+            [ "$decision" = "auto" ] || { ligne "non" "$raison" "$verts" "$etat" "reste une carte pour Raphaël"; continue; }
+            [ "$verts" = "true" ] || { ligne "oui" "$raison" "$verts" "$etat" "attend les contrôles verts"; continue; }
+            [ "$etat" = "CLEAN" ] || { ligne "oui" "$raison" "$verts" "$etat" "pas fusionnée (état différent de CLEAN : en retard ou en conflit, la chef la met à jour)"; continue; }
+            if gh pr merge "$n" --repo "$REPO" --merge --match-head-commit "$sha"; then
+              ligne "oui" "$raison" "$verts" "$etat" "FUSIONNÉE"
+              [ "$(printf '%s' "$verdict" | jq -r '.deploiement')" = "true" ] && deploiement=1
+            else
+              ligne "oui" "$raison" "$verts" "$etat" "fusion refusée par GitHub (voir le message au-dessus)"
+            fi
+          done
+          # Un push fait avec le jeton du workflow ne déclenche aucun autre workflow : la mise en ligne est lancée à la main si l'écran ou le module ont changé.
+          if [ "$deploiement" = "1" ]; then
+            gh workflow run deploy.yml --repo "$REPO" --ref "$DEFAULT_BRANCH" && echo "Mise en ligne relancée (deploy.yml)." && echo "Mise en ligne relancée." >> "$resume"
+          fi

@@ -36,14 +36,22 @@
 #    base les écarte de reponses_sans_suite (est_reponse_automatique, migration 0059).
 #  - CI en cours : une carte « Fusionne » déjà posée est GARDÉE (la CI finit, rien ne change
 #    pour Raphaël) ; seule une PR pas propre pour de bon la retire.
+#  - FUSION AUTOMATIQUE (19 oct. 2026, chantier f4a4e3f3 ; Raphaël : « ça me soûle à chaque fois de cliquer et marquer
+#    comme fait ») : UNE règle, scripts/fusion_auto.py (lue aussi par .github/workflows/fusion-auto.yml, qui fusionne quand les
+#    contrôles sont verts). PR « auto » (session du cockpit, seulement écran / documentation / contrôles) : AUCUNE carte
+#    « Fusionne », une carte déjà posée est retirée (réponse automatique), le script dit « se fusionne seule ». PR sensible
+#    (base, réglages, outils, règles…) : la carte reste, avec la raison en mots simples. Fichiers ou branche illisibles : carte.
+#    REPLI : une PR « auto » propre et ouverte depuis plus de delai_repli_min (fusion_auto.py) devient une carte quand même
+#    (interrupteur FUSION_AUTO=off, fusion refusée) : rien ne reste coincé en silence. Tests : --fichiers a,b  --branche x
+#    --meme-depot oui|non  --age-min n (sans GitHub).
 # Appelé par : tout agent qui ouvre une PR (consignes de chef.sh / renfort.sh),
 # et la passe de chef.sh, qui réconcilie avec la liste des PR ouvertes.
 set -euo pipefail
 RACINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SQL="$RACINE/scripts/sql.sh"; DEM="$RACINE/scripts/demander.sh"   # chemins absolus : marche aussi depuis le cache d'un projet branché
+SQL="${COCKPIT_SQL:-$RACINE/scripts/sql.sh}"; DEM="${COCKPIT_DEM:-$RACINE/scripts/demander.sh}"   # chemins absolus : marche aussi depuis le cache d'un projet branché (COCKPIT_SQL / COCKPIT_DEM : base simulée des bancs)
 q() { printf '%s' "$1" | sed "s/'/''/g"; }
 
-projet="${COCKPIT_PROJET:-}"; n=""; fermee=0; etat=""; titre=""; mstate=""; ci=""
+projet="${COCKPIT_PROJET:-}"; n=""; fermee=0; etat=""; titre=""; mstate=""; ci=""; fichiers_donnes=""; branche_donnee=""; meme_donne=""; age_donne=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --projet) projet="${2:-}"; shift 2 ;;
@@ -52,6 +60,10 @@ while [ $# -gt 0 ]; do
     --fermee) fermee=1; shift ;;
     --merge-state) mstate="${2:-}"; shift 2 ;;
     --ci)     ci="${2:-}"; shift 2 ;;
+    --fichiers)   fichiers_donnes="${2:-}"; shift 2 ;;
+    --branche)    branche_donnee="${2:-}"; shift 2 ;;
+    --meme-depot) meme_donne="${2:-}"; shift 2 ;;
+    --age-min)    age_donne="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,45p' "${BASH_SOURCE[0]}"; exit 0 ;;
     -*) echo "Argument inconnu : $1" >&2; exit 2 ;;
     *) n="$1"; shift ;;
@@ -59,6 +71,8 @@ while [ $# -gt 0 ]; do
 done
 [[ "$n" =~ ^[0-9]+$ ]] || { echo "Usage : $0 <numéro de PR> [--fermee] [--etat open|closed|merged] [--titre \"…\"]" >&2; exit 2; }
 case "$etat" in ""|open|closed|merged) ;; *) echo "--etat : open, closed ou merged." >&2; exit 2 ;; esac
+case "$meme_donne" in ""|oui|non) ;; *) echo "--meme-depot : oui ou non." >&2; exit 2 ;; esac
+[[ "$age_donne" =~ ^[0-9]*$ ]] || { echo "--age-min : un nombre de minutes." >&2; exit 2; }
 case "$ci" in ""|ok|echec|cours) ;; *) echo "--ci : ok, echec ou cours." >&2; exit 2 ;; esac
 [ -n "$projet" ] || { echo "Projet inconnu : COCKPIT_PROJET ou --projet <slug>." >&2; exit 2; }
 
@@ -183,12 +197,55 @@ fi
 # PR propre : la carte d'état « en conflit » n'a plus lieu d'être.
 [ "$(conflit_ouvert)" = "0" ] || { retirer_conflit "propre"; echo "Carte « en conflit » de la PR #$n retirée (PR propre)."; }
 
+# Fusion automatique : la règle (scripts/fusion_auto.py) dit « auto » ou « carte ». Dans le doute (fichiers, branche ou dépôt
+# illisibles), c'est une carte : on ne promet jamais une fusion qu'on n'a pas vérifiée.
+pourquoi_carte="C'est prêt et testé. Seul ton toucher peut le mettre en ligne."
+if [ "$etat" = "open" ] || [ -z "$etat" ]; then
+  FUSION="$RACINE/scripts/fusion_auto.py"
+  fichiers=""
+  if [ -n "$fichiers_donnes" ]; then fichiers=$(printf '%s' "$fichiers_donnes" | tr ',' '\n')
+  elif [ "$info" != "{}" ]; then   # tous les fichiers de la PR (100 par page, 30 pages au plus), ancien nom compris
+    for page in $(seq 1 30); do
+      p=$(curl -fsS --max-time 15 ${auth[@]+"${auth[@]}"} -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$depot/pulls/$n/files?per_page=100&page=$page" 2>/dev/null) || { fichiers=""; break; }
+      fichiers="$fichiers"$'\n'"$(printf '%s' "$p" | jq -r '.[] | .filename, (.previous_filename // empty)')"
+      [ "$(printf '%s' "$p" | jq 'length')" -ge 100 ] || break
+    done
+  fi
+  branche="$branche_donnee"; [ -n "$branche" ] || branche=$(printf '%s' "$info" | jq -r '.head.ref // ""')
+  meme="$meme_donne"
+  if [ -z "$meme" ]; then
+    if [ "$(printf '%s' "$info" | jq -r '.head.repo.full_name // ""')" = "$depot" ]; then meme=oui; else meme=non; fi
+  fi
+  verdict=$(printf '%s\n' "$fichiers" | python3 -I "$FUSION" --branche "$branche" --meme-depot "$meme" 2>/dev/null) || verdict=""
+  decision=$(printf '%s' "$verdict" | jq -r '.decision // "carte"' 2>/dev/null || echo carte)
+  raison=$(printf '%s' "$verdict" | jq -r '.raison // ""' 2>/dev/null || echo "")
+  delai=$(printf '%s' "$verdict" | jq -r '.delai_repli_min // 20' 2>/dev/null || echo 20)
+  if [ "$decision" = "auto" ]; then
+    age="$age_donne"
+    [ -n "$age" ] || age=$(printf '%s' "$info" | jq -r 'if .updated_at then ((now - (.updated_at | fromdate)) / 60 | floor) else "" end' 2>/dev/null || echo "")
+    if [ -n "$age" ] && [ "$age" -ge "$delai" ]; then
+      pourquoi_carte="Elle devait se fusionner seule depuis plus de $delai minutes et ne l'a pas fait. Fusionne-la toi-même."
+    else
+      if [ "$ouvertes" != "0" ]; then
+        "$SQL" "update messages set answered_at = now(), answered_by = null, reponse = 'PR #$n se fusionne seule ($(q "$raison")) : carte retirée, rien à faire.' where projet_id = '$pid' and kind = 'action' and answered_at is null and left(corps, ${#cle}) = '$(q "$cle")'" >/dev/null \
+          || { echo "La base a refusé le retrait de la carte PR #$n." >&2; exit 1; }
+        echo "Carte PR #$n retirée : elle se fusionne seule."
+      fi
+      echo "AUTO : PR #$n se fusionne seule quand le contrôle est vert ($raison). Aucune carte, rien à cliquer."
+      exit 0
+    fi
+  elif [ -n "$raison" ] && [ -n "$(printf '%s' "$fichiers" | tr -d '[:space:]')" ]; then
+    pourquoi_carte="Cette PR $raison : elle ne se fusionne pas seule, c'est à toi."
+    [ ${#pourquoi_carte} -le 250 ] || pourquoi_carte="${pourquoi_carte:0:247}..."
+  fi
+fi
+
 if [ "$toutes" != "0" ]; then echo "PR #$n : carte déjà posée ($ouvertes ouverte, $toutes au total), rien à faire."; exit 0; fi
 
 question="$cle ${titre:-prête à valider}"
 [ ${#question} -le 140 ] || question="${question:0:137}..."
 COCKPIT_PROJET="$projet" "$DEM" --action --question "$question" \
-  --pourquoi "C'est prêt et testé. Seul ton toucher peut le mettre en ligne." \
+  --pourquoi "$pourquoi_carte" \
   --lien "https://github.com/$depot/pull/$n|Ouvrir la PR #$n" \
   --etape "Touche « Merge pull request »" \
   --etape "Touche « Confirm merge »" >/dev/null || { echo "La carte de la PR #$n n'a pas pu être posée." >&2; exit 1; }
