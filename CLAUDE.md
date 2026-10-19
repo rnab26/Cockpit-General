@@ -69,6 +69,8 @@ cockpit` (réservée à service_role).
 cd app && npm ci && npx tsc -b && npm run build            # l'app se tient
 node --experimental-strip-types app/scripts/verifier-*.ts  # décisions pures
 node app/scripts/verifier-web.mjs                          # parcours réel, écran de téléphone
+node app/scripts/verifier-statuts-ecran.mjs               # statuer bouge les compteurs TOUT DE SUITE (écriture retardée de 8 s) : « Ça marche », « Ça ne marche pas », « Ça bloque » sur une carte d'action (elle passe chez Claude, revient quand il répond), écriture refusée = retour arrière visible (projet jetable, téléphone)
+node --experimental-strip-types app/scripts/verifier-statuts.ts   # les règles pures de ce mouvement : compteurs avant/après chaque geste, balle chez Claude / chez toi (hors ligne, CI)
 node app/scripts/verifier-accueil.mjs                     # vue par défaut (boxes + barres), accueil simple (boxes + 3 blocs), vue détaillée, chat plié, classer sans test (projets jetables, téléphone)
 node app/scripts/verifier-messages.mjs                     # un message n'est pas un chantier, sur écran de téléphone : lignes de vrais chantiers (« au travail » au lieu de « 0 % »), conversation sans chantier = une ligne sans barre, pastille, toucher = la discussion, la phrase exacte de Raphaël ne crée aucune ligne (vrais hooks, projet jetable)
 node --experimental-strip-types app/scripts/verifier-messages-fils.ts   # les règles pures de cet écran (hors ligne, CI)
@@ -202,6 +204,7 @@ Ce fichier est chargé par CHAQUE agent et chaque réveil : il ne garde que les 
 - `docs/historique/couts-recus.md` : Coûts, factures, reçus Anthropic (programme Google), fournisseurs.
 
 **Règles à retenir (résumé ; détail et preuves dans les fichiers ci-dessus)**
+- **Statuer = l'écran bouge tout de suite** (19 oct. 2026, chantier fa297cc4) : un geste sur un chantier ou une carte (« Ça marche », « Ça ne marche pas », « Fait », « Ça bloque », mettre de côté, relancer) pose la ligne à l'écran AVANT la réponse de la base (`lib/statuts.ts`, `lib/reponseCarte.ts`, `useDonnees.poserChantier / poserMessage`), la protège d'une lecture partie avant l'écriture, et revient en arrière avec un message si l'écriture échoue. Un nouveau bouton qui écrit sur un chantier ou une carte passe par là, jamais « écrire, puis recharger tout ». « Ça bloque » (ou « Pas encore » + un mot) passe la balle à Claude : la carte quitte « pour toi » et le chantier avance dans « ça avance » jusqu'à ce que Claude écrive dans le fil (`reponseCarte.retourPrisEnCharge`). Détail : `docs/historique/app-ecran-donnees.md`, « Statuer ».
 - **Un message n'est pas un chantier** : un chantier est un sujet de travail qui dure ; un message est une ligne dans un fil. Rien n'ouvre de chantier depuis une phrase. Une session fait UNE chose à la fois ; l'action en direct va sur la session, jamais dans une table lisible par les membres.
 - **Hooks** : ils doivent marcher avec le minimum d'événements (UserPromptSubmit, PostToolUse, Stop). Un projet branché ne reçoit que ce que propagent le lanceur et `brancher.sh` : on corrige ici, jamais dans un projet.
 - **Chaque fil est une discussion** : un message de Raphaël dans un fil = une réponse courte de Claude dans ce fil (`progression.sh --point`). Les cartes (questions, actions, vérifications) restent en dernier.

@@ -11,6 +11,7 @@ import type { Chantier, Message, Section } from './types.ts'
 import { heureLisible, reservationValide } from './dates.ts'
 import { dansFenetre, type Fenetre } from './fenetre.ts'
 import { aToi, demandesDe } from './entonnoir.ts'
+import { retourPrisEnCharge } from './reponseCarte.ts'
 
 export interface QuatreNombres {
   pourToi: number   // les DEMANDES de « À toi » (entonnoir.aToi sans les chantiers à tester)
@@ -29,10 +30,11 @@ export interface LigneOuJenSuis {
 const vide = (): QuatreNombres => ({ pourToi: 0, bouge: 0, dort: 0, livre: 0, expirees: 0 })
 
 /** Les chantiers qui portent au moins une question/action sans réponse. */
-export function chantiersEnAttente(messages: readonly Pick<Message, 'chantier_id' | 'kind' | 'answered_at'>[]): Set<string> {
+export function chantiersEnAttente(messages: readonly Pick<Message, 'chantier_id' | 'kind' | 'answered_at' | 'corps' | 'auteur_type' | 'created_at'>[]): Set<string> {
   const s = new Set<string>()
   for (const m of messages) {
-    if ((m.kind === 'question' || m.kind === 'action') && !m.answered_at && m.chantier_id) s.add(m.chantier_id)
+    // Une carte dont Raphaël a déjà rendu son retour (« Ça bloque ») n'attend plus SA réponse : c'est à Claude (retourPrisEnCharge).
+    if ((m.kind === 'question' || m.kind === 'action') && !m.answered_at && m.chantier_id && !retourPrisEnCharge(m as never, messages)) s.add(m.chantier_id)
   }
   return s
 }

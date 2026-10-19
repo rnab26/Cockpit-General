@@ -19,6 +19,7 @@ import { etatOuEnEst, chantierTenu, ouEnEstVisible, type EtatOuEnEst } from './o
 import { extrait, nomCourtSession } from './texte.ts'
 import { dateRelative } from './dates.ts'
 import { estAction } from './discussion.ts'
+import { PREFIXE_REPRISE as PREFIXE, estRetourOuvert, retourPrisEnCharge } from './reponseCarte.ts'
 
 type ChantierE = Chantier
 type MessageE = Message
@@ -176,6 +177,9 @@ export function aToi(chantiers: readonly ChantierE[], messages: readonly Message
     .filter((m) => estQuestionOuverte(m) && dansProjet(m.projet_id))
     // Un certifié est aussi archivé (« Fini ») : sa question gardée reste ici (0026). Un archivé l'a fermée en base.
     .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !m.chantier_id || (!!c && (!c.archived_at || c.etat === 'valide')) })
+    // « Ça bloque » (ou « Pas encore » + un mot) : la balle est chez Claude, la carte quitte « pour toi » et le chantier avance dans « ça avance » ;
+    // elle revient ici dès que Claude a répondu (reponseCarte.retourPrisEnCharge). Un chantier fini ou archivé n'est jamais « pris en charge ».
+    .filter((m) => { const c = m.chantier_id ? parId.get(m.chantier_id) : null; return !(c && !c.archived_at && c.etat !== 'valide' && retourPrisEnCharge(m, messages)) })
     .map((m) => {
       const depuis = plusTard(m.created_at, m.confirmee_at)
       return { type: estAction(m) ? 'action' as const : 'question' as const, cle: `q-${m.id}`, projetId: m.projet_id, chantier: m.chantier_id ? parId.get(m.chantier_id) ?? null : null, message: m, depuis, avanceDepuis: avance(m.chantier_id, depuis) }
@@ -415,7 +419,7 @@ export interface LigneCaAvance {
 // reprendre_reponse) ; en attendant, et pendant la reprise, elle se VOIT.
 
 /** Le début du message que la base écrit quand la chef reprend une réponse (0017, reprendre_reponse). */
-export const PREFIXE_REPRISE = 'Claude reprend ta réponse'
+export const PREFIXE_REPRISE = PREFIXE
 /** Même fenêtre que reponses_sans_suite (0017) : une vieille réponse ne ressort jamais. */
 export const JOURS_REPONSE_REPRISE = 7
 
@@ -436,20 +440,26 @@ export function repriseReponse(
   if (c.archived_at || c.etat === 'valide') return null
   const limite = new Date(now.getTime() - JOURS_REPONSE_REPRISE * 86_400_000).toISOString()
   let r: MessageE | null = null
+  // La date du geste : sa réponse, ou (carte d'action restée ouverte) son retour « Ça bloque » (0070).
+  const dateDe = (m: MessageE) => m.answered_at ?? m.retour_at ?? ''
   for (const m of messages) {
     // Seules SES réponses depuis l'app (answered_by) : une réponse notée par une session
     // vient de sa conversation, elle est déjà prise (0018, même règle que la base).
-    if (m.chantier_id !== c.id || (m.kind !== 'question' && m.kind !== 'action') || !m.answered_at || !m.answered_by) continue
-    if (!r || m.answered_at > r.answered_at!) r = m
+    if (m.chantier_id !== c.id || (m.kind !== 'question' && m.kind !== 'action') || !m.answered_by) continue
+    if (!m.answered_at && !estRetourOuvert(m)) continue
+    if (!r || dateDe(m) > dateDe(r)) r = m
   }
-  if (!r || r.answered_at! <= limite || (r.reponse ?? '').startsWith('Retirée par Claude')) return null
-  const t0 = r.answered_at!
-  if (activites.some((a) => a.chantier_id === c.id && a.updated_at > t0)) return null
-  if (taches.some((t) => t.chantier_id === c.id && !!t.progres_at && t.progres_at > t0)) return null
+  if (!r || dateDe(r) <= limite || (r.reponse ?? '').startsWith('Retirée par Claude')) return null
+  const t0 = dateDe(r)
+  // Un retour « Ça bloque » ne regarde que le fil (même règle que le compteur « pour toi » : retourPrisEnCharge), pas les étapes signalées.
+  if (r.answered_at) {
+    if (activites.some((a) => a.chantier_id === c.id && a.updated_at > t0)) return null
+    if (taches.some((t) => t.chantier_id === c.id && !!t.progres_at && t.progres_at > t0)) return null
+  }
   const apres = messages.filter((m) => m.chantier_id === c.id && m.id !== r!.id && m.auteur_type === 'session' && m.created_at > t0)
   if (apres.length === 0) return 'attend'
   const tenu = !!c.pris_jusqu_a && c.pris_jusqu_a > now.toISOString()
-  return tenu && apres.every((m) => m.kind === 'info' && m.corps.startsWith(PREFIXE_REPRISE)) ? 'reprise' : null
+  return (tenu || !r.answered_at) && apres.every((m) => m.kind === 'info' && m.corps.startsWith(PREFIXE_REPRISE)) ? 'reprise' : null
 }
 
 export const LIBELLE_REPRISE: Record<RepriseReponse, string> = {

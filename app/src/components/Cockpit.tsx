@@ -196,6 +196,7 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
   }), [vue])
   const recharger = useCallback(() => d.recharger(true), [d.recharger]) // eslint-disable-line react-hooks/exhaustive-deps
   const messagesLocal = useMemo(() => ({ poser: d.poserMessage, retirer: d.retirerMessage, relire: d.relireMessage }), [d.poserMessage, d.retirerMessage, d.relireMessage])
+  const chantiersLocal = useMemo(() => ({ poser: d.poserChantier, annuler: d.annulerChantier, confirmer: d.confirmerChantier, relire: d.relireChantier }), [d.poserChantier, d.annulerChantier, d.confirmerChantier, d.relireChantier])
   const selection = useMemo(() => ({
     actif: selectionActive, ids: selectionIds,
     basculer: (id: string) => setSelectionIds((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }),
@@ -206,15 +207,15 @@ export function Cockpit({ moi, theme, changerTheme, seDeconnecter }: { moi: Moi;
     const x = parProjet.get(projetId)
     if (!projet || !x) return null
     return {
-      moi, admin, par: moi.email, projet, ...x, enAttente, now, silenceMs, recharger, messagesLocal, prefs, poser, selection,
+      moi, admin, par: moi.email, projet, ...x, enAttente, now, silenceMs, recharger, messagesLocal, chantiersLocal, prefs, poser, selection,
       ouvrirModifier: setAModifier, ouvrirDoublonDe: setDoublonDe, ouvrirChantier: (id: string | null) => ouvrirChantier(projetId, id),
     }
-  }, [d.projets, parProjet, moi, admin, enAttente, now, silenceMs, recharger, messagesLocal, prefs, poser, selection, ouvrirChantier])
+  }, [d.projets, parProjet, moi, admin, enAttente, now, silenceMs, recharger, messagesLocal, chantiersLocal, prefs, poser, selection, ouvrirChantier])
 
   const prenables = usePrenables(admin, d.derniereMaj)
   const global: Global = {
     moi, admin, par: moi.email, projets: d.projets, sections: d.sections, chantiers: d.chantiers, messages: d.messages, activites: d.activites,
-    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, rechargerProjets: d.rechargerProjets, passagesComplets: d.passagesComplets, prenables, nonLus, vue, ouvrirChantier, contexteDe,
+    sessions: d.sessions, taches: d.taches, now, silenceMs, prefs, poser, recharger, messagesLocal, chantiersLocal, rechargerProjets: d.rechargerProjets, passagesComplets: d.passagesComplets, prenables, nonLus, vue, ouvrirChantier, contexteDe,
   }
 
   const pastilles = useMemo(() => {
