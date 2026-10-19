@@ -177,6 +177,7 @@ voit dans le cockpit (chantier + `progression.sh` à chaque étape).
 « Je veux des réponses simples, courtes, nettes et précises. » Dans la
 conversation comme dans le cockpit : la réponse d'abord, en quelques lignes,
 puis ce qu'il doit faire. Pas de pavé, pas de détail technique non demandé.
+**Forme mesurable (19 oct. 2026, « c'est toujours trop long, je zappe des trucs »)** : une phrase de réponse, 5 puces au plus (mot clé en gras), ni tableau ni récit, fin « À faire de ton côté : … » ou « Rien à faire », 10 lignes au plus ; ne jamais couper ce qui n'est pas vérifié, un risque ou un coût, ni un geste qu'il doit faire (avec le lien exact). Rappelée à CHAQUE message par `hooks/prompt-rappel.sh` et au démarrage par `hooks/session-start.sh` (même phrase aux deux endroits : modifie les deux ensemble) ; le même texte est dans les règles globales (`rnab26/dotfiles`, section « Communication »).
 
 ## Règle de clarté (Raphaël, 29 sept. 2026) — elle vaut pour TOUT le cockpit
 
