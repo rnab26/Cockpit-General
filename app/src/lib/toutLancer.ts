@@ -179,7 +179,7 @@ export function voyantDe(e: EntreeLancer, now: Date): Voyant {
     return { ...base, etat: 'vivante', signe: 'veille', texte: s.vivantes > 1 ? `${s.vivantes} sessions ouvertes, en veille` : 'session ouverte, en veille : rien ne tourne' }
   }
   const muette = (s.etats?.sans_nouvelles ?? 0) > 0
-  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session ne répond plus' : 'aucune session suivie', note: muette ? '' : NOTE_NON_SUIVIE, signe: muette ? 'sans_nouvelles' as const : null }
+  const aucune = { etat: 'aucune' as const, texte: muette ? 'sans nouvelles : une session n’a rien signalé (elle a peut-être fini)' : 'aucune session suivie', note: muette ? '' : NOTE_NON_SUIVIE, signe: muette ? 'sans_nouvelles' as const : null }
   const min = minutesDepuis(s.reveil_at, now)
   const dejaDemande = min !== null && min < s.reveil_ecart_min
   if (!attend) return { ...base, ...aucune, raison: 'Rien n’attend : pas besoin de session.' }
