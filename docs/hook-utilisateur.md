@@ -20,3 +20,6 @@ Une session cloud ouverte sur plusieurs dépôts démarre dans `/home/user` : au
 - NON VÉRIFIÉ : que Claude Code cloud charge `~/.claude/settings.json` venu des dotfiles. `~/.claude/CLAUDE.md` et `~/.claude/skills` y sont bien synchronisés depuis les dotfiles ; un `settings.json` n'y est pas (aucun présent ici). La preuve se fait en ouvrant une session neuve sur plusieurs dépôts : le premier message doit faire apparaître la session dans « Ça avance ». Sinon `connecter.sh` reste le recours.
 - Avant le premier signe d'une session multi-dépôts, elle n'est pas visible (le premier message qui nomme le projet, ou le premier fichier touché, la branche).
 - Un message qui nomme deux projets n'en choisit aucun. Un choix fait ne change plus (relancer `connecter.sh --depot` pour le changer).
+
+## Constat du 20 oct. 2026 (à lire avant tout)
+VÉRIFIÉ : une session cloud n'a pas de `~/.claude/settings.json` utilisateur (seulement `launcher-settings.json` posé par la plateforme, hook Stop, et `remote-settings.json` vide). Ce hook n'a donc jamais pu se charger. Voie qui marche : `connecter.sh` demandé par le CLAUDE.md des dépôts joints, avec `presence.sh` (voir CLAUDE.md, « Session sans hook »).
