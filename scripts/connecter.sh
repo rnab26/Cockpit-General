@@ -58,6 +58,12 @@ if [ -n "$SID" ]; then
   fi
 fi
 
+# 2 bis. Présence : sans hook, le signe de vie ne se refait pas. Un petit processus détaché le refait tant que la session existe.
+if [ -n "$SID" ] && [ -n "${CLAUDE_PID:-}" ] && [ -d "/proc/$CLAUDE_PID" ] && [ "${COCKPIT_PRESENCE:-on}" != "off" ]; then
+  nohup setsid "$ICI/scripts/presence.sh" --projet "$PROJET" --session "$SID" --claude-pid "$CLAUDE_PID" --branche "$BRANCHE" >/dev/null 2>&1 </dev/null &
+  declaree="$declaree ; présence suivie toutes les 2 min tant que la session est ouverte"
+fi
+
 # 3. Les hooks utilisateur (hooks/utilisateur.sh) retiennent ce choix pour toute la session : suivi, rappels, réponses en direct.
 if [ -n "$SID" ]; then
   mkdir -p "${COCKPIT_HOME:-$HOME/.cockpit}/sessions" 2>/dev/null && printf '%s\n' "$DEPOT" >"${COCKPIT_HOME:-$HOME/.cockpit}/sessions/$SID.depot" 2>/dev/null
