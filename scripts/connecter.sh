@@ -50,7 +50,7 @@ esac
 # 2. La session visible dans l'app (comme le fait le hook de suivi à chaque appel d'outil).
 declaree="non (CLAUDE_CODE_SESSION_ID absent : la session ne sera pas listée)"
 if [ -n "$SID" ]; then
-  charge=$(jq -cn --arg s "$SID" --arg b "$BRANCHE" '{session_id: $s, hook_event_name: "Vie", branche: $b}')
+  charge=$(jq -cn --arg s "$SID" --arg b "$BRANCHE" '{session_id: $s, hook_event_name: "Vie", branche: $b, rattacher: "1"}')
   if "$ICI/scripts/sql.sh" "select suivre('$(printf '%s' "$PROJET" | sed "s/'/''/g")', '$(printf '%s' "$charge" | sed "s/'/''/g")'::jsonb)" 2>/dev/null | jq -e '.ok == true' >/dev/null 2>&1; then
     declaree="oui (session ${SID:0:8}, branche ${BRANCHE:-inconnue})"
   else
