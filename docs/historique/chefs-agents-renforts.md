@@ -385,3 +385,5 @@ Demande de Raphaël : « Je veux que ce soit automatique […] je ne peux pas ch
 
 ## 20 oct. 2026 — session sans hook visible (chantier présence)
 Cause : une session multi-dépôts démarre dans /home/user, aucun hook ; connecter.sh ne déclarait la session qu une fois, puis elle redevenait « absente » après le délai (constaté sur la session du cockpit elle-même : dernier signe 19 oct. 18:44 alors qu elle travaillait). Correctif : presence.sh (signe de vie toutes les 2 min tant que le processus Claude existe), lancé par connecter.sh ; premier geste ajouté à docs/bloc-CLAUDE.md. Prouvé : vu_at avance toutes les 20 s en base, état « en veille ». Banc : verifier-presence.mjs (7/7).
+
+20 oct. 2026 (suite) : la session FacePro du 16 oct. était enregistrée dans le projet « cockpit » ; suivre() ne changeait jamais projet_id. Migration 0108 : le drapeau "rattacher":"1" (posé par connecter.sh et presence.sh) déplace la session vers le projet demandé ; les hooks ordinaires ne déplacent rien. Prouvé en transaction annulée : hook ordinaire reste dans A, rattacher passe dans B.

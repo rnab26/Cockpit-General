@@ -30,7 +30,7 @@ printf '%s\n' "$$" >"$PIDF"
 trap 'rm -f "$PIDF"' EXIT
 esc() { printf '%s' "$1" | sed "s/'/''/g"; }
 while [ -d "/proc/$CPID" ]; do
-  charge=$(jq -cn --arg s "$SID" --arg b "$BRANCHE" '{session_id: $s, hook_event_name: "Vie", branche: $b}')
+  charge=$(jq -cn --arg s "$SID" --arg b "$BRANCHE" '{session_id: $s, hook_event_name: "Vie", branche: $b, rattacher: "1"}')
   "$SQL" "select suivre('$(esc "$PROJET")', '$(esc "$charge")'::jsonb)" >/dev/null 2>&1 || true
   sleep "$PAS"
 done
