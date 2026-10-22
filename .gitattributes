@@ -1,0 +1,2 @@
+# Les journaux de docs/historique/ ne grandissent que par la fin : deux branches qui y ajoutent chacune une entrée se fusionnent en gardant les deux (plus de conflit à régler à la main).
+docs/historique/*.md merge=union
