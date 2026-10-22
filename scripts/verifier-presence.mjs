@@ -66,6 +66,24 @@ try {
   claude2.kill("SIGKILL");
   await attends(() => spawnSync("pgrep", ["-fc", "presence.sh --projet test-presence --session sess-6"], { encoding: "utf8" }).stdout.trim() === "0", 6000);
   verifie("Claude fini : la présence s'arrête", spawnSync("pgrep", ["-fc", "presence.sh --projet test-presence --session sess-6"], { encoding: "utf8" }).stdout.trim() === "0");
+  console.log("7. Branchement implicite : un appel au cockpit avec COCKPIT_PROJET suffit (sans connecter.sh)");
+  const claude3 = spawn("sleep", ["60"], { stdio: "ignore" });
+  const base7 = { ...env, COCKPIT_PROJET: "", CLAUDE_PID: String(claude3.pid), SUPABASE_URL: "http://127.0.0.1:9", COCKPIT_SQL: faux, COCKPIT_PRESENCE_PAS: "1" };
+  const n7 = () => spawnSync("pgrep", ["-fc", "presence.sh --projet projet-reel --session sess-7"], { encoding: "utf8" }).stdout.trim();
+  const sql7 = (extra) => spawnSync("bash", [join(RACINE, "scripts/sql.sh"), "select 1"], { env: { ...base7, CLAUDE_CODE_SESSION_ID: "sess-7", ...extra }, encoding: "utf8", timeout: 15000 });
+  const marque7 = join(dossier, "cockpit-presence-sess-7.projet");
+  sql7({});
+  verifie("sans COCKPIT_PROJET : rien n'est lancé", n7() === "0" && !existsSync(marque7));
+  sql7({ COCKPIT_PROJET: "test-banc-x" });
+  verifie("projet de banc (test-…) : jamais branché", !existsSync(marque7));
+  sql7({ COCKPIT_PROJET: "projet-reel", COCKPIT_PRESENCE: "off" });
+  verifie("COCKPIT_PRESENCE=off : rien", !existsSync(marque7));
+  sql7({ COCKPIT_PROJET: "projet-reel" });
+  verifie("projet réel : marqueur posé et présence lancée", await attends(() => n7() === "1", 6000) && readFileSync(marque7, "utf8").startsWith("projet-reel\n"), n7());
+  sql7({ COCKPIT_PROJET: "autre-projet" });
+  verifie("un autre projet nommé plus tard ne change pas le choix", readFileSync(marque7, "utf8").startsWith("projet-reel\n") && n7() === "1");
+  claude3.kill("SIGKILL");
+  await attends(() => n7() === "0", 6000);
 } finally { try { claude.kill("SIGKILL"); } catch {} rmSync(dossier, { recursive: true, force: true }); }
 console.log(`\n${total - echecs}/${total}`);
 process.exit(echecs ? 1 : 0);
