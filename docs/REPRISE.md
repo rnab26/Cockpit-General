@@ -2,7 +2,7 @@
 
 **À lire en premier par toute session qui reprend le cockpit.** L'état vivant (chantiers, fil, qui travaille) est en base et arrive au démarrage (hook, ou `scripts/connecter.sh`) ; ce fichier dit le contexte et la suite. Les règles permanentes sont dans `CLAUDE.md` ; le récit complet des lots du 29 sept. au 19 oct. est dans `docs/historique/reprise-archive-sept-oct-2026.md` (à lire au moment de toucher au sujet, pas avant). Les décisions de Raphaël, mot pour mot : `rnab26/dotfiles/cockpit-kit/DECISIONS-2026-09-28.md`.
 
-Dernière mise à jour : 22 oct. 2026.
+Dernière mise à jour : 22 oct. 2026 (fin de journée : sections 0 septdecies).
 
 ## 0 septdecies. 22 oct. 2026 : le cockpit voit TOUTES les sessions, les réveils travaillent tous les projets
 
@@ -14,6 +14,9 @@ Demande de Raphaël : « une session FacePro tourne quasi constamment et aucune 
 - **Réveil** : une règle, `cible_reveil_manuelle` (0109) ; « Activer une session » marche même sans chef vivante ; `add_repo` avec `access="push"` et chargé par ToolSearch (outil différé en routine) pour atteindre un autre dépôt. Preuve : le réveil de 10:32 a traité FacePro (chantier « Langue d'origine » passé « à vérifier »).
 - **Fusions** : PR sûres + migrations seules + hooks `*.sh` se fusionnent seules (`fusion_auto.py`) ; `.gitattributes` : journaux `docs/historique/*.md` en fusion « union » (plus de conflit d'ajout).
 - **Nettoyage** : hook utilisateur supprimé (jamais chargé en cloud), 15 projets de test oubliés purgés, CLAUDE.md 38 → 24 Ko, REPRISE.md 84 → quelques Ko.
+
+- **Réveil réel prouvé ET limite de plateforme trouvée** : deux réveils (10:32, 10:51) : FacePro servi (chantier « à vérifier »), mais une session de ROUTINE n'a pas `add_repo` (ToolSearch ne le trouve pas) et ne voit que les dépôts de sa routine ; `trieur-data` n'y est pas. Réponse (0111/0112) : `chef.sh --depot-absent <slug>` (une carte pour Raphaël : lien + étapes), 24 h sans réveil pour rien, voyant sans bouton qui échouerait, message d'écran. **Seul geste restant (à la main, une fois) : ajouter `rnab26/Trieur-Data` aux dépôts de la routine « Cockpit — réveil immédiat » (claude.ai/code/routines). Même geste pour tout futur projet branché.**
+- **Bancs** : tous verts sauf ce qui dépend de l'environnement ; `verifier-base` passe avec le filet global éteint (le banc allume le seul réglage, jamais le job).
 
 **Pas prouvé / à surveiller**
 - Un réveil réel APRÈS le correctif ToolSearch de `add_repo` (Trieur n'avait pas été atteint à 10:32).
