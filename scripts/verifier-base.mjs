@@ -2755,6 +2755,7 @@ async function controle34_fermeture_sessions() {
 }
 
 const P11 = randomUUID(), SLUG_K = `test-verif-${rand}-k`;
+let filetAvant = true; // état réel du filet global avant la passe (remis à la fin)
 async function controle38_filet_securite() {
   section("38. Filet de sécurité (0044) : du travail attend + personne de vivant = un réveil journalisé ; sinon rien");
   await sql(`insert into projets (id, slug, nom, delai_sans_signe_min) values (${q(P11)}, ${q(SLUG_K)}, 'Projet de test filet', 3)`);
@@ -2763,7 +2764,7 @@ async function controle38_filet_securite() {
   const vieux = (min) => sql(`insert into messages (projet_id, auteur, auteur_type, kind, corps, created_at) values (${q(P11)}, 'Raphaël', 'proprietaire', 'info', 'Peux-tu regarder ça ?', now() - interval '${min} minutes')`);
   // Le cron existe, actif, toutes les 3 minutes ; les fonctions ne sont pas ouvertes au public.
   const cron = await une(`select active, schedule from cron.job where jobname = 'cockpit-filet-securite'`).catch(() => null);
-  verifie("pg_cron : le job cockpit-filet-securite existe, actif, à la cadence réglée (0071 : toutes les minutes par défaut)", cron?.active === true && /^(\*|\*\/([1-9]|1[0-5])|[0-2]-59\/3) \* \* \* \*$/.test(cron.schedule), cron);
+  verifie("pg_cron : le job cockpit-filet-securite existe, actif, à la cadence réglée (0071 : toutes les minutes par défaut)", cron?.active === filetAvant && /^(\*|\*\/([1-9]|1[0-5])|[0-2]-59\/3) \* \* \* \*$/.test(cron.schedule), cron);
   const droits = await une(`select has_function_privilege('anon', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as anon,
     has_function_privilege('authenticated', 'cockpit.filet_passe(text,boolean,boolean)', 'execute') as auth,
     has_function_privilege('authenticated', 'cockpit.reveiller_chef(uuid,uuid,text)', 'execute') as reveil,
@@ -3690,7 +3691,7 @@ async function controle51_reactivite() {
   verifie("la boucle cron suit le réglage (2 min, puis rétabli) et lance libération + filet sous un seul verrou",
     j2.schedule === "*/2 * * * *" && /boucle_reactive/.test(j2.command) && /724550/.test(j2.command) && j1.schedule === (avant.cadence_min <= 1 ? "* * * * *" : `*/${avant.cadence_min} * * * *`), { j2, j1 });
   const tout = await une(`select (select count(*) from cron.job where jobname = 'cockpit-filet-securite' and active)::int as actif`);
-  verifie("la boucle est active après le test", tout.actif === 1);
+  verifie("la boucle est dans le même état qu'avant le test (active seulement si le filet global est allumé)", tout.actif === (filetAvant ? 1 : 0));
 }
 
 const PFC = randomUUID(), SLUG_FC = `test-verif-${rand}-fc`;
@@ -4219,6 +4220,10 @@ const etapes = [
     controle58_cles_import,
     controle59_epuration_cartes,
   ];
+  // 22 oct. 2026 : Raphaël a éteint le filet GLOBAL (pas de réveil automatique) : les contrôles du filet ont besoin qu'il soit allumé. On
+  // allume le seul réglage (filet_reglage.actif), JAMAIS le job pg_cron (aucun vrai réveil possible), et on remet l'état d'avant à la fin.
+  filetAvant = (await une(`select actif from filet_reglage where id = 1`)).actif === true;
+  if (!filetAvant) await sql(`update filet_reglage set actif = true where id = 1`);
   // SEUL=41 : ne joue que le contrôle « controle41_… » (passe ciblée, économe) ; SEUL=35,38 en joue plusieurs ; sans SEUL, tout.
   for (const etape of etapes.filter((e) => !process.env.SEUL || process.env.SEUL.split(",").some((n) => (e.name ?? "").startsWith(`controle${n}_`)))) {
     try { await etape(); }
@@ -4226,6 +4231,7 @@ const etapes = [
   }
 } finally {
   section("nettoyage");
+  try { if (!filetAvant) await sql(`update filet_reglage set actif = false where id = 1`); } catch (e) { console.log(`  (filet global non remis à « éteint » : ${e.message})`); }
   try { if (ws) ws.close(); } catch {}
   const problemes = [];
   if (userId) { if (!(await supprimerCompte(userId))) problemes.push(`compte ${userId} non supprimé`); }
