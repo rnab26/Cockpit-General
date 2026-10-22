@@ -32,7 +32,7 @@
 set -euo pipefail
 ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 slug=""; nom=""; depot=""; url_site=""; dossier="$PWD"; forcer=0; couleur=""; maj=0
-voie=""; motifs=""; garde_seulement=0
+voie=""; motifs=""; garde_seulement=0; pg_seul=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --projet) slug="${2:-}"; shift 2 ;;
@@ -47,6 +47,9 @@ while [ $# -gt 0 ]; do
     # améliorations du cockpit doivent être partout, sans que j'aie à le
     # demander »). Ne touche pas à la base, n'imprime que ce qui a changé.
     --maj) maj=1; shift ;;
+    # --premier-geste-seulement : ne pose QUE la consigne « premier geste » en tête du CLAUDE.md du projet (22 oct. 2026) : une session
+    # sans hook (plusieurs dépôts) ne lit que ce fichier. Ni base, ni scripts, ni hooks.
+    --premier-geste-seulement) pg_seul=1; shift ;;
     --voie) voie="${2:-}"; shift 2 ;;
     --sans-trace) voie=invisible; shift ;;
     --branches-raphael) voie=branches; shift ;;
@@ -190,6 +193,31 @@ FIN
 fi
 
 if [ "$maj" = 1 ]; then exec 3>&1 1>/tmp/cockpit-brancher-$$.log; fi
+# La consigne « premier geste » (docs/premier-geste.md) : EN TÊTE du CLAUDE.md, entre repères, remplacée à chaque passage.
+poser_premier_geste() {
+  local claude="$dossier/CLAUDE.md"; [ -f "$claude" ] || touch "$claude"
+  TEXTE=$(sed "s/{{SLUG}}/$slug/g" "$ICI/docs/premier-geste.md") python3 - "$claude" <<'PYG'
+import os, re, sys
+p = sys.argv[1]; s = open(p).read()
+d, f = "<!-- cockpit-premier-geste:début -->", "<!-- cockpit-premier-geste:fin -->"
+bloc = d + "\n" + os.environ["TEXTE"].strip("\n") + "\n" + f + "\n"
+i = s.find(d)
+if i >= 0:
+    j = s.find(f, i)
+    j = (s.index("\n", j) + 1) if j >= 0 else i + len(d)
+    nouveau = s[:i] + bloc + s[j:]
+else:
+    m = re.match(r"(# [^\n]*\n+)", s)          # après le titre du fichier, s'il y en a un
+    k = m.end() if m else 0
+    nouveau = s[:k] + bloc + "\n" + s[k:]
+if nouveau != s:
+    open(p, "w").write(nouveau); print("   premier geste posé / mis à jour : CLAUDE.md")
+else:
+    print("   premier geste déjà à jour : CLAUDE.md")
+PYG
+}
+if [ "$pg_seul" = 1 ]; then poser_premier_geste; exit 0; fi
+
 echo "1. Projet « $slug » en base"
 [ "$maj" = 1 ] || "$SQL" "insert into projets (slug, nom, depot, url_site, couleur) values ('$(q "$slug")', '$(q "$nom")', $( [ -n "$depot" ] && echo "'$(q "$depot")'" || echo null ), $( [ -n "$url_site" ] && echo "'$(q "$url_site")'" || echo null ), $( [ -n "$couleur" ] && echo "'$(q "$couleur")'" || echo null )) on conflict (slug) do update set nom = excluded.nom, depot = coalesce(excluded.depot, projets.depot), url_site = coalesce(excluded.url_site, projets.url_site), couleur = coalesce(excluded.couleur, projets.couleur)" >/dev/null
 cle=""; [ "$maj" = 1 ] || cle=$("$SQL" "select cle_embed from projets where slug = '$(q "$slug")'" | jq -r '.rows[0].cle_embed')
@@ -313,6 +341,7 @@ else:
 PY2
 else
   printf '\n%s\n' "$bloc" >> "$claude"; echo "   bloc ajouté"; fi
+poser_premier_geste
 
 if [ "$maj" = 1 ]; then
   # Seulement ce qui a changé, pour le hook de démarrage.

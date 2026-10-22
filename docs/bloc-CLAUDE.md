@@ -7,12 +7,6 @@ Le hook `.claude/hooks/cockpit-session-start.sh` injecte l'état au démarrage :
 chantiers ouverts par section, questions en attente, réponses humaines,
 demandes des utilisateurs, progression des autres sessions.
 
-- **PREMIER GESTE de la session, sans hook (20 oct. 2026)** : si ton contexte ne contient AUCUN bloc « Cockpit » (session ouverte sur
-  plusieurs dépôts : elle démarre dans `/home/user` et aucun hook ne tourne), lance une fois
-  `bash /home/user/Cockpit-General/scripts/connecter.sh --projet {{SLUG}}` (si ce dossier manque :
-  `git clone --depth 1 https://github.com/rnab26/Cockpit-General /home/user/Cockpit-General` d'abord). Il montre l'état du projet et
-  rend la session visible dans « Ça avance » ; un petit processus refait son signe de vie tant qu'elle est ouverte. Plusieurs projets
-  dans la session : prends celui du sujet de Raphaël. Sans cela, la session est invisible dans le cockpit.
 - **RÉPONSES À RAPHAËL : simples, courtes, nettes, précises** (29 sept. : « je
   veux des réponses simples, courtes, nettes et précises ; pas de pavé »).
   Quelques lignes : la réponse d'abord, puis ce qu'il doit faire s'il y a

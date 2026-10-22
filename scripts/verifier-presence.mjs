@@ -1,7 +1,7 @@
 // Présence d'une session sans hooks (20 oct. 2026) : presence.sh refait le signe de vie tant que le processus Claude existe, puis s'arrête.
 //   node scripts/verifier-presence.mjs      (hors ligne : un faux sql.sh enregistre les appels, un faux « Claude » = un sleep)
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, chmodSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +36,17 @@ try {
   console.log("4. Entrées fausses : sortie 0 sans rien faire");
   const v = spawnSync("bash", [join(RACINE, "scripts/presence.sh"), "--projet", "x"], { env, timeout: 3000 });
   verifie("arguments manquants : sortie 0", v.status === 0, v.status);
+  console.log("5. La consigne « premier geste » est posée en tête du CLAUDE.md du projet (brancher.sh --premier-geste-seulement)");
+  const cdir = join(dossier, "projet"); mkdirSync(cdir);
+  const cmd = join(cdir, "CLAUDE.md");
+  writeFileSync(cmd, "# Projet Test\n\nRègle du projet.\n\n## Autre section\ntexte\n");
+  const lance = () => spawnSync("bash", [join(RACINE, "scripts/brancher.sh"), "--projet", "test-pg", "--dossier", cdir, "--premier-geste-seulement"], { env, encoding: "utf8", timeout: 20000 });
+  let r5 = lance();
+  let t = readFileSync(cmd, "utf8");
+  verifie("posée une fois, après le titre, avec le slug du projet", r5.status === 0 && t.startsWith("# Projet Test\n\n<!-- cockpit-premier-geste:début -->") && /connecter\.sh --projet test-pg`/.test(t), t.slice(0, 200));
+  verifie("le reste du fichier est intact", t.includes("Règle du projet.\n\n## Autre section\ntexte\n"));
+  r5 = lance(); const t2 = readFileSync(cmd, "utf8");
+  verifie("relancée : rien ne change, jamais de doublon", t2 === t && (t2.match(/cockpit-premier-geste:début/g) ?? []).length === 1 && /déjà à jour/.test(r5.stdout), r5.stdout);
   console.log("6. Conteneur recyclé : le prochain appel au cockpit (sql.sh) relance la présence morte");
   const claude2 = spawn("sleep", ["60"], { stdio: "ignore" });
   const env6 = { ...env, CLAUDE_CODE_SESSION_ID: "sess-6", CLAUDE_PID: String(claude2.pid), SUPABASE_URL: "http://127.0.0.1:9", COCKPIT_SQL: faux, COCKPIT_PRESENCE_PAS: "1" };
