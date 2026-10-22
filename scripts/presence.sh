@@ -25,7 +25,10 @@ command -v jq >/dev/null || exit 0
 SQL="${COCKPIT_SQL:-$ICI/scripts/sql.sh}"
 # Une seule présence par session : un 2e lancement laisse la première faire.
 PIDF="${TMPDIR:-/tmp}/cockpit-presence-$SID.pid"
-if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null && [ "$(cat "$PIDF")" != "$$" ]; then exit 0; fi
+# Verrou atomique (deux appels à sql.sh presque simultanés ne doivent pas lancer deux présences) ; sans flock, simple contrôle du pid.
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$PIDF.lock"; flock -n 9 || exit 0
+elif [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null && [ "$(cat "$PIDF")" != "$$" ]; then exit 0; fi
 printf '%s\n' "$$" >"$PIDF"
 trap 'rm -f "$PIDF" "${TMPDIR:-/tmp}/cockpit-machine-pid-$SID"' EXIT
 esc() { printf '%s' "$1" | sed "s/'/''/g"; }
@@ -37,12 +40,12 @@ machine() {
   command -v python3 >/dev/null 2>&1 && [ -f "$ICI/scripts/machine.py" ] || return 0
   if [ -s "$MPID" ] && kill -0 "$(cat "$MPID" 2>/dev/null)" 2>/dev/null; then return 0; fi
   if [ -f "$MOFF" ] && [ $(( $(date +%s) - $(stat -c %Y "$MOFF" 2>/dev/null || echo 0) )) -lt "${COCKPIT_MACHINE_ETEINT_S:-600}" ]; then return 0; fi
-  ( setsid python3 "$ICI/scripts/machine.py" --projet "$PROJET" --session "$SID" --sql "$SQL" --claude-pid "$CPID" --marque-eteint "$MOFF" >/dev/null 2>&1 & echo $! >"$MPID" ) >/dev/null 2>&1
+  ( setsid python3 "$ICI/scripts/machine.py" --projet "$PROJET" --session "$SID" --sql "$SQL" --claude-pid "$CPID" --marque-eteint "$MOFF" >/dev/null 2>&1 9>&- & echo $! >"$MPID" ) >/dev/null 2>&1
 }
 while [ -d "/proc/$CPID" ]; do
   machine
   charge=$(jq -cn --arg s "$SID" --arg b "$BRANCHE" '{session_id: $s, hook_event_name: "Vie", branche: $b, rattacher: "1"}')
-  "$SQL" "select suivre('$(esc "$PROJET")', '$(esc "$charge")'::jsonb)" >/dev/null 2>&1 || true
-  sleep "$PAS"
+  "$SQL" "select suivre('$(esc "$PROJET")', '$(esc "$charge")'::jsonb)" >/dev/null 2>&1 9>&- || true
+  sleep "$PAS" 9>&-
 done
 exit 0
