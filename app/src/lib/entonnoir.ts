@@ -12,7 +12,7 @@
 import type { Activite, Chantier, Message, Priorite, SessionClaude, Tache } from './types.ts'
 import { activiteDuChantier } from './activite.ts'
 import { chantiersEnAttente } from './ouJenSuis.ts'
-import { presenceChantier, preuveDeVie, derniereDemandeOuCaEnEst, type CodePresence, type Presence } from './presence.ts'
+import { presenceChantier, preuveDeVie, sansPourcentage, derniereDemandeOuCaEnEst, type CodePresence, type Presence } from './presence.ts'
 import { activiteDeTache, agentsVivantsDuChantier, agentVivantDuChantier, nomSession, presenceAvecAgent, quiTravaille, resumeTravail, estSessionAutonome, type QuiTravaille, type ReglagesParProjet } from './sessions.ts'
 import { syntheseMiseEnLigne } from './jalons.ts'
 import { etatOuEnEst, chantierTenu, ouEnEstVisible, type EtatOuEnEst } from './ouEnEst.ts'
@@ -519,6 +519,9 @@ export function caAvanceToutSeul(
       const barreAgent = agentVivant && agentVivant.pourcentage != null ? activiteDeTache(agentVivant, now) : null
       const barre = parSession && barreAgent ? (barreAgent.updated_at > parSession.updated_at ? barreAgent : parSession)
         : parSession ?? (presence.barreVive ? (presenceBase.code === 'travaille' ? activite : barreAgent) : null)
+          // Ligne vivante sans barre vive : la session vient de finir son tour (statut « attente ») et n'a pas encore repris.
+          // La barre ne disparaît pas pour autant (22 oct. 2026) : on garde le dernier avancement connu.
+          ?? (act && act.statut === 'attente' && !sansPourcentage(act) ? act : null)
       const agent = agentVivant
       lignes.push({ c, presence, activite: barre, vivant: true, qui: morceaux.join(' · ') || 'Claude',
         etape: barre?.etape || agent?.etape || null, pourquoi: null, demandeLe: null, ouEnEst: etatOuEnEst(c, messages, true, now, tenus) })

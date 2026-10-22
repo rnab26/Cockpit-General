@@ -231,6 +231,15 @@ action_live() {
   ( setsid "$SQL" "select signaler_action_live('$(qsql "$PROJET")', '$(qsql "$branche")', '$(qsql "$desc")')" >/dev/null 2>&1 & ) >/dev/null 2>&1
 }
 
+# Un message de Raphaël réveille la session : sa barre repasse « en direct » TOUT DE SUITE (22 oct. 2026 : « dès que j'ai répondu, la barre
+# de progression s'est retirée » : le hook Stop l'avait mise en attente, et seul le premier outil du tour la rallumait).
+reprise_live() {
+  [ -z "$agent" ] && [ -n "$branche" ] || return 0
+  est_renfort && return 0
+  touch "${TMPDIR:-/tmp}/cockpit-live-$sid" 2>/dev/null
+  ( setsid "$SQL" "select signaler_action_live('$(qsql "$PROJET")', '$(qsql "$branche")', 'Lit ton message')" >/dev/null 2>&1 & ) >/dev/null 2>&1
+}
+
 # TRAVAIL RÉEL DU TOUR (0091) : une ligne par modification de fichier faite par la session elle-même (pas par ses agents).
 # Le hook d'arrêt (autonome.sh) la lit : du travail sans AUCUN chantier tenu → une relance, une seule par tour. C'est le filet
 # qui remplace l'ouverture automatique par message : un chantier naît d'un travail, pas d'une phrase.
@@ -391,6 +400,7 @@ case "$ev" in
     # suite, avant son premier pas — sans attendre le rythme de 20 s.
     reponses_fraiches UserPromptSubmit maintenant
     consigner_message
+    reprise_live
     battement_tour
     battement_machine
     emettre

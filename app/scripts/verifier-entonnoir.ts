@@ -353,6 +353,11 @@ console.log('verifier-entonnoir')
   const mort = caAvanceToutSeul(cs, [], [], [], [tache('a1', 'tr-readme', 53)], now, 15 * 60_000)
   verifie('silence réglé à 15 min : l’assistant de 53 min n’est plus « vivant » (ni barre, ni « assistant »)',
     mort.length === 1 && !mort[0].vivant && mort[0].qui === '' && !mort[0].activite, mort.map((x) => [x.vivant, x.qui]))
+  // 22 oct. 2026 (FacePro « Accélérer les rendus vidéo ») : la session finit son tour (barre « attente » 20 %), un assistant tourne encore :
+  // la ligne reste vivante ET garde sa barre (« dès que j'ai répondu, la barre s'est retirée »).
+  const fin = caAvanceToutSeul(cs, [A('att', 'tr', 'tr-readme', 'attente', 2, 'claude/s', 20)], [], [], [tache('a1', 'tr-readme', 3, { pourcentage: null })], now, S60)
+  verifie('tour terminé (barre « attente » 20 %) + assistant vivant : la ligne garde sa barre à 20 %',
+    fin.length === 1 && fin[0].vivant && fin[0].activite?.pourcentage === 20, fin.map((x) => [x.vivant, x.activite?.pourcentage]))
   // FacePro « Correctif bouche… » : mis de côté (reporte) mais une conversation y écrit encore : le travail réel se montre (29 sept., voulu).
   const rep = [C('fp-reporte', 'fp', 'reporte')]
   const ses = [{ id: 'sx', projet_id: 'fp', branche: 'claude/face-pro-chantiers-azd1gl', sujet: 'face-pro-chantiers', fin_at: null, vu_at: il(48) }] as never

@@ -354,12 +354,16 @@ case "$mode" in
     if [ "$deja" = "true" ]; then echo "Déjà noté pour $cible_nom : rien de plus à faire."; exit 0; fi
     ouverte=$(un "select count(*) as n from messages m join projets p on p.id = m.projet_id where p.slug = $CP and m.kind = 'action' and m.answered_at is null and m.corps like 'Ajoute le dépôt de %'" | jq -r '.n // 0')
     if [ "$ouverte" != "0" ]; then echo "Noté pour $cible_nom : la carte est déjà posée."; exit 0; fi
+    depot_nom=$(un "select depot from projets where slug = $CP" | jq -r '.depot // empty')
+    [ -n "$depot_nom" ] || depot_nom="rnab26/$cible_nom"
     COCKPIT_PROJET="$cible" "$DEM" --action --question "Ajoute le dépôt de $cible_nom à la routine de réveil" \
       --pourquoi "Sans cela, « Tout lancer » ne peut pas faire travailler $cible_nom : la routine ne voit que ses dépôts. Une fois ajouté, ça marche pour toujours." \
       --lien "https://claude.ai/code/routines|Ouvrir les routines" \
-      --etape "Ouvre la routine « Cockpit — réveil immédiat »." \
-      --etape "Dans ses dépôts, ajoute celui de $cible_nom." \
-      --etape "Enregistre. Rien d'autre : le prochain « Tout lancer » le prend." \
+      --etape "Sur la page, touche la routine nommée « Cockpit — réveil immédiat (jeton) — ne pas supprimer »." \
+      --etape "Touche « Modifier » (ou le crayon), puis descends jusqu'à la liste des dépôts (Repositories)." \
+      --etape "Touche « Ajouter un dépôt », cherche le texte copié ci-dessous et choisis-le dans la liste." \
+      --etape "Touche « Enregistrer ». Ne change rien d'autre (ni le texte, ni le jeton, ni l'horaire)." \
+      --copier "Dépôt à ajouter|$depot_nom" \
       >/dev/null 2>&1 && echo "Noté : le dépôt de $cible_nom n'est pas dans la routine. Carte posée ; plus aucun réveil pour ce projet pendant 24 h." \
       || echo "Noté pour $cible_nom (la carte n'a pas pu être posée : réessaie $CHEF_CMD --depot-absent $cible dans une heure)."
     exit 0 ;;
