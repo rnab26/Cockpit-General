@@ -20,7 +20,7 @@ const sql = (q) => { const j = JSON.parse(execFileSync(sqlSh, [q], { encoding: '
 let total = 0, echecs = 0
 const verifie = (nom, ok, detail) => { total++; console.log(`  ${ok ? '✓' : '✗'} ${nom}${!ok && detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 400)}` : ''}`); if (!ok) echecs++ }
 const lancer = (args, env = {}, cwd) => {
-  try { return { code: 0, sortie: execFileSync('bash', [connecter, ...args], { encoding: 'utf8', cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 }) } }
+  try { return { code: 0, sortie: execFileSync('bash', [connecter, ...args], { encoding: 'utf8', cwd, env: { ...process.env, COCKPIT_PRESENCE: 'off', ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 }) } }
   catch (e) { return { code: e.status ?? 1, sortie: `${e.stdout ?? ''}${e.stderr ?? ''}` } }
 }
 
