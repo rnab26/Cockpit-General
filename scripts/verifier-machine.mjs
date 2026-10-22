@@ -44,9 +44,9 @@ const ticks = (pid) => { try { const c = readFileSync(`/proc/${pid}/stat`, 'utf8
 let calcul = null
 try {
   await purgerPassesPrecedentes(sql, 'test-machine-')
-  sql(`insert into projets (id, slug, nom, depot, machine_pas_s, machine_fraicheur_min) values (${q(P)}, ${q(SLUG)}, 'Test machine', 'rnab26/test-machine', ${PAS}, 2)`)
+  sql(`insert into projets (id, slug, nom, depot, machine_pas_s, machine_fraicheur_min, machine_actif) values (${q(P)}, ${q(SLUG)}, 'Test machine', 'rnab26/test-machine', ${PAS}, 2, false)`)
 
-  console.log('1. Éteint par défaut')
+  console.log('1. Éteint (réglage du projet coupé) : rien n’est mesuré')
   hook()
   await dormir(4000)
   let p1 = pidBattement()

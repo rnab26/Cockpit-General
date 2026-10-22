@@ -388,6 +388,7 @@ Cause : une session multi-dépôts démarre dans /home/user, aucun hook ; connec
 
 20 oct. 2026 (suite) : la session FacePro du 16 oct. était enregistrée dans le projet « cockpit » ; suivre() ne changeait jamais projet_id. Migration 0108 : le drapeau "rattacher":"1" (posé par connecter.sh et presence.sh) déplace la session vers le projet demandé ; les hooks ordinaires ne déplacent rien. Prouvé en transaction annulée : hook ordinaire reste dans A, rattacher passe dans B.
 
+22 oct. 2026 (0110) : le battement machine est ALLUMÉ par défaut (sans jetons, ~1 % d un cœur) et presence.sh le relance pour les sessions sans hook : une session FacePro qui calcule sans parler apparaît « au travail ». Réglable par projet (Réglages › Renforts). connecter.sh n écrit plus le fichier .depot (plus lu depuis le retrait du hook utilisateur). Bancs : machine 13/13, etat-travail 37/37, presence 7/7, connecter 11/11.
 ## 22 oct. 2026 : hook utilisateur retiré (nettoyage, mandat de Raphaël « supprime le superflu »)
 `hooks/utilisateur.sh`, `docs/hook-utilisateur.md`, `docs/hook-utilisateur-settings.json` et le banc `verifier-utilisateur.mjs` (livrés le 19 oct., chantier cff4fbb9) sont supprimés : prouvé le 20 oct. qu'un hook utilisateur ne se charge pas dans les sessions cloud (aucun `settings.json` utilisateur, réglages distants vides). Remplacé par `connecter.sh` + `presence.sh` + le « PREMIER GESTE » de `docs/bloc-CLAUDE.md`. Reste : `connecter.sh` écrit encore `~/.cockpit/sessions/<id>.depot` (étape 3), que plus rien ne lit.
 

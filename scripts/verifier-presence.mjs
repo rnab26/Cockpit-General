@@ -15,7 +15,7 @@ const faux = join(dossier, "sql.sh");
 writeFileSync(faux, `#!/usr/bin/env bash\nprintf '%s\\n' "$1" >>"${journal}"\necho '{"ok":true,"rows":[]}'\n`); chmodSync(faux, 0o755);
 const nbAppels = () => (existsSync(journal) ? readFileSync(journal, "utf8").split("\n").filter(Boolean).length : 0);
 const claude = spawn("sleep", ["60"], { stdio: "ignore" });
-const env = { ...process.env, COCKPIT_SQL: faux, TMPDIR: dossier };
+const env = { ...process.env, COCKPIT_SQL: faux, TMPDIR: dossier, COCKPIT_PRESENCE_MACHINE: "off" };
 try {
   console.log("1. Tant que Claude existe, le signe de vie se refait");
   const p = spawn("bash", [join(RACINE, "scripts/presence.sh"), "--projet", "test-presence", "--session", "sess-1", "--claude-pid", String(claude.pid), "--branche", "b", "--pas", "1"], { env, stdio: "ignore" });

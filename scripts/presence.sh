@@ -27,9 +27,20 @@ SQL="${COCKPIT_SQL:-$ICI/scripts/sql.sh}"
 PIDF="${TMPDIR:-/tmp}/cockpit-presence-$SID.pid"
 if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null && [ "$(cat "$PIDF")" != "$$" ]; then exit 0; fi
 printf '%s\n' "$$" >"$PIDF"
-trap 'rm -f "$PIDF"' EXIT
+trap 'rm -f "$PIDF" "${TMPDIR:-/tmp}/cockpit-machine-pid-$SID"' EXIT
 esc() { printf '%s' "$1" | sed "s/'/''/g"; }
+# Calcul en arrière-plan (scripts/machine.py, sans jetons) : sans hook, c'est le seul moyen de voir qu'une session « travaille » entre
+# deux messages. Il s'arrête seul quand rien ne tourne ou quand le réglage du projet est éteint ; on le relance au plus toutes les 2 min.
+MPID="${TMPDIR:-/tmp}/cockpit-machine-pid-$SID"; MOFF="${TMPDIR:-/tmp}/cockpit-machine-eteint-$SID"
+machine() {
+  [ "${COCKPIT_PRESENCE_MACHINE:-on}" = "off" ] && return 0
+  command -v python3 >/dev/null 2>&1 && [ -f "$ICI/scripts/machine.py" ] || return 0
+  if [ -s "$MPID" ] && kill -0 "$(cat "$MPID" 2>/dev/null)" 2>/dev/null; then return 0; fi
+  if [ -f "$MOFF" ] && [ $(( $(date +%s) - $(stat -c %Y "$MOFF" 2>/dev/null || echo 0) )) -lt "${COCKPIT_MACHINE_ETEINT_S:-600}" ]; then return 0; fi
+  ( setsid python3 "$ICI/scripts/machine.py" --projet "$PROJET" --session "$SID" --sql "$SQL" --claude-pid "$CPID" --marque-eteint "$MOFF" >/dev/null 2>&1 & echo $! >"$MPID" ) >/dev/null 2>&1
+}
 while [ -d "/proc/$CPID" ]; do
+  machine
   charge=$(jq -cn --arg s "$SID" --arg b "$BRANCHE" '{session_id: $s, hook_event_name: "Vie", branche: $b, rattacher: "1"}')
   "$SQL" "select suivre('$(esc "$PROJET")', '$(esc "$charge")'::jsonb)" >/dev/null 2>&1 || true
   sleep "$PAS"
