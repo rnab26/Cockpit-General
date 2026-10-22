@@ -83,6 +83,7 @@ verifie('déjà une session ouverte : bon résultat', messageApresActivation([ra
 verifie('pas de réveil réglé : échec visible, sans « Réessayer » (réessayer ne changerait rien)', (() => { const m = messageApresActivation([ra('pas_configure')], maintenant); return !m.ok && !m.reessayer && /^Pas activée : le réveil automatique n’est pas réglé/.test(m.texte) })())
 verifie('projet en pause : échec dit', /en pause/.test(messageApresActivation([ra('projet_en_pause')], maintenant).texte))
 verifie('erreur technique : visible avec la cause, « Réessayer » proposé', (() => { const m = messageApresActivation([ra(null, { erreur: 'boum' })], maintenant); return !m.ok && m.reessayer && m.texte === 'Pas activée : boum' })())
+verifie('dépôt absent de la routine : échec visible qui renvoie à la carte, sans « Réessayer »', (() => { const m = messageApresActivation([ra('depot_absent')], maintenant); return !m.ok && !m.reessayer && /ajoute son dépôt à la routine/.test(m.texte) })())
 verifie('plusieurs projets : chaque phrase porte son nom', (() => { const m = messageApresActivation([ra('envoye'), ra('pas_configure', { nom: 'B' })], maintenant); return !m.ok && /A : session demandée/.test(m.texte) && /B : le réveil automatique/.test(m.texte) })())
 verifie('réponse inattendue : dite, jamais un faux succès', !messageApresActivation([ra('truc')], maintenant).ok)
 bilan()
