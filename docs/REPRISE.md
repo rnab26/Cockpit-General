@@ -12,7 +12,7 @@ dépôt font foi.
 
 ## 0 sexdecies. 19 oct. 2026 (nuit) : session multi-dépôts branchée toute seule (chantier cff4fbb9)
 
-Le relais des verdicts dits en session existait déjà (0085, `chantier.sh --verdict-dit`, rappel `prompt-rappel.sh`) ; la demande restante était « une session FacePro tourne et n'apparaît pas dans Ça avance » (session sur plusieurs dépôts, démarre dans `/home/user`, aucun hook). Livré : `hooks/utilisateur.sh` (hook utilisateur qui rejoue les hooks du bon dépôt, choix sur signes, jamais de doublon), `connecter.sh --depot`, bloc de réglages `docs/hook-utilisateur-settings.json`, banc `verifier-utilisateur.mjs` 19/19. **Non vérifié** : que les sessions cloud chargent un `settings.json` venu des dotfiles (voir `docs/hook-utilisateur.md`) ; tant que le bloc n'est pas dans `rnab26/dotfiles` `.claude/settings.json` et essayé sur une session neuve, rien n'est branché automatiquement.
+Le relais des verdicts dits en session existait déjà (0085, `chantier.sh --verdict-dit`, rappel `prompt-rappel.sh`) ; la demande restante était « une session FacePro tourne et n'apparaît pas dans Ça avance » (session sur plusieurs dépôts, démarre dans `/home/user`, aucun hook). Le hook utilisateur livré alors (`hooks/utilisateur.sh`) a été retiré le 22 oct. 2026 : il ne se charge jamais dans les sessions cloud ; remplacé par `connecter.sh` + `presence.sh` (voir `docs/historique/chefs-agents-renforts.md`).
 
 ## 0 quindecies. 19 oct. 2026 (soir) : « vivant » = du travail réel, arrière-plan compris (migration 0104, chantier a33cf882)
 
@@ -160,7 +160,7 @@ branche une session sans hooks (cause du « débranché » : session ouverte sur
 **Vérifié** : verifier-web 477 (écran complet), bulle 42, hors ligne 36, création 18, coûts 27, vitesse 6, accueil 47,
 connecter 11, base 842 (dont §56 : 15), 48 suites pures ; app tsc + build. **À constater par Raphaël** : l'écran sur son téléphone, un classement réel.
 **Non fait** (voir le doc) : clôture des chantiers ouverts puis jamais terminés (piste : commits
-poussés comme preuve), hook utilisateur (non vérifié : copie de `dotfiles/.claude/settings.json` ?), auto-fusion, CLAUDE.md de 122 Ko.
+poussés comme preuve), auto-fusion, CLAUDE.md de 122 Ko.
 
 ## 0 ter. Suite du 13 oct. 2026 (après-midi) : « mes chantiers ne sont pas à jour » — le cockpit lit git
 
