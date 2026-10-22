@@ -21,6 +21,12 @@ set -euo pipefail
 # le projet demandé ; tout appel au cockpit (sql.sh, donc progression.sh, demander.sh…) relance la présence si elle est morte.
 # Sans jeton, sans écriture, jamais bloquant ; presence.sh refuse un doublon.
 _sid="${CLAUDE_CODE_SESSION_ID:-}"
+# Branchement IMPLICITE : une session qui parle au cockpit pour un projet (COCKPIT_PROJET) est une session de ce projet, même si elle n'a
+# jamais lancé connecter.sh ; le premier projet nommé fait foi. Jamais pour un projet de banc (test-…), jamais si COCKPIT_PRESENCE=off.
+if [ -n "$_sid" ] && [ -n "${CLAUDE_PID:-}" ] && [ -n "${COCKPIT_PROJET:-}" ] && [ "${COCKPIT_PRESENCE:-on}" != "off" ] \
+   && [ "${COCKPIT_PROJET#test-}" = "$COCKPIT_PROJET" ] && [ ! -f "${TMPDIR:-/tmp}/cockpit-presence-$_sid.projet" ]; then
+  printf '%s\n%s\n' "$COCKPIT_PROJET" "$(git symbolic-ref --short -q HEAD 2>/dev/null || true)" >"${TMPDIR:-/tmp}/cockpit-presence-$_sid.projet" 2>/dev/null || true
+fi
 if [ -n "$_sid" ] && [ -n "${CLAUDE_PID:-}" ] && [ -f "${TMPDIR:-/tmp}/cockpit-presence-$_sid.projet" ]; then
   _pp="$(dirname "${BASH_SOURCE[0]}")/presence.sh"
   if [ -x "$_pp" ] && ! { [ -s "${TMPDIR:-/tmp}/cockpit-presence-$_sid.pid" ] && kill -0 "$(cat "${TMPDIR:-/tmp}/cockpit-presence-$_sid.pid" 2>/dev/null)" 2>/dev/null; }; then
