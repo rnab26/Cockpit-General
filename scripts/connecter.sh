@@ -64,9 +64,4 @@ if [ -n "$SID" ] && [ -n "${CLAUDE_PID:-}" ] && [ -d "/proc/$CLAUDE_PID" ] && [ 
   declaree="$declaree ; présence suivie toutes les 2 min tant que la session est ouverte"
 fi
 
-# 3. Les hooks utilisateur (hooks/utilisateur.sh) retiennent ce choix pour toute la session : suivi, rappels, réponses en direct.
-if [ -n "$SID" ]; then
-  mkdir -p "${COCKPIT_HOME:-$HOME/.cockpit}/sessions" 2>/dev/null && printf '%s\n' "$DEPOT" >"${COCKPIT_HOME:-$HOME/.cockpit}/sessions/$SID.depot" 2>/dev/null
-fi
-
 printf '=== Session branchée au cockpit : projet « %s » — déclarée dans l'\''app : %s ===\n\n%s\n' "$PROJET" "$declaree" "$contexte"

@@ -121,7 +121,7 @@ else {
     res.defauts.delai_sans_signe_min === String(REGLAGES_TRAVAIL_DEFAUT.repliMin) && res.defauts.tour_silence_min === String(REGLAGES_TRAVAIL_DEFAUT.tourMin)
     && res.defauts.fond_plafond_min === String(REGLAGES_TRAVAIL_DEFAUT.fondMin) && res.defauts.reveil_ecart_min === String(REGLAGES_TRAVAIL_DEFAUT.ouvertureMin)
     && res.defauts.machine_fraicheur_min === String(REGLAGES_TRAVAIL_DEFAUT.machineMin) && res.defauts.machine_seuil_pct === String(MACHINE_DEFAUT.seuilPct)
-    && res.defauts.machine_pas_s === String(MACHINE_DEFAUT.pasS) && res.defauts.machine_actif === 'false', JSON.stringify(res.defauts))
+    && res.defauts.machine_pas_s === String(MACHINE_DEFAUT.pasS) && res.defauts.machine_actif === 'true', JSON.stringify(res.defauts))
   // 3
   verifie('réglage : un tour de 20 min de battement est « sans nouvelles » à 12 min', res.tour12 === 'sans_nouvelles', res.tour12)
   verifie('…et « au travail » quand le projet règle 30 min (rien n’est en dur)', res.tour30 === 'au_travail', res.tour30)

@@ -385,13 +385,13 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
   // « Travail réel » (0104) : ce qui prouve qu'une session travaille vraiment. Valeurs de la ligne du projet, sinon défauts de la base.
   const [tourMin, setTourMin] = useState(projet.tour_silence_min ?? REGLAGES_TRAVAIL_DEFAUT.tourMin)
   const [fondMin, setFondMin] = useState(projet.fond_plafond_min ?? REGLAGES_TRAVAIL_DEFAUT.fondMin)
-  const [machineOn, setMachineOn] = useState(projet.machine_actif ?? false)
+  const [machineOn, setMachineOn] = useState(projet.machine_actif ?? true)
   const [machineMin, setMachineMin] = useState(projet.machine_fraicheur_min ?? REGLAGES_TRAVAIL_DEFAUT.machineMin)
   const [seuilPct, setSeuilPct] = useState(projet.machine_seuil_pct ?? MACHINE_DEFAUT.seuilPct)
   const [pasS, setPasS] = useState(projet.machine_pas_s ?? MACHINE_DEFAUT.pasS)
   useEffect(() => {
     setTourMin(projet.tour_silence_min ?? REGLAGES_TRAVAIL_DEFAUT.tourMin); setFondMin(projet.fond_plafond_min ?? REGLAGES_TRAVAIL_DEFAUT.fondMin)
-    setMachineOn(projet.machine_actif ?? false); setMachineMin(projet.machine_fraicheur_min ?? REGLAGES_TRAVAIL_DEFAUT.machineMin)
+    setMachineOn(projet.machine_actif ?? true); setMachineMin(projet.machine_fraicheur_min ?? REGLAGES_TRAVAIL_DEFAUT.machineMin)
     setSeuilPct(projet.machine_seuil_pct ?? MACHINE_DEFAUT.seuilPct); setPasS(projet.machine_pas_s ?? MACHINE_DEFAUT.pasS)
   }, [projet.tour_silence_min, projet.fond_plafond_min, projet.machine_actif, projet.machine_fraicheur_min, projet.machine_seuil_pct, projet.machine_pas_s])
   const [envoi, setEnvoi] = useState(false)
@@ -519,7 +519,7 @@ function ReglagesModeles({ projet }: { projet: Projet }) {
         </div>
         <label className="flex items-center gap-2 text-xs text-texte-2">
           <input type="checkbox" checked={machineOn} onChange={(e) => setMachineOn(e.target.checked)} className="h-5 w-5" data-testid="travail-machine" />
-          Mesurer les calculs sur la machine de la session (essai, éteint par défaut)
+          Mesurer les calculs sur la machine de la session (sans jetons)
         </label>
         {machineOn ? (
           <div className="flex flex-wrap gap-3" data-testid="travail-machine-details">
