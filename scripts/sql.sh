@@ -16,6 +16,20 @@
 # enveloppe la requête) ; plusieurs `;` s'exécutent mais ne renvoient rien.
 # N'alias jamais une colonne `as t` (alias interne du wrapper).
 set -euo pipefail
+# PRÉSENCE D'UNE SESSION SANS HOOK (22 oct. 2026). Le conteneur d'une session est recyclé à l'inactivité : ses processus d'arrière-plan
+# meurent (constaté sur la session FacePro : presence.sh disparu, session « sans nouvelles » alors qu'elle travaillait). connecter.sh note
+# le projet demandé ; tout appel au cockpit (sql.sh, donc progression.sh, demander.sh…) relance la présence si elle est morte.
+# Sans jeton, sans écriture, jamais bloquant ; presence.sh refuse un doublon.
+_sid="${CLAUDE_CODE_SESSION_ID:-}"
+if [ -n "$_sid" ] && [ -n "${CLAUDE_PID:-}" ] && [ -f "${TMPDIR:-/tmp}/cockpit-presence-$_sid.projet" ]; then
+  _pp="$(dirname "${BASH_SOURCE[0]}")/presence.sh"
+  if [ -x "$_pp" ] && ! { [ -s "${TMPDIR:-/tmp}/cockpit-presence-$_sid.pid" ] && kill -0 "$(cat "${TMPDIR:-/tmp}/cockpit-presence-$_sid.pid" 2>/dev/null)" 2>/dev/null; }; then
+    { read -r _proj; read -r _br; } <"${TMPDIR:-/tmp}/cockpit-presence-$_sid.projet" || true
+    if [ -n "${_proj:-}" ]; then
+      ( nohup setsid "$_pp" --projet "$_proj" --session "$_sid" --claude-pid "$CLAUDE_PID" --branche "${_br:-}" >/dev/null 2>&1 </dev/null & ) 2>/dev/null || true
+    fi
+  fi
+fi
 URL="${SUPABASE_URL:-https://bexiyvmdbxcwxasgslxp.supabase.co}"
 entetes=(-H "Content-Type: application/json" -H "Content-Profile: cockpit")
 if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then

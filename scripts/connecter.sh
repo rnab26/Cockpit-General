@@ -60,6 +60,7 @@ fi
 
 # 2 bis. Présence : sans hook, le signe de vie ne se refait pas. Un petit processus détaché le refait tant que la session existe.
 if [ -n "$SID" ] && [ -n "${CLAUDE_PID:-}" ] && [ -d "/proc/$CLAUDE_PID" ] && [ "${COCKPIT_PRESENCE:-on}" != "off" ]; then
+  printf '%s\n%s\n' "$PROJET" "$BRANCHE" >"${TMPDIR:-/tmp}/cockpit-presence-$SID.projet" 2>/dev/null || true   # relu par sql.sh : il relance la présence si le conteneur a été recyclé
   nohup setsid "$ICI/scripts/presence.sh" --projet "$PROJET" --session "$SID" --claude-pid "$CLAUDE_PID" --branche "$BRANCHE" >/dev/null 2>&1 </dev/null &
   declaree="$declaree ; présence suivie toutes les 2 min tant que la session est ouverte"
 fi

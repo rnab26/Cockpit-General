@@ -36,6 +36,25 @@ try {
   console.log("4. Entrées fausses : sortie 0 sans rien faire");
   const v = spawnSync("bash", [join(RACINE, "scripts/presence.sh"), "--projet", "x"], { env, timeout: 3000 });
   verifie("arguments manquants : sortie 0", v.status === 0, v.status);
+  console.log("6. Conteneur recyclé : le prochain appel au cockpit (sql.sh) relance la présence morte");
+  const claude2 = spawn("sleep", ["60"], { stdio: "ignore" });
+  const env6 = { ...env, CLAUDE_CODE_SESSION_ID: "sess-6", CLAUDE_PID: String(claude2.pid), SUPABASE_URL: "http://127.0.0.1:9", COCKPIT_SQL: faux, COCKPIT_PRESENCE_PAS: "1" };
+  writeFileSync(join(dossier, "cockpit-presence-sess-6.projet"), "test-presence\nmabranche\n");
+  const avant6 = nbAppels();
+  spawnSync("bash", [join(RACINE, "scripts/sql.sh"), "select 1"], { env: env6, encoding: "utf8", timeout: 15000 });
+  verifie("un appel à sql.sh relance presence.sh (signes de vie reprennent)", await attends(() => nbAppels() > avant6 + 1, 6000), `${avant6} -> ${nbAppels()}`);
+  const pid6 = readFileSync(join(dossier, "cockpit-presence-sess-6.pid"), "utf8").trim();
+  spawnSync("kill", [pid6]);
+  await new Promise((r) => setTimeout(r, 500));
+  const apres6 = nbAppels();
+  spawnSync("bash", [join(RACINE, "scripts/sql.sh"), "select 1"], { env: env6, encoding: "utf8", timeout: 15000 });
+  verifie("présence tuée (recyclage) puis un nouvel appel : elle repart", await attends(() => nbAppels() > apres6 + 1, 6000), `${apres6} -> ${nbAppels()}`);
+  spawnSync("bash", [join(RACINE, "scripts/sql.sh"), "select 1"], { env: env6, encoding: "utf8", timeout: 15000 });
+  const pid6b = readFileSync(join(dossier, "cockpit-presence-sess-6.pid"), "utf8").trim();
+  verifie("présence vivante : pas de doublon", spawnSync("pgrep", ["-fc", "presence.sh --projet test-presence --session sess-6"], { encoding: "utf8" }).stdout.trim() === "1" && pid6b.length > 0);
+  claude2.kill("SIGKILL");
+  await attends(() => spawnSync("pgrep", ["-fc", "presence.sh --projet test-presence --session sess-6"], { encoding: "utf8" }).stdout.trim() === "0", 6000);
+  verifie("Claude fini : la présence s'arrête", spawnSync("pgrep", ["-fc", "presence.sh --projet test-presence --session sess-6"], { encoding: "utf8" }).stdout.trim() === "0");
 } finally { try { claude.kill("SIGKILL"); } catch {} rmSync(dossier, { recursive: true, force: true }); }
 console.log(`\n${total - echecs}/${total}`);
 process.exit(echecs ? 1 : 0);
