@@ -1,6 +1,6 @@
 // « Tout lancer » (lib/toutLancer.ts, 16 oct. 2026, chantier 876e2e4b) : ce que dit l'unique bouton et sa ligne d'état.
 import { verifie, bilan } from './_assert.ts'
-import { aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, NOTE_NON_SUIVIE, noteNonSuivie, SANS_REVEIL, voyantDe, voyantsDe, type EntreeLancer, type EtatSessions } from '../src/lib/toutLancer.ts'
+import { aActiverAvecLancer, decisionToutLancer, messageApresActivation, messageApresLancer, DEPOT_ABSENT, NOTE_NON_SUIVIE, noteNonSuivie, SANS_REVEIL, voyantDe, voyantsDe, type EntreeLancer, type EtatSessions } from '../src/lib/toutLancer.ts'
 import type { EtatRenforts, Renfort } from '../src/lib/renforts.ts'
 
 console.log('verifier-tout-lancer')
@@ -56,6 +56,7 @@ verifie('plusieurs sessions en veille : le nombre est dit', voyantDe(e('a', { et
 verifie('plusieurs sessions au travail : le nombre est dit', voyantDe(e('a', { etat: etat({}), sessions: ss({ vivantes: 3, etats: { au_travail: 3, en_veille: 0, sans_nouvelles: 0 } }) }), maintenant).texte === '3 sessions au travail')
 verifie('une chef vivante sans autre session compte comme session ouverte', voyantDe(e('a', { etat: etat({}), sessions: ss({ chef: true }) }), maintenant).etat === 'vivante')
 verifie('aucune session + un chantier qui attend : gris, bouton « Activer »', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 2)] }), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && v.peutActiver && v.attend === '2 chantiers' })())
+verifie('dépôt absent de la routine (0112) : pas de bouton qui échouerait, la raison est dite, « Tout lancer » ne l’active pas', (() => { const v = voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ depot_absent: true }) }), maintenant); return !v.peutActiver && v.raison === DEPOT_ABSENT && aActiverAvecLancer(['a'], [v]).length === 0 })())
 verifie('aucune session + AUCUN chantier mais des messages qui attendent : le bouton reste', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({ messages: 2 }) }), maintenant); return v.peutActiver && v.attend === '2 messages' })())
 verifie('chantiers et messages : les deux sont dits', voyantDe(e('a', { etat: etat({ attente: [att('A', 1)] }), sessions: ss({ messages: 1 }) }), maintenant).attend === '1 chantier · 1 message')
 verifie('aucune session et rien n’attend : pas de bouton (une session coûte des jetons pour rien), et AUCUN texte en plus (épuré le 19 oct.)', (() => { const v = voyantDe(e('a', { etat: etat({}), sessions: ss({}) }), maintenant); return v.etat === 'aucune' && !v.peutActiver && v.raison === null && v.note === '' })())
