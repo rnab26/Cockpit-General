@@ -214,6 +214,7 @@ export function messageApresActivation(rs: ResultatActivation[], now: Date): { o
       case 'session_vivante': return { ok: true, texte: `${nom(r)}une session est déjà ouverte.` }
       case 'projet_en_pause': return { ok: false, texte: `${nom(r)}projet en pause : rallume-le dans Réglages du projet.` }
       case 'pas_configure': return { ok: false, texte: `${nom(r)}le réveil automatique n’est pas réglé : ouvre Claude Code sur ce projet.` }
+      case 'depot_absent': return { ok: false, texte: `${nom(r)}la routine de réveil ne voit pas ce projet : ajoute son dépôt à la routine (carte « À toi »).` }
       case 'aucune_chef': return { ok: false, texte: `${nom(r)}aucun réveil automatique actif : ouvre Claude Code sur ce projet.` }
       default: return { ok: false, texte: `${nom(r)}réponse inattendue (${r.resultat ?? 'vide'}).` }
     }
