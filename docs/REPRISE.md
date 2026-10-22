@@ -95,3 +95,6 @@ Demande de Raphaël : « une session FacePro tourne quasi constamment et aucune 
 - Raphaël : répondre à CHAQUE message tout de suite (une ligne d'accusé
   suffit), même pendant un long travail. Il a cru ses messages perdus.
 
+
+## Filet de réveil rallumé (22 oct. 2026, demande de Raphaël : « je veux du live »)
+`filet_reglage.actif` = true ; par projet : délai 1 min (`filet_delai_min`, avant 3), plafond 6 réveils/jour (`filet_plafond_jour`, avant 12), écart 5 min. Réglages en base seulement (`regler_filet`, `regler_filet_global`), aucun code. Raphaël l'avait coupé le 19 oct. (jetons). **À faire : mesurer le coût réel du prochain réveil** (`sessions.jetons` de la session de routine, table `filet_reveils` pour l'heure) et le noter ici ; si une session réveillée peut rester ouverte à attendre le message suivant, le mesurer aussi (limite : conteneur recyclé à l'inactivité).
