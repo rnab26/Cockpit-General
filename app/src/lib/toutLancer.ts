@@ -30,6 +30,8 @@ export interface EtatSessions {
   messages: number
   /** La routine de réveil est configurée (sinon : ouvrir Claude Code à la main). */
   reveil_possible: boolean
+  /** 0111/0112 : le dépôt du projet n'est pas dans la routine de réveil (constaté, 24 h) : un réveil ne peut rien y faire. */
+  depot_absent?: boolean
   reveil_at: string | null
   reveil_ecart_min: number
 }
@@ -126,6 +128,9 @@ export type EtatVoyant = 'vivante' | 'aucune' | 'pause' | 'inconnu'
 /** Phrase quand le réveil automatique n'est pas réglé : pas de bouton (il ne ferait rien), on dit quoi faire. */
 export const SANS_REVEIL = 'Réveil automatique non réglé : ouvre Claude Code sur ce projet.'
 
+/** Phrase quand le dépôt du projet n'est pas dans la routine de réveil : pas de bouton (il échouerait), on dit quoi faire. */
+export const DEPOT_ABSENT = 'La routine de réveil ne voit pas ce projet : ajoute son dépôt à la routine (carte « À toi »).'
+
 /** « Aucune session » est un constat sur les sessions que le cockpit SUIT (hooks) : une session ouverte sans hooks (dossier hors dépôt) ne se voit pas. On ne l'affirme donc pas plus qu'on ne le sait. */
 export const NOTE_NON_SUIVIE = 'Une session ouverte sans le suivi du cockpit n’apparaît pas ici : si tu en as une qui travaille, ne clique pas.'
 
@@ -186,6 +191,7 @@ export function voyantDe(e: EntreeLancer, now: Date): Voyant {
   const min = minutesDepuis(s.reveil_at, now)
   const dejaDemande = min !== null && min < s.reveil_ecart_min
   if (!attend) return { ...base, ...aucune, raison: null }
+  if (s.depot_absent) return { ...base, ...aucune, raison: DEPOT_ABSENT }
   if (!s.reveil_possible) return { ...base, ...aucune, raison: SANS_REVEIL }
   if (dejaDemande) return { ...base, ...aucune, dejaDemande: true, raison: `Session demandée ${ilYA(min!)} : elle arrive.` }
   return { ...base, ...aucune, peutActiver: true }
@@ -198,7 +204,7 @@ export const voyantsDe = (entrees: EntreeLancer[], now: Date): Voyant[] => entre
  * ni sur « rien n'attend » : la demande de renforts vient de poser du travail, et la base ne tire jamais deux fois (activer_session).
  */
 export const aActiverAvecLancer = (aLancer: string[], voyants: Voyant[]): string[] =>
-  aLancer.filter((slug) => { const v = voyants.find((x) => x.slug === slug); return !!v && v.etat === 'aucune' && v.raison !== SANS_REVEIL })
+  aLancer.filter((slug) => { const v = voyants.find((x) => x.slug === slug); return !!v && v.etat === 'aucune' && v.raison !== SANS_REVEIL && v.raison !== DEPOT_ABSENT })
 
 export interface ResultatActivation { nom: string; resultat: string | null; reveil_at?: string | null; erreur: string | null }
 
