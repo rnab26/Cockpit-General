@@ -70,6 +70,11 @@
   //     data-declencheur="#lien-du-menu" (l'élément du menu du site qui l'ouvre),
   //     soit, sans lui (ou s'il est introuvable), un bouton flottant en bas à droite.
   // Échap, un second toucher, un toucher à l'extérieur ou le retour du téléphone referment. data-libelle = texte du bouton.
+  // Pastille sur le bouton qui ouvre le panneau (23 oct. 2026, Raphaël : « pas de notification, je ne
+  // peux pas savoir qu'on pose des questions »). Rouge = n question(s) / action(s) qui attendent une
+  // réponse ; orange = demande(s) codée(s) à valider. Posée par charger() à chaque lecture (donc aussi
+  // en arrière-plan, panneau fermé). Sans bouton (mode page), rien à faire.
+  let majPastille = () => {}
   if ((balise.getAttribute('data-mode') || '').trim() === 'bouton') {
     const libelle = balise.getAttribute('data-libelle') || 'Demandes'
     hote.style.cssText = 'display:none;position:fixed;z-index:2147483000;right:12px;bottom:64px;' +
@@ -122,6 +127,28 @@
       declencheurEl = b
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fermer() })
+    majPastille = (rouge, orange) => {
+      const cible = declencheurEl
+      if (!cible) return
+      const n = rouge || orange
+      let p = cible.querySelector('[data-cockpit-pastille]')
+      if (!n) { if (p) p.remove(); cible.removeAttribute('data-cockpit-attente'); return }
+      if (!p) {
+        p = document.createElement('span')
+        p.setAttribute('data-cockpit-pastille', '1')
+        p.setAttribute('aria-hidden', 'true')
+        cible.appendChild(p)
+      }
+      if (getComputedStyle(cible).position === 'static') cible.style.position = 'relative'
+      p.textContent = String(n)
+      p.style.cssText = 'position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 5px;' +
+        'box-sizing:border-box;border-radius:99px;font:700 11px/18px system-ui,sans-serif;text-align:center;' +
+        'color:#fff;pointer-events:none;box-shadow:0 0 0 2px #fff;background:' + (rouge ? '#dc2626' : '#d97706')
+      const texte = rouge
+        ? rouge + (rouge > 1 ? ' questions attendent' : ' question attend') + ' ta réponse'
+        : orange + (orange > 1 ? ' demandes codées' : ' demande codée') + ' à valider'
+      cible.setAttribute('data-cockpit-attente', texte)
+    }
   }
 
   // <nettoyer-url> — COPIE de supabase/functions/cockpit-embed/reproduction.ts
@@ -776,6 +803,12 @@
       etat.majA = new Date()
       etat.erreurFond = null
       etat.erreur = null
+      try {
+        const ch = d.chantiers || []
+        const rouge = ch.reduce((n, c) => n + questionsEnAttente(c).length, 0)
+        const orange = ch.filter((c) => c.etat === 'a_verifier' && !questionsEnAttente(c).length).length
+        majPastille(rouge, orange)
+      } catch (e2) { /* la pastille ne doit jamais empêcher l'affichage */ }
     } catch (e) {
       if (premier || !etat.donnees) etat.erreur = e.message
       else etat.erreurFond = e.message
@@ -1244,5 +1277,12 @@
   setInterval(() => { if (!document.hidden) charger(false) }, cfg.intervalle * 1000)
   // Recalcul de la présence toutes les 30 s, même sans nouvelle donnée.
   setInterval(() => { if (!document.hidden && etat.donnees) rendreSiPossible(true) }, 30000)
+  // Le site hôte peut refaire son bouton (appli React) : on repose la pastille si elle a disparu.
+  setInterval(() => {
+    if (document.hidden || !etat.donnees) return
+    const ch = etat.donnees.chantiers || []
+    const rouge = ch.reduce((n, c) => n + questionsEnAttente(c).length, 0)
+    majPastille(rouge, ch.filter((c) => c.etat === 'a_verifier' && !questionsEnAttente(c).length).length)
+  }, 30000)
   document.addEventListener('visibilitychange', () => { if (!document.hidden) charger(false) })
 })()
