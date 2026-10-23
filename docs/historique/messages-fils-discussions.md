@@ -398,3 +398,6 @@ intempestives et pas actualisées dans le chat ». Le chat de la bulle d'aide es
 vérifications, à tester) vivent dans « À toi » de l'accueil, une seule fois. Retiré : `AFaireIci` et `LigneCarte` (`BulleFlottanteAide.tsx`). Gardé tel quel : les pastilles
 « à faire » de la liste des discussions et de la barre du bas (`cartesAFaire`, `notifsChat`) : elles disent qu'une chose attend, l'accueil la montre. Règle pour la suite : on ne remet
 pas de liste de cartes dans le chat ; une carte nouvelle se pose dans « À toi ». Bancs : `verifier-bulle.mjs` (41/41) et `verifier-accueil.mjs` (50/50) vérifient qu'il n'y a plus de bloc.
+
+### Push « une question t'attend » (23 oct. 2026, migration 0113, chantier 3892956d)
+Raphaël : notifications reçues seulement quand l'app est ouverte. Constat : (1) `push_abonnements` était VIDE, aucun appareil n'était abonné (Réglages › Notifications › « Activer sur cet appareil » jamais fait ou abonnement mort) ; (2) seul le type « reponse » partait, jamais une question ou une action (`a_toi`, emis = false). Fait : trigger `push_sur_question` (question/action posée par une session, tant qu'elle attend), `cockpit-push` gère les deux types, `notif_types.a_toi.emis = true`. Non couvert : « pr » et « termine » restent non émis ; un appareil doit encore être abonné par Raphaël.

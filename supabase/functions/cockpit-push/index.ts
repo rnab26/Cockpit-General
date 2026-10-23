@@ -27,8 +27,13 @@ Deno.serve(async (req) => {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ erreur: "message_id manquant" }, 400)
 
   const base = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { db: { schema: "cockpit" } })
-  const { data: m } = await base.from("messages").select("id, projet_id, chantier_id, auteur_type, kind, corps, repond_a").eq("id", id).maybeSingle()
-  if (!m || m.auteur_type !== "session" || m.kind !== "info" || !m.repond_a) return json({ envoye: 0, raison: "pas une réponse" })
+  const { data: m } = await base.from("messages").select("id, projet_id, chantier_id, auteur_type, kind, corps, repond_a, answered_at").eq("id", id).maybeSingle()
+  // Deux sortes de message déclenchent un push (migration 0113 pour la seconde) :
+  // une réponse de Claude (type « reponse ») et une question / action posée à
+  // Raphaël par une session (type « a_toi », seulement tant qu'elle attend).
+  const estReponse = !!m && m.auteur_type === "session" && m.kind === "info" && !!m.repond_a
+  const estAToi = !!m && m.auteur_type === "session" && (m.kind === "question" || m.kind === "action") && !m.answered_at
+  if (!m || (!estReponse && !estAToi)) return json({ envoye: 0, raison: "ni réponse ni question" })
   const [{ data: projet }, { data: chantier }] = await Promise.all([
     base.from("projets").select("nom, slug").eq("id", m.projet_id).maybeSingle(),
     m.chantier_id ? base.from("chantiers").select("titre").eq("id", m.chantier_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -36,7 +41,7 @@ Deno.serve(async (req) => {
   if (!projet || projet.slug.startsWith("test-")) return json({ envoye: 0, raison: "projet de test" })
 
   // UNE règle, en base (migration 0052) : admins et membres qui veulent ce type sur ce projet.
-  const { data: dest } = await base.rpc("notif_destinataires", { p_type: "reponse", p_projet: m.projet_id })
+  const { data: dest } = await base.rpc("notif_destinataires", { p_type: estAToi ? "a_toi" : "reponse", p_projet: m.projet_id })
   const users = [...new Set((dest ?? []).map((x: { user_id: string }) => x.user_id))]
   if (!users.length) return json({ envoye: 0, raison: "personne ne veut cette notification" })
   const { data: abos } = await base.from("push_abonnements").select("id, endpoint, p256dh, auth").in("user_id", users)
@@ -44,7 +49,9 @@ Deno.serve(async (req) => {
 
   webpush.setVapidDetails(Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@cockpit.local", Deno.env.get("VAPID_PUBLIC_KEY")!, Deno.env.get("VAPID_PRIVATE_KEY")!)
   const payload = JSON.stringify({
-    titre: `Claude a répondu · ${projet.nom}`,
+    titre: estAToi
+      ? `${m.kind === "action" ? "Un geste t'est demandé" : "Une question t'attend"} · ${projet.nom}`
+      : `Claude a répondu · ${projet.nom}`,
     corps: court(m.corps.replace(/\s+/g, " "), 140),
     sujet: chantier?.titre ?? "Discussion du projet",
     projet_id: m.projet_id, chantier_id: m.chantier_id, message_id: m.id,
