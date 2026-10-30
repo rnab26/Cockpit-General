@@ -3857,7 +3857,7 @@ async function controle41_reglages_notifications() {
   section("41. Réglages des notifications (0052) : types et projets par personne, filtrage serveur, une seule règle");
   const types = await sql(`select code, defaut, emis from notif_types order by ordre`);
   verifie("catalogue : « reponse » est émis et allumé par défaut", types.find((t) => t.code === "reponse")?.emis === true && types.find((t) => t.code === "reponse")?.defaut === true, types);
-  verifie("catalogue : seuls les types réellement émis ont un push (les autres sont « bientôt »)", types.filter((t) => t.emis).map((t) => t.code).join() === "reponse", types);
+  verifie("catalogue : seuls les types réellement émis ont un push (les autres sont « bientôt »)", types.filter((t) => t.emis).map((t) => t.code).join() === "reponse,a_toi", types); // « a_toi » émis depuis 0113 (push des questions)
   const droits = await une(`select has_function_privilege('authenticated', 'cockpit.notif_destinataires(text,uuid)', 'execute') as d, has_function_privilege('anon', 'cockpit.notif_veut(uuid,text,uuid)', 'execute') as v, has_function_privilege('service_role', 'cockpit.notif_destinataires(text,uuid)', 'execute') as s`);
   verifie("notif_destinataires / notif_veut : réservées au service (revoke public)", !droits.d && !droits.v && droits.s, droits);
   const rls = await une(`select (select relrowsecurity and relreplident = 'f' from pg_class where oid = 'cockpit.notif_reglages'::regclass) as reglages, (select relrowsecurity and relreplident = 'f' from pg_class where oid = 'cockpit.notif_types'::regclass) as catalogue`);
@@ -3878,7 +3878,7 @@ async function controle41_reglages_notifications() {
   verifie("destinataires : jamais pour un projet de test", test.n === 0, test);
   const reel = await une(`select id from projets where slug not like 'test-%' limit 1`);
   if (reel) {
-    verifie("destinataires : un type non émis n'a aucun destinataire", (await une(`select count(*)::int as n from notif_destinataires('a_toi', ${q(reel.id)})`)).n === 0);
+    verifie("destinataires : un type non émis n'a aucun destinataire", (await une(`select count(*)::int as n from notif_destinataires('pr', ${q(reel.id)})`)).n === 0);
     await sql(`update notif_reglages set projets_coupes = array[${q(reel.id)}]::uuid[] where user_id = ${q(userId)}`);
     verifie("destinataires : la personne qui a coupé ce projet n'y figure pas", (await une(`select count(*)::int as n from notif_destinataires('reponse', ${q(reel.id)}) where user_id = ${q(userId)}`)).n === 0);
   }
