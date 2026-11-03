@@ -331,9 +331,9 @@ case "$mode" in
     if [ "$deja" = "true" ]; then echo "$cible déjà noté absent pour $projet : carte déjà posée, rien de plus à faire."; exit 0; fi
     # UNE carte, à la première fois seulement (la date ci-dessus sert de clé), dite en mots simples.
     COCKPIT_PROJET="$projet" "$DEM" --question "Les réveils de $projet ne peuvent pas ouvrir de session. Que fait-on ?" \
-      --pourquoi "La routine de réveil n'a pas l'outil pour ouvrir ou fermer des sessions. Claude fait alors le travail lui-même, un peu moins vite. Rien ne casse, rien n'est perdu." \
+      --pourquoi "La routine de réveil n'a pas l'outil pour ouvrir des sessions, et claude.ai n'a aucun réglage pour le lui donner (vérifié le 3 nov.). Claude travaille donc seul dans le réveil, un peu moins vite. Rien ne casse." \
       --option "Continuer comme ça|Claude travaille seul dans le réveil. Rien à faire de ton côté.|recommande" \
-      --option "Donner l'outil à la routine|Claude te donne les gestes exacts, un par un, pour régler ça une fois pour toutes." \
+      --option "Je regarde plus tard|Si claude.ai ajoute ce réglage un jour, dis-le et Claude relance la question." \
       >/dev/null 2>&1 && echo "Noté : $cible manque à la routine de $projet. Carte posée pour Raphaël ; la passe ne liste plus ce geste." \
       || echo "Noté : $cible manque à la routine de $projet (la carte n'a pas pu être posée : réessaie $CHEF_CMD --sans-outil $cible dans une heure)."
     exit 0 ;;
